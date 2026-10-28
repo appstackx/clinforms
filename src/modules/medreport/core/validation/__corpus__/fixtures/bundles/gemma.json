@@ -1,0 +1,82 @@
+{
+  "_about": "Fictional episode: Gemma Whitlock, right knee sprain playing netball. N-101 Priya Shah (initial assessment), N-102 Sarah Reid (follow-up), N-103 Tom Ellis (discharge). tenantId is set by the harness.",
+  "source": {
+    "connectorId": "tm3-sim",
+    "simulated": true,
+    "fetchedAt": "2026-10-21T09:00:00.000Z",
+    "externalPatientId": "corpus-pat-gemma",
+    "externalEpisodeId": "corpus-ep-gemma",
+    "label": "Simulated TM3 sandbox – demo data, not affiliated with TM3"
+  },
+  "registration": {
+    "id": "REG",
+    "externalPatientId": "corpus-pat-gemma",
+    "title": "Mrs",
+    "firstName": "Gemma",
+    "lastName": "Whitlock",
+    "fullName": "Gemma Whitlock",
+    "dob": "1990-02-11",
+    "sex": "female",
+    "addressSummary": "4 Sample Lane (fictional), Testtown ZZ2 2ZZ",
+    "occupation": "Teaching assistant",
+    "employer": "Testtown Primary (fictional)"
+  },
+  "referral": {
+    "type": "mlc",
+    "name": "Northgate Case Services (fictional)",
+    "reference": "NCS-2026-118",
+    "contactName": "A. Handler",
+    "address": "Testtown",
+    "referralDate": "2026-08-28",
+    "reason": "Right knee injury playing netball on 24/08/2026."
+  },
+  "incident": { "date": "2026-08-24", "mechanism": "Twisted the right knee landing from a jump at netball.", "type": "sport" },
+  "clinicians": [
+    { "name": "Sarah Reid", "hcpc": "PH-DEMO-01", "role": "Senior Physiotherapist, MCSP" },
+    { "name": "Tom Ellis", "hcpc": "PH-DEMO-02", "role": "Physiotherapist, MCSP" },
+    { "name": "Priya Shah", "hcpc": "PH-DEMO-03", "role": "Physiotherapist, MCSP" }
+  ],
+  "notes": [
+    {
+      "id": "N-101",
+      "date": "2026-09-01",
+      "time": "10:00",
+      "type": "initial_assessment",
+      "author": "priya",
+      "subjective": "Twisted R knee landing at netball 24/08/2026. Medial knee pain 6/10 on stairs. Off work since 25/08/2026.",
+      "objective": "Mild effusion. Tender medial joint line. Valgus stress painful, firm end feel. Knee flexion 110°.",
+      "assessment": "Assessment: grade I-II sprain of the right MCL, possible medial meniscus irritation.",
+      "plan": "Quads sets, heel slides 3 x daily. Review 1 wk."
+    },
+    {
+      "id": "N-102",
+      "date": "2026-09-15",
+      "time": "10:00",
+      "type": "follow_up",
+      "author": "sarah",
+      "subjective": "Pain 3/10 on stairs. Back at work on reduced hours since 14/09/2026.",
+      "objective": "No effusion. Knee flexion 135°. Single-leg squat to 60° with control.",
+      "assessment": "Progressing well.",
+      "plan": "Progress loading. Review 2 wks."
+    },
+    {
+      "id": "N-103",
+      "date": "2026-10-20",
+      "time": "10:00",
+      "type": "discharge",
+      "author": "tom",
+      "subjective": "No pain at work. Not yet back at netball.",
+      "objective": "Full knee range. Hop test 90% of the left side.",
+      "assessment": "Sprain resolving well.",
+      "plan": "Discharged with a return-to-sport plan."
+    }
+  ],
+  "appointments": [
+    { "id": "A-101", "date": "2026-09-01", "time": "10:00", "status": "ATT", "noteId": "N-101" },
+    { "id": "A-102", "date": "2026-09-15", "time": "10:00", "status": "ATT", "noteId": "N-102" },
+    { "id": "A-103", "date": "2026-10-20", "time": "10:00", "status": "ATT", "noteId": "N-103" }
+  ],
+  "outcomeMeasures": [],
+  "consent": { "disclosureConsentRecorded": true, "date": "2026-09-01" },
+  "episodeStatus": "discharged"
+}

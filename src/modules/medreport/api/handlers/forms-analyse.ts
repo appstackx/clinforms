@@ -27,22 +27,35 @@ import "server-only";
  * passcode for the public demo, the clinic's own limits for a member); the extra parallel calls of a long
  * form count against the same limits. A clinic's live analysis is written to its audit trail.
  *
- * Owner: ai agent.
+ * Usage (25/10/2026): a clinic's form reading is counted (api/usage.ts recordUsage): every reading, its live calls and
+ * their tokens, and a live call that failed (estimated cost on the platform page only). The public demo never counts.
+ *
+ * bh2 WA2: a form converted from RTF records the converter's version (analysis.convertedWith = core/rtf
+ * RTF_CONVERTER_VERSION, plan WA2 design 7 – the stamp WE's re-load checks), and a proposed map larger than the request
+ * caps (forms/request-caps.ts: 400 questions, 20 sharing a place) is refused 422 FORM_TOO_COMPLEX – it could never be
+ * confirmed or filled.
+ *
+ * Owner: WA2 (forms engine) – docs/bh2-ownership.json.
  */
 import { analyseFormFile } from "../../ai/analyse-form";
 import { chooseAiModeForActor, takeLiveCallsFor } from "../../ai/live-gate";
 import { AUDIT_ACTIONS, auditActor, requireActor } from "../../auth/actor";
+import { assertClinicMayCreate } from "../../auth/clinic-access";
 import { DraftGenerationError } from "../../ai/types";
 import { MAX_FORM_REQUEST_BYTES } from "../../config.public";
 import { decodeFormFile } from "../../forms/file";
+import { formRequestCapIssues } from "../../forms/request-caps";
+import { RTF_CONVERTER_VERSION } from "../../core/rtf";
 import { findFormMergeFields } from "../../forms/merge-scan";
 import { listMergeTokens } from "../../core/merge-fields";
 import { FormsAnalyseRequestSchema, type FormsAnalyseResponse } from "../contract";
 import { publicEngineName, WORDING } from "../../core/wording";
 import { json, logEvent, parseBody, problem, type MedreportHandler } from "../http";
+import { recordUsage, usageOfError } from "../usage";
 
 export const handleFormsAnalyse: MedreportHandler = async (req, _ctx, deps) => {
   const actor = await requireActor(req, deps);
+  await assertClinicMayCreate(actor, deps, "analyse"); // 10/2026: nothing new once a clinic's trial has ended
   const parsed = await parseBody(req, FormsAnalyseRequestSchema, { maxBytes: MAX_FORM_REQUEST_BYTES });
   if (!parsed.ok) return parsed.response;
   const body = parsed.data;
@@ -88,7 +101,19 @@ export const handleFormsAnalyse: MedreportHandler = async (req, _ctx, deps) => {
       cacheReadTok: usage?.cacheReadInputTokens,
       cacheWriteTok: usage?.cacheCreationInputTokens,
     });
-    if (result.form.analysis.mode === "live") {
+    const live = result.form.analysis.mode === "live";
+    const failure = result.liveFailure;
+    const countedUsage = live ? usage : failure?.usage;
+    const countedModel = live ? result.form.analysis.model : failure?.model;
+    await recordUsage(deps, actor, {
+      kind: "form_read",
+      read: true,
+      liveCalls: live ? (result.live?.chunks ?? 1) : 0,
+      failedCalls: failure ? 1 : 0,
+      ...(countedModel ? { model: countedModel } : {}),
+      ...(countedUsage ? { usage: countedUsage } : {}),
+    });
+    if (live) {
       await auditActor(deps, actor, {
         action: AUDIT_ACTIONS.formAnalyseLive,
         targetType: "form",
@@ -117,7 +142,9 @@ export const handleFormsAnalyse: MedreportHandler = async (req, _ctx, deps) => {
       logEvent("form_merge_fields", { form: result.form.id, count: mergeFields.length, fixed: fixed.length });
     }
     if (file.convertedFrom) {
-      // An RTF upload converted to Word (forms/file.ts): staff see what the conversion left out.
+      // An RTF upload converted to Word (forms/file.ts): staff see what the conversion left out, and the map records which
+      // converter made its Word file (plan WA2 design 7).
+      analysis.convertedWith = RTF_CONVERTER_VERSION;
       const notes = file.convertedFrom.notes;
       analysis.warnings = [...notes, ...analysis.warnings.filter((w) => !notes.includes(w))];
       trace = [
@@ -131,10 +158,16 @@ export const handleFormsAnalyse: MedreportHandler = async (req, _ctx, deps) => {
       ];
       logEvent("form_rtf_converted", { form: result.form.id, rtfBytes: file.convertedFrom.sizeBytes, bytes: file.sizeBytes, notes: notes.length, ms: file.convertedFrom.ms });
     }
+    const capIssues = formRequestCapIssues(result.form);
+    if (capIssues.length > 0) return problem(422, "This form is too complex to fill", { code: "FORM_TOO_COMPLEX", detail: capIssues[0].message, issues: capIssues });
     const response: FormsAnalyseResponse = { form: { ...result.form, analysis }, outlineSummary: result.outlineSummary, trace };
     return json(response);
   } catch (err) {
     if (err instanceof DraftGenerationError) {
+      // A live reading that failed after the drafting service answered still cost tokens.
+      if (gate.mode === "live" && err.code !== "LIVE_AI_UNAVAILABLE") {
+        await recordUsage(deps, actor, { kind: "form_read", read: false, liveCalls: 0, failedCalls: 1, ...usageOfError(err) });
+      }
       logEvent("form_analysis_failed", { kind: file.mimeType, bytes: file.sizeBytes, code: err.code, ms: Date.now() - started });
       return problem(err.code === "LIVE_AI_UNAVAILABLE" ? 503 : 502, "Form analysis failed", {
         code: err.code,

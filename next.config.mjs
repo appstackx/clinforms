@@ -81,10 +81,29 @@ const nextConfig = {
   // No `x-powered-by: Next.js` header on responses.
   poweredByHeader: false,
   skipTrailingSlashRedirect: true,
+  experimental: {
+    // pdfkit (under @react-pdf/renderer) opens its default Helvetica with a runtime require that file tracing
+    // cannot see, so without this every PDF render fails on Vercel with "Cannot find module …/Helvetica.cjs".
+    // Keep the list in step with the routes that render PDFs (route.js.nft.json naming pdfkit.node.mjs).
+    outputFileTracingIncludes: {
+      "/api/reports/v1/render": ["./node_modules/pdfkit/js/standard-fonts/**/*"],
+      "/api/reports/v1/forms/fill-preview": ["./node_modules/pdfkit/js/standard-fonts/**/*"],
+    },
+  },
   async headers() {
     return [
       { source: "/:path*", headers: securityHeaders },
       ...NOINDEX_SOURCES.map((source) => ({ source, headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }] })),
+      // A clinic's public booking pages and patient portal (clinic system, contract §6): never indexed, and the
+      // patient's OWN browser may use its location for "distance from you" (worked out on the device, never sent).
+      // Later entries win for the same header, so only these paths differ from the site-wide policy above.
+      {
+        source: "/clinics/:path*",
+        headers: [
+          { key: "X-Robots-Tag", value: "noindex, nofollow" },
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(self), payment=(), usb=()" },
+        ],
+      },
     ];
   },
   async rewrites() {

@@ -13,6 +13,9 @@
  * only" and the Simulated TM3 link.
  * Tenant mode (HostHooks.mode = "tenant"): the clinic's name, the signed-in member's menu (clinic
  * settings, sign out) and no demo wording. Paths come from HostHooks.basePath (ui/routes.ts).
+ * A demo clinic (HostHooks.clinic.demoClinic, read by the host on the server – core/demo-clinic.ts): a "Demo clinic"
+ * pill in the sticky header, so it stays in view while scrolling (the host's layout shows the full banner above the
+ * shell, src/app/app/studio/layout.tsx). A real clinic and the public demo show neither.
  *
  * The header is sticky at the top of the viewport (top-0); the review and form-mapping screens' sticky
  * side panels sit just below it.
@@ -28,6 +31,7 @@ import { usePathname } from "next/navigation";
 import { createContext, useContext, useState, type ReactNode } from "react";
 import { ArrowLeft, ChevronDown, LayoutTemplate, LogOut, Settings, ShieldCheck } from "lucide-react";
 import { PRODUCT } from "../../../config.public";
+import { WORDING } from "../../../core/wording";
 import { useHostHooks, useStudioMode } from "../../host-hooks";
 import { cn } from "../../primitives";
 import { studioSection, useStudioPaths, type StudioPaths, type StudioSection } from "../../routes";
@@ -104,6 +108,7 @@ function OuterShell({ children, ...page }: StudioShellProps) {
   const mode = useStudioMode();
   const tenant = mode === "tenant";
   const { clinic } = useHostHooks();
+  const demoClinic = tenant && clinic?.demoClinic === true;
   const pathname = usePathname() ?? paths.home;
   const section = studioSection(pathname, paths.basePath);
   const items = navItems(paths, tenant);
@@ -133,6 +138,15 @@ function OuterShell({ children, ...page }: StudioShellProps) {
                 /
               </span>
               <span className="max-w-[16rem] truncate font-medium">{clinic.name}</span>
+            </span>
+          ) : null}
+          {demoClinic ? (
+            <span
+              className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-900 ring-1 ring-amber-300"
+              data-demo-clinic-pill=""
+              title={WORDING.demoClinic.banner}
+            >
+              {WORDING.demoClinic.label}
             </span>
           ) : null}
           <nav aria-label="Studio" className="ml-4 hidden items-center gap-1 text-sm lg:flex">

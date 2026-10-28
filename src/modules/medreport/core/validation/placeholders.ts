@@ -11,9 +11,15 @@
  * warning that it will be left blank on the referrer's form (evidence "optional field blank"). Sign-off
  * fields are filled from the approval receipt and are never "empty" here.
  *
- * Owner: ai agent.
+ * bh2 WA1 design 5: whether a box needs an answer comes from the issue state (core/issue-state.ts) – a box that is not
+ * asked (its frozen condition rules it out, a person decided so, a session not attended) needs none; a box left blank
+ * on purpose is still an optional box without an answer (the warning stays, acknowledgeable as before).
+ *
+ * Owner: WA1 (issue state) – docs/bh2-ownership.json.
  */
-import { isSectionAnswered } from "../forms";
+import { isBlankByDesign, isSectionAnswered, leftBlankEffect } from "../forms";
+import { issueDetails } from "../issue-state";
+import type { FormField } from "../types";
 import type { ReportFlag } from "../types";
 import { getValidationContext, hasText, makeFlag } from "./context";
 import type { ValidatorInput } from "./index";
@@ -26,15 +32,24 @@ export const PLACEHOLDER_PATTERNS: readonly RegExp[] = [
   /\{\{?[^{}\n]{1,40}\}\}?/g,
 ];
 
+/** " – the printed “30 minutes” is removed" (what leaving the box blank changes on the form), or "". */
+function blankEffect(field: Pick<FormField, "anchor"> | undefined): string {
+  const effect = field ? leftBlankEffect(field) : null;
+  return effect ? ` – ${effect}` : "";
+}
+
 export function validatePlaceholders(input: ValidatorInput): ReportFlag[] {
   const ctx = getValidationContext(input);
   const flags: ReportFlag[] = [];
 
   const specs = new Map(input.template.sections.map((s) => [s.key, s]));
+  const notAsked = new Set(issueDetails(input.report, input.form ?? null).filter((b) => b.state.kind === "not_applicable" && (b.state.reason !== "condition" || b.frozenCondition)).map((b) => b.key));
   for (const section of input.report.sections ?? []) {
     if (section.fieldId) {
-      // Form reports: sign-off fields are filled from the approval receipt.
-      if (section.kind === "declaration" || isSectionAnswered({ paragraphs: section.paragraphs ?? [], answer: section.answer })) continue;
+      // Form reports: sign-off fields are filled from the approval receipt; a box that is not asked needs no answer.
+      const field = input.form?.fields.find((f) => f.id === section.fieldId);
+      if (notAsked.has(section.key)) continue;
+      if (section.kind === "declaration" || isSectionAnswered({ paragraphs: section.paragraphs ?? [], answer: section.answer, blankFromRecords: isBlankByDesign(section, field) })) continue;
       const required = specs.get(section.key)?.required ?? true;
       if (!required) {
         flags.push(
@@ -43,7 +58,8 @@ export function validatePlaceholders(input: ValidatorInput): ReportFlag[] {
             severity: "warning",
             sectionKey: section.key,
             evidence: "optional field blank",
-            message: `“${section.title}” is optional on the referrer's form and has no answer, so it will be left blank.`,
+            // Fix round 1 (B0-2): what leaving it blank removes from the printed form, where it prints a default.
+            message: `“${section.title}” is optional on the referrer's form and has no answer, so it will be left blank${blankEffect(field)}.`,
           }),
         );
         continue;

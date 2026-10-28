@@ -6,6 +6,7 @@ import { ReportFlagSchema } from "../schemas";
 import type { Report, ReportFlag, ReportTemplate } from "../types";
 import { canAcknowledge, canSign, runValidators, validateReport } from "./index";
 import { findUnsupportedOpinionPhrases } from "./opinion-language";
+import { normaliseForMatch } from "./text";
 import { TEST_FACTS_DATE, para, testBundle, testReport, withSection } from "./test-fixtures";
 
 function run(report: Report, template: ReportTemplate): ReportFlag[] {
@@ -85,7 +86,7 @@ test("citations: a dropped-ID flag from drafting is carried over while the parag
  * Figures
  * ----------------------------------------------------------------------------------------------*/
 
-test("figures: dates and numbers must be in the cited sources; dates block, numbers warn", () => {
+test("figures: dates and numbers must be in the cited sources; dates block, numbers block in drafted text and warn in a person's", () => {
   const good = para(
     "On 18/03/2026 Sarah Reid recorded central low back pain of 7/10 at worst, a sitting tolerance of twenty minutes and an SLR of 70°; a review was planned in about six to seven weeks.",
     ["N-001"],
@@ -101,10 +102,14 @@ test("figures: dates and numbers must be in the cited sources; dates block, numb
 
   assert.deepEqual(fig(good.id), [], JSON.stringify(fig(good.id)));
   assert.deepEqual(fig(wrongDate.id).map((f) => [f.evidence, f.severity]), [["19/03/2026", "blocking"]]);
-  assert.deepEqual(fig(wrongNumber.id).map((f) => [f.evidence, f.severity]), [["8", "warning"]]);
+  // bh2-rc1 (DoC I4, ISSUE-na-figure-01): a drafted number no cited source holds blocks; a person's own number warns.
+  assert.deepEqual(fig(wrongNumber.id).map((f) => [f.evidence, f.severity]), [["8", "blocking"]]);
   assert.deepEqual(fig(wrongPeriod.id).map((f) => [f.evidence, f.severity]), [["8 weeks", "blocking"]]);
   assert.deepEqual(fig(future.id).map((f) => f.severity), ["blocking"]);
-  assert.deepEqual(fig(wrongLevel.id).map((f) => [f.evidence, f.severity]), [["L3/4", "warning"]]); // L4 is recorded, L3 is not
+  assert.deepEqual(fig(wrongLevel.id).map((f) => [f.evidence, f.severity]), [["L3/4", "blocking"]]); // L4 is recorded, L3 is not
+  const typed = { ...wrongNumber, id: "fig-person-1", origin: "edited" as const, originalText: "Pain was 7/10 at worst." };
+  const byPerson = run(withSection(testReport(SOL), "examination_findings", [typed]), SOL);
+  assert.deepEqual(of(byPerson, "FIGURE_NOT_IN_SOURCE", typed.id).map((f) => [f.evidence, f.severity]), [["8", "warning"]]);
 });
 
 test("figures: a computed fact supports its own figures but not a recalculation", () => {
@@ -229,6 +234,267 @@ test("opinion: phrase finder covers causation, probability, prognosis, timeframe
   assert.deepEqual(found("He has improved."), []);
 });
 
+/* Work and activity status is not a recovery opinion (Blue Heart trial, 10/2026) --------------------- */
+
+/** The Blue Heart test run's 10Bridge F-37 (time off work): the drafted answer and the note it cites. */
+const F37_NOTE = "Took 3 days off work, then back on normal duties with breaks from the desk.";
+const F37_DRAFT = "Mr Ellery told me on 15/07/2026 that he took 3 days off work, then returned to normal duties with breaks from the desk.";
+
+/** A drafted paragraph citing the F-37 note (N-003), and the report it is in. */
+function f37Report(text: string): { report: Report; p: ReturnType<typeof para> } {
+  const bundle = testBundle();
+  bundle.notes.push({
+    id: "N-003",
+    date: "2026-07-15",
+    type: "initial_assessment",
+    author: { name: "Sarah Reid", hcpc: "PH-DEMO-01", role: "Senior Physiotherapist, MCSP" },
+    subjective: F37_NOTE,
+    objective: "",
+    assessment: "",
+    plan: "",
+  });
+  const p = para(text, ["N-003"], { basis: "patient_reported" });
+  // bh2 WB design 6: the voice owner is the approver (no approver and no author: strict mode) – Sarah Reid approves.
+  const approver = { memberId: "mem_sarah", name: "Sarah Reid", hcpc: "PH-DEMO-01" };
+  return { report: withSection({ ...testReport(SOL, bundle), approver }, "progress_current_status", [p]), p };
+}
+
+/** Labels of the opinion phrases in `draft` that a note with `note` as its Subjective does not support. */
+function opinionLabels(draft: string, note: string): string[] {
+  return findUnsupportedOpinionPhrases(draft, normaliseForMatch(`Subjective: ${note}`)).map((m) => m.label);
+}
+
+test("opinion: the F-37 work status passes – \"returned to normal duties\" from a note's \"back on normal duties\"", () => {
+  const { report, p } = f37Report(F37_DRAFT);
+  assert.deepEqual(run(report, SOL).filter((f) => f.paragraphId === p.id), []);
+  assert.deepEqual(findUnsupportedOpinionPhrases(F37_DRAFT, normaliseForMatch(F37_NOTE)), []);
+});
+
+test("opinion: symptoms back to normal \"during work\" stay a recovery opinion, even citing the F-37 note", () => {
+  const { report, p } = f37Report("Mr Ellery told me on 15/07/2026 that his symptoms returned to normal during work.");
+  const [flag, ...rest] = of(run(report, SOL), "OPINION_LANGUAGE", p.id);
+  assert.equal(rest.length, 0);
+  assert.equal(flag.severity, "blocking");
+  assert.equal(flag.evidence, "returned to normal");
+  assert.match(flag.message, /\(recovery\)/);
+  assert.equal(canAcknowledge(flag, report), false);
+  // Only a few plain describing words may stand between "normal" and the activity; any other word keeps it recovery.
+  const cases: Array<[draft: string, note: string]> = [
+    ["His neck was back to normal during duties.", F37_NOTE],
+    ["His neck returned to normal while driving.", "Driving normally; the nervousness has settled."],
+    ["Her back returned to normal when working shifts.", "Back on full shifts."],
+    ["He has returned to normal pain-free activities.", "Back on normal activities with some pain."],
+    ["He returned to his normal unrestricted duties.", "Back on normal duties, restrictions on lifting."],
+  ];
+  for (const [draft, note] of cases) assert.deepEqual(opinionLabels(draft, note), ["recovery"], draft);
+});
+
+test("opinion: faithful work and activity paraphrases pass when the cited note records the same thing", () => {
+  const cases: Array<[draft: string, note: string]> = [
+    ["He went back to his normal duties after 3 days.", "Back on full duties after 3 days off."],
+    ["He has returned to his normal working hours.", "No pain, back on full hours."],
+    ["She returned to her usual gym routine.", "Back at the gym."],
+    ["He has returned to normal training.", "Back to full training with the team, no pain."],
+    ["He has returned to normal driving.", "Driving normally; the nervousness has settled."],
+    ["He returned to normal work.", "Back on normal duties."],
+    ["He has returned to his normal role.", "Back in his normal role."],
+    ["He has returned to normal duties.", "Returned to work on full duties on 10/08/2026."],
+    ["She has returned to her normal 12-hour shifts.", "Back on full 12-hour shifts."],
+    ["He returned to his normal hobbies.", "Back to all his usual hobbies."],
+    ["He has returned to all his normal activities.", "Back to all normal activities."],
+    ["He returned to his normal duties in the warehouse.", "Back on full duties in the warehouse."],
+    // A drafted status that has not happened, recorded the same way (Gemma Whitlock's review of 13/10/2026).
+    ["She has not yet returned to her normal 12-hour shifts.", "Working 8-hour shifts with full moving and handling using equipment; not yet back on 12-hour shifts."],
+    ["He was back at work after 3 days.", "Took 3 days off work."],
+    ["She resumed full duties on 13/10/2026.", "Back on full duties."],
+    ["She returned to work on light duties on 28/09/2026.", "Phased return to work: 4-hour shifts."],
+    ["He was back to the gym for lower body work only.", "Back at the gym for lower body work only."],
+    ["At discharge he was working full time without restrictions.", "Working full time with no restrictions."],
+    ["He returned to football and the gym without restrictions.", "Back to football and the gym with no restrictions."],
+    ["Sessions focused on strengthening and on balance, with step-ups.", "Step-ups, split squats and single-leg balance."],
+    ["Treatment progressed to split squats, with work on balance.", "Progressed: split squats and single-leg balance."],
+    ["Side-stepping and cutting drills caused mild discomfort on the inner side of the knee.", "Side-stepping and cutting drills cause mild discomfort on the inner side of the knee."],
+  ];
+  for (const [draft, note] of cases) assert.deepEqual(opinionLabels(draft, note), [], draft);
+});
+
+test("opinion: a note that says the opposite, or names another activity, does not support a full return", () => {
+  const cases: Array<[draft: string, note: string]> = [
+    ["He can return to normal activities.", "Pain with all activities."],
+    ["He has returned to his normal sports.", "Has stopped all sports since the accident."],
+    ["He has returned to his normal daily activities.", "Difficulty with normal daily activities."],
+    ["He has returned to his normal training.", "Pain on full training."],
+    ["He returned to normal duties.", "Off normal duties since 02/09/2026."],
+    ["He returned to normal duties.", "No full duties until review."],
+    ["He returned to normal duties.", "Normal duties: not yet."],
+    ["He returned to normal duties.", "Back on full duties - not yet."],
+    ["He returned to normal duties.", "Prior to the accident he was on full duties as a scaffolder. Currently off work."],
+    ["He returned to normal duties.", "Previously on full duties; currently off work."],
+    ["He returned to normal duties.", "Fit for full duties from 01/10/2026 (GP fit note)."],
+    ["He returned to normal duties.", "Back on full duties from 01/10/2026."],
+    ["He returned to normal duties.", "Back on full duties in 2 weeks."],
+    ["He returned to normal duties.", "Back on full duties? Unsure."],
+    ["He returned to normal duties.", "Keen to get back to full duties."],
+    ["He returned to normal duties.", "Back to full duties would be premature."],
+    ["He returned to normal duties.", "Back on full duties but avoiding lifting."],
+    // A current level is not a recorded return; the drafted describing word must match the note.
+    ["He has returned to normal training.", "Usual training with the team, no pain."],
+    ["She returned to her normal 12-hour shifts.", "Back on full 8-hour shifts."],
+    // Another activity: "driving normally" records driving only.
+    ["He has returned to his pre-accident activities.", "Pre-accident activities: gym 3 times a week and football. All stopped."],
+    ["He has returned to his pre-accident activities.", "Driving normally. Unable to play football or go to the gym."],
+    ["He has returned to all his normal activities.", "Driving normally."],
+    // A drafted "has not returned" needs the note's own negation; a modal ("can't") is a fitness opinion.
+    ["She has not yet returned to her normal shifts.", "Back on full shifts."],
+    ["He can't return to normal duties.", "Not yet back on normal duties."],
+  ];
+  for (const [draft, note] of cases) {
+    // bh2 check-WB M1: a modal beside the return ("He can return …") is judged as well – the return is flagged either way.
+    const labels = opinionLabels(draft, note);
+    assert.ok(labels.includes("return to normal work or activity"), `${draft} | ${note}: ${labels.join(", ")}`);
+  }
+});
+
+test("opinion: unrecorded opinions and unsupported full returns still block", () => {
+  const cases: Array<[draft: string, note: string, label: string]> = [
+    // A full return the note gives at a lower level, negated, hedged, planned or only as history.
+    ["He returned to normal duties.", "Back on light duties.", "return to normal work or activity"],
+    ["He returned to normal duties.", "Not yet back on normal duties.", "return to normal work or activity"],
+    ["He returned to normal duties.", "Nearly back on normal duties.", "return to normal work or activity"],
+    ["She returned to normal duties.", "In my opinion she should be able to return to full duties within 4 weeks.", "return to normal work or activity"],
+    ["She returned to normal duties.", "Request 3 further sessions to complete the graded return to full duties.", "return to normal work or activity"],
+    ["He returned to normal duties.", "Goal: normal duties by week 6.", "return to normal work or activity"],
+    ["He returned to normal duties.", "Neck pain since the accident. Social history: Works full time on normal duties.", "return to normal work or activity"],
+    ["He returned to normal activities.", "Back on normal duties.", "return to normal work or activity"],
+    ["He has returned to his pre-accident activities.", "Pain 2/10.", "return to normal work or activity"],
+    // Recovery, prognosis, causation, fitness and the standard of proof.
+    ["His symptoms returned to normal.", "Neurological screen normal. Back on normal duties.", "recovery"],
+    ["He has fully recovered.", "Back on normal duties.", "recovery"],
+    ["He will make a full recovery.", "Pain 2/10.", "recovery"],
+    ["The symptoms are expected to resolve.", "Pain 2/10.", "prediction"],
+    ["The symptoms were caused by the accident.", "Turning his head causes pain.", "causation"],
+    ["The accident caused pain.", "Turning his head causes pain.", "causation"],
+    ["The findings are consistent with the index event.", "Pain 2/10.", "causation"],
+    ["He is fit for work.", "Back on normal duties.", "fitness for work"],
+    ["He has no further restrictions.", "Working with no restrictions.", "fitness for work"],
+    ["He is working without restrictions.", "Restrictions on lifting for 4 weeks.", "fitness for work"],
+    ["On balance, I consider the symptoms to be genuine.", "Worked on strength.", "balance of probabilities"],
+    ["He worked hard and on balance he is fit to play.", "Pain 2/10.", "balance of probabilities"],
+    // "Focused on … and on balance" is exercise only when the note records balance work.
+    ["Having focused on the records and on balance, the symptoms are genuine.", "Pain 2/10.", "balance of probabilities"],
+    ["His progress on balance suggests the account is reliable.", "Pain 2/10.", "balance of probabilities"],
+  ];
+  for (const [draft, note, label] of cases) {
+    const labels = opinionLabels(draft, note);
+    assert.ok(labels.includes(label), `${draft} → ${JSON.stringify(labels)}`);
+  }
+});
+
+test("opinion: a drafted return the F-37 note does not record – a modal, advice or a contradiction – still blocks", () => {
+  // Integration review (10/2026): the note recording the return supports only a drafted return that happened.
+  const drafts = [
+    "He can return to normal duties.",
+    "He can't return to normal duties.",
+    "He cannot return to his normal duties.",
+    "He is able to return to his normal duties.",
+    "He is unable to return to his normal duties.",
+    "He should return to normal duties.",
+    "He should be able to return to his normal duties.",
+    "He would be able to return to his normal duties in 2 weeks.",
+    "He could return to normal duties.",
+    "He may return to normal duties.",
+    "He is ready to return to normal duties.",
+    "None – he can go back to his normal duties.",
+    "I recommend a graded return to normal duties over 4 weeks.",
+    "I would advise a return to his normal duties.",
+    "He has been advised to return to normal duties.",
+    "He should be back to normal duties by the end of the month.",
+    "Once his pain settles he can return to normal duties.",
+    "There is no reason he cannot return to normal duties.",
+    "He did not return to normal duties.",
+    "He never returned to normal duties.",
+    "He was unable to return to normal duties after the accident.",
+  ];
+  for (const draft of drafts) assert.notDeepEqual(opinionLabels(draft, F37_NOTE), [], draft);
+  // Through the validators, as /sign runs them: a fitness view on F-37's note cannot be approved as drafted.
+  const { report, p } = f37Report("None. He can return to his normal duties.");
+  const [flag] = of(run(report, SOL), "OPINION_LANGUAGE", p.id);
+  assert.equal(flag.severity, "blocking");
+  assert.equal(canAcknowledge(flag, report), false);
+  // Elsewhere: fitness and prognosis on other activities, and a prognosis after a recorded "not yet".
+  const others: Array<[draft: string, note: string]> = [
+    ["He can return to normal driving.", "Driving normally; the nervousness has settled."],
+    ["He should be able to return to normal training.", "Back to full training with the team, no pain."],
+    ["She has not yet returned to her normal 12-hour shifts, but should be able to shortly.", "Working 8-hour shifts; not yet back on 12-hour shifts."],
+    ["He can return to work without restrictions.", "Not yet able to work with no restrictions."],
+    // A symptom or body part as the subject is recovery, whatever word follows.
+    ["His neck is back to normal work-wise.", F37_NOTE],
+    ["His symptoms have returned to normal activity levels.", "Back to normal activity."],
+    ["His knee function returned to normal sporting activities.", "Back to full sporting activities."],
+  ];
+  for (const [draft, note] of others) assert.notDeepEqual(opinionLabels(draft, note), [], `${draft} | ${note}`);
+  // A drafted return that happened still passes.
+  for (const draft of [
+    "He returned to normal duties after 3 days off work.",
+    "He has returned to normal duties.",
+    "He went back to his normal duties.",
+    "He is back to his normal duties.",
+    "He had returned to normal duties by 15/07/2026.",
+    "He was back to normal duties.",
+    "Yes – he returned to his normal duties after 3 days.",
+  ]) {
+    assert.deepEqual(opinionLabels(draft, F37_NOTE), [], draft);
+  }
+});
+
+test("opinion: causation, the standard of proof and recorded returns – the review's remaining cases", () => {
+  const BALANCE_NOTE = "Progressed: step-ups, split squats and single-leg balance.";
+  const block: Array<[draft: string, note: string]> = [
+    // "Which / that / it caused" is causation, however the note's "which causes pain" goes on.
+    ["Ms Whitlock was injured lifting at work, which caused pain in her lower back.", "Lifting boxes at work, which causes pain in her lower back."],
+    ["The collision, which caused pain in his neck, was on 04/07/2026.", "Turning, which causes pain in his neck."],
+    ["He was hit from behind and that caused neck pain.", "Looking over his shoulder and that causes neck pain."],
+    ["The accident and it caused headaches.", "Reading and it causes headaches."],
+    // "On balance" as the standard of proof, even when the note records balance work.
+    ["Having worked on the evidence and on balance, the symptoms are genuine.", BALANCE_NOTE],
+    ["Having focused on the records and on balance, the symptoms are genuine.", BALANCE_NOTE],
+    ["His progress on balance suggests the account is reliable.", BALANCE_NOTE],
+    // Notes that give a goal, an earlier episode, a qualifier after a comma or an exception.
+    ["He returned to normal duties.", "LTG: back on full duties."],
+    ["He returned to normal duties.", "Objectives: back on full duties."],
+    ["He returned to normal duties.", "Had a similar injury in 2019 and was back on full duties after 4 weeks. Currently off work."],
+    ["He returned to normal duties.", "Back on full duties, but avoiding lifting."],
+    ["He returned to normal duties.", "Back on full duties, except lifting."],
+    ["He has returned to all his normal activities.", "Back to all activities other than running."],
+    ["He returned to normal duties.", "Back on full duties is unrealistic at present."],
+    ["He returned to normal duties.", "Back on full duties Monday."],
+  ];
+  for (const [draft, note] of block) assert.notDeepEqual(opinionLabels(draft, note), [], `${draft} | ${note}`);
+  const pass: Array<[draft: string, note: string]> = [
+    ["Sessions focused on strengthening and on balance, with step-ups.", BALANCE_NOTE],
+    ["Treatment progressed to split squats, with work on balance.", BALANCE_NOTE],
+    ["He worked on balance and strength.", BALANCE_NOTE],
+    ["Side-stepping and cutting drills caused mild discomfort on the inner side of the knee.", "Side-stepping and cutting drills cause mild discomfort on the inner side of the knee."],
+    // Jordan Ellery's discharge note (welcome pack): "Working full time with no restrictions".
+    ["Yes – he has returned to his normal duties and is working full time with no restrictions.", "Working full time with no restrictions."],
+    ["He has now returned to his normal working hours.", "Working full time with no restrictions."],
+  ];
+  for (const [draft, note] of pass) assert.deepEqual(opinionLabels(draft, note), [], `${draft} | ${note}`);
+});
+
+test("opinion: an unsupported full return blocks drafted text with no acknowledgement; edited text needs a reason", () => {
+  const ai = para("He returned to normal duties.", ["N-002"]);
+  const report = withSection(testReport(EMP), "functional_status", [ai]);
+  const [flag] = of(run(report, EMP), "OPINION_LANGUAGE", ai.id);
+  assert.equal(flag.evidence, "returned to normal duties"); // N-002 records "amended duties"
+  assert.equal(flag.severity, "blocking");
+  assert.equal(canAcknowledge(flag, report), false);
+  const edited = withSection(report, "functional_status", [{ ...ai, origin: "edited" }]);
+  const [own] = of(run(edited, EMP), "OPINION_LANGUAGE", ai.id);
+  assert.equal(canAcknowledge(own, edited), true);
+  assert.equal(own.acknowledged, undefined);
+});
+
 /* ------------------------------------------------------------------------------------------------
  * Scope terms
  * ----------------------------------------------------------------------------------------------*/
@@ -325,4 +591,156 @@ test("validateReport: computes facts from the snapshot and returns canSign", () 
   assert.equal(r.canSign, false); // narrative sections not drafted yet
   assert.ok(r.blocking.length > 0);
   assert.deepEqual(r.flags, run(report, SOL));
+});
+
+/* ------------------------------------------------------------------------------------------------
+ * Fix round 1 (B0-1): another clinician's notes in the signer's first person
+ * ----------------------------------------------------------------------------------------------*/
+
+test("fix round 1: 'told me' / 'My assessment' / 'in my opinion' citing another clinician's note blocks; the signer's own note does not", () => {
+  // Every note written by Tom Ellis; Sarah Reid is the author who signs.
+  const tom = { name: "Tom Ellis", hcpc: "PH-DEMO-02", role: "Physiotherapist, MCSP" };
+  const bundle = testBundle();
+  const allTom = { ...bundle, notes: bundle.notes.map((n) => ({ ...n, author: tom })) };
+  const sarah = { name: "Sarah Reid", hcpc: "PH-DEMO-01", role: "Senior Physiotherapist, MCSP" };
+  const told = para("Mr Testcase told me that the pain started when he lifted a parcel.", ["N-001"], { basis: "patient_reported" });
+  const assessed = para("My assessment on 18/03/2026 was acute mechanical low back pain.", ["N-001"]);
+  const opinion = para("On 06/05/2026, in my opinion, he is fit for a phased return to normal duties over 2 weeks.", ["N-002"], { basis: "clinician_opinion_recorded" });
+  const report = { ...withSection(testReport(SOL, allTom), "presenting_complaints", [told, assessed, opinion]), author: sarah };
+  const flags = run(report, SOL);
+  for (const p of [told, assessed, opinion]) {
+    const f = of(flags, "OTHER_CLINICIAN_VOICE", p.id)[0];
+    assert.equal(f?.severity, "blocking", p.text);
+    assert.equal(f?.evidence, "Tom Ellis");
+    assert.match(f?.message ?? "", /written by Tom Ellis/);
+    assert.equal(canAcknowledge(f, report), false, "drafted text: name the clinician or rewrite it");
+  }
+  assert.equal(validateReport(report, SOL).canSign, false);
+
+  // The same words citing Sarah Reid's own note (N-001 in the test bundle) raise nothing.
+  const own = { ...withSection(testReport(SOL), "presenting_complaints", [{ ...told, id: "own-1" }, { ...assessed, id: "own-2" }]), author: sarah };
+  assert.equal(of(run(own, SOL), "OTHER_CLINICIAN_VOICE").length, 0);
+
+  // Edited by the clinician: still flagged, but they may acknowledge it (it is their own account).
+  const edited = { ...report, sections: report.sections.map((s) => (s.key === "presenting_complaints" ? { ...s, paragraphs: [{ ...told, origin: "edited" as const, originalText: told.text }] } : s)) };
+  const ef = of(run(edited, SOL), "OTHER_CLINICIAN_VOICE")[0];
+  assert.equal(ef?.severity, "blocking");
+  assert.equal(canAcknowledge(ef, edited), true);
+});
+
+/* ------------------------------------------------------------------------------------------------
+ * Fix round 1 (B0-7): conditional questions
+ * ----------------------------------------------------------------------------------------------*/
+
+// bh2 fix round 1 (R1T-WA1-01 / RG-1; integrator grant needed – expectations changed): only a condition FROZEN when the
+// report was created rules a box out. The run-time reading of the printed questions that this test pinned on a report
+// from before the release (no reportModel) never reached production, so it is applied to no report: such a report's
+// boxes are ordinary – printed and fully checked, as production printed and checked them. The behaviour this test was
+// written for (fix round 1, B0-7) is now that of the frozen reading – asserted below on a report of this release.
+test("fix round 1: “IF YES, PLEASE DETAIL” after “NO” and “If not back at work…” after “Yes” are not asked – no blocking check, printed blank", async () => {
+  const { compileConditions, conditionFieldsOf, conditionOf, conditionWanted } = await import("../conditions");
+  const { buildFormAnswers } = await import("../forms");
+  assert.deepEqual(conditionWanted("IF YES, PLEASE DETAIL"), { wants: "yes", anyOfAbove: false });
+  assert.deepEqual(conditionWanted("If not back at work, expected return to work date"), { wants: "no", anyOfAbove: false });
+  assert.deepEqual(conditionWanted("Frequency – if other, details"), { wants: "other", anyOfAbove: false });
+  assert.deepEqual(conditionWanted("If yes to any of the above, note detail"), { wants: "yes", anyOfAbove: true });
+  assert.equal(conditionWanted("Has the patient returned to work?"), null);
+  const sec = (key: string, title: string, answer?: ReportSection_["answer"], text = "") => ({ key, title, kind: "ai_narrative" as const, status: "drafted" as const, fieldId: key, paragraphs: text ? [{ id: `${key}-p1`, text, sourceIds: ["N-001"], origin: "ai" as const }] : [], ...(answer ? { answer } : {}) });
+  const unfrozen = [
+    sec("F-27", "Has the patient returned to work?", { kind: "yes_no", value: true }),
+    sec("F-28", "If not back at work, expected return to work date", { kind: "date", value: null }),
+    sec("F-32", "ANY FURTHER TREATMENT RECOMMENDED?", { kind: "yes_no", value: false }),
+    sec("F-33", "IF YES, PLEASE DETAIL", undefined, "Request 3 further sessions."),
+  ];
+  const answerType = (key: string) => (key === "F-27" || key === "F-32" ? "yes_no" : key === "F-28" ? "date" : "long_text");
+  const form = { fields: unfrozen.map((s) => ({ id: s.key, label: s.title, guidance: "", answerType: answerType(s.key), anchor: { kind: "docx", target: "table_cell", blockId: "t0.r0.c0" }, fillSource: { kind: "notes_narrative" }, required: true, confidence: "high" })) } as never as import("../types").FormDefinition;
+  // A report from before the release: no frozen condition, so no box is ruled out and the drafted detail is printed.
+  assert.equal(conditionOf(unfrozen, "F-28"), null);
+  assert.equal(conditionOf(unfrozen, "F-33"), null);
+  assert.deepEqual(buildFormAnswers({ sections: unfrozen } as never, form)["F-33"], { text: "Request 3 further sessions." }, "printed, as production printed it");
+  // This release freezes the conditions when the report is created (core/report-factory.ts createFormReport).
+  const frozen = compileConditions(conditionFieldsOf(form.fields));
+  const sections = unfrozen.map((s) => (frozen.get(s.key) ? { ...s, condition: frozen.get(s.key) } : s));
+  assert.equal(conditionOf(sections, "F-28")?.applies, false);
+  assert.equal(conditionOf(sections, "F-33")?.because, "“ANY FURTHER TREATMENT RECOMMENDED?” is “No”");
+  const base = testReport(SOL);
+  const report = { ...base, sections: [...base.sections, ...sections] } as unknown as Report;
+  const template = { ...SOL, sections: [...SOL.sections, ...sections.map((s) => ({ key: s.key, title: s.title, kind: s.kind, required: true, guidance: "" }))] } as unknown as ReportTemplate;
+  // The server reads a form report's conditions from its attested map (core/issue-state.ts serverReading).
+  const flags = validateReport(report, template, { form, computedFacts: computeFacts(report.bundleSnapshot, { asOf: TEST_FACTS_DATE }) }).flags;
+  assert.equal(flags.filter((f) => f.sectionKey === "F-28" || f.sectionKey === "F-33").length, 0, "no “required, no answer” and no checks on the drafted text");
+  assert.deepEqual(buildFormAnswers({ sections } as never, form)["F-33"], { text: "", blank: true, leftBlank: true }, "the drafted detail is not printed");
+  // Answered "Yes" after all: it applies again.
+  const yes = sections.map((s) => (s.key === "F-32" ? { ...s, answer: { kind: "yes_no" as const, value: true } } : s));
+  assert.equal(conditionOf(yes, "F-33")?.applies, true);
+});
+
+type ReportSection_ = import("../types").ReportSection;
+
+test("safety amendment (R-safety-8): a mail-merge code owned by a question that does not apply still blocks approval", async () => {
+  const { conditionOf } = await import("../conditions");
+  // A fictional two-question form: "ANY FURTHER TREATMENT RECOMMENDED?" then "IF YES, PLEASE DETAIL: <<P_TREATMENT>>".
+  const sections = [
+    { key: "F-32", title: "ANY FURTHER TREATMENT RECOMMENDED?", kind: "ai_narrative" as const, status: "drafted" as const, fieldId: "F-32", paragraphs: [], answer: { kind: "yes_no" as const, value: false } },
+    { key: "F-33", title: "IF YES, PLEASE DETAIL", kind: "ai_narrative" as const, status: "drafted" as const, fieldId: "F-33", paragraphs: [] },
+  ];
+  // bh2 fix round 1 (R1T-WA1-01; integrator grant needed): no frozen condition, so the box is an ordinary question on
+  // this report from before the release (no run-time reading of its printed words) – and its code blocks, as on
+  // production. (A box a FROZEN condition rules out clears its own code: the approved DIFF:ISSUE-merge-na-01.)
+  assert.equal(conditionOf(sections, "F-33"), null, "an ordinary question: no run-time reading of “IF YES”");
+  const fields = [
+    { id: "F-32", label: "ANY FURTHER TREATMENT RECOMMENDED?", guidance: "", answerType: "yes_no", options: ["Yes", "No"], anchor: { kind: "docx", target: "delete_options", blockId: "p0", placeholderText: "Yes / No" }, fillSource: { kind: "clinician_opinion" }, required: true, confidence: "high" },
+    { id: "F-33", label: "IF YES, PLEASE DETAIL", guidance: "", answerType: "long_text", anchor: { kind: "docx", target: "replace_placeholder", blockId: "p1", placeholderText: "<<P_TREATMENT>>" }, fillSource: { kind: "notes_narrative" }, required: true, confidence: "high" },
+  ];
+  const mergeFields = [{ text: "<<P_TREATMENT>>", where: "the form's text", blockId: "p1" }];
+  const form = { fields, analysis: { mode: "rules", promptVersion: "x", at: "2026-10-25T09:00:00.000Z", warnings: [], mergeFields } } as never;
+  const base = testReport(SOL);
+  const report = { ...base, sections: [...base.sections, ...sections] } as unknown as Report;
+  // bh2 WA1 (design 8): sections without a frozen condition are read at run time only on a report from before the release.
+  delete (report as { reportModel?: number }).reportModel;
+  const template = { ...SOL, sections: [...SOL.sections, ...sections.map((s) => ({ key: s.key, title: s.title, kind: s.kind, required: true, guidance: "" }))] } as unknown as ReportTemplate;
+  const result = validateReport(report, template, { form });
+  // (An ordinary box now: its own "required, no answer" is reported too – as on production.)
+  const code = result.flags.filter((f) => f.code === "MISSING_PLACEHOLDER" && f.sectionKey === "F-33" && (f.evidence ?? "").startsWith("mail-merge field"));
+  assert.equal(code.length, 1, "the code the question owns is still reported");
+  assert.equal(code[0].severity, "blocking");
+  assert.equal(canAcknowledge(code[0], report), false);
+  assert.ok(result.blocking.some((f) => f.id === code[0].id));
+  assert.equal(result.canSign, false, "never approved with a merge code that the final copy would refuse to issue");
+  // The rest of the not-applicable question's checks are still dropped (fix round 1, B0-7).
+  assert.deepEqual(result.flags.filter((f) => f.sectionKey === "F-33" && f.code !== "MISSING_PLACEHOLDER" && f.code !== "OPEN_GAP"), []);
+  // An answer-level merge code in the not-applicable box is never dropped either.
+  const typed = { ...report, sections: report.sections.map((s) => (s.key === "F-33" ? { ...s, paragraphs: [{ id: "F-33-p1", text: "See <<P_TREATMENT>>.", sourceIds: [], origin: "clinician" as const }] } : s)) } as unknown as Report;
+  assert.ok(run(typed, template).some((f) => f.code === "MISSING_PLACEHOLDER" && f.paragraphId === "F-33-p1"));
+});
+
+/* ------------------------------------------------------------------------------------------------
+ * Fix round 1 (B0-5, B0-6, B0-16, B0-23): drafted wording that does not fit its place on the form (warnings)
+ * ----------------------------------------------------------------------------------------------*/
+
+test("fix round 1: a dated, attributed sentence in a table cell, a repeated row, commentary and a later note on an IA form are warnings", () => {
+  const bundle = testBundle(); // N-001 18/03/2026 initial assessment, N-002 06/05/2026 discharge
+  const cell = (id: string, label: string) => ({ id, label, guidance: "", answerType: "short_text", anchor: { kind: "docx", target: "table_cell", blockId: `t4.r${id.slice(2)}.c0` }, fillSource: { kind: "notes_narrative" }, required: false, confidence: "high" });
+  const fields = [cell("F-28", "Activity 1"), cell("F-29", "Activity 1 – frequency"), cell("F-32", "Activity 2"), { ...cell("F-40", "Present condition"), answerType: "long_text", anchor: { kind: "docx", target: "after_paragraph", blockId: "p40" } }];
+  const sec = (key: string, title: string, text: string, ids = ["N-001"]) => ({ key, title, kind: "ai_narrative" as const, status: "drafted" as const, fieldId: key, paragraphs: [{ id: `${key}-p1`, text, sourceIds: ids, origin: "ai" as const }] });
+  const base = testReport(SOL, bundle);
+  const report = {
+    ...base,
+    form: { formId: "frm_10bridge_ia", title: "Initial Assessment Report", referrer: { name: "10Bridge", type: "mlc" }, fileSha256: "0".repeat(64), kind: "docx" },
+    sections: [
+      sec("F-28", "Activity 1", "Mr Testcase told Tom Ellis, physiotherapist, on 18/03/2026 that he walks the dog every day."),
+      sec("F-29", "Activity 1 – frequency", "Daily"),
+      sec("F-32", "Activity 2", "He walks the dog every day."),
+      sec("F-40", "Present condition", "The notes are written by Sarah Reid. On 06/05/2026 his back pain was 2/10 at worst.", ["N-002"]),
+    ],
+  } as unknown as Report;
+  const template = { ...SOL, sections: report.sections.map((s) => ({ key: s.key, title: s.title, kind: s.kind, required: false, guidance: "" })) } as unknown as ReportTemplate;
+  const flags = runValidators({ report, bundle, template, computedFacts: computeFacts(bundle, { asOf: TEST_FACTS_DATE }), form: { analysis: { mode: "rules", promptVersion: "t", at: "2026-10-25T09:00:00.000Z", warnings: [] }, fields } as never }).filter((f) => f.code === "DRAFT_FIT");
+  const by = (key: string, ev: string) => flags.find((f) => f.sectionKey === key && (f.evidence ?? "").startsWith(ev));
+  assert.match(by("F-28", "shorten")?.message ?? "", /^Shorten for the box: this answer goes in a table cell/);
+  assert.equal(by("F-29", "shorten"), undefined, "“Daily” is the value alone");
+  assert.match(by("F-32", "repeat")?.message ?? "", /^This repeats “Activity 1” \(F-28\)/);
+  assert.match(by("F-40", "comment")?.message ?? "", /^Remove the comment about the notes \(“The notes are written by/);
+  assert.match(by("F-40", "later note")?.message ?? "", /^From a later note of 06\/05\/2026 – check it belongs on an initial assessment \(18\/03\/2026\)\.$/);
+  assert.ok(flags.every((f) => f.severity === "warning"), "never blocking");
 });

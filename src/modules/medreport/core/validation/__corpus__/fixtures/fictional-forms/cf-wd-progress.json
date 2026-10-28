@@ -1,0 +1,389 @@
+{
+ "_about": "Fictional referrer form (ClinForms' own wording) for bh2 fix round 1 (WD): a question that prints its own condition, a work-status yes/no, an 'any other treatment' yes/no, an area treated and its 'now' twin, a modality-used tick, an engagement opinion box, a visits table with a length per visit, a single planned-modality tick on an opinion box, an attendance summary. Generated layout: the harness builds the Word file from it.",
+ "id": "cf-wd-progress",
+ "title": "Progress and Discharge Summary (fictional form)",
+ "referrer": {
+  "name": "Eastbrook Case Services (fictional)",
+  "type": "mlc"
+ },
+ "fileName": "cf-wd-progress.docx",
+ "layout": [
+  {
+   "p": "Progress and Discharge Summary (fictional form)"
+  },
+  {
+   "p": "Complete each box from the clinical record."
+  },
+  {
+   "table": [
+    [
+     "Patient name",
+     ""
+    ],
+    [
+     "a. If the patient was off work when first seen, is the patient back at work now?",
+     "☐ Yes  ☐ No"
+    ],
+    [
+     "b. If the person is at work, can they carry on with all their usual tasks?",
+     "☐ Yes  ☐ No"
+    ],
+    [
+     "Is the patient receiving any other treatment?",
+     "☐ Yes  ☐ No"
+    ],
+    [
+     "Area treated 1",
+     ""
+    ],
+    [
+     "Area treated 1 – improvement the patient reports (%)",
+     ""
+    ],
+    [
+     "Modalities given – Hydrotherapy",
+     "☐"
+    ],
+    [
+     "How well did the patient take part in treatment?",
+     ""
+    ],
+    [
+     "Visit 2 – date",
+     ""
+    ],
+    [
+     "Visit 2 – length",
+     "30 min"
+    ],
+    [
+     "Visit 3 – date",
+     ""
+    ],
+    [
+     "Visit 3 – length",
+     "30 min"
+    ],
+    [
+     "Planned modality – Shockwave",
+     "☐"
+    ],
+    [
+     "Summary of attendance",
+     ""
+    ]
+   ]
+  }
+ ],
+ "fields": [
+  {
+   "id": "F-01",
+   "label": "Patient name",
+   "guidance": "",
+   "answerType": "short_text",
+   "anchor": {
+    "kind": "docx",
+    "target": "table_cell",
+    "blockId": "t0.r0.c1"
+   },
+   "fillSource": {
+    "kind": "registration",
+    "path": "patient.fullName"
+   },
+   "required": true,
+   "confidence": "high"
+  },
+  {
+   "id": "F-02",
+   "label": "a. If the patient was off work when first seen, is the patient back at work now?",
+   "guidance": "",
+   "answerType": "yes_no",
+   "options": [
+    "Yes",
+    "No"
+   ],
+   "anchor": {
+    "kind": "docx",
+    "target": "checkbox_glyph",
+    "blockId": "t0.r1.c1",
+    "optionGlyphs": [
+     {
+      "option": "Yes",
+      "blockId": "t0.r1.c1",
+      "glyphIndex": 0
+     },
+     {
+      "option": "No",
+      "blockId": "t0.r1.c1",
+      "glyphIndex": 1
+     }
+    ]
+   },
+   "fillSource": {
+    "kind": "notes_narrative"
+   },
+   "required": true,
+   "confidence": "high"
+  },
+  {
+   "id": "F-03",
+   "label": "b. If the person is at work, can they carry on with all their usual tasks?",
+   "guidance": "",
+   "answerType": "yes_no",
+   "options": [
+    "Yes",
+    "No"
+   ],
+   "anchor": {
+    "kind": "docx",
+    "target": "checkbox_glyph",
+    "blockId": "t0.r2.c1",
+    "optionGlyphs": [
+     {
+      "option": "Yes",
+      "blockId": "t0.r2.c1",
+      "glyphIndex": 0
+     },
+     {
+      "option": "No",
+      "blockId": "t0.r2.c1",
+      "glyphIndex": 1
+     }
+    ]
+   },
+   "fillSource": {
+    "kind": "notes_narrative"
+   },
+   "required": true,
+   "confidence": "high"
+  },
+  {
+   "id": "F-04",
+   "label": "Is the patient receiving any other treatment?",
+   "guidance": "",
+   "answerType": "yes_no",
+   "options": [
+    "Yes",
+    "No"
+   ],
+   "anchor": {
+    "kind": "docx",
+    "target": "checkbox_glyph",
+    "blockId": "t0.r3.c1",
+    "optionGlyphs": [
+     {
+      "option": "Yes",
+      "blockId": "t0.r3.c1",
+      "glyphIndex": 0
+     },
+     {
+      "option": "No",
+      "blockId": "t0.r3.c1",
+      "glyphIndex": 1
+     }
+    ]
+   },
+   "fillSource": {
+    "kind": "notes_narrative"
+   },
+   "required": true,
+   "confidence": "high"
+  },
+  {
+   "id": "F-05",
+   "label": "Area treated 1",
+   "guidance": "Which part of the body was treated.",
+   "answerType": "short_text",
+   "anchor": {
+    "kind": "docx",
+    "target": "table_cell",
+    "blockId": "t0.r4.c1"
+   },
+   "fillSource": {
+    "kind": "notes_narrative"
+   },
+   "required": false,
+   "confidence": "high"
+  },
+  {
+   "id": "F-06",
+   "label": "Area treated 1 – improvement the patient reports (%)",
+   "guidance": "A figure out of 100 given by the patient.",
+   "answerType": "short_text",
+   "anchor": {
+    "kind": "docx",
+    "target": "table_cell",
+    "blockId": "t0.r5.c1"
+   },
+   "fillSource": {
+    "kind": "notes_narrative"
+   },
+   "required": false,
+   "confidence": "high"
+  },
+  {
+   "id": "F-07",
+   "label": "Modalities given – Hydrotherapy",
+   "guidance": "Tick it when hydrotherapy formed part of treatment.",
+   "answerType": "checkbox",
+   "options": [
+    "Hydrotherapy"
+   ],
+   "anchor": {
+    "kind": "docx",
+    "target": "checkbox_glyph",
+    "blockId": "t0.r6.c1",
+    "optionGlyphs": [
+     {
+      "option": "Hydrotherapy",
+      "blockId": "t0.r6.c1",
+      "glyphIndex": 0
+     }
+    ]
+   },
+   "fillSource": {
+    "kind": "notes_narrative"
+   },
+   "required": false,
+   "confidence": "high"
+  },
+  {
+   "id": "F-08",
+   "label": "How well did the patient take part in treatment?",
+   "guidance": "",
+   "answerType": "long_text",
+   "anchor": {
+    "kind": "docx",
+    "target": "table_cell",
+    "blockId": "t0.r7.c1"
+   },
+   "fillSource": {
+    "kind": "clinician_opinion"
+   },
+   "required": false,
+   "confidence": "high"
+  },
+  {
+   "id": "F-09",
+   "label": "Visit 2 – date",
+   "guidance": "",
+   "answerType": "date",
+   "anchor": {
+    "kind": "docx",
+    "target": "table_cell",
+    "blockId": "t0.r8.c1"
+   },
+   "fillSource": {
+    "kind": "registration",
+    "path": "episode.attendedDate",
+    "part": {
+     "index": 2,
+     "of": 3
+    }
+   },
+   "required": false,
+   "confidence": "high",
+   "section": "Visits"
+  },
+  {
+   "id": "F-10",
+   "label": "Visit 2 – length",
+   "guidance": "How long the visit lasted, if not the printed 30 min.",
+   "answerType": "short_text",
+   "anchor": {
+    "kind": "docx",
+    "target": "replace_placeholder",
+    "blockId": "t0.r9.c1",
+    "placeholderText": "30 min"
+   },
+   "fillSource": {
+    "kind": "notes_narrative"
+   },
+   "required": false,
+   "confidence": "high",
+   "section": "Visits"
+  },
+  {
+   "id": "F-11",
+   "label": "Visit 3 – date",
+   "guidance": "",
+   "answerType": "date",
+   "anchor": {
+    "kind": "docx",
+    "target": "table_cell",
+    "blockId": "t0.r10.c1"
+   },
+   "fillSource": {
+    "kind": "registration",
+    "path": "episode.attendedDate",
+    "part": {
+     "index": 3,
+     "of": 3
+    }
+   },
+   "required": false,
+   "confidence": "high",
+   "section": "Visits"
+  },
+  {
+   "id": "F-12",
+   "label": "Visit 3 – length",
+   "guidance": "How long the visit lasted, if not the printed 30 min.",
+   "answerType": "short_text",
+   "anchor": {
+    "kind": "docx",
+    "target": "replace_placeholder",
+    "blockId": "t0.r11.c1",
+    "placeholderText": "30 min"
+   },
+   "fillSource": {
+    "kind": "notes_narrative"
+   },
+   "required": false,
+   "confidence": "high",
+   "section": "Visits"
+  },
+  {
+   "id": "F-13",
+   "label": "Planned modality – Shockwave",
+   "guidance": "",
+   "answerType": "checkbox",
+   "options": [
+    "Shockwave"
+   ],
+   "anchor": {
+    "kind": "docx",
+    "target": "checkbox_glyph",
+    "blockId": "t0.r12.c1",
+    "optionGlyphs": [
+     {
+      "option": "Shockwave",
+      "blockId": "t0.r12.c1",
+      "glyphIndex": 0
+     }
+    ]
+   },
+   "fillSource": {
+    "kind": "clinician_opinion"
+   },
+   "required": false,
+   "confidence": "high"
+  },
+  {
+   "id": "F-14",
+   "label": "Summary of attendance",
+   "guidance": "",
+   "answerType": "long_text",
+   "anchor": {
+    "kind": "docx",
+    "target": "table_cell",
+    "blockId": "t0.r13.c1"
+   },
+   "fillSource": {
+    "kind": "notes_narrative"
+   },
+   "required": false,
+   "confidence": "high"
+  }
+ ]
+}

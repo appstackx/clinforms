@@ -213,7 +213,7 @@ export function getSecret(name: SecretName): string {
  * A purpose-bound key derived from MEDREPORT_SIGNING_SECRET (domain separation: a receipt MAC can
  * never be replayed as a form-map confirmation or a filed-document token).
  */
-export function signingKey(purpose: "receipt" | "form-confirmation" | "file-token" | "rate-limit-key"): string {
+export function signingKey(purpose: "receipt" | "form-confirmation" | "file-token" | "rate-limit-key" | "usage-episode" | "usage-report"): string {
   const secret = getSecret("MEDREPORT_SIGNING_SECRET");
   return purpose === "receipt" ? secret : createHmac("sha256", secret).update(`appstackx-reports:${purpose}:v1`, "utf8").digest("base64url");
 }

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Notice, PageHeader, Panel } from "@/components/account/shell";
+import { clinicTrialRunning } from "@/server/admin/clinic-plan";
 import { isManager } from "@/server/auth/roles";
 import { requireAppContext } from "@/server/auth/session";
 import { getDb } from "@/server/db";
@@ -11,7 +12,8 @@ export const metadata: Metadata = { title: "Clinic details" };
 
 export default async function ClinicSettingsPage() {
   const { membership } = await requireAppContext();
-  const profile = await getClinicProfile({ db: getDb() }, membership.tenantId);
+  const db = getDb();
+  const [profile, trial] = await Promise.all([getClinicProfile({ db }, membership.tenantId), clinicTrialRunning(db, membership.tenantId)]);
   const editable = isManager(membership.role);
   return (
     <>
@@ -24,6 +26,7 @@ export default async function ClinicSettingsPage() {
         ) : null}
         <ClinicProfileForm
           editable={editable}
+          trial={trial}
           values={{
             displayName: profile?.displayName ?? membership.clinicName,
             legalName: profile?.legalName ?? "",

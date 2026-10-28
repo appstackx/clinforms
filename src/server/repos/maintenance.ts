@@ -10,10 +10,13 @@ import { assertIso, nowIso, type DbContext } from "./context";
 import { purgeIncompleteUploads } from "./form-file-uploads";
 import { purgeExpiredLaunchTokens } from "./launch-tokens";
 import { purgeRateLimits } from "./rate-limits";
+import { purgeUsageEvents } from "./usage";
 
 const DAY_MS = 86_400_000;
 /** "Request access" submissions are kept up to 24 months (privacy policy). */
 export const ACCESS_REQUEST_RETENTION_DAYS = 730;
+/** The usage events ledger (retries only). */
+export const USAGE_EVENT_RETENTION_DAYS = 7;
 
 function daysBefore(nowIsoValue: string, days: number): string {
   return new Date(Date.parse(nowIsoValue) - days * DAY_MS).toISOString();
@@ -57,6 +60,11 @@ export interface RetentionResult {
   accessRequests: number;
   /** Form-file uploads started more than a day ago and never completed (they are never served). */
   incompleteUploads: number;
+  /**
+   * 25/10/2026: entries of the usage events ledger older than a week (it only guards retries). The usage counters
+   * themselves (clinic_usage, usage_report) are never deleted by retention: a month's numbers outlive its reports.
+   */
+  usageEvents: number;
 }
 
 /**
@@ -71,5 +79,6 @@ export async function runRetention(ctx: DbContext): Promise<RetentionResult> {
     rateLimits: await purgeRateLimits(ctx, daysBefore(now, 1)),
     accessRequests: await purgeOldAccessRequests(ctx, now),
     incompleteUploads: await purgeIncompleteUploads(ctx, daysBefore(now, 1)),
+    usageEvents: await purgeUsageEvents(ctx, daysBefore(now, USAGE_EVENT_RETENTION_DAYS)),
   };
 }

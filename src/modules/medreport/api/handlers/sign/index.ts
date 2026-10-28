@@ -1,0 +1,196 @@
+import "server-only";
+
+/**
+ * POST /api/reports/v1/sign
+ * Body SignRequest → SignResponse {receipt, flags}. Re-runs the validators; 409 SIGNOFF_BLOCKED (problem.flags) if blocking items remain.
+ * Form reports (report.form set): `form` is required; validate against core/forms.ts formToTemplate(form); attestations must equal FORM_ATTESTATIONS.
+ *
+ * Checks, in order: an actor (auth/actor.ts; 401) of the report's clinic (403 TENANT_MISMATCH) and – for a
+ * launch-bound actor – the report's patient and episode (403 SESSION_MISMATCH); WHO signs (below); the
+ * template / form map (api/resolve-template.ts); a form map must be the clinic's and confirmed with a valid
+ * server attestation (409 FORM_NOT_CONFIRMED); typed signature = signer name (case-insensitive, spaces
+ * collapsed); statement accepted; every attestation of the template ticked (exact text); then the
+ * validators (canSign). The receipt (auth/sign-receipt.ts) is an HMAC over the report fingerprint, signer,
+ * time, attestations, the verified form map's hash and the session the approval came through.
+ *
+ * Who signs (wave 2):
+ * - a clinic's signed-in member: the signer IS the member – name from the account, HCPC number and job
+ *   title from the member profile – never the body's `signer`. Allowed for owner / admin / clinician with an
+ *   HCPC number and "may sign" (403 SIGNER_NOT_ALLOWED otherwise; staff never approve). A body `signer`
+ *   with another HCPC number is 403 SIGNER_MISMATCH (approve as yourself). A launch from the clinic system
+ *   for another clinician is 403 SIGNER_MISMATCH too. approvedVia {kind "user", sid = sign-in session,
+ *   userId, launchSid?}. Written to the clinic's audit trail.
+ * - the public demo: the body's `signer` (fictional clinicians); a launch session that names a clinician
+ *   may only be used by that clinician (403 SIGNER_MISMATCH); approvedVia {kind "launch" | "demo", sid}.
+ * - (fix wave 2) a clinic's member never approves drafted answers that speak in ANOTHER clinician's first
+ *   person (report.author ≠ the signer and an unedited drafted answer says "I …"): 409 SIGNER_NOT_AUTHOR with
+ *   the questions to edit (core/voice.ts otherClinicianVoice). The demo is unchanged.
+ * - (fix round 1, B0-1) every approval: a drafted answer that says "I" / "my" while citing another clinician's note is
+ *   a blocking OTHER_CLINICIAN_VOICE flag (core/validation/voice.ts), so canSign refuses it (409 SIGNOFF_BLOCKED);
+ *   on a report with no author, a member's approval is refused the same way against the signer (409 SIGNER_NOT_AUTHOR).
+ * - (10/2026) DEMO clinics (core/demo-clinic.ts; ClinicProfile.demoClinic, read on the server): a member whose
+ *   signing details hold a made-up PH-DEMO-NN number approves with it exactly like a real clinician does. In ANY
+ *   OTHER clinic such a number never approves: 403 DEMO_NUMBER_NOT_ALLOWED, checked after every other check so the
+ *   existing refusals read as before (a clinic that was a demo clinic and is real again; the members page already
+ *   refuses to save one there). The audit row of a demo clinic's approval says
+ *   so (demoClinic, and the made-up number when one was used – never a real registration number). The public demo
+ *   (`/reports`, fictional signer from the body) is unchanged.
+ *
+ * Usage (25/10/2026): a clinic's approval is counted (api/usage.ts recordUsage): the report's first approval, and – when
+ * nothing was drafted for it – it counts towards the clinic's allowance now. Approving the same report again, or an
+ * amended version of an approved report (report.amends), never counts again – "amends" is taken only for an approved
+ * report of the same patient, episode and form (the server's fingerprint of this report, api/usage.ts usageEpisodeFp);
+ * any other "amends" counts as a new report. The public demo never counts.
+ *
+ * bh2 WA1 (design 6): in a clinic's Studio the body must be the stored revision (409 STALE_REPORT); a dry-run FINAL fill
+ * with the receipt's signer and time must succeed (409 ISSUE_REFUSED with the boxes concerned); the receipt binds the
+ * issued document's content hash and the acknowledgements the approval relied on (checks/issue.ts, sign/receipt.ts).
+ *
+ * bh2 fix round 1 (WA1): a body over the validators' budget is refused before anything else runs (413 PAYLOAD_TOO_LARGE,
+ * checks/issue.ts validationBudgetRefusal – R1T-WA1-03); the body's `status` and `receipt` are the client's word and are
+ * never what the approval is checked as – the report is checked as not yet approved (checks/issue.ts asNotYetApproved),
+ * so a body saying "signed" cannot switch off the approver's adoption of a proposal (R1T-WA1-04, SAF-5).
+ *
+ * W0.4 module split (bh2): the checks live in sign/checks/ (roles.ts – who signs and the demo number, owner WC;
+ * voice.ts – the signer's own voice, WB; issue.ts – the validators, WA1) and the receipt in sign/receipt.ts (WA1);
+ * this file runs them in the order above. W0.6 adds the pipeline's stub checks (SIGNER_CHECKS, BEFORE_VALIDATION,
+ * AFTER_VALIDATION below; their context is checks/context.ts). Owners: docs/bh2-ownership.json.
+ *
+ * Owner: forms-engine agent (formerly docgen; wave 2 caller rules: API slice).
+ */
+import { AUDIT_ACTIONS, assertActorEpisode, assertActorTenant, auditActor, macPrefix, requireActor } from "../../../auth/actor";
+import { MAX_FORM_REQUEST_BYTES } from "../../../config.public";
+import { normaliseDemoHcpc } from "../../../core/demo-clinic";
+import { SignRequestSchema, type ProblemIssue, type SignResponse } from "../../contract";
+import { json, logEvent, parseBody, problem, type MedreportHandler } from "../../http";
+import { checkAttestedForm, resolveTemplate } from "../../resolve-template";
+import { recordUsage, usageEpisodeFp, usageEpisodeOfReport } from "../../usage";
+import type { SignCheck, SignCheckContext, SignerCheckContext } from "./checks/context";
+import { asNotYetApproved, issuedDocumentCheck, staleReportCheck, validationBudgetRefusal, validationCheck } from "./checks/issue";
+import { approverCheck, demoNumberCheck, resolveSigner } from "./checks/roles";
+import { signerConfirmationsCheck, signVoiceOwner, voiceRefusal } from "./checks/voice";
+import { mintReceipt } from "./receipt";
+
+/**
+ * W0.6 pipeline: the checks the workstreams fill in, in the order they run. Once the signer is known: is the signer the
+ * report's approver (WC). Before the validators: is the body the stored revision (WA1 – checks/issue.ts). After them:
+ * the signer's confirmations (WB), then what would be issued – the dry-run FINAL fill with the receipt's own signer and
+ * time (WA1, checks/issue.ts issuedDocumentCheck, run last below with the approval time and the validators' result).
+ * (bh2 fix round 1: harden-WA1's legacyReadingCheck is gone with the run-time reading of printed questions – R1T-WA1-01/05.)
+ */
+const SIGNER_CHECKS: ReadonlyArray<SignCheck<SignerCheckContext>> = [approverCheck];
+const BEFORE_VALIDATION: readonly SignCheck[] = [staleReportCheck];
+const AFTER_VALIDATION: readonly SignCheck[] = [signerConfirmationsCheck];
+
+async function runChecks<C extends SignerCheckContext>(checks: ReadonlyArray<SignCheck<C>>, ctx: C): Promise<Response | null> {
+  for (const check of checks) {
+    const refusal = await check(ctx);
+    if (refusal) return refusal;
+  }
+  return null;
+}
+
+const normaliseName = (s: string) => s.normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
+
+export const handleSign: MedreportHandler = async (req, _ctx, deps) => {
+  // Approval is an authenticated act: who approved is recorded from the sign-in / session, not just typed.
+  const actor = await requireActor(req, deps);
+  const parsed = await parseBody(req, SignRequestSchema, { maxBytes: MAX_FORM_REQUEST_BYTES });
+  if (!parsed.ok) return parsed.response;
+  const { typedSignature, statementAccepted, attestations, form } = parsed.data;
+  // bh2 fix round 1 (R1T-WA1-03): no validator runs on a body over the budget.
+  const tooLarge = validationBudgetRefusal(parsed.data.report, form);
+  if (tooLarge) return tooLarge;
+  // bh2 fix round 1 (R1T-WA1-04): checked as not yet approved, whatever status or receipt the body claims.
+  const report = asNotYetApproved(parsed.data.report);
+
+  assertActorTenant(actor, report.tenantId, "report");
+  const ref = report.episodeRef;
+  try {
+    // A launch-bound actor approves only its own patient's episode (a demo session bound to a connector is
+    // not limited here, as before wave 2).
+    if (actor.scope) assertActorEpisode(actor, { connectorId: ref.connectorId, patientId: ref.patientId, episodeId: ref.episodeId });
+  } catch {
+    return problem(403, "This session does not cover this report", {
+      code: "SESSION_MISMATCH",
+      detail: "You opened a different patient from the clinic system. Open this patient from the clinic system, or reload the page, and approve again.",
+    });
+  }
+
+  // Who signs.
+  const who = resolveSigner(actor, parsed.data.signer);
+  if (!who.ok) return who.response;
+  const { signer } = who;
+  // bh2 W0 follow-up: one object for what the checks add to the receipt (checks/context.ts receiptAdditions).
+  // bh2 (WB design 13; ownership exception – WA1's file): the approver's sign-time confirmations reach signerConfirmationsCheck.
+  const signerCtx: SignerCheckContext = { req, deps, actor, report, signer, receiptAdditions: {}, ...(parsed.data.confirmations ? { confirmations: parsed.data.confirmations } : {}) };
+  const notApprover = await runChecks(SIGNER_CHECKS, signerCtx);
+  if (notApprover) return notApprover;
+
+  const voice = voiceRefusal(actor, report, signer);
+  if (voice) return voice;
+
+  const resolved = resolveTemplate({ templateId: report.templateId, form, reportForm: report.form, path: "report.templateId" });
+  if (!resolved.ok) return resolved.response;
+  const { template } = resolved;
+
+  // The receipt records the map's attested hash: the hash of the map as read, or (an API client's copy with a key of
+  // its own) as this build knows it – exactly what it recorded before the rollback shim (auth/attestations.ts formMapMatches).
+  let attestedMapSha256: string | undefined;
+  if (resolved.form) {
+    const attested = checkAttestedForm(resolved.form, actor.tenantId);
+    if (!attested.ok) return attested.response;
+    attestedMapSha256 = attested.mapSha256;
+  }
+
+  const issues: ProblemIssue[] = [];
+  if (normaliseName(typedSignature) !== normaliseName(signer.name)) {
+    issues.push({ path: "typedSignature", message: "Type your name exactly as it appears in the name field to sign." });
+  }
+  if (!statementAccepted) issues.push({ path: "statementAccepted", message: "Confirm the statement before approving." });
+  const missing = template.attestations.filter((a) => !attestations.includes(a));
+  missing.forEach((a) => issues.push({ path: "attestations", message: `Tick: “${a}”` }));
+  if (issues.length > 0) return problem(422, "The approval is incomplete", { code: "VALIDATION_FAILED", issues });
+
+  const started = Date.now();
+  const ctx: SignCheckContext = { ...signerCtx, template, form: resolved.form, started };
+  const stale = await runChecks(BEFORE_VALIDATION, ctx);
+  if (stale) return stale;
+  const { result, response: blocked } = validationCheck({ report, template, form: resolved.form, started, owner: signVoiceOwner(report, signer) });
+  if (blocked) return blocked;
+  const unconfirmed = await runChecks(AFTER_VALIDATION, ctx);
+  if (unconfirmed) return unconfirmed;
+  // bh2 WA1 design 6: the approval time is minted once – the dry-run FINAL fill writes it into the sign-off boxes and the
+  // receipt carries it, so the issued document is exactly the one checked here.
+  const signedAt = new Date();
+  const notIssuable = await issuedDocumentCheck(ctx, { signedAt, validation: result, ...(parsed.data.fileBase64 ? { fileBase64: parsed.data.fileBase64 } : {}) });
+  if (notIssuable) return notIssuable;
+
+  const { demoClinic, response: demoRefusal } = await demoNumberCheck({ deps, actor, signer, templateId: template.id, started });
+  if (demoRefusal) return demoRefusal;
+
+  const receipt = await mintReceipt({ report, signer, template, formMapSha256: attestedMapSha256, actor, additions: signerCtx.receiptAdditions, now: signedAt });
+  const body: SignResponse = { receipt, flags: result.flags };
+  logEvent("sign", { template: template.id, report: report.id, flags: result.flags.length, form: Boolean(resolved.form), via: actor.via, demoClinic, ms: Date.now() - started });
+  const demoNumber = demoClinic ? normaliseDemoHcpc(signer.hcpc) : null;
+  await auditActor(deps, actor, {
+    action: AUDIT_ACTIONS.sign,
+    targetType: "report",
+    targetId: report.id,
+    detail: {
+      ...(resolved.form ? { formId: resolved.form.id } : { templateId: template.id }),
+      receiptMac: macPrefix(receipt.mac),
+      contentSha256: receipt.contentSha256.slice(0, 16),
+      flags: result.flags.length,
+      // A demo clinic's approval says so; a made-up number is recorded (it identifies nobody), a real one never is.
+      ...(demoClinic ? { demoClinic: true, ...(demoNumber ? { demoNumber } : {}) } : {}),
+    },
+  });
+  await recordUsage(deps, actor, {
+    kind: "report_approved",
+    reportId: report.id,
+    ...(report.amends ? { amendsReportId: report.amends.reportId } : {}),
+    episodeFp: usageEpisodeFp(actor.tenantId, usageEpisodeOfReport(report)),
+  });
+  return json(body);
+};

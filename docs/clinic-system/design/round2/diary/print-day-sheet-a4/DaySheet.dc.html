@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<title>Day sheet – print</title>
+<script src="./vendor/react.js"></script>
+<script src="./vendor/react-dom.js"></script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+*{box-sizing:border-box}
+@page{size:A4;margin:0}
+</style>
+</helmet>
+<div style="width: 794px; height: 1123px; background: #FFFFFF; color: #0F172A; font-family: Inter, system-ui, sans-serif; font-size: 16px; line-height: 22px; padding: 48px 48px 40px; display: flex; flex-direction: column; gap: 20px">
+<header style="display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; border-bottom: 2px solid #0F172A; padding-bottom: 14px">
+<div style="display: flex; flex-direction: column; gap: 2px">
+<span style="font-size: 13px; color: #334155">Northgate Physiotherapy Group (fictional) · Harbour Road</span>
+<h1 style="margin: 0; font-size: 26px; line-height: 32px; font-weight: 700">Day sheet – Tuesday 27/10/2026</h1>
+<span style="font-weight: 600">Priya Shah · PH-DEMO-01 · Room 1</span>
+</div>
+<div style="text-align: right; font-size: 13px; line-height: 18px; color: #334155; display: flex; flex-direction: column">
+<span>9 appointments · 1 blocked</span>
+<span>Printed 27/10/2026 07:45</span>
+<span>by Jess Taylor</span>
+</div>
+</header>
+<table style="width: 100%; border-collapse: collapse; font-size: 15px; line-height: 20px">
+<thead>
+<tr style="text-align: left; border-bottom: 1.5px solid #0F172A; font-size: 13px">
+<th scope="col" style="padding: 6px 6px 6px 0; width: 64px">Time</th>
+<th scope="col" style="padding: 6px">Patient</th>
+<th scope="col" style="padding: 6px">Service</th>
+<th scope="col" style="padding: 6px">Payer</th>
+<th scope="col" style="padding: 6px; width: 92px">Arrived</th>
+</tr>
+</thead>
+<tbody>
+<sc-for list="{{rows}}" as="r" hint-placeholder-count="10">
+<tr style="border-bottom: 1px solid #CBD5E1; vertical-align: top">
+<td style="padding: 9px 6px 9px 0; font-variant-numeric: tabular-nums; font-weight: 600">{{r.time}}</td>
+<td style="padding: 9px 6px"><div style="font-weight: 600">{{r.name}}</div><div style="font-size: 13px; color: #334155">DOB {{r.dob}} · {{r.phone}}</div><sc-if value="{{r.alert}}" hint-placeholder-val="{{false}}"><div style="font-size: 13px; font-weight: 600; margin-top: 2px"><span style="border: 1.5px solid #0F172A; border-radius: 3px; padding: 0 4px; margin-right: 4px">ALERT</span>{{r.alertText}}</div></sc-if></td>
+<td style="padding: 9px 6px">{{r.service}}</td>
+<td style="padding: 9px 6px; font-size: 14px">{{r.payer}}</td>
+<td style="padding: 9px 6px"><span style="display: inline-block; width: 20px; height: 20px; border: 1.5px solid #0F172A; border-radius: 3px"></span><span style="font-size: 12px; color: #334155; margin-left: 6px">DNA ☐</span></td>
+</tr>
+</sc-for>
+</tbody>
+</table>
+<div style="font-size: 13px; color: #334155; display: flex; gap: 24px; flex-wrap: wrap"><span><strong>Blocked:</strong> 12:30–13:30 Lunch</span><span><strong>Cancelled:</strong> 14:00 Hannah Wright (late cancellation)</span></div>
+<footer style="margin-top: auto; border-top: 1px solid #94A3B8; padding-top: 10px; display: flex; justify-content: space-between; font-size: 12px; line-height: 16px; color: #334155">
+<span>Confidential – contains personal data. Shred after use. No clinical notes are printed on this sheet.</span>
+<span>Page 1 of 4</span>
+</footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":794,"height":1123}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const r = (time, name, dob, phone, service, payer, alertText) => ({ time, name, dob, phone, service, payer, alert: !!alertText, alertText: alertText || '' });
+    return {
+      rows: [
+        r('08:00', 'Ravi Patel', '19/05/1979', '07700 900101', 'Follow-up 30', 'Self-pay'),
+        r('08:30', 'Owen Price', '02/12/1990', '07700 900412', 'Follow-up 30', 'Self-pay'),
+        r('09:00', 'Margaret Ellis', '14/03/1961', '07700 900123', 'Initial 45', 'Self-pay'),
+        r('10:00', 'Liam O’Connor', '21/06/1985', '07700 900560', 'Follow-up 30', 'Bluewell Health (fictional) – excess £20'),
+        r('10:30', 'Chloe Bennett', '11/01/1996', '07700 900733', 'Follow-up 30', 'Self-pay'),
+        r('11:00', 'Emily Turner', '27/09/1982', '07700 900218', 'Initial 45', 'Self-pay', 'Latex allergy'),
+        r('15:00', 'George Lewis', '05/04/1957', '07700 900649', 'Follow-up 30', 'Self-pay'),
+        r('16:00', 'Isla Morgan', '02/07/1988', '07700 900318', 'Initial 45', 'Self-pay')
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

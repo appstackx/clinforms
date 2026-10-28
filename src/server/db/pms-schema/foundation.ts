@@ -8,6 +8,8 @@
  *   tenant_id, so a row can never point at another clinic's row.
  * - Calendar dates are TEXT "YYYY-MM-DD" on both dialects; timestamps ISO TEXT / timestamptz; booleans 0/1;
  *   money in whole pence (INTEGER).
+ * - Configurable access (0103): pms_role_permissions, pms_member_access, pms_member_permissions, pms_member_sites,
+ *   pms_access_changes – choices only; the permission list and its locks are src/modules/pms/core/permissions.ts.
  * - Columns ending in _enc hold AES-GCM ciphertext with AAD "<tenant>:<table>.<column>:<id>"
  *   (src/server/repos/pms/context.ts).
  */
@@ -92,6 +94,10 @@ export interface PmsPractitionersTable {
   display_name: string;
   profession: string;
   registration_number: string | null;
+  /** The register the number is on ("HCPC"); null on rows before migration 0104 (read as HCPC). */
+  registration_body: ColumnType<string | null, string | null | undefined, string | null>;
+  /** 1 = may sign clinical notes with this record's registration number (migration 0105). */
+  may_sign: WithDefault<number>;
   email: string | null;
   phone: string | null;
   colour: string | null;
@@ -271,6 +277,60 @@ export interface PmsAuthorisationsTable {
   updated_at: IsoTimestamp;
 }
 
+export interface PmsRolePermissionsTable {
+  tenant_id: string;
+  /** "owner" | "admin" | "clinician" | "staff" */
+  role: string;
+  permission: string;
+  /** 0/1 */
+  allowed: number;
+  updated_by: string | null;
+  updated_at: IsoTimestamp;
+}
+
+export interface PmsMemberAccessTable {
+  tenant_id: string;
+  /** Better Auth user id. */
+  user_id: string;
+  active: WithDefault<number>;
+  all_sites: WithDefault<number>;
+  rev: WithDefault<number>;
+  updated_by: string | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
+export interface PmsMemberPermissionsTable {
+  tenant_id: string;
+  user_id: string;
+  permission: string;
+  allowed: number;
+  updated_by: string | null;
+  updated_at: IsoTimestamp;
+}
+
+export interface PmsMemberSitesTable {
+  tenant_id: string;
+  user_id: string;
+  site_id: string;
+  works_at: WithDefault<number>;
+  can_see: WithDefault<number>;
+  updated_at: IsoTimestamp;
+}
+
+export interface PmsAccessChangesTable {
+  tenant_id: string;
+  id: string;
+  /** "role" | "member" */
+  kind: string;
+  subject_role: string | null;
+  subject_user_id: string | null;
+  /** JSON array of AccessChangeItem (src/modules/pms/core/access.ts). */
+  items_json: string;
+  changed_by: string | null;
+  created_at: IsoTimestamp;
+}
+
 export interface FoundationTables {
   clinic_entitlements: ClinicEntitlementsTable;
   clinic_usage_counters: ClinicUsageCountersTable;
@@ -285,6 +345,11 @@ export interface FoundationTables {
   pms_patients: PmsPatientsTable;
   pms_cases: PmsCasesTable;
   pms_authorisations: PmsAuthorisationsTable;
+  pms_role_permissions: PmsRolePermissionsTable;
+  pms_member_access: PmsMemberAccessTable;
+  pms_member_permissions: PmsMemberPermissionsTable;
+  pms_member_sites: PmsMemberSitesTable;
+  pms_access_changes: PmsAccessChangesTable;
 }
 
 /** Foreign-key order (parents first). */
@@ -302,6 +367,11 @@ export const FOUNDATION_TABLES = [
   "pms_patients",
   "pms_cases",
   "pms_authorisations",
+  "pms_role_permissions",
+  "pms_member_access",
+  "pms_member_permissions",
+  "pms_member_sites",
+  "pms_access_changes",
 ] as const satisfies readonly (keyof FoundationTables)[];
 
 export const FOUNDATION_PRIMARY_KEYS: { readonly [T in (typeof FOUNDATION_TABLES)[number]]: readonly (keyof FoundationTables[T] & string)[] } = {
@@ -318,6 +388,11 @@ export const FOUNDATION_PRIMARY_KEYS: { readonly [T in (typeof FOUNDATION_TABLES
   pms_patients: ["tenant_id", "id"],
   pms_cases: ["tenant_id", "id"],
   pms_authorisations: ["tenant_id", "id"],
+  pms_role_permissions: ["tenant_id", "role", "permission"],
+  pms_member_access: ["tenant_id", "user_id"],
+  pms_member_permissions: ["tenant_id", "user_id", "permission"],
+  pms_member_sites: ["tenant_id", "user_id", "site_id"],
+  pms_access_changes: ["tenant_id", "id"],
 };
 
 /** Timestamp columns (TEXT in SQLite, timestamptz in Postgres) – the D1 → Postgres copy compares them as ISO. */

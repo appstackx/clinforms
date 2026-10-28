@@ -4,23 +4,30 @@
  * session; anyone else gets nothing done). Each action is audited under the "platform" pseudo-tenant.
  */
 import { revalidatePath } from "next/cache";
-import { ACCOUNT_ERRORS, RETENTION_MAX_DAYS, RETENTION_MIN_DAYS } from "@/lib/account-copy";
+import { ACCOUNT_ERRORS, RETENTION_MAX_DAYS, RETENTION_MIN_DAYS, type InviteDelivery } from "@/lib/account-copy";
+import { endTrial, extendTrial, setDemoClinic, setDraftingLimits, setTrial } from "@/server/admin/clinic-plan";
+import { removePackage, setPackage } from "@/server/admin/clinic-package";
+import { formatPence, isPackageId, packageLabel, parsePounds, reportsText, type SetupFeeStatus } from "@/lib/packages";
 import { platformActionAdmin } from "@/server/admin/guards";
-import { isPackageId } from "@/modules/pms/core/entitlements";
-import { PLATFORM_PATH, createClinicAsPlatform, markAccessRequest, setClinicPackageAsPlatform } from "@/server/admin/platform-console";
+import { isPackageId as isEntitlementPackageId } from "@/modules/pms/core/entitlements";
+import { PLATFORM_PATH, createClinicAsPlatform, createOwnerResetLinkAsPlatform, markAccessRequest, setClinicPackageAsPlatform } from "@/server/admin/platform-console";
+import { getAuth } from "@/server/auth/auth";
 import { appOrigin, authSecret, baseUrlSetting } from "@/server/auth/config";
+import { normaliseEmail } from "@/server/auth/platform";
 import { requestHeaders, type ActionResult } from "@/server/auth/session";
 import { TenantSlugError } from "@/server/auth/tenant";
 import { getDb } from "@/server/db";
+import { inviteDeliveryOf } from "@/server/email";
 import { logAuthEvent } from "@/server/email/log";
 import { RepoInputError } from "@/server/repos/context";
 
 export type CreateClinicResult = ActionResult<{
   clinicName: string;
   tenantId: string;
+  ownerEmail: string;
   inviteLink: string;
   expiresAt: string;
-  emailSent: boolean;
+  delivery: InviteDelivery;
 }>;
 
 export async function createClinicAction(_prev: CreateClinicResult | null, form: FormData): Promise<CreateClinicResult> {
@@ -31,6 +38,10 @@ export async function createClinicAction(_prev: CreateClinicResult | null, form:
   if (!Number.isInteger(retentionDays) || retentionDays < RETENTION_MIN_DAYS || retentionDays > RETENTION_MAX_DAYS) {
     return { ok: false, error: ACCOUNT_ERRORS.retentionRange };
   }
+  // The form offers "Email the invitation to the owner" only while email is set up ("emailChoice"). Security fix
+  // 24/10/2026 (D4): the box is OFF by default – an owner's address may be a shared inbox, and whoever opens the
+  // invitation first becomes the owner; tick it only for the owner's own mailbox.
+  const sendEmail = !(form.get("emailChoice") === "1" && form.get("sendEmail") !== "on");
   try {
     const created = await createClinicAsPlatform(getDb(), admin, {
       name: String(form.get("name") ?? "").trim(),
@@ -39,19 +50,47 @@ export async function createClinicAction(_prev: CreateClinicResult | null, form:
       retentionDays,
       appOrigin: appOrigin(baseUrlSetting(), requestHeaders()),
       linkSecret: authSecret(),
+      sendEmail,
     });
     revalidatePath(PLATFORM_PATH);
     return {
       ok: true,
       clinicName: String(form.get("name") ?? "").trim(),
       tenantId: created.tenantId,
+      ownerEmail: normaliseEmail(String(form.get("ownerEmail") ?? "")),
       inviteLink: created.inviteLink,
       expiresAt: created.invitationExpiresAt,
-      emailSent: created.email.status === "sent",
+      delivery: inviteDeliveryOf(created.email),
     };
   } catch (err) {
     if (err instanceof RepoInputError || err instanceof TenantSlugError) return { ok: false, error: err.message };
     logAuthEvent("platform.create_clinic_failed", { error: err instanceof Error ? err.name : "error" });
+    return { ok: false, error: ACCOUNT_ERRORS.generic };
+  }
+}
+
+export type OwnerResetResult = ActionResult<{ tenantId: string; ownerEmail: string; link: string; expiresAt: string }>;
+
+/**
+ * A one-time password reset link for a clinic owner who cannot use "Forgotten your password?" and has nobody in the
+ * clinic to create one (e.g. its only owner, email off or not arriving). Never emailed: shown once on the page.
+ */
+export async function createOwnerResetLinkAction(_prev: OwnerResetResult | null, form: FormData): Promise<OwnerResetResult> {
+  const admin = await platformActionAdmin();
+  if (!admin) return { ok: false, error: ACCOUNT_ERRORS.forbidden };
+  try {
+    const tenantId = String(form.get("tenantId") ?? "").trim();
+    const ownerEmail = normaliseEmail(String(form.get("resetOwnerEmail") ?? ""));
+    const created = await createOwnerResetLinkAsPlatform(getDb(), admin, {
+      tenantId,
+      ownerEmail,
+      requestReset: (email) => getAuth().api.requestPasswordReset({ body: { email }, headers: requestHeaders() }),
+    });
+    revalidatePath(PLATFORM_PATH);
+    return { ok: true, tenantId, ownerEmail, link: created.link, expiresAt: created.expiresAt };
+  } catch (err) {
+    if (err instanceof RepoInputError) return { ok: false, error: err.message };
+    logAuthEvent("platform.owner_reset_link_failed", { error: err instanceof Error ? err.name : "error" });
     return { ok: false, error: ACCOUNT_ERRORS.generic };
   }
 }
@@ -73,11 +112,165 @@ export async function setClinicPackageAction(form: FormData): Promise<void> {
   const admin = await platformActionAdmin();
   if (!admin) return;
   const pkg = String(form.get("package") ?? "");
-  if (!isPackageId(pkg)) return;
+  if (!isEntitlementPackageId(pkg)) return;
   try {
     await setClinicPackageAsPlatform(getDb(), admin, { tenantId: String(form.get("tenantId") ?? ""), package: pkg, on: form.get("on") === "1" });
   } catch (err) {
     if (!(err instanceof RepoInputError)) logAuthEvent("platform.set_package_failed", { error: err instanceof Error ? err.name : "error" });
   }
   revalidatePath(PLATFORM_PATH);
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Trials and drafting limits (10/2026) – every change audited (src/server/admin/clinic-plan.ts)
+ * ----------------------------------------------------------------------------------------------*/
+
+export type PlanActionResult = ActionResult<{ message: string }>;
+
+const UK_DATE_TIME = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
+
+function intField(form: FormData, name: string): number | null {
+  const text = String(form.get(name) ?? "").trim();
+  if (text === "") return null;
+  const n = Number(text);
+  return Number.isInteger(n) ? n : NaN;
+}
+
+/** Runs a plan change for an administrator already checked by the action itself; errors become messages. */
+async function runPlanChange(run: () => Promise<string>): Promise<PlanActionResult> {
+  try {
+    const message = await run();
+    revalidatePath(PLATFORM_PATH);
+    return { ok: true, message };
+  } catch (err) {
+    if (err instanceof RepoInputError) return { ok: false, error: err.message };
+    logAuthEvent("platform.plan_change_failed", { error: err instanceof Error ? err.name : "error" });
+    return { ok: false, error: ACCOUNT_ERRORS.generic };
+  }
+}
+
+/** Sets (or restarts) a trial: days, starting when the owner first signs in (default) or now. */
+export async function setTrialAction(_prev: PlanActionResult | null, form: FormData): Promise<PlanActionResult> {
+  const admin = await platformActionAdmin();
+  if (!admin) return { ok: false, error: ACCOUNT_ERRORS.forbidden };
+  return runPlanChange(async () => {
+    const tenantId = String(form.get("tenantId") ?? "").trim();
+    const days = intField(form, "days") ?? 3;
+    const start = form.get("start") === "now" ? "now" : "first_sign_in";
+    const r = await setTrial(getDb(), { kind: "platform", admin }, tenantId, { days, start });
+    if (!r.plan.trialEndsAt) return `${tenantId}: a ${days}-day trial starts when the owner first signs in.`;
+    return `${tenantId}: the ${days}-day trial ${r.startedNow ? "started now (the owner has already signed in)" : "started now"} and ends ${UK_DATE_TIME.format(new Date(r.plan.trialEndsAt))}.`;
+  });
+}
+
+/** Extend / convert / end now, by the button pressed ("what"). */
+export async function changeTrialAction(_prev: PlanActionResult | null, form: FormData): Promise<PlanActionResult> {
+  const admin = await platformActionAdmin();
+  if (!admin) return { ok: false, error: ACCOUNT_ERRORS.forbidden };
+  return runPlanChange(async () => {
+    const tenantId = String(form.get("tenantId") ?? "").trim();
+    const what = String(form.get("what") ?? "");
+    const actor = { kind: "platform" as const, admin };
+    if (what === "extend") {
+      const days = intField(form, "days");
+      if (days === null || Number.isNaN(days)) throw new RepoInputError("Enter how many days to add.");
+      const plan = await extendTrial(getDb(), actor, tenantId, days);
+      return plan.trialEndsAt
+        ? `${tenantId}: the trial now ends ${UK_DATE_TIME.format(new Date(plan.trialEndsAt))}.`
+        : `${tenantId}: the trial is now ${plan.trialDays} days, starting when the owner first signs in.`;
+    }
+    if (what === "paid") {
+      await endTrial(getDb(), actor, tenantId, "paid");
+      return `${tenantId}: the trial was converted to a full account.`;
+    }
+    if (what === "end") {
+      await endTrial(getDb(), actor, tenantId, "now");
+      return `${tenantId}: the trial has ended. The clinic can still open and download its records, but cannot create anything new.`;
+    }
+    throw new RepoInputError("Choose what to do with the trial.");
+  });
+}
+
+/** The clinic's own drafting limits; empty = the default. */
+export async function setLimitsAction(_prev: PlanActionResult | null, form: FormData): Promise<PlanActionResult> {
+  const admin = await platformActionAdmin();
+  if (!admin) return { ok: false, error: ACCOUNT_ERRORS.forbidden };
+  return runPlanChange(async () => {
+    const tenantId = String(form.get("tenantId") ?? "").trim();
+    const reset = form.get("what") === "default";
+    const perMinute = reset ? null : intField(form, "perMinute");
+    const perDay = reset ? null : intField(form, "perDay");
+    if (Number.isNaN(perMinute) || Number.isNaN(perDay)) throw new RepoInputError("Limits are whole numbers (leave empty for the default).");
+    const plan = await setDraftingLimits(getDb(), { kind: "platform", admin }, tenantId, { perMinute, perDay });
+    const text = (v: number | null, unit: string) => (v === null ? `the default a ${unit}` : `${v.toLocaleString("en-GB")} a ${unit}`);
+    return `${tenantId}: drafting limits are ${text(plan.livePerMinute, "minute")} and ${text(plan.livePerDay, "day")}.`;
+  });
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Packages (25/10/2026) – every change audited (src/server/admin/clinic-package.ts)
+ * ----------------------------------------------------------------------------------------------*/
+
+function poundsField(form: FormData, name: string, what: string, required: boolean): number | null {
+  const pence = parsePounds(String(form.get(name) ?? ""));
+  if (pence === null) {
+    if (required) throw new RepoInputError(`Enter ${what} in pounds (for example 199 or 1.50).`);
+    return null;
+  }
+  if (Number.isNaN(pence)) throw new RepoInputError(`${what[0].toUpperCase()}${what.slice(1)} must be an amount in pounds, for example 199 or 1.50.`);
+  return pence;
+}
+
+/** Saves a clinic's package ("what" = save), or removes it ("what" = remove). */
+export async function packageAction(_prev: PlanActionResult | null, form: FormData): Promise<PlanActionResult> {
+  const admin = await platformActionAdmin();
+  if (!admin) return { ok: false, error: ACCOUNT_ERRORS.forbidden };
+  return runPlanChange(async () => {
+    const tenantId = String(form.get("tenantId") ?? "").trim();
+    const actor = { kind: "platform" as const, admin };
+    if (form.get("what") === "remove") {
+      await removePackage(getDb(), actor, tenantId);
+      return `${tenantId}: the package was removed. Usage is still counted; nothing is shown as an allowance.`;
+    }
+    const id = String(form.get("package") ?? "");
+    if (!isPackageId(id)) throw new RepoInputError("Choose a package.");
+    const reports = intField(form, "reportsIncluded");
+    if (reports === null || Number.isNaN(reports)) throw new RepoInputError("Enter the reports included a month (a whole number).");
+    const status = String(form.get("setupFeeStatus") ?? "");
+    const saved = await setPackage(getDb(), actor, tenantId, {
+      package: id,
+      monthlyPricePence: poundsField(form, "monthlyPrice", "the monthly price", true) as number,
+      reportsIncluded: reports,
+      // Empty = not agreed yet (a Custom deal before its extra price is settled): extra reports are counted, shown without a price.
+      extraReportPence: poundsField(form, "extraReportPrice", "the price of an extra report", false),
+      foundingPricePence: poundsField(form, "foundingPrice", "the founding price", false),
+      foundingUntil: String(form.get("foundingUntil") ?? "").trim() || null,
+      setupFeePence: poundsField(form, "setupFee", "the set-up fee", false),
+      setupFeeStatus: status === "due" || status === "paid" || status === "waived" ? (status as SetupFeeStatus) : null,
+      startsOn: String(form.get("startsOn") ?? "").trim() || null,
+      notes: String(form.get("notes") ?? ""),
+    });
+    const founding = saved.foundingPricePence !== null ? `, founding ${formatPence(saved.foundingPricePence)} until ${saved.foundingUntil}` : "";
+    return `${tenantId}: ${packageLabel(saved.package)} – ${formatPence(saved.monthlyPricePence)} a month, ${reportsText(saved.reportsIncluded)}, extra ${saved.extraReportPence === null ? "not set yet" : `${formatPence(saved.extraReportPence)} each`}${founding}; from ${saved.startsOn}.`;
+  });
+}
+
+/**
+ * Demo clinic on / off ("what" = "on" | "off"): a clinic with made-up data only – banner, a notice on every output,
+ * made-up PH-DEMO numbers may approve. Platform administrators only (re-checked here); audited under the clinic and
+ * the platform (src/server/admin/clinic-plan.ts setDemoClinic). A clinic's own pages can never change it.
+ */
+export async function setDemoClinicAction(_prev: PlanActionResult | null, form: FormData): Promise<PlanActionResult> {
+  const admin = await platformActionAdmin();
+  if (!admin) return { ok: false, error: ACCOUNT_ERRORS.forbidden };
+  return runPlanChange(async () => {
+    const tenantId = String(form.get("tenantId") ?? "").trim();
+    const what = String(form.get("what") ?? "");
+    if (what !== "on" && what !== "off") throw new RepoInputError("Choose whether to switch the demo clinic on or off.");
+    const r = await setDemoClinic(getDb(), { kind: "platform", admin }, tenantId, what === "on");
+    const stale = r.membersWithDemoNumbers;
+    if (what === "on") return r.changed ? `${tenantId} is now a demo clinic: made-up data only, made-up PH-DEMO numbers accepted.` : `${tenantId} already is a demo clinic.`;
+    const base = r.changed ? `${tenantId} is a real clinic again.` : `${tenantId} is not a demo clinic.`;
+    return stale > 0 ? `${base} ${stale} ${stale === 1 ? "member still holds" : "members still hold"} a made-up number and cannot approve until it is replaced (Settings → Members).` : base;
+  });
 }

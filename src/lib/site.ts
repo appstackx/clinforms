@@ -100,9 +100,9 @@ export const AUTH_PATHS = ["/login", "/two-factor", "/accept-invite", "/reset-pa
 
 /**
  * Areas that are never indexed and never show the cookie banner: the signed-in app, the public demo
- * (Studio and simulated clinic system) and the APIs. They still respect a consent given elsewhere.
+ * (Studio and simulated clinic system), the APIs and a clinic's own patient pages (/clinics – booking and portal). They still respect a consent given elsewhere.
  */
-export const APP_AREA_PREFIXES = ["/app", "/reports", "/pms-sandbox", "/api"] as const;
+export const APP_AREA_PREFIXES = ["/app", "/reports", "/pms-sandbox", "/api", "/clinics"] as const;
 
 /** True when `pathname` is `prefix` itself or below it ("/reports" and "/reports/x", not "/reportsx"). */
 export function isUnder(pathname: string, prefix: string): boolean {

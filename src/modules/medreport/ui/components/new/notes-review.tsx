@@ -33,6 +33,7 @@ import {
   applyClinician,
   attendanceNotice,
   clinicianKey,
+  clinicianMatchNotices,
   clinicianLabel,
   consentMissing,
   firstLines,
@@ -76,12 +77,14 @@ export function NotesReviewStep({ review: initial, tenant, busy, error, onConfir
   const memberList = useHostHooks().clinic?.clinicians;
   const members = useMemo<ReviewClinician[]>(() => (memberList ?? []).map((m) => ({ name: m.name, hcpc: m.hcpc ?? "" })), [memberList]);
   const [review, setReview] = useState<NotesReview>(() => withMemberNumbers(initial, members));
-  const clinicians = useMemo(() => reviewClinicians(withMemberNumbers(initial, members), members), [initial, members]);
+  const clinicians = useMemo(() => reviewClinicians(initial, members), [initial, members]);
+  // A clinician in the notes shown with another number (a member's HCPC number in place of PH-DEMO-01): say so.
+  const matchNotices = useMemo(() => clinicianMatchNotices(initial, members), [initial, members]);
   const counts = reviewCounts(review);
   const blockers = reviewBlockers(review);
   const attendanceTodo = attendanceNotice(review);
   const detected = new Set(review.detected);
-  const serverWarnings = review.warnings.filter((w) => w.code !== "NO_CLINICIAN" && w.code !== "NO_DATE");
+  const alsoCheck = review.warnings.filter((w) => w.code !== "NO_CLINICIAN" && w.code !== "NO_DATE").map((w) => w.message).concat(matchNotices);
   const adminKeys = new Set(review.warnings.filter((w) => w.code === "ADMIN_LEFT_OUT").flatMap((w) => w.entryKeys ?? []));
   const scoresShown = review.outcomes.filter((o) => review.entries.some((e) => e.key === o.entryKey && e.include && e.date));
 
@@ -137,11 +140,11 @@ export function NotesReviewStep({ review: initial, tenant, busy, error, onConfir
         </Notice>
       ) : null}
 
-      {serverWarnings.length ? (
+      {alsoCheck.length ? (
         <Notice tone="info" title="Also check">
           <ul className="list-disc space-y-0.5 pl-4" data-testid="notes-review-warnings">
-            {serverWarnings.map((w) => (
-              <li key={w.message}>{w.message}</li>
+            {alsoCheck.map((message) => (
+              <li key={message}>{message}</li>
             ))}
           </ul>
         </Notice>
