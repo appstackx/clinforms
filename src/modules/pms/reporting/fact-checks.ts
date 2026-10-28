@@ -30,6 +30,13 @@ function monthIn(month: string, f: Pick<FactFilter, "from" | "to">): boolean {
   return MONTH.test(month) && month >= f.from.slice(0, 7) && month <= f.to.slice(0, 7);
 }
 
+/** A fact's month (and its date, when it has one – inside the period and in that month). */
+function whenIn(fact: { month: string; date?: string }, f: Pick<FactFilter, "from" | "to">): boolean {
+  if (!monthIn(fact.month, f)) return false;
+  if (fact.date === undefined) return true;
+  return isIsoDate(fact.date) && fact.date.slice(0, 7) === fact.month && fact.date >= f.from && fact.date <= f.to;
+}
+
 /** A site the viewer asked for; without a site only when the whole clinic was asked for. */
 function siteOk(siteId: string | null, f: Pick<FactFilter, "siteIds" | "known">): boolean {
   if (siteId === null) return f.siteIds === null;
@@ -71,7 +78,8 @@ export function checkAppointmentFacts(facts: readonly AppointmentFact[] | null |
   return keep(
     facts,
     (a) =>
-      monthIn(a.month, f) &&
+      whenIn(a, f) &&
+      (a.serviceId === undefined || a.serviceId === null || typeof a.serviceId === "string") &&
       (APPOINTMENT_OUTCOMES as readonly string[]).includes(a.outcome) &&
       count(a.appointments) &&
       count(a.minutes) &&
@@ -82,14 +90,14 @@ export function checkAppointmentFacts(facts: readonly AppointmentFact[] | null |
 }
 
 export function checkAvailabilityFacts(facts: readonly AvailabilityFact[] | null | undefined, f: FactFilter): Checked<AvailabilityFact> {
-  return keep(facts, (a) => typeof a.practitionerId === "string" && monthIn(a.month, f) && count(a.minutes) && siteOk(a.siteId, f) && practitionerOk(a.practitionerId, f));
+  return keep(facts, (a) => typeof a.practitionerId === "string" && whenIn(a, f) && count(a.minutes) && siteOk(a.siteId, f) && practitionerOk(a.practitionerId, f));
 }
 
 export function checkRevenueFacts(facts: readonly RevenueFact[] | null | undefined, f: FactFilter): Checked<RevenueFact> {
   return keep(
     facts,
     (r) =>
-      monthIn(r.month, f) &&
+      whenIn(r, f) &&
       (REVENUE_KINDS as readonly string[]).includes(r.kind) &&
       (PAYER_TYPES as readonly string[]).includes(r.payerType) &&
       count(r.count) &&

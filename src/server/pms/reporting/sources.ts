@@ -1,21 +1,17 @@
 /**
  * Where the reports get the diary's and invoicing's figures. The reporting module never reads another module's
  * tables: the module that owns the data implements a source (aggregated facts – src/modules/pms/reporting/facts.ts)
- * and it is registered here. Until a module is in use, its source is null and the reports that need it say so
- * ("These figures come from the diary…") instead of showing empty figures.
+ * and it is registered here – by default the diary's (src/server/pms/diary/reporting-source.ts) and billing's
+ * (src/server/pms/billing/reporting-source.ts). Tests may swap a source (registerReportingSource); with null the
+ * reports that need it say so ("These figures come from the diary…") instead of showing empty figures.
  *
- * INTEGRATION (orchestrator): when the diary and billing modules land, register their sources below, e.g.
- *
- *   import { diaryReportingSource } from "../diary/reporting-source";
- *   import { billingReportingSource } from "../billing/reporting-source";
- *   const DEFAULT_SOURCES: ReportingSources = { diary: diaryReportingSource, billing: billingReportingSource };
- *
- * The contract a source must keep is in docs/clinic-system/reporting.md §4 (tenant-scoped, aggregated, UK months,
- * outcomes, the site filter). The reports check every fact they are given (src/modules/pms/reporting/fact-checks.ts)
- * and leave out – and log – any that break it, so a faulty source cannot show another site's figures.
+ * The reports check every fact they are given (src/modules/pms/reporting/fact-checks.ts) and leave out – and log –
+ * any that break the contract, so a faulty source cannot show another site's figures.
  */
 import "server-only";
 import type { RepoContext } from "../../repos/context";
+import { BILLING_REPORTING_SOURCE } from "../billing/reporting-source";
+import { DIARY_REPORTING_SOURCE } from "../diary/reporting-source";
 import type { AppointmentFact, AttendedPatientsFact, AvailabilityFact, DebtFact, RevenueFact } from "../../../modules/pms/reporting/facts";
 export type { ReportingQuery } from "./query";
 import type { ReportingQuery } from "./query";
@@ -41,7 +37,7 @@ export interface ReportingSources {
   billing: BillingReportingSource | null;
 }
 
-const DEFAULT_SOURCES: ReportingSources = { diary: null, billing: null };
+const DEFAULT_SOURCES: ReportingSources = { diary: DIARY_REPORTING_SOURCE, billing: BILLING_REPORTING_SOURCE };
 
 let current: ReportingSources = { ...DEFAULT_SOURCES };
 

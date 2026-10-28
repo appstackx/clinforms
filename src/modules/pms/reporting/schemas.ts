@@ -1,6 +1,6 @@
 /**
  * Input schemas of the reporting and set-up module (zod v4, pure – used by the forms and the repositories):
- * opening hours and closures of the sites, staff site access, report filters and the audit search.
+ * opening hours and closures of the sites, report filters and the audit search.
  * Shared directory inputs (sites, rooms, practitioners, appointment types, prices, referrers) are the
  * foundation's schemas (src/modules/pms/core/schemas.ts) – the set-up screens use those unchanged.
  */
@@ -45,11 +45,17 @@ export type OpeningSessionInput = z.input<typeof OpeningSessionSchema>;
 /** At most this many opening sessions per weekday (e.g. a morning and an evening session, or three). */
 export const MAX_SESSIONS_PER_DAY = 3;
 
-/** A site's whole week. Replaces what was there; an empty list = closed every day. */
+/**
+ * A site's whole week. Replaces what was there. At least one session: a site without any hours is "not set" (the
+ * diary is not limited), so "closed every day" is refused – switch the site off or add a closure instead.
+ */
 export const OpeningHoursInputSchema = z
   .object({
     siteId: PmsIdSchema,
-    sessions: z.array(OpeningSessionSchema).max(7 * MAX_SESSIONS_PER_DAY, "Too many opening sessions"),
+    sessions: z
+      .array(OpeningSessionSchema)
+      .min(1, "A site must open on at least one day – switch the site off or add a closure instead")
+      .max(7 * MAX_SESSIONS_PER_DAY, "Too many opening sessions"),
   })
   .superRefine((v, ctx) => {
     for (let day = 1; day <= 7; day++) {
@@ -90,27 +96,6 @@ export const ClosureInputSchema = z
 export type ClosureInput = z.input<typeof ClosureInputSchema>;
 
 /* ------------------------------------------------------------------------------------------------
- * Staff site access
- * ----------------------------------------------------------------------------------------------*/
-
-export const MAX_SITES_PER_PERSON = 60;
-
-export const StaffAccessInputSchema = z
-  .object({
-    /** True = every site, now and later. */
-    allSites: z.boolean(),
-    siteIds: z
-      .array(PmsIdSchema)
-      .max(MAX_SITES_PER_PERSON)
-      .transform((ids) => Array.from(new Set(ids)).sort()),
-  })
-  .superRefine((v, ctx) => {
-    if (!v.allSites && v.siteIds.length === 0) ctx.addIssue({ code: "custom", path: ["siteIds"], message: "Choose at least one site, or every site" });
-  })
-  .transform((v) => ({ allSites: v.allSites, siteIds: v.allSites ? [] : v.siteIds }));
-export type StaffAccessInput = z.input<typeof StaffAccessInputSchema>;
-
-/* ------------------------------------------------------------------------------------------------
  * Report filters (from the page's query string)
  * ----------------------------------------------------------------------------------------------*/
 
@@ -132,6 +117,7 @@ export interface ReportFilterParams {
   to: string | null;
   siteId: string | null;
   practitionerId: string | null;
+  serviceId: string | null;
 }
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
@@ -143,6 +129,7 @@ export function parseReportFilter(source: QuerySource): ReportFilterParams {
   const to = queryValue(source, "to");
   const site = queryValue(source, "site");
   const practitioner = queryValue(source, "practitioner");
+  const service = queryValue(source, "service");
   const fromOk = from && isIsoDate(from) ? from : null;
   const toOk = to && isIsoDate(to) ? to : null;
   // Dates typed without choosing "Choose dates" still mean those dates.
@@ -153,6 +140,7 @@ export function parseReportFilter(source: QuerySource): ReportFilterParams {
     to: toOk,
     siteId: site && ID.test(site) ? site : null,
     practitionerId: practitioner && ID.test(practitioner) ? practitioner : null,
+    serviceId: service && ID.test(service) ? service : null,
   };
 }
 

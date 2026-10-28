@@ -4,10 +4,11 @@
  * viewer may see, practitioner) and the reporting sources; figures come from the pure rules in
  * src/modules/pms/reporting/metrics.ts. Nothing here decrypts clinical text.
  */
-import { DEFAULT_PRESET, monthsOf, periodInstants, resolvePeriod, type ReportPeriod } from "../../../modules/pms/reporting/periods";
+import { DEFAULT_PRESET, monthsOf, periodInstants, resolvePeriod, weeksOf, type ReportPeriod } from "../../../modules/pms/reporting/periods";
 import {
   agedDebt,
   attendanceBy,
+  attendanceByWeek,
   attendanceOf,
   authorisationAlerts,
   monthSeries,
@@ -30,15 +31,15 @@ import {
 } from "../../../modules/pms/reporting/metrics";
 import { checkAppointmentFacts, checkAvailabilityFacts, checkDebtFacts, checkRevenueFacts, type FactFilter, type KnownIds } from "../../../modules/pms/reporting/fact-checks";
 import type { ReportFilterParams } from "../../../modules/pms/reporting/schemas";
-import { siteFilterFor, sitesInScope, type SiteScope } from "../../../modules/pms/reporting/staff";
-import type { PayerType, Practitioner, ReferrerKind, Room, Site } from "../../../modules/pms/core/types";
+import { siteFilterFor, sitesInScope, type SiteScope } from "../../../modules/pms/reporting/site-scope";
+import type { PayerType, Practitioner, ReferrerKind, Room, Service, Site } from "../../../modules/pms/core/types";
 import { logAuthEvent } from "../../email/log";
 import type { RepoContext } from "../../repos/context";
-import { listPractitioners, listRooms, listSites } from "../../repos/pms/directory";
+import { listPractitioners, listRooms, listServices, listSites } from "../../repos/pms/directory";
 import { listClosures, listOpeningHours } from "../../repos/pms/reporting/opening-hours";
 import {
   authorisationsForReview,
-  casesClosedIn,
+  casesClosedBy,
   casesOpenedBy,
   newPatientsByMonth,
   openCaseload,
@@ -62,6 +63,7 @@ export interface ReportDirectory {
   sites: Site[];
   rooms: Room[];
   practitioners: Practitioner[];
+  services: Service[];
   siteName: (id: string | null) => string;
   roomName: (id: string | null) => string;
   practitionerName: (id: string | null) => string;
@@ -69,10 +71,11 @@ export interface ReportDirectory {
 
 /** Every site, room and practitioner of the clinic (inactive ones too: history points at them). */
 export async function loadDirectory(ctx: RepoContext, tenantId: string): Promise<ReportDirectory> {
-  const [sites, rooms, practitioners] = await Promise.all([
+  const [sites, rooms, practitioners, services] = await Promise.all([
     listSites(ctx, tenantId, { includeInactive: true }),
     listRooms(ctx, tenantId, { includeInactive: true }),
     listPractitioners(ctx, tenantId, { includeInactive: true }),
+    listServices(ctx, tenantId, { includeInactive: true }),
   ]);
   const siteNames = new Map(sites.map((s) => [s.id, s.name]));
   const roomNames = new Map(rooms.map((r) => [r.id, `${r.name}${siteNames.get(r.siteId) ? ` · ${siteNames.get(r.siteId)}` : ""}`]));
@@ -81,6 +84,7 @@ export async function loadDirectory(ctx: RepoContext, tenantId: string): Promise
     sites,
     rooms,
     practitioners,
+    services,
     siteName: (id) => (id ? (siteNames.get(id) ?? "Unknown site") : "No site"),
     roomName: (id) => (id ? (roomNames.get(id) ?? "Unknown room") : "No room"),
     practitionerName: (id) => (id ? (pracNames.get(id) ?? "Unknown practitioner") : "No practitioner"),
@@ -99,6 +103,8 @@ export interface ReportRequest {
   /** The sites the figures cover: null = the whole clinic. */
   siteIds: readonly string[] | null;
   practitionerId: string | null;
+  /** The appointment type asked for (attendance), or null. */
+  serviceId: string | null;
   /** The clinic's own sites, rooms and practitioners (facts naming anything else are left out). */
   known: KnownIds;
 }
@@ -126,6 +132,7 @@ export function buildReportRequest(options: { tenantId: string; params: ReportFi
   const siteIds = siteFilterFor(scope, siteId);
   const practitionerChoices = directory.practitioners.filter((p) => p.active || p.id === params.practitionerId);
   const practitionerId = params.practitionerId && directory.practitioners.some((p) => p.id === params.practitionerId) ? params.practitionerId : null;
+  const serviceId = params.serviceId && directory.services.some((x) => x.id === params.serviceId) ? params.serviceId : null;
   return {
     request: {
       tenantId: options.tenantId,
@@ -136,6 +143,7 @@ export function buildReportRequest(options: { tenantId: string; params: ReportFi
       siteId,
       siteIds,
       practitionerId,
+      serviceId,
       known: { siteIds: directory.sites.map((s) => s.id), roomIds: directory.rooms.map((r) => r.id), practitionerIds: directory.practitioners.map((p) => p.id) },
     },
     periodError,
@@ -183,6 +191,8 @@ export interface UtilisationReport {
   practitionerTotal: { bookedMinutes: number; availableMinutes: number; utilisation: number | null };
   /** Sites shown without opening hours (no rate possible). */
   sitesWithoutHours: string[];
+  /** By site against the practitioners' rota time there (the dashboard's and the report's site figure). */
+  bySiteRota: UtilisationRow[];
 }
 
 export async function loadUtilisation(ctx: RepoContext, req: ReportRequest, dir: ReportDirectory, sources: ReportingSources): Promise<UtilisationReport | Unavailable> {
@@ -205,7 +215,15 @@ export async function loadUtilisation(ctx: RepoContext, req: ReportRequest, dir:
     ? dir.practitioners.filter((p) => p.id === req.practitionerId)
     : dir.practitioners.filter((p) => p.active && p.bookable && (!req.siteIds || (p.defaultSiteId !== null && siteIds.includes(p.defaultSiteId))));
   const bySite = utilisationBySite(facts.facts, sites, rooms, hours, closures, req.period);
-  const byPractitioner = utilisationByPractitioner(facts.facts, practitioners, avail.facts);
+  const withTime = new Set(avail.facts.map((a) => a.practitionerId));
+  for (const f of facts.facts) if (f.practitionerId) withTime.add(f.practitionerId);
+  const shown = req.practitionerId ? practitioners : dir.practitioners.filter((p) => withTime.has(p.id) || practitioners.some((x) => x.id === p.id));
+  const byPractitioner = utilisationByPractitioner(facts.facts, shown, avail.facts);
+  const rotaBySite = utilisationByPractitioner(
+    facts.facts.map((f) => ({ ...f, practitionerId: f.siteId })),
+    sites,
+    avail.facts.filter((a) => a.siteId !== null).map((a) => ({ ...a, practitionerId: a.siteId as string })),
+  );
   return {
     available: true,
     bySite,
@@ -214,6 +232,7 @@ export async function loadUtilisation(ctx: RepoContext, req: ReportRequest, dir:
     total: totalUtilisation(bySite),
     practitionerTotal: totalUtilisation(byPractitioner),
     sitesWithoutHours: sites.filter((s) => !hours.some((h) => h.siteId === s.id)).map((s) => s.id),
+    bySiteRota: rotaBySite,
   };
 }
 
@@ -223,21 +242,25 @@ export interface AttendanceReport {
   bySite: AttendanceRow[];
   byPractitioner: AttendanceRow[];
   byMonth: AttendanceRow[];
+  /** One row per week (Monday) of the period. */
+  byWeek: AttendanceRow[];
 }
 
 export async function loadAttendance(ctx: RepoContext, req: ReportRequest, sources: ReportingSources): Promise<AttendanceReport | Unavailable> {
   if (!sources.diary) return { available: false };
   const q = toQuery(req);
-  const facts = checkAppointmentFacts(await sources.diary.appointmentFacts(ctx, req.tenantId, q), factFilter(req));
-  noteDropped("diary.appointments", facts.dropped);
+  const checked = checkAppointmentFacts(await sources.diary.appointmentFacts(ctx, req.tenantId, q), factFilter(req));
+  noteDropped("diary.appointments", checked.dropped);
+  const list = req.serviceId ? checked.facts.filter((f) => f.serviceId === req.serviceId) : checked.facts;
   const months = monthsOf(req.period.from, req.period.to);
-  const byMonth = attendanceBy(facts.facts, (f) => f.month);
+  const byMonth = attendanceBy(list, (f) => f.month);
   return {
     available: true,
-    total: attendanceOf(facts.facts),
-    bySite: attendanceBy(facts.facts, (f) => f.siteId),
-    byPractitioner: attendanceBy(facts.facts, (f) => f.practitionerId),
+    total: attendanceOf(list),
+    bySite: attendanceBy(list, (f) => f.siteId),
+    byPractitioner: attendanceBy(list, (f) => f.practitionerId),
     byMonth: months.map((m) => byMonth.find((r) => r.key === m) ?? { key: m, ...attendanceOf([]) }),
+    byWeek: attendanceByWeek(list, weeksOf(req.period.from, req.period.to)),
   };
 }
 
@@ -293,6 +316,8 @@ export interface CaseloadReport {
   openedByPayer: { key: PayerType; cases: number }[];
   opened: number;
   closed: number;
+  /** Per practitioner: open now, opened and closed in the period. */
+  practitioners: { key: string | null; open: number; opened: number; closed: number }[];
 }
 
 function sumBy<T, K>(rows: readonly T[], key: (r: T) => K, value: (r: T) => number): { key: K; cases: number }[] {
@@ -305,10 +330,21 @@ function sumBy<T, K>(rows: readonly T[], key: (r: T) => K, value: (r: T) => numb
 
 export async function loadCaseload(ctx: RepoContext, req: ReportRequest): Promise<CaseloadReport> {
   const range = { from: req.period.from, to: req.period.to, siteIds: req.siteIds };
-  const [open, opened, closed] = await Promise.all([openCaseload(ctx, req.tenantId, req.siteIds), casesOpenedBy(ctx, req.tenantId, range), casesClosedIn(ctx, req.tenantId, range)]);
+  const [open, opened, closedRows] = await Promise.all([openCaseload(ctx, req.tenantId, req.siteIds), casesOpenedBy(ctx, req.tenantId, range), casesClosedBy(ctx, req.tenantId, range)]);
   const forPrac = <T extends CaseloadRow | CaseCountRow>(rows: T[]) => (req.practitionerId ? rows.filter((r) => r.practitionerId === req.practitionerId) : rows);
   const o = forPrac(open);
   const p = forPrac(opened);
+  const c = forPrac(closedRows);
+  const closed = c.reduce((sum, r) => sum + r.cases, 0);
+  const pracs = new Map<string | null, { key: string | null; open: number; opened: number; closed: number }>();
+  const at = (key: string | null) => {
+    let row = pracs.get(key);
+    if (!row) pracs.set(key, (row = { key, open: 0, opened: 0, closed: 0 }));
+    return row;
+  };
+  for (const r of o) at(r.practitionerId).open += r.cases;
+  for (const r of p) at(r.practitionerId).opened += r.cases;
+  for (const r of c) at(r.practitionerId).closed += r.cases;
   const byMonth = new Map<string, number>();
   for (const r of p) byMonth.set(r.month, (byMonth.get(r.month) ?? 0) + r.cases);
   return {
@@ -320,6 +356,7 @@ export async function loadCaseload(ctx: RepoContext, req: ReportRequest): Promis
     openedByPayer: sumBy(p, (r) => r.payerType, (r) => r.cases),
     opened: p.reduce((s, r) => s + r.cases, 0),
     closed,
+    practitioners: Array.from(pracs.values()).sort((x, y) => y.open - x.open || y.opened - x.opened),
   };
 }
 
@@ -334,6 +371,8 @@ export interface RevenueReport {
   bySite: RevenueRow[];
   byPayer: RevenueRow[];
   byPractitioner: RevenueRow[];
+  /** Invoiced per month and payer type (patients vs insurers in the report's table). */
+  byMonthPayer: { month: string; payerType: PayerType; invoicedPence: number }[];
 }
 
 export async function loadRevenue(ctx: RepoContext, req: ReportRequest, sources: ReportingSources): Promise<RevenueReport | Unavailable> {
@@ -350,6 +389,7 @@ export async function loadRevenue(ctx: RepoContext, req: ReportRequest, sources:
     bySite: revenueBy(facts, (f) => f.siteId ?? ""),
     byPayer: revenueBy(facts, (f) => f.payerType),
     byPractitioner: revenueBy(facts, (f) => f.practitionerId),
+    byMonthPayer: revenueBy(facts, (f) => `${f.month}|${f.payerType}`).map((x) => ({ month: x.key.split("|")[0], payerType: x.key.split("|")[1] as PayerType, invoicedPence: x.invoicedPence })),
   };
 }
 

@@ -6,4 +6,3 @@
 export * from "./audit-search";
 export * from "./opening-hours";
 export * from "./record-figures";
-export * from "./staff-access";

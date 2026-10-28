@@ -1,6 +1,8 @@
 -- ClinForms 0160 (SQLite / Cloudflare D1): clinic system, reporting and set-up module - opening hours and
--- closures of the sites (available time for the utilisation reports, later online booking) and staff site
--- access (a member limited to chosen sites). Kept in step with
+-- closures of the sites (the ONE source of when a site is open: the diary's rota windows, free slots and online
+-- booking are clipped to them, and the utilisation reports use them) and the clinic's report targets.
+-- Edited in place before its first merge (never applied to any server database): the October draft's own staff
+-- site-access tables were dropped - site access is the access module's (0103 pms_member_sites). Kept in step with
 -- supabase/migrations/20261024000160_pms_reporting_setup.sql (db/parity.test.ts).
 -- Every table carries tenant_id and every link includes it, so a row can never point at another clinic's row.
 -- Times of day are TEXT HH:MM (UK local time), weekdays 1 Monday to 7 Sunday, dates TEXT YYYY-MM-DD.
@@ -37,24 +39,13 @@ CREATE TABLE IF NOT EXISTS pms_site_closures (
 );
 CREATE INDEX IF NOT EXISTS pms_site_closures_dates ON pms_site_closures (tenant_id, starts_on);
 
-CREATE TABLE IF NOT EXISTS pms_staff_access (
+CREATE TABLE IF NOT EXISTS pms_reporting_settings (
   tenant_id TEXT NOT NULL,
-  user_id TEXT NOT NULL,
-  all_sites INTEGER NOT NULL DEFAULT 1 CHECK (all_sites IN (0, 1)),
-  rev INTEGER NOT NULL DEFAULT 0 CHECK (rev >= 0),
-  write_token TEXT,
+  rev INTEGER NOT NULL DEFAULT 1 CHECK (rev > 0),
+  utilisation_target_percent INTEGER NOT NULL DEFAULT 80 CHECK (utilisation_target_percent BETWEEN 1 AND 100),
+  dna_target_tenths INTEGER NOT NULL DEFAULT 40 CHECK (dna_target_tenths BETWEEN 0 AND 500),
   updated_by TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
-  PRIMARY KEY (tenant_id, user_id)
+  PRIMARY KEY (tenant_id)
 );
-
-CREATE TABLE IF NOT EXISTS pms_staff_sites (
-  tenant_id TEXT NOT NULL,
-  user_id TEXT NOT NULL,
-  site_id TEXT NOT NULL,
-  PRIMARY KEY (tenant_id, user_id, site_id),
-  FOREIGN KEY (tenant_id, user_id) REFERENCES pms_staff_access (tenant_id, user_id) ON DELETE CASCADE,
-  FOREIGN KEY (tenant_id, site_id) REFERENCES pms_sites (tenant_id, id)
-);
-CREATE INDEX IF NOT EXISTS pms_staff_sites_site ON pms_staff_sites (tenant_id, site_id);

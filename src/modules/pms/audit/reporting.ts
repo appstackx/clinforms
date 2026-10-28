@@ -8,7 +8,7 @@ export const REPORTING_AUDIT_LABELS: Readonly<Record<string, string>> = {
   "pms.opening_hours.set": "Opening hours changed",
   "pms.closure.create": "Closure added",
   "pms.closure.remove": "Closure removed",
-  "pms.staff_access.set": "Staff site access changed",
+  "pms.report_targets.set": "Report targets changed",
   "pms.report.export": "Report downloaded",
   "pms.audit.export": "Audit trail downloaded",
 };
@@ -17,7 +17,7 @@ export const REPORTING_AUDIT_LABELS: Readonly<Record<string, string>> = {
 export const REPORTING_AUDIT_TARGETS: Readonly<Record<string, string>> = {
   pms_opening_hours: "Opening hours",
   pms_closure: "Closure",
-  pms_staff_access: "Staff site access",
+  pms_reporting_settings: "Report targets",
   pms_report: "Clinic report",
   pms_audit: "Audit trail",
 };

@@ -23,9 +23,13 @@ import type { PayerType } from "../core/types";
 export const APPOINTMENT_OUTCOMES = ["upcoming", "unrecorded", "attended", "dna", "late_cancel", "cancelled"] as const;
 export type AppointmentOutcome = (typeof APPOINTMENT_OUTCOMES)[number];
 
-/** Appointments of one month, site, room, practitioner and outcome. */
+/** Appointments of one month (and, from the diary's source, one UK date and service), site, room, practitioner and outcome. */
 export interface AppointmentFact {
   month: string;
+  /** The UK date ("YYYY-MM-DD") – weekly figures need it; facts without it count only in monthly figures. */
+  date?: string;
+  /** The appointment type (the service filter); absent = not known. */
+  serviceId?: string | null;
   siteId: string | null;
   roomId: string | null;
   practitionerId: string | null;
@@ -40,6 +44,8 @@ export interface AvailabilityFact {
   practitionerId: string;
   siteId: string | null;
   month: string;
+  /** The UK date, when the source gives one. */
+  date?: string;
   minutes: number;
 }
 
@@ -60,6 +66,8 @@ export type RevenueKind = (typeof REVENUE_KINDS)[number];
  */
 export interface RevenueFact {
   month: string;
+  /** The UK date (issue / payment date), when the source gives one. */
+  date?: string;
   siteId: string | null;
   practitionerId: string | null;
   payerType: PayerType;

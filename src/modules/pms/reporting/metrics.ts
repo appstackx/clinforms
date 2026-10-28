@@ -16,7 +16,7 @@
 import { authorisationView, type AuthorisationLike, type AuthorisationView } from "../core/authorisations";
 import type { PayerType } from "../core/types";
 import type { AppointmentFact, AppointmentOutcome, AvailabilityFact, DebtFact, RevenueFact, RevenueKind } from "./facts";
-import { addDays, dayNumber, eachDay, isoWeekday, type ReportPeriod } from "./periods";
+import { addDays, dayNumber, eachDay, isoWeekday, weekStart, type ReportPeriod } from "./periods";
 import { timeToMinutes } from "./schemas";
 
 /* ------------------------------------------------------------------------------------------------
@@ -361,10 +361,13 @@ export function revenueBy(facts: readonly RevenueFact[], key: (f: RevenueFact) =
 export const DEBT_BUCKETS = ["not_due", "d0_30", "d31_60", "d61_90", "d91_plus"] as const;
 export type DebtBucket = (typeof DEBT_BUCKETS)[number];
 
-/** Which age bucket an amount due on `dueOn` is in on `today` (days overdue). */
+/**
+ * Which age bucket an amount due on `dueOn` is in on `today` (days overdue) – the same bands as billing's aged debt
+ * (src/modules/pms/billing/aging.ts): due today or later = not yet due, then 1–30, 31–60, 61–90, over 90 days.
+ */
 export function debtBucket(dueOn: string, today: string): DebtBucket {
   const overdue = dayNumber(today) - dayNumber(dueOn);
-  if (overdue < 0) return "not_due";
+  if (overdue <= 0) return "not_due";
   if (overdue <= 30) return "d0_30";
   if (overdue <= 60) return "d31_60";
   if (overdue <= 90) return "d61_90";
@@ -449,6 +452,19 @@ export function authorisationAlerts<T extends AuthorisationLike>(list: readonly 
     if (reasons.length) out.push({ authorisation: a, view, reasons });
   }
   return out.sort((x, y) => (x.view.daysToExpiry ?? 99_999) - (y.view.daysToExpiry ?? 99_999));
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Series by week
+ * ----------------------------------------------------------------------------------------------*/
+
+/** Attendance per week (Mondays from weeksOf), with an empty row for a week without appointments. */
+export function attendanceByWeek(facts: readonly AppointmentFact[], weeks: readonly string[]): AttendanceRow[] {
+  const rows = attendanceBy(
+    facts.filter((f) => f.date !== undefined),
+    (f) => weekStart(f.date as string),
+  );
+  return weeks.map((w) => rows.find((r) => r.key === w) ?? { key: w, ...attendanceOf([]) });
 }
 
 /* ------------------------------------------------------------------------------------------------

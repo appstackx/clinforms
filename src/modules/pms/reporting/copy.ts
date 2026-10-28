@@ -52,7 +52,7 @@ export const SERVICE_CATEGORY_LABELS: Readonly<Record<ServiceCategory, string>> 
 
 export const DEBT_BUCKET_LABELS: Readonly<Record<DebtBucket, string>> = {
   not_due: "Not yet due",
-  d0_30: "0–30 days",
+  d0_30: "1–30 days",
   d31_60: "31–60 days",
   d61_90: "61–90 days",
   d91_plus: "Over 90 days",

@@ -2,12 +2,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { auditIdRange, clinicSystemAuditAreas, ulidLowerBound, ulidTime, ulidTimePart } from "./audit-search";
-import { REPORTS, REPORT_IDS, isReportId } from "./catalogue";
+import { REPORTS, REPORT_IDS, isReportId, reportAccess, reportsFor } from "./catalogue";
 import { PAYER_TYPE_LABELS, labelOf } from "./copy";
 import { csvCell, penceToPounds, rateToPercent, reportFileName, toCsv } from "./csv";
 import type { AppointmentFact, DebtFact, RevenueFact } from "./facts";
 import {
   agedDebt,
+  attendanceByWeek,
   attendanceBy,
   attendanceOf,
   authorisationAlerts,
@@ -31,10 +32,10 @@ import {
   utilisationBySite,
   weeklyOpenMinutes,
 } from "./metrics";
-import { addDays, daysInclusive, eachDay, isoWeekday, monthLabel, monthsOf, periodInstants, resolvePeriod, ukDateOf, ukMidnightMs, ukMinutesOf } from "./periods";
-import { ClosureInputSchema, OpeningHoursInputSchema, StaffAccessInputSchema, TimeOfDaySchema, parseAuditSearch, parseReportFilter, timeToMinutes, minutesToTime } from "./schemas";
-import { CLINIC_ROLE_LABELS, clinicRoleLabel, effectiveSiteScope, roleMatrix, scopeAllows, siteFilterFor, sitesInScope } from "./staff";
-import { PMS_PERMISSIONS, PMS_ROLES } from "../core/permissions";
+import { addDays, daysInclusive, eachDay, isoWeekday, monthLabel, monthsOf, periodInstants, resolvePeriod, ukDateOf, ukMidnightMs, ukMinutesOf, weekLabel, weekStart, weeksOf } from "./periods";
+import { ClosureInputSchema, OpeningHoursInputSchema, TimeOfDaySchema, parseAuditSearch, parseReportFilter, timeToMinutes, minutesToTime } from "./schemas";
+import { scopeAllows, scopeFromSiteIds, siteFilterFor, sitesInScope } from "./site-scope";
+import { clipToOpening, closureOn, openSessionsOn, openingInfo } from "./opening";
 
 describe("periods (UK calendar)", () => {
   const today = "2026-10-24"; // a Saturday
@@ -90,7 +91,7 @@ describe("periods (UK calendar)", () => {
   });
 });
 
-describe("inputs (opening hours, closures, staff access, query strings)", () => {
+describe("inputs (opening hours, closures, query strings)", () => {
   it("times are HH:MM in steps of 5 minutes", () => {
     assert.equal(TimeOfDaySchema.safeParse("08:00").success, true);
     assert.equal(TimeOfDaySchema.safeParse("8:00").success, false);
@@ -102,7 +103,7 @@ describe("inputs (opening hours, closures, staff access, query strings)", () => 
   it("opening sessions: closing after opening, no overlap on a day, at most three a day", () => {
     const site = "site_01HZZZZZZZZZZZZZZZZZZZZZZZ";
     assert.equal(OpeningHoursInputSchema.safeParse({ siteId: site, sessions: [{ weekday: 1, opensAt: "08:00", closesAt: "13:00" }, { weekday: 1, opensAt: "14:00", closesAt: "20:00" }] }).success, true);
-    assert.equal(OpeningHoursInputSchema.safeParse({ siteId: site, sessions: [] }).success, true, "closed all week");
+    assert.equal(OpeningHoursInputSchema.safeParse({ siteId: site, sessions: [] }).success, false, "closed all week is refused (switch the site off or add a closure)");
     const overlap = OpeningHoursInputSchema.safeParse({ siteId: site, sessions: [{ weekday: 2, opensAt: "08:00", closesAt: "13:00" }, { weekday: 2, opensAt: "12:00", closesAt: "18:00" }] });
     assert.equal(overlap.success, false);
     assert.match(JSON.stringify(overlap.error?.issues), /overlap/);
@@ -118,12 +119,6 @@ describe("inputs (opening hours, closures, staff access, query strings)", () => 
     assert.equal(ClosureInputSchema.safeParse({ startsOn: "2026-01-01", endsOn: "2026-06-01" }).success, false);
     assert.equal(ClosureInputSchema.safeParse({ startsOn: "2026-12-24", endsOn: "2027-01-01", siteId: null }).success, true);
   });
-  it("staff access: every site, or at least one chosen site (duplicates removed)", () => {
-    assert.deepEqual(StaffAccessInputSchema.parse({ allSites: true, siteIds: ["site_b"] }), { allSites: true, siteIds: [] });
-    assert.deepEqual(StaffAccessInputSchema.parse({ allSites: false, siteIds: ["site_b", "site_a", "site_b"] }), { allSites: false, siteIds: ["site_a", "site_b"] });
-    assert.equal(StaffAccessInputSchema.safeParse({ allSites: false, siteIds: [] }).success, false);
-    assert.equal(StaffAccessInputSchema.safeParse({ allSites: false, siteIds: ["bad id"] }).success, false);
-  });
   it("query strings: unknown or malformed values are dropped", () => {
     assert.deepEqual(parseReportFilter({ period: "last_month", from: "2026-13-01", to: "2026-10-31", site: "site_x", practitioner: ["prac_1", "prac_2"] }), {
       preset: "last_month",
@@ -131,8 +126,9 @@ describe("inputs (opening hours, closures, staff access, query strings)", () => 
       to: "2026-10-31",
       siteId: "site_x",
       practitionerId: "prac_1",
+      serviceId: null,
     });
-    assert.deepEqual(parseReportFilter(new URLSearchParams("period=everything&site=%27%3B--")), { preset: null, from: null, to: null, siteId: null, practitionerId: null });
+    assert.deepEqual(parseReportFilter(new URLSearchParams("period=everything&site=%27%3B--&service=svc_1")), { preset: null, from: null, to: null, siteId: null, practitionerId: null, serviceId: "svc_1" });
     const audit = parseAuditSearch({ from: "2026-10-01", area: "pms.patient", action: "DROP TABLE", user: "user_1", type: "pms_patient", record: "pat_01", before: "01JABCDEFGHJKMNPQRSTVWXYZ0" });
     assert.equal(audit.area, "pms.patient");
     assert.equal(audit.action, null);
@@ -268,7 +264,8 @@ describe("revenue and debt", () => {
   it("aged debt by payer account, from the due date", () => {
     const today = "2026-10-24";
     assert.equal(debtBucket("2026-11-19", today), "not_due");
-    assert.equal(debtBucket("2026-10-24", today), "d0_30");
+    assert.equal(debtBucket("2026-10-24", today), "not_due", "due today is not overdue yet – as billing's aged debt");
+    assert.equal(debtBucket("2026-10-23", today), "d0_30");
     assert.equal(debtBucket("2026-09-23", today), "d31_60");
     assert.equal(debtBucket("2026-08-24", today), "d61_90");
     assert.equal(debtBucket("2026-01-01", today), "d91_plus");
@@ -335,14 +332,10 @@ describe("CSV", () => {
   });
 });
 
-describe("staff roles and site access", () => {
-  it("clinic names for the roles; owners always every site", () => {
-    assert.deepEqual(CLINIC_ROLE_LABELS, { owner: "Owner", admin: "Administrator", clinician: "Practitioner", staff: "Reception" });
-    assert.equal(clinicRoleLabel("staff"), "Reception");
-    assert.equal(clinicRoleLabel("member"), "member");
-    assert.deepEqual(effectiveSiteScope("owner", { allSites: false, siteIds: ["s1"] }), { all: true });
-    assert.deepEqual(effectiveSiteScope("staff", null), { all: true }, "no row = every site");
-    const limited = effectiveSiteScope("clinician", { allSites: false, siteIds: ["s1", "s2"] });
+describe("site access (from the access module's actor.siteIds)", () => {
+  it("every site, or the member's sites only", () => {
+    assert.deepEqual(scopeFromSiteIds(null), { all: true });
+    const limited = scopeFromSiteIds(new Set(["s1", "s2"]));
     assert.deepEqual(limited, { all: false, siteIds: ["s1", "s2"] });
     assert.equal(scopeAllows(limited, "s1"), true);
     assert.equal(scopeAllows(limited, "s3"), false);
@@ -352,12 +345,28 @@ describe("staff roles and site access", () => {
     assert.deepEqual(siteFilterFor(limited, "s2"), ["s2"]);
     assert.equal(siteFilterFor({ all: true }, null), null);
   });
-  it("the roles overview follows the permission list", () => {
-    const rows = roleMatrix(PMS_PERMISSIONS, PMS_ROLES);
-    assert.equal(rows.length, PMS_PERMISSIONS.length);
-    const clinical = rows.find((r) => r.permission === "clinical.view");
-    assert.deepEqual(clinical?.roles, { owner: true, admin: true, clinician: true, staff: false });
-    assert.ok(rows.every((r) => r.label.length > 0));
+});
+
+describe("one opening-hours source (rota windows clipped to the site's hours)", () => {
+  const info = openingInfo(
+    [
+      { siteId: "a", weekday: 1, opensAt: "08:00", closesAt: "12:00" },
+      { siteId: "a", weekday: 1, opensAt: "13:00", closesAt: "20:00" },
+    ],
+    [
+      { siteId: "a", startsOn: "2026-11-09", endsOn: "2026-11-09", reason: "Training" },
+      { siteId: null, startsOn: "2026-12-25", endsOn: "2026-12-28", reason: "Christmas" },
+    ],
+  );
+  const w = (siteId: string, date: string, startMinute: number, endMinute: number) => ({ siteId, date, startMinute, endMinute });
+  it("cuts a window to each session, drops closed days, leaves sites without hours alone", () => {
+    assert.deepEqual(clipToOpening([w("a", "2026-11-02", 420, 1260)], info).map((x) => [x.startMinute, x.endMinute]), [[480, 720], [780, 1200]]);
+    assert.deepEqual(clipToOpening([w("a", "2026-11-03", 540, 600)], info), [], "Tuesday: no session = closed");
+    assert.deepEqual(clipToOpening([w("a", "2026-11-09", 540, 600)], info), [], "the site's own closure");
+    assert.deepEqual(clipToOpening([w("b", "2026-12-26", 540, 600)], info), [], "an all-sites closure");
+    assert.deepEqual(clipToOpening([w("b", "2026-11-03", 420, 1260)], info).map((x) => [x.startMinute, x.endMinute]), [[420, 1260]], "no hours set = not limited");
+    assert.equal(openSessionsOn(info, "b", "2026-11-03"), null);
+    assert.equal(closureOn(info, "a", "2026-12-25")?.reason, "Christmas");
   });
 });
 
@@ -391,5 +400,44 @@ describe("report catalogue", () => {
     }
     assert.equal(isReportId("utilisation"), true);
     assert.equal(isReportId("../etc"), false);
+  });
+
+  it("who opens what: all reports with reports.all; appointments and caseload only with reports.own; nothing otherwise", () => {
+    const can = (granted: string[]) => (p: string) => granted.includes(p);
+    assert.equal(reportAccess("revenue", can(["reports.all"])), "all");
+    assert.equal(reportAccess("attendance", can(["reports.own"])), "own");
+    assert.equal(reportAccess("revenue", can(["reports.own"])), null);
+    assert.equal(reportAccess("attendance", can(["reports.export"])), null);
+    assert.deepEqual(
+      reportsFor(can(["reports.own"])).map((g) => [g.group, g.reports.map((r) => r.id)]),
+      [
+        ["Appointments", ["attendance", "utilisation"]],
+        ["Clinical", ["caseload"]],
+      ],
+    );
+    assert.deepEqual(reportsFor(can(["reports.all"])).map((g) => g.group), ["Appointments", "Clinical", "Finance"]);
+    assert.deepEqual(reportsFor(can([])), []);
+  });
+});
+
+describe("weeks", () => {
+  it("last 6 weeks = this week and the five before (Monday to Sunday); weeks of a period; labels", () => {
+    const r = resolvePeriod("last_6_weeks", "2026-10-28");
+    assert.ok(r.ok);
+    assert.deepEqual([r.period.from, r.period.to, r.period.days], ["2026-09-21", "2026-11-01", 42]);
+    assert.deepEqual(weeksOf("2026-09-23", "2026-10-06"), ["2026-09-21", "2026-09-28", "2026-10-05"]);
+    assert.equal(weekStart("2026-11-01"), "2026-10-26");
+    assert.equal(weekLabel("2026-09-21"), "w/c 21/09/2026");
+    assert.equal(weekLabel("2026-09-21", true), "21/09");
+  });
+
+  it("attendance by week from dated facts (facts without a date count only in totals)", () => {
+    const f = (date: string | undefined, outcome: AppointmentFact["outcome"]): AppointmentFact => ({ month: (date ?? "2026-10-01").slice(0, 7), date, siteId: "s1", roomId: null, practitionerId: "p1", outcome, appointments: 1, minutes: 30 });
+    const weeks = attendanceByWeek([f("2026-10-05", "attended"), f("2026-10-07", "dna"), f("2026-10-13", "attended"), f(undefined, "dna")], ["2026-10-05", "2026-10-12", "2026-10-19"]);
+    assert.deepEqual(weeks.map((w) => [w.key, w.due, w.dna]), [
+      ["2026-10-05", 2, 1],
+      ["2026-10-12", 1, 0],
+      ["2026-10-19", 0, 0],
+    ]);
   });
 });

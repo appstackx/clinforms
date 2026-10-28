@@ -1,18 +1,16 @@
 /**
- * Site access of the signed-in member (src/modules/pms/reporting/staff.ts) and the checks the reporting and
- * set-up screens make with it. Other modules may use siteScopeOf() to show a limited member only their sites.
+ * Site access of the signed-in member for the reports, the dashboard and set-up. The sites come from the access
+ * module (actor.siteIds – "works at" ∪ "can see"; null = every site); nothing is stored by reporting.
  */
-import "server-only";
-import { scopeAllows, type SiteScope } from "../../../modules/pms/reporting/staff";
-import { getSiteScope } from "../../repos/pms/reporting/staff-access";
+import { scopeAllows, scopeFromSiteIds, type SiteScope } from "../../../modules/pms/reporting/site-scope";
 import type { ClinicActor } from "../actor";
 
-/** Where the member may work (owners: every site; no stored access: every site). */
-export async function siteScopeOf(actor: Pick<ClinicActor, "repo" | "tenantId" | "userId" | "role">): Promise<SiteScope> {
-  return getSiteScope(actor.repo(), actor.tenantId, actor.userId, actor.role);
+/** Where the member may look (owners and unlimited members: every site). */
+export function siteScopeOf(actor: Pick<ClinicActor, "siteIds">): SiteScope {
+  return scopeFromSiteIds(actor.siteIds);
 }
 
-/** Clinic-wide set-up (appointment types, prices, staff, record keeping, the audit trail) needs every site. */
+/** Clinic-wide set-up (appointment types, prices, payers, templates, billing settings) needs every site. */
 export function coversWholeClinic(scope: SiteScope): boolean {
   return scope.all;
 }

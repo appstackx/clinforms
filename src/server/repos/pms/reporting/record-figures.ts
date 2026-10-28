@@ -289,3 +289,38 @@ export async function referrerNames(ctx: DbContext, tenantId: string, ids: reado
   }
   return out;
 }
+
+/** Cases closed or discharged in the period, by site, practitioner and payer type. */
+export async function casesClosedBy(ctx: DbContext, tenantId: string, range: FigureRange): Promise<CaseloadRow[]> {
+  assertTenantId(tenantId);
+  const { rows } = await sql<{ site_id: string | null; practitioner_id: string | null; payer_type: string; n: number | string }>`
+    select site_id, practitioner_id, payer_type, count(*) as n
+    from pms_cases
+    where tenant_id = ${tenantId} and closed_on is not null and closed_on >= ${range.from} and closed_on <= ${range.to}${siteClause("site_id", range.siteIds)}
+    group by site_id, practitioner_id, payer_type
+  `.execute(ctx.db);
+  return rows.map((r) => ({ siteId: r.site_id, practitionerId: r.practitioner_id, payerType: r.payer_type as PayerType, cases: num(r.n) }));
+}
+
+/**
+ * Active authorisations with a session limit that have not expired by `today`, counted by sessions left (the
+ * report's "sessions left" chart), at the chosen sites (by their case's site) and, optionally, one practitioner's
+ * cases. Counted in the database.
+ */
+export async function authorisationSessionsLeft(
+  ctx: DbContext,
+  tenantId: string,
+  options: { today: string; siteIds: readonly string[] | null; practitionerId: string | null },
+): Promise<{ left: number; authorisations: number }[]> {
+  assertTenantId(tenantId);
+  const prac = options.practitionerId ? sql` and c.practitioner_id = ${options.practitionerId}` : sql``;
+  const { rows } = await sql<{ left_n: number | string; n: number | string }>`
+    select a.sessions_authorised - a.sessions_used as left_n, count(*) as n
+    from pms_authorisations a
+    join pms_cases c on c.tenant_id = a.tenant_id and c.id = a.case_id
+    where a.tenant_id = ${tenantId} and c.tenant_id = ${tenantId} and a.status = 'active' and a.sessions_authorised is not null
+      and (a.expires_on is null or a.expires_on >= ${options.today})${siteClause("c.site_id", options.siteIds)}${prac}
+    group by 1
+  `.execute(ctx.db);
+  return rows.map((r) => ({ left: Math.max(0, num(r.left_n)), authorisations: num(r.n) })).sort((x, y) => x.left - y.left);
+}

@@ -1,7 +1,7 @@
 /**
- * TESTS ONLY: the reporting and set-up module's repository suite – opening hours, closures, staff site access,
- * the audit search, the figures from the shared record and the report loaders (with in-memory diary and
- * invoicing sources). Run unchanged on node:sqlite and PGlite (../reporting-repos.test.ts) and on D1 through the
+ * TESTS ONLY: the reporting and set-up module's repository suite – opening hours and closures (and the diary
+ * following them: one opening-hours source), report targets, the audit search and the figures from the shared
+ * record (the report loaders have their own service suite). Run unchanged on node:sqlite and PGlite (../reporting-repos.test.ts) and on D1 through the
  * gateway (workers/data-gateway/test/pms-reporting-stack.test.ts); with a query log it ends with the tenant-scope
  * guard (every clinic-system statement names tenant_id).
  */
@@ -18,10 +18,6 @@ import { createPatient } from "../../patients";
 import { createReferrer } from "../../referrers";
 import { unscopedStatements, type QueryLog } from "../../testing/guarded-db";
 import { auditIdRange } from "../../../../../modules/pms/reporting/audit-search";
-import type { AppointmentFact, DebtFact, RevenueFact } from "../../../../../modules/pms/reporting/facts";
-import { parseReportFilter } from "../../../../../modules/pms/reporting/schemas";
-import { buildReportRequest, loadAttendance, loadAuthorisations, loadCaseload, loadDashboard, loadDebtors, loadDirectory, loadPatients, loadRevenue, loadUtilisation } from "../../../../pms/reporting/reports";
-import type { ReportingSources } from "../../../../pms/reporting/sources";
 import { searchAudit } from "../audit-search";
 import { addClosure, getClosure, listClosures, listOpeningHours, removeClosure, setOpeningHours } from "../opening-hours";
 import {
@@ -35,7 +31,9 @@ import {
   referralSources,
   referrerNames,
 } from "../record-figures";
-import { getSiteScope, getStaffAccess, listStaffAccess, setStaffAccess } from "../staff-access";
+import { getReportingSettings, updateReportingSettings } from "../settings";
+import { availabilityWindows, createAvailability } from "../../diary/availability";
+import { findFreeSlots } from "../../diary/slots";
 
 export interface ReportingSuiteDb {
   db: Kysely<Database>;
@@ -122,7 +120,8 @@ export function defineReportingRepoSuite(label: string, factory: () => Promise<R
       await setOpeningHours(ctx, A, { siteId: ids.s2, sessions: [{ weekday: 1, opensAt: "09:00", closesAt: "13:00" }] }, ACTOR);
       await rejects(setOpeningHours(ctx, A, { siteId: ids.s1, sessions: [{ weekday: 1, opensAt: "08:00", closesAt: "12:00" }, { weekday: 1, opensAt: "11:00", closesAt: "15:00" }] }, ACTOR), /overlap/);
       await rejects(setOpeningHours(ctx, B, { siteId: ids.s1, sessions: [{ weekday: 1, opensAt: "08:00", closesAt: "12:00" }] }, ACTOR_B), /site does not exist/);
-      await rejects(setOpeningHours(ctx, A, { siteId: ids.sB, sessions: [] }, ACTOR), /site does not exist/);
+      await rejects(setOpeningHours(ctx, A, { siteId: ids.sB, sessions: [{ weekday: 1, opensAt: "08:00", closesAt: "12:00" }] }, ACTOR), /site does not exist/);
+      await rejects(setOpeningHours(ctx, A, { siteId: ids.s1, sessions: [] }, ACTOR), /at least one day/);
       assert.equal((await listOpeningHours(ctx, B)).length, 0, "the other clinic sees none");
       assert.equal((await listOpeningHours(ctx, A, { siteIds: [ids.s2] })).length, 1);
       assert.equal((await listOpeningHours(ctx, A, { siteIds: [] })).length, 0);
@@ -153,41 +152,6 @@ export function defineReportingRepoSuite(label: string, factory: () => Promise<R
       assert.equal((await listAudit(ctx, A, { action: "pms.closure.create" })).length, 4);
       assert.equal((await listAudit(ctx, A, { action: "pms.closure.remove" })).length, 1);
       assert.equal((await listClosures(ctx, B)).length, 0);
-    });
-
-    it("staff access: every site by default; limited, revisioned, refused across clinics; owners never limited", async () => {
-      const u = "user_reception_1";
-      const none = await getStaffAccess(ctx, A, u);
-      assert.deepEqual([none.allSites, none.siteIds, none.rev], [true, [], 0]);
-      const first = await setStaffAccess(ctx, A, u, 0, { allSites: false, siteIds: [ids.s2, ids.s1, ids.s2] }, ACTOR);
-      assert.ok(first.ok && first.rev === 1);
-      const got = await getStaffAccess(ctx, A, u);
-      assert.deepEqual([got.allSites, got.siteIds.slice().sort(), got.rev, got.updatedBy], [false, [ids.s1, ids.s2].sort(), 1, ACTOR.userId]);
-      assert.deepEqual(await setStaffAccess(ctx, A, u, 0, { allSites: true, siteIds: [] }, ACTOR), { ok: false, reason: "conflict", currentRev: 1 }, "a stale revision changes nothing");
-      assert.equal((await getStaffAccess(ctx, A, u)).allSites, false);
-      const second = await setStaffAccess(ctx, A, u, 1, { allSites: false, siteIds: [ids.s1] }, ACTOR);
-      assert.ok(second.ok && second.rev === 2);
-      // Two people saving on the same revision: the first wins; the second neither changes the flag nor the sites.
-      const third = await setStaffAccess(ctx, A, u, 2, { allSites: false, siteIds: [ids.s2] }, ACTOR);
-      const late = await setStaffAccess(ctx, A, u, 2, { allSites: false, siteIds: [ids.s1, ids.s2] }, ACTOR);
-      assert.ok(third.ok);
-      assert.deepEqual(late, { ok: false, reason: "conflict", currentRev: 3 });
-      assert.deepEqual((await getStaffAccess(ctx, A, u)).siteIds, [ids.s2]);
-      await rejects(setStaffAccess(ctx, A, u, 3, { allSites: false, siteIds: [ids.sB] }, ACTOR), /does not exist in this clinic/);
-      await rejects(setStaffAccess(ctx, A, u, 3, { allSites: false, siteIds: [] }, ACTOR), /at least one site/);
-      assert.deepEqual((await getStaffAccess(ctx, B, u)).rev, 0, "the same person in another clinic: untouched");
-      const back = await setStaffAccess(ctx, A, u, 3, { allSites: true, siteIds: [ids.s1] }, ACTOR);
-      assert.ok(back.ok);
-      assert.deepEqual((await getStaffAccess(ctx, A, u)).siteIds, [], "every site: the list is cleared");
-      await setStaffAccess(ctx, A, "user_practitioner_1", 0, { allSites: false, siteIds: [ids.s1] }, ACTOR);
-      const all = await listStaffAccess(ctx, A);
-      assert.deepEqual(Array.from(all.keys()).sort(), ["user_practitioner_1", u]);
-      assert.deepEqual(all.get("user_practitioner_1")?.siteIds, [ids.s1]);
-      assert.deepEqual(await getSiteScope(ctx, A, "user_practitioner_1", "clinician"), { all: false, siteIds: [ids.s1] });
-      assert.deepEqual(await getSiteScope(ctx, A, "user_practitioner_1", "owner"), { all: true }, "owners always see every site");
-      const audit = await listAudit(ctx, A, { action: "pms.staff_access.set" });
-      assert.equal(audit.length, 5, "only the saves that won are recorded");
-      assert.deepEqual(audit[0].detail, { allSites: false, sites: 1, rev: 1 });
     });
 
     it("audit search: dates as id ranges, areas, actions, person, record – one clinic only, newest first, paged", async () => {
@@ -265,116 +229,45 @@ export function defineReportingRepoSuite(label: string, factory: () => Promise<R
       assert.equal((await authorisationsForReview(ctx, B, { today: "2026-10-24", days: 365, siteIds: null })).length, 0);
     });
 
-    it("report loaders: sources checked (another site's or month's facts left out), the viewer's sites only", async () => {
-      clock = Date.parse("2026-10-24T09:00:00.000Z");
-      const dir = await loadDirectory(ctx, A);
-      const appts: AppointmentFact[] = [
-        { month: "2026-10", siteId: ids.s1, roomId: ids.r1, practitionerId: ids.p1, outcome: "attended", appointments: 10, minutes: 300 },
-        { month: "2026-10", siteId: ids.s1, roomId: ids.r2, practitionerId: ids.p1, outcome: "dna", appointments: 2, minutes: 60 },
-        { month: "2026-10", siteId: ids.s2, roomId: ids.r3, practitionerId: ids.p2, outcome: "late_cancel", appointments: 1, minutes: 30 },
-        { month: "2026-10", siteId: ids.s2, roomId: ids.r3, practitionerId: ids.p2, outcome: "attended", appointments: 7, minutes: 210 },
-        { month: "2026-09", siteId: ids.s1, roomId: ids.r1, practitionerId: ids.p1, outcome: "attended", appointments: 5, minutes: 150 },
-        { month: "2026-10", siteId: ids.sB, roomId: null, practitionerId: null, outcome: "attended", appointments: 99, minutes: 999 },
-        { month: "2027-01", siteId: ids.s1, roomId: ids.r1, practitionerId: ids.p1, outcome: "attended", appointments: 50, minutes: 500 },
-      ];
-      const revenue: RevenueFact[] = [
-        { month: "2026-10", siteId: ids.s1, practitionerId: ids.p1, payerType: "insurer", kind: "invoiced", count: 4, amountPence: 20000 },
-        { month: "2026-10", siteId: ids.s2, practitionerId: ids.p2, payerType: "self_pay", kind: "invoiced", count: 2, amountPence: 13000 },
-        { month: "2026-10", siteId: ids.s2, practitionerId: null, payerType: "self_pay", kind: "received", count: 2, amountPence: 13000 },
-        { month: "2026-10", siteId: ids.s1, practitionerId: null, payerType: "insurer", kind: "credited", count: 1, amountPence: 5000 },
-      ];
-      const debt: DebtFact[] = [
-        { payerType: "insurer", payerReferrerId: ids.ins, siteId: ids.s1, dueOn: "2026-08-01", invoices: 3, outstandingPence: 15000 },
-        { payerType: "self_pay", payerReferrerId: null, siteId: ids.s2, dueOn: "2026-10-20", invoices: 1, outstandingPence: 6500 },
-        { payerType: "insurer", payerReferrerId: ids.insB, siteId: ids.sB, dueOn: "2026-10-01", invoices: 1, outstandingPence: 1 },
-      ];
-      // In-memory sources that (wrongly) ignore the filter: the loaders' checks must keep the figures right.
-      const sources: ReportingSources = {
-        diary: {
-          appointmentFacts: async (_c, t) => (t === A ? appts.filter((f) => f.month === "2026-10" || f.siteId === ids.sB || f.month === "2027-01") : []),
-          availabilityFacts: async () => [
-            { practitionerId: ids.p1, siteId: ids.s1, month: "2026-10", minutes: 1200 },
-            { practitionerId: ids.p2, siteId: ids.s2, month: "2026-10", minutes: 600 },
-          ],
-          attendedPatients: async () => ({ patients: 12, newPatients: 4 }),
-        },
-        billing: { revenueFacts: async () => revenue, debtFacts: async () => debt },
-      };
-      const owner = buildReportRequest({ tenantId: A, params: parseReportFilter({ period: "this_month" }), today: "2026-10-24", now: new Date(clock).toISOString(), scope: { all: true }, directory: dir });
-      const req = owner.request;
-      assert.deepEqual([req.period.from, req.period.to, req.siteIds], ["2026-10-01", "2026-10-31", null]);
+    it("report targets: defaults until saved, revisioned, audited, one clinic only", async () => {
+      assert.deepEqual(await getReportingSettings(ctx, A), { rev: 0, utilisationTargetPercent: 80, dnaTargetTenths: 40 });
+      tick();
+      assert.deepEqual((await updateReportingSettings(ctx, A, 0, { utilisationTargetPercent: 75, dnaTargetTenths: 35 }, ACTOR)).ok, true);
+      assert.deepEqual(await getReportingSettings(ctx, A), { rev: 1, utilisationTargetPercent: 75, dnaTargetTenths: 35 });
+      tick();
+      const stale = await updateReportingSettings(ctx, A, 0, { utilisationTargetPercent: 90, dnaTargetTenths: 35 }, ACTOR);
+      assert.equal(stale.ok, false, "a stale revision changes nothing");
+      assert.equal((await getReportingSettings(ctx, A)).utilisationTargetPercent, 75);
+      tick();
+      assert.equal((await updateReportingSettings(ctx, A, 1, { utilisationTargetPercent: 82, dnaTargetTenths: 40 }, ACTOR)).ok, true);
+      await rejects(updateReportingSettings(ctx, A, 2, { utilisationTargetPercent: 0, dnaTargetTenths: 40 }, ACTOR), /Report targets/);
+      assert.deepEqual(await getReportingSettings(ctx, B), { rev: 0, utilisationTargetPercent: 80, dnaTargetTenths: 40 }, "the other clinic keeps the defaults");
+      const audit = await listAudit(ctx, A, { action: "pms.report_targets.set" });
+      assert.equal(audit.length, 2, "one row per change that applied (not the stale one)");
+    });
 
-      const util = await loadUtilisation(ctx, req, dir, sources);
-      assert.ok(util.available);
-      const s1 = util.bySite.find((r) => r.key === ids.s1);
-      // s1: Mon + Tue 08:00–18:00 = 600 min a day; October 2026 has 4 Mondays + 4 Tuesdays = 4800, less the 12 Oct closure (600) = 4200, × 2 rooms.
-      assert.deepEqual([s1?.bookedMinutes, s1?.availableMinutes], [360, 8400]);
-      assert.ok(!util.bySite.some((r) => r.key === ids.sB), "another clinic's site never shows");
-      assert.equal(util.byPractitioner.find((r) => r.key === ids.p1)?.utilisation, 360 / 1200);
-      assert.equal(util.byRoom.find((r) => r.key === ids.r3)?.availableMinutes, 4 * 240 - 0, "s2: Mondays 09:00–13:00, the 13 Oct closure is a Tuesday");
-
-      const att = await loadAttendance(ctx, req, sources);
-      assert.ok(att.available);
-      assert.deepEqual([att.total.total, att.total.attended, att.total.dna, att.total.lateCancel], [20, 17, 2, 1], "September, January and the other site are left out");
-      assert.equal(att.byMonth.length, 1);
-
-      const rev = await loadRevenue(ctx, req, sources);
-      assert.ok(rev.available);
-      assert.deepEqual([rev.total.invoicedPence, rev.total.creditedPence, rev.total.netPence, rev.total.receivedPence], [33000, 5000, 28000, 13000]);
-      const debts = await loadDebtors(ctx, req, sources);
-      assert.ok(debts.available);
-      assert.deepEqual(debts.rows.map((r) => [r.name, r.outstandingPence]), [["Northwell Health Insurance (fictional)", 15000], ["Self-pay patients", 6500]], "another clinic's site and account are left out");
-
-      // A receptionist limited to Wolverton: only Wolverton's figures, even from a source that sends everything.
-      const limited = buildReportRequest({ tenantId: A, params: parseReportFilter({ period: "this_month", site: ids.s1 }), today: "2026-10-24", now: new Date(clock).toISOString(), scope: { all: false, siteIds: [ids.s2] }, directory: dir });
-      assert.deepEqual([limited.request.siteId, limited.request.siteIds, limited.siteChoices.map((s) => s.id)], [null, [ids.s2], [ids.s2]], "a site outside the scope is ignored");
-      const latt = await loadAttendance(ctx, limited.request, sources);
-      assert.ok(latt.available);
-      assert.deepEqual([latt.total.total, latt.total.lateCancel], [8, 1]);
-      const lrev = await loadRevenue(ctx, limited.request, sources);
-      assert.ok(lrev.available);
-      assert.equal(lrev.total.netPence, 13000);
-      const ldebt = await loadDebtors(ctx, limited.request, sources);
-      assert.ok(ldebt.available);
-      assert.deepEqual(ldebt.rows.map((r) => r.outstandingPence), [6500]);
-      const lutil = await loadUtilisation(ctx, limited.request, dir, sources);
-      assert.ok(lutil.available);
-      assert.deepEqual(lutil.bySite.map((r) => r.key), [ids.s2]);
-      assert.deepEqual(lutil.byPractitioner.map((r) => r.key), [ids.p2], "practitioners of the chosen sites");
-
-      // Practitioner filter.
-      const one = buildReportRequest({ tenantId: A, params: parseReportFilter({ period: "this_month", practitioner: ids.p2 }), today: "2026-10-24", now: new Date(clock).toISOString(), scope: { all: true }, directory: dir });
-      const patt = await loadAttendance(ctx, one.request, sources);
-      assert.ok(patt.available);
-      assert.equal(patt.total.total, 8);
-      assert.equal(buildReportRequest({ tenantId: A, params: parseReportFilter({ practitioner: "prac_unknown" }), today: "2026-10-24", now: "", scope: { all: true }, directory: dir }).request.practitionerId, null);
-      const bad = buildReportRequest({ tenantId: A, params: parseReportFilter({ period: "custom", from: "2026-10-05" }), today: "2026-10-24", now: "", scope: { all: true }, directory: dir });
-      assert.equal(bad.periodError, "Enter a start and an end date.");
-      assert.equal(bad.request.period.preset, "this_month", "the default period instead");
-
-      // No diary, no invoicing yet: the reports say so.
-      const none: ReportingSources = { diary: null, billing: null };
-      assert.deepEqual(await loadUtilisation(ctx, req, dir, none), { available: false });
-      assert.deepEqual(await loadRevenue(ctx, req, none), { available: false });
-      const pats = await loadPatients(ctx, req, none);
-      assert.deepEqual([pats.byCases.patients, pats.byCases.newPatients, pats.byAppointments, pats.casesOpened, pats.registered], [2, 1, null, 2, 3]);
-      assert.deepEqual(pats.sourcesByKind.map((k) => k.kind).sort(), ["gp", "insurer"]);
-      const withDiary = await loadPatients(ctx, req, sources);
-      assert.deepEqual(withDiary.byAppointments, { patients: 12, newPatients: 4, returning: 8, newShare: 4 / 12 });
-      assert.equal((await loadPatients(ctx, limited.request, none)).registered, null, "registrations are clinic-wide only");
-      const cl = await loadCaseload(ctx, req);
-      assert.deepEqual([cl.openTotal, cl.opened, cl.closed], [2, 2, 1]);
-      const auths = await loadAuthorisations(ctx, req, 14);
-      assert.deepEqual(auths.map((a) => [a.authorisation.code, a.reasons]), [["NW-SOON", ["expires_soon"]], ["LAST-ONE", ["few_sessions_left"]]]);
-      const dash = await loadDashboard(ctx, req, dir, sources);
-      assert.equal(dash.attendance?.now.dnaRate, 2 / 20);
-      assert.deepEqual([dash.previous.from, dash.previous.to], ["2026-08-31", "2026-09-30"]);
-      assert.equal(dash.revenue?.now.netPence, 28000);
-      assert.equal(dash.debt?.outstandingPence, 21500);
-      assert.equal(dash.authorisationsToAct, 2);
-      assert.equal(dash.openCases, 2);
-      const bare = await loadDashboard(ctx, req, dir, none);
-      assert.deepEqual([bare.attendance, bare.utilisation, bare.revenue, bare.debt], [null, null, null, null]);
+    it("one opening-hours source: the diary's rota windows and free slots are clipped to the site's hours and closures", async () => {
+      clock = Date.parse("2026-10-26T09:00:00.000Z");
+      const s3 = (await createSite(ctx, A, { name: "Newport (fictional)" }, ACTOR)).id;
+      const s4 = (await createSite(ctx, A, { name: "No hours yet (fictional)" }, ACTOR)).id;
+      const p3 = (await createPractitioner(ctx, A, { displayName: "Lena Ford", defaultSiteId: s3 }, ACTOR)).id;
+      const p4 = (await createPractitioner(ctx, A, { displayName: "Owen Price", defaultSiteId: s4 }, ACTOR)).id;
+      for (const [practitionerId, siteId] of [[p3, s3], [p4, s4]]) {
+        await createAvailability(ctx, A, { practitionerId, siteId, weekday: 1, startTime: "07:00", endTime: "21:00", validFrom: "2026-10-01" }, ACTOR);
+      }
+      await setOpeningHours(ctx, A, { siteId: s3, sessions: [1, 2, 3, 4, 5].map((weekday) => ({ weekday, opensAt: "08:00", closesAt: "20:00" })) }, ACTOR);
+      await addClosure(ctx, A, { siteId: s3, startsOn: "2026-11-09", reason: "Staff training" }, ACTOR);
+      const hours = (slots: { startMinute: number }[]) => slots.map((x) => x.startMinute / 60);
+      const monday = await findFreeSlots(ctx, A, { fromDate: "2026-11-02", days: 1, practitionerIds: [p3], durationMinutes: 60, stepMinutes: 60, limit: 50 });
+      assert.deepEqual(hours(monday), [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19], "a 07:00–21:00 rota at a site open 08:00–20:00");
+      const windows = await availabilityWindows(ctx, A, ["2026-11-02"], { practitionerIds: [p3] });
+      assert.deepEqual(windows.map((w) => [w.startMinute, w.endMinute]), [[480, 1200]]);
+      assert.deepEqual(await findFreeSlots(ctx, A, { fromDate: "2026-11-09", days: 1, practitionerIds: [p3], durationMinutes: 60, stepMinutes: 60 }), [], "a closure day: no slots");
+      await addClosure(ctx, A, { siteId: null, startsOn: "2026-11-16", reason: "Bank holiday" }, ACTOR);
+      assert.deepEqual(await findFreeSlots(ctx, A, { fromDate: "2026-11-16", days: 1, practitionerIds: [p4], durationMinutes: 60, stepMinutes: 60 }), [], "an all-sites closure closes a site without hours too");
+      const unrestricted = await findFreeSlots(ctx, A, { fromDate: "2026-11-02", days: 1, practitionerIds: [p4], durationMinutes: 60, stepMinutes: 60, limit: 50 });
+      assert.deepEqual(hours(unrestricted), [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20], "a site without opening hours is not limited");
+      await rejects(setOpeningHours(ctx, A, { siteId: s3, sessions: [] }, ACTOR), /at least one day/);
     });
 
     it("tenant-scope guard: every clinic-system statement named tenant_id", () => {

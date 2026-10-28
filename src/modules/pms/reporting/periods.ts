@@ -7,6 +7,7 @@ import { isIsoDate } from "../core/text";
 
 export const PERIOD_PRESETS = [
   "this_week",
+  "last_6_weeks",
   "last_week",
   "this_month",
   "last_month",
@@ -21,6 +22,7 @@ export type PeriodPreset = (typeof PERIOD_PRESETS)[number];
 
 export const PERIOD_LABELS: Readonly<Record<PeriodPreset, string>> = {
   this_week: "This week",
+  last_6_weeks: "Last 6 weeks",
   last_week: "Last week",
   this_month: "This month",
   last_month: "Last month",
@@ -32,7 +34,10 @@ export const PERIOD_LABELS: Readonly<Record<PeriodPreset, string>> = {
   custom: "Choose dates",
 };
 
-export const DEFAULT_PRESET: PeriodPreset = "this_month";
+export const DEFAULT_PRESET: PeriodPreset = "last_6_weeks";
+
+/** The period chips of the report filter bar (design round 2c); "custom" opens the date fields. */
+export const REPORT_PERIOD_CHIPS: readonly PeriodPreset[] = ["this_week", "last_6_weeks", "this_quarter", "custom"];
 /** A report never covers more than this many days (one year and a day: a leap year plus a margin). */
 export const MAX_PERIOD_DAYS = 367;
 
@@ -102,6 +107,24 @@ export function monthsOf(from: string, to: string): string[] {
   return out;
 }
 
+/** The Monday of the week a date is in (UK weeks start on Monday). */
+export function weekStart(iso: string): string {
+  return addDays(iso, 1 - isoWeekday(iso));
+}
+
+/** The weeks (their Mondays) a period touches, in order. */
+export function weeksOf(from: string, to: string): string[] {
+  const out: string[] = [];
+  for (let w = weekStart(from); w <= to; w = addDays(w, 7)) out.push(w);
+  return out;
+}
+
+/** "2026-09-21" → "w/c 21/09/2026" (long) or "21/09" (short, chart labels). */
+export function weekLabel(monday: string, short = false): string {
+  const [y, m, d] = monday.split("-");
+  return short ? `${d}/${m}` : `w/c ${d}/${m}/${y}`;
+}
+
 /** "2026-10" → "Oct 2026". */
 export function monthLabel(key: string): string {
   const [y, m] = key.split("-").map(Number);
@@ -142,6 +165,10 @@ export function resolvePeriod(preset: PeriodPreset, today: string, custom: { fro
     case "this_week":
       from = addDays(today, 1 - isoWeekday(today));
       to = addDays(from, 6);
+      break;
+    case "last_6_weeks":
+      from = addDays(today, 1 - isoWeekday(today) - 35);
+      to = addDays(today, 7 - isoWeekday(today));
       break;
     case "last_week":
       from = addDays(today, 1 - isoWeekday(today) - 7);
