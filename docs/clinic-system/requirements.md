@@ -180,17 +180,17 @@ model, server actions and API routes – **but no `page.tsx`** under `src/app/ap
 
 ### 3.4 BOOK – online booking (public)
 
-Committed on `feat/cs-portal` (`51e6ed6`): migrations `0150`–`0152`, slot engine, policy, repositories and flows.
-**Online bookings are stored in portal's own `pms_online_bookings` with its own clash trigger, through a
-standalone "diary port"** – not yet in the diary's `pms_appointments`. No public routes yet.
+M7 (28/10/2026, `feat/cs-portal` → `feat/clinic-system`): **online bookings are diary appointments**
+(`pms_appointments.source = online`) booked through the diary's adapter for the portal's port; `pms_online_bookings`
+keeps the reference, how the record was found and the manage-link hash. Public pages under `/clinics/[clinic]/**`.
 
-- **K2-BOOK-001** · MVP · partial · portal · FC 2.1-24 — Public booking page per clinic and site in route group `src/app/(public-clinic)/**`: no staff cookie, `noindex`, rate-limited, never reveals whether a patient exists. AC: flows done; pages missing; e2e books as a new and as an existing patient at 375 px.
-- **K2-BOOK-002** · MVP · partial · portal · FC 2.1-25 — Availability from the diary: rotas, opening hours, bookable appointment types, buffers, minimum notice, horizon, existing appointments and blocks. AC: a slot shown online is always bookable by reception at the same moment and vice versa.
-- **K2-BOOK-003** · MVP · missing · portal · FC 2.1-24, 2.1-06 — An online booking becomes a diary appointment in `pms_appointments` (one appointment store, one clash rule) through a diary adapter for the portal's diary port. AC: an online booking appears in the diary immediately; a reception booking in the same slot is refused, and the reverse.
-- **K2-BOOK-004** · MVP · partial · portal · FC 2.5-01 — Booking confirmation, cancellation and change messages go through comms (outbox until a live provider). AC: portal's own outbox (`pms_portal_messages`) replaced by, or forwarded to, comms' message log; one outbox screen.
-- **K2-BOOK-005** · MVP · partial · portal · FC 2.1-29 — Patient cancels or rebooks online within the notice policy; a cancellation inside the notice is flagged late. AC: flows done; pages missing.
+- **K2-BOOK-001** · MVP · done · portal · FC 2.1-24 — Public booking page per clinic and site in route group `src/app/(public-clinic)/**`: no staff cookie, `noindex`, rate-limited, never reveals whether a patient exists. AC: done M7 – `/clinics/[clinic]/book`; e2e books as a new patient at 375 px (pms-portal-screens, pms-prototype-b); suite proves an existing match answers the same.
+- **K2-BOOK-002** · MVP · done · portal · FC 2.1-25 — Availability from the diary: rotas, opening hours, bookable appointment types, buffers, minimum notice, horizon, existing appointments and blocks. AC: done M7 – slots are the diary's `findFreeSlots` (rota windows marked online, minus appointments and blocked time); suite asserts online slots = the diary's own search.
+- **K2-BOOK-003** · MVP · done · portal · FC 2.1-24, 2.1-06 — An online booking becomes a diary appointment in `pms_appointments` (one appointment store, one clash rule) through a diary adapter for the portal's diary port. AC: done M7 – `src/server/pms/diary/portal-adapter.ts`; suite + e2e: reception refused over an online booking and the reverse.
+- **K2-BOOK-004** · MVP · done · portal · FC 2.5-01 — Booking confirmation, cancellation and change messages go through comms (outbox until a live provider). AC: done M7 – `pms_portal_messages` dropped; diary hook messages + `portal_link` through comms; one outbox.
+- **K2-BOOK-005** · MVP · done · portal · FC 2.1-29 — Patient cancels or rebooks online within the notice policy; a cancellation inside the notice is flagged late. AC: done M7 – late = diary `late_cancelled` with the fee flag; move only outside the notice; e2e.
 - **K2-BOOK-006** · MVP · done · portal · FC none — Bot check ready but off; rate limits per client, email and clinic. AC: `human-check.ts` off by default; tests for limits.
-- **K2-BOOK-007** · MVP · partial · portal · FC 2.1-25 — Staff settings for online booking (`/app/clinic/online-booking`, permission `booking.manage`): on/off per site, bookable types and practitioners, notice, horizon, cancellation policy text. AC: data done; screen missing.
+- **K2-BOOK-007** · MVP · done · portal · FC 2.1-25 — Staff settings for online booking (`/app/clinic/online-booking`, permission `settings.setup`): on/off per site, bookable types and practitioners, notice, horizon, cancellation policy text. AC: done M7 (+ site map positions, latest online bookings to check).
 - **K2-BOOK-008** · Later · missing · portal · FC 2.1-26 — Deposit or payment at booking. AC: needs live payments (K2-PAY-005).
 - **K2-BOOK-009** · Later · missing · portal · FC 2.1-28 — Insured patients book online with insurer and authorisation details captured for staff to confirm.
 - **K2-BOOK-010** · Later · missing · portal · FC 2.1-27 — Forms, add-ons and companion bookings inside the booking flow.
@@ -250,25 +250,25 @@ letters and messages) and integration (`cs-integration`, Word/RTF resolver, unco
 
 ### 3.8 FORM – intake and consent forms
 
-Committed on `feat/cs-portal`: form templates, patients' copies (`pms_intake_templates`, `pms_intake_responses`),
-starter forms, typed e-signature, sealing trigger.
+M7: form templates, patients' copies (`pms_intake_templates`, `pms_intake_responses`), starter forms, typed
+e-signature, sealing trigger, builder, record Forms tab, signed copy, outcome questionnaires in the portal.
 
 - **K2-FORM-001** · MVP · done · portal · FC 2.2-21 — Starter new-patient intake and consent forms (written for the product) and clinic copies. AC: tests; no third-party wording.
-- **K2-FORM-002** · MVP · partial · portal · FC 2.2-21 — Staff send a form link to a patient (e.g. before the first appointment) through comms. AC: flow done; send uses portal's own outbox today (see K2-BOOK-004).
+- **K2-FORM-002** · MVP · done · portal · FC 2.2-21 — Staff send a form link to a patient (e.g. before the first appointment) through comms. AC: done M7 – record Forms tab → Send form: the copy + a 72-hour one-time portal link by email through comms.
 - **K2-FORM-003** · MVP · done · portal · FC 2.2-21 — Typed e-signature; answers and typed name encrypted; the copy is sealed by a trigger once submitted. AC: suite proves seal.
-- **K2-FORM-004** · MVP · partial · portal · FC 2.2-21 — Verified vs unverified submissions: consent recorded on the record only when verified; staff apply other answers to the record. AC: flows done; staff screen missing.
-- **K2-FORM-005** · MVP · partial · portal · FC none — Health answers visible to clinicians only. AC: domain rule done; enforced in the forms record tab (missing).
-- **K2-FORM-006** · MVP · missing · portal · FC 2.3-05 — Forms tab on the patient record (`/app/clinic/patients/[patientId]/forms`) and intake screen (`/app/clinic/intake`). AC: list, view, apply answers.
-- **K2-FORM-007** · Later · missing · portal · FC 2.2-22 — Form builder with field-to-record mapping, file uploads, clinic-tablet mode.
+- **K2-FORM-004** · MVP · done · portal · FC 2.2-21 — Verified vs unverified submissions: consent recorded on the record only when verified; staff apply other answers to the record. AC: done M7 – signed copy page: Mark checked, Copy to the record.
+- **K2-FORM-005** · MVP · done · portal · FC none — Health answers visible to clinicians only. AC: done M7 – questions marked clinical are hidden without `clinical.view` on the Forms tab and signed copy; outcome questionnaires clinical as a whole; e2e as reception.
+- **K2-FORM-006** · MVP · done · portal · FC 2.3-05 — Forms tab on the patient record (`/app/clinic/patients/[patientId]/forms`) and intake screen (`/app/clinic/intake`). AC: done M7 – list, view (sealed copy, fingerprint), apply answers; Overview Forms card.
+- **K2-FORM-007** · Later · partial · portal · FC 2.2-22 — Form builder with field-to-record mapping, file uploads, clinic-tablet mode. AC: builder with Mark clinical and field-to-record mapping done M7 (`/app/clinic/intake/[form]`); file uploads and clinic-tablet mode missing.
 
 ### 3.9 PORTAL – patient portal
 
-- **K2-PORTAL-001** · MVP · partial · portal · FC 2.1-31 — Magic-link sign-in; patient accounts separate from staff accounts; secrets stored as hashes; sessions expire. AC: flows done; routes missing; links reach patients only once email is live (K2-COMMS-005).
-- **K2-PORTAL-002** · MVP · partial · portal · FC 2.1-30, 2.1-29 — Portal shows upcoming appointments with cancel/rebook within policy. AC: flows done; pages missing.
-- **K2-PORTAL-003** · MVP · partial · portal · FC 2.1-30 — Forms to complete. AC: flows done; pages missing.
-- **K2-PORTAL-004** · MVP · partial · portal · FC 2.1-30 — Documents explicitly shared by staff (letters, exercise sheets); no clinical notes unless shared. AC: `pms_portal_shares` done; pages missing.
+- **K2-PORTAL-001** · MVP · done · portal · FC 2.1-31 — Magic-link sign-in; patient accounts separate from staff accounts; secrets stored as hashes; sessions expire. AC: done M7 – email-only request, one-time 15-minute link through comms, same answer for everyone, rate-limited; links reach patients only once email is live (K2-COMMS-005).
+- **K2-PORTAL-002** · MVP · done · portal · FC 2.1-30, 2.1-29 — Portal shows upcoming appointments with cancel/rebook within policy. AC: done M7 – late warning with the fee, cancel, move, book again.
+- **K2-PORTAL-003** · MVP · done · portal · FC 2.1-30 — Forms to complete. AC: done M7 – intake forms (typed signature) and outcome questionnaires (scored into the record's Outcomes).
+- **K2-PORTAL-004** · MVP · partial · portal · FC 2.1-30 — Documents explicitly shared by staff (letters, exercise sheets); no clinical notes unless shared. AC: portal pages done M7 (shared documents + the patient's signed copies); a staff screen to share a document is missing.
 - **K2-PORTAL-005** · MVP · done · portal · FC none — Strict tenant and patient scoping; a patient can never reach another patient's or clinic's data or any staff route. AC: suite with two clinics and two patients.
-- **K2-PORTAL-006** · MVP · partial · portal · FC 2.1-32 — Works as mobile web at 375 px. AC: e2e at 375 px.
+- **K2-PORTAL-006** · MVP · done · portal · FC 2.1-32 — Works as mobile web at 375 px. AC: done M7 – e2e at 375 px with axe.
 - **K2-PORTAL-007** · Later · missing · portal · FC 2.1-30 — View and pay invoices in the portal.
 
 ### 3.10 COMMS – communications and reminders
@@ -433,7 +433,7 @@ outbox); two merge-field engines; foundation `clinic_entitlements`/`clinic_usage
 ### 5.1 Security
 - **K2-NFR-001** · MVP · done · foundation · FC none — Every page/layout under `/app/clinic` calls `requireClinicActor` first; every action `clinicActionActor`; every route `clinicRoute`; tenant and user never taken from the request. AC: contract source-check tests.
 - **K2-NFR-002** · MVP · done · foundation · FC none — Writes same-origin only; JSON errors; `no-store`. AC: `http.test.ts`.
-- **K2-NFR-003** · MVP · partial · portal · FC none — Public endpoints rate-limited (`hitRateLimit`), `noindex`, bot check ready. AC: limits tested; pages missing.
+- **K2-NFR-003** · MVP · done · portal · FC none — Public endpoints rate-limited (`hitRateLimit`), `noindex`, bot check ready. AC: done M7 – pages, limits per client / email / clinic, `noindex` header + metadata on `/clinics/*`, bot check ready but off.
 - **K2-NFR-004** · MVP · partial · records · FC 2.2-20 — Uploads: magic-byte type check, size limits, never executed or rendered inline. AC: tests; route review in the security lens.
 - **K2-NFR-005** · MVP · partial · billing · FC none — Every CSV export guards against formula injection (billing done; reporting and import to verify). AC: shared helper used everywhere.
 - **K2-NFR-006** · MVP · missing · ops · FC none — No patient data in logs, analytics (PostHog), error messages or URLs. AC: security lens finds none; PostHog off on `/app/clinic` pages or property-scrubbed.
@@ -667,21 +667,21 @@ Generated from the requirement lines above (§3, §5). "FC" = feature-comparison
 
 | Priority | done | back end done (screen pending) | partial | partial-wt | missing | total |
 |---|---:|---:|---:|---:|---:|---:|
-| MVP | 70 | 24 | 33 | 21 | 28 | 176 |
-| Later | 0 | 0 | 4 | 0 | 25 | 29 |
-| **All** | 70 | 24 | 37 | 21 | 53 | 205 |
+| MVP | 85 | 24 | 20 | 21 | 26 | 176 |
+| Later | 0 | 0 | 5 | 0 | 24 | 29 |
+| **All** | 85 | 24 | 25 | 21 | 50 | 205 |
 
 | Area | done | back end done (screen pending) | partial | partial-wt | missing |
 |---|---:|---:|---:|---:|---:|
 | PLT | 9 | 0 | 1 | 0 | 1 |
 | SITE | 1 | 1 | 0 | 2 | 2 |
 | DIARY | 6 | 11 | 0 | 0 | 5 |
-| BOOK | 1 | 0 | 5 | 0 | 4 |
+| BOOK | 7 | 0 | 0 | 0 | 3 |
 | PAT | 0 | 7 | 3 | 1 | 3 |
 | NOTE | 2 | 5 | 2 | 0 | 2 |
 | LTR | 3 | 0 | 2 | 1 | 1 |
-| FORM | 2 | 0 | 3 | 0 | 2 |
-| PORTAL | 1 | 0 | 5 | 0 | 1 |
+| FORM | 6 | 0 | 1 | 0 | 0 |
+| PORTAL | 5 | 0 | 1 | 0 | 1 |
 | COMMS | 7 | 0 | 2 | 0 | 3 |
 | BILL | 12 | 0 | 2 | 0 | 2 |
 | AUTHS | 2 | 0 | 2 | 1 | 1 |
@@ -691,7 +691,7 @@ Generated from the requirement lines above (§3, §5). "FC" = feature-comparison
 | CF | 1 | 0 | 0 | 2 | 3 |
 | ADM | 2 | 0 | 2 | 2 | 2 |
 | AUD | 3 | 0 | 0 | 1 | 1 |
-| NFR | 14 | 0 | 6 | 0 | 14 |
+| NFR | 15 | 0 | 5 | 0 | 14 |
 
 ### 13.1 Requirement → feature-comparison rows → branch → status
 
@@ -736,13 +736,13 @@ Generated from the requirement lines above (§3, §5). "FC" = feature-comparison
 | K2-DIARY-020 | Later | missing | feat/cs-diary | 2.1-09 | Skills limit which services a practitioner can be booked for |
 | K2-DIARY-021 | Later | missing | feat/cs-diary | 2.1-19 | List view of appointments with bulk actions |
 | K2-DIARY-022 | Later | missing | feat/cs-diary | 2.1-21 | Calendar feed for practitioners (no patient names) |
-| K2-BOOK-001 | MVP | partial | feat/cs-portal | 2.1-24 | Public booking page per clinic and site in route group `src/app/(public-clinic)/**`: no … |
-| K2-BOOK-002 | MVP | partial | feat/cs-portal | 2.1-25 | Availability from the diary: rotas, opening hours, bookable appointment types, buffers, … |
-| K2-BOOK-003 | MVP | missing | feat/cs-portal | 2.1-24, 2.1-06 | An online booking becomes a diary appointment in `pms_appointments` (one appointment … |
-| K2-BOOK-004 | MVP | partial | feat/cs-portal | 2.5-01 | Booking confirmation, cancellation and change messages go through comms (outbox until a … |
-| K2-BOOK-005 | MVP | partial | feat/cs-portal | 2.1-29 | Patient cancels or rebooks online within the notice policy; a cancellation inside the … |
+| K2-BOOK-001 | MVP | done | feat/cs-portal | 2.1-24 | Public booking page per clinic and site in route group `src/app/(public-clinic)/**`: no … |
+| K2-BOOK-002 | MVP | done | feat/cs-portal | 2.1-25 | Availability from the diary: rotas, opening hours, bookable appointment types, buffers, … |
+| K2-BOOK-003 | MVP | done | feat/cs-portal | 2.1-24, 2.1-06 | An online booking becomes a diary appointment in `pms_appointments` (one appointment … |
+| K2-BOOK-004 | MVP | done | feat/cs-portal | 2.5-01 | Booking confirmation, cancellation and change messages go through comms (outbox until a … |
+| K2-BOOK-005 | MVP | done | feat/cs-portal | 2.1-29 | Patient cancels or rebooks online within the notice policy; a cancellation inside the … |
 | K2-BOOK-006 | MVP | done | feat/cs-portal | – | Bot check ready but off; rate limits per client, email and clinic |
-| K2-BOOK-007 | MVP | partial | feat/cs-portal | 2.1-25 | Staff settings for online booking (`/app/clinic/online-booking`, permission … |
+| K2-BOOK-007 | MVP | done | feat/cs-portal | 2.1-25 | Staff settings for online booking (`/app/clinic/online-booking`, permission … |
 | K2-BOOK-008 | Later | missing | feat/cs-portal | 2.1-26 | Deposit or payment at booking |
 | K2-BOOK-009 | Later | missing | feat/cs-portal | 2.1-28 | Insured patients book online with insurer and authorisation details captured for staff to … |
 | K2-BOOK-010 | Later | missing | feat/cs-portal | 2.1-27 | Forms, add-ons and companion bookings inside the booking flow |
@@ -779,18 +779,18 @@ Generated from the requirement lines above (§3, §5). "FC" = feature-comparison
 | K2-LTR-006 | MVP | partial | feat/cs-records | 2.3-04 | Discharge summary letter from the discharge note |
 | K2-LTR-007 | MVP | missing | feat/cs-integration | – | One merge-field engine for letters and ClinForms (reconcile comms `merge-fields.ts` and … |
 | K2-FORM-001 | MVP | done | feat/cs-portal | 2.2-21 | Starter new-patient intake and consent forms (written for the product) and clinic copies |
-| K2-FORM-002 | MVP | partial | feat/cs-portal | 2.2-21 | Staff send a form link to a patient (e.g |
+| K2-FORM-002 | MVP | done | feat/cs-portal | 2.2-21 | Staff send a form link to a patient (e.g |
 | K2-FORM-003 | MVP | done | feat/cs-portal | 2.2-21 | Typed e-signature; answers and typed name encrypted; the copy is sealed by a trigger once … |
-| K2-FORM-004 | MVP | partial | feat/cs-portal | 2.2-21 | Verified vs unverified submissions: consent recorded on the record only when verified; … |
-| K2-FORM-005 | MVP | partial | feat/cs-portal | – | Health answers visible to clinicians only |
-| K2-FORM-006 | MVP | missing | feat/cs-portal | 2.3-05 | Forms tab on the patient record (`/app/clinic/patients/[patientId]/forms`) and intake … |
-| K2-FORM-007 | Later | missing | feat/cs-portal | 2.2-22 | Form builder with field-to-record mapping, file uploads, clinic-tablet mode |
-| K2-PORTAL-001 | MVP | partial | feat/cs-portal | 2.1-31 | Magic-link sign-in; patient accounts separate from staff accounts; secrets stored as … |
-| K2-PORTAL-002 | MVP | partial | feat/cs-portal | 2.1-30, 2.1-29 | Portal shows upcoming appointments with cancel/rebook within policy |
-| K2-PORTAL-003 | MVP | partial | feat/cs-portal | 2.1-30 | Forms to complete |
+| K2-FORM-004 | MVP | done | feat/cs-portal | 2.2-21 | Verified vs unverified submissions: consent recorded on the record only when verified; … |
+| K2-FORM-005 | MVP | done | feat/cs-portal | – | Health answers visible to clinicians only |
+| K2-FORM-006 | MVP | done | feat/cs-portal | 2.3-05 | Forms tab on the patient record (`/app/clinic/patients/[patientId]/forms`) and intake … |
+| K2-FORM-007 | Later | partial | feat/cs-portal | 2.2-22 | Form builder with field-to-record mapping, file uploads, clinic-tablet mode |
+| K2-PORTAL-001 | MVP | done | feat/cs-portal | 2.1-31 | Magic-link sign-in; patient accounts separate from staff accounts; secrets stored as … |
+| K2-PORTAL-002 | MVP | done | feat/cs-portal | 2.1-30, 2.1-29 | Portal shows upcoming appointments with cancel/rebook within policy |
+| K2-PORTAL-003 | MVP | done | feat/cs-portal | 2.1-30 | Forms to complete |
 | K2-PORTAL-004 | MVP | partial | feat/cs-portal | 2.1-30 | Documents explicitly shared by staff (letters, exercise sheets); no clinical notes unless … |
 | K2-PORTAL-005 | MVP | done | feat/cs-portal | – | Strict tenant and patient scoping; a patient can never reach another patient's or … |
-| K2-PORTAL-006 | MVP | partial | feat/cs-portal | 2.1-32 | Works as mobile web at 375 px |
+| K2-PORTAL-006 | MVP | done | feat/cs-portal | 2.1-32 | Works as mobile web at 375 px |
 | K2-PORTAL-007 | Later | missing | feat/cs-portal | 2.1-30 | View and pay invoices in the portal |
 | K2-COMMS-001 | MVP | done | feat/cs-comms | 2.5-04 | Message templates with merge fields; appointment messages never carry clinical detail |
 | K2-COMMS-002 | MVP | done | feat/cs-comms | 2.5-01 | Booking, change and cancellation confirmations triggered by diary changes … |
@@ -870,7 +870,7 @@ Generated from the requirement lines above (§3, §5). "FC" = feature-comparison
 | K2-AUD-005 | Later | missing | feat/cs-records | 2.6-13 | Record views (who opened a patient's clinical notes) are logged |
 | K2-NFR-001 | MVP | done | feat/clinic-system | – | Every page/layout under `/app/clinic` calls `requireClinicActor` first; every action … |
 | K2-NFR-002 | MVP | done | feat/clinic-system | – | Writes same-origin only; JSON errors; `no-store` |
-| K2-NFR-003 | MVP | partial | feat/cs-portal | – | Public endpoints rate-limited (`hitRateLimit`), `noindex`, bot check ready |
+| K2-NFR-003 | MVP | done | feat/cs-portal | – | Public endpoints rate-limited (`hitRateLimit`), `noindex`, bot check ready |
 | K2-NFR-004 | MVP | partial | feat/cs-records | 2.2-20 | Uploads: magic-byte type check, size limits, never executed or rendered inline |
 | K2-NFR-005 | MVP | partial | feat/cs-billing | – | Every CSV export guards against formula injection (billing done; reporting and import to … |
 | K2-NFR-006 | MVP | missing | – | – | No patient data in logs, analytics (PostHog), error messages or URLs |

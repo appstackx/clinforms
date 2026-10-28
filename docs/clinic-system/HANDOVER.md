@@ -1,5 +1,10 @@
 # K2 clinic system – handover
 
+> **Update 28/10/2026 (latest – read §16 first):** M7 online booking + patient portal + intake forms + patient outcome
+> questionnaires DONE – online bookings are diary appointments, the portal's emails go through comms, public pages
+> under `/clinics/[clinic]`, staff set-up / builder / Forms tab; merged into `feat/clinic-system` `caa9b4d`. Next: M8
+> set-up + reports + dashboard. See §16.
+
 > **Update 28/10/2026 (latest – read §15 first):** M6 Messages DONE – back end reviewed, diary hook, Messages screens, letter editor, record Messages tab, billing emails, seed, e2e; merged into `feat/clinic-system` `d1f350b`. Next: M7 online booking + portal. See §15.
 
 > **Update 28/10/2026 (latest – read §14 first):** M5 billing DONE – back end, screens, seed, e2e; merged into `feat/clinic-system` `0acf07c`. Next: M6 Messages. See §14.
@@ -729,12 +734,17 @@ anyway" in quiet hours not built.
 **M7 Online booking + portal + intake** (portal branch): diary adapter for the portal's bookings, portal outbox → comms
 (`sendDocumentMessage` / templates incl. `portal_link`), public pages, Prototype B e2e.
 
-## 16. M7 online booking + portal + intake + patient questionnaires (28/10/2026) – IN PROGRESS (midpoint)
+## 16. M7 online booking + portal + intake + patient questionnaires (28/10/2026) – DONE, merged into `feat/clinic-system`
 
-**Midpoint state (pushed; `main` untouched):** `feat/cs-portal` **`6f3320f`** = `feat/clinic-system` `d1f350b` merged in
+**Final heads (all pushed; `main` untouched):** `feat/cs-portal` **`9e008fb`** · `feat/clinic-system` **`caa9b4d`** (merge
+of `feat/cs-portal`, tree identical to it; `feat/clinic-system` had not moved since `d1f350b`) · merged back:
+`feat/cs-diary` `6c36133`, `feat/cs-records` `169d944`, `feat/cs-billing` `b968b06`, `feat/cs-comms` `c378fc9` (trees
+identical to `caa9b4d`; typecheck + test:pms each – see 16.6).
+
+**Midpoint state (kept for the record):** `feat/cs-portal` **`6f3320f`** = `feat/clinic-system` `d1f350b` merged in
 (`dffa6f6`, no conflicts) + `572ac44` (comms: offer texts respect quiet hours) + `6f3320f` (portal back end). Worktree
 `/Users/khuram/Projects/Appstackx/clinforms-wt/cs-portal` (npm ci done incl. workers/data-gateway; `.env.local` copied
-from cs-comms). test:pms green except nothing; portal suite 17/17 on SQLite, PGlite, D1 stand-in, local workerd D1.
+from cs-comms). test:pms green; portal suite 17/17 on SQLite, PGlite, D1 stand-in, local workerd D1.
 **Not yet done at midpoint:** screens (public route group, portal, staff set-up / intake builder / record Forms tab /
 Overview card / outcome send), seed `seed-portal.ts`, e2e `pms-prototype-b.cjs` + `pms-portal-screens.cjs`, designs
 commit, full chain, merges. If you pick this up: continue from `6f3320f` on `feat/cs-portal`.
@@ -774,3 +784,110 @@ commit, full chain, merges. If you pick this up: continue from `6f3320f` on `fea
 6. Sign-in by **email only** (design) with the same answer for everyone; links 15 min (patient asked) / 72 h (staff
    sent with a form), single use, hash only.
 7. Migrations 0150–0152 **edited in place** (never applied anywhere – same reasoning as 0140/0141).
+
+### 16.3 Commits on `feat/cs-portal`
+| Commit | What |
+|---|---|
+| `dffa6f6` | `feat/clinic-system` `d1f350b` merged into the October draft (no conflicts) |
+| `572ac44` | Comms: waiting-list offer texts respect quiet hours (0142 `hold_until`, release in the message run) |
+| `6f3320f` | Portal back end: online bookings = diary appointments (adapter + `alsoWrite`), sites table, comms instead of the portal outbox, batched audits, late cancellation, email-only sign-in, outcome questionnaires; suite rewritten |
+| `2b42084` | Screens: public route group, staff set-up / intake builder / record Forms tab + signed copy, Overview card, Outcomes link; `next.config.mjs` + `src/lib/site.ts` (see 16.8) |
+| `1a4b321` | Seed `scripts/pms/seed-portal.ts` (from `seed-demo.ts` after comms) + e2e `pms-prototype-b.cjs`, `pms-portal-screens.cjs` |
+| `e2112dd` | Designs `docs/clinic-system/design/round3/portal/` (+ README, ZZ99 postcodes) and `docs/clinic-system/portal.md` |
+| `9e008fb` | Shell nav test + shell e2e: Online booking and Intake forms under Set-up |
+
+### 16.4 What is built (by requirement)
+- **BOOK-001/002/003/004/005/007** – `/clinics/[clinic]/book` (6 steps at 375 px: where → what → who → when → details
+  → confirm → booked; "Add to calendar" .ics; "Manage booking" link), `/clinics/[clinic]/booking/[link]` (+ `/move`,
+  `/forms/[id]`), slots = the diary's `findFreeSlots` (rota windows marked online, appointments, blocks/closures) within
+  notice/horizon; booking = diary `bookAppointment` (source online, confirmation requested) + `pms_online_bookings` +
+  forms in one batch (`src/server/pms/diary/portal-adapter.ts`); messages via the diary→comms hook, run straight away;
+  late cancel = diary `late_cancelled` + fee flag; staff **Set-up → Online booking** (`/app/clinic/online-booking`,
+  `settings.setup`): switches, notice / horizon / step / free-changes hours, texts, per-site on/off + map position,
+  types and practitioners offered, latest online bookings (new patient flag, Mark checked – `diary.book`).
+- **PORTAL-001/002/003/005/006** – `/clinics/[clinic]/portal` (email-only sign-in, "Check your email", link page with a
+  Sign in button, home: forms to complete, upcoming, shared with you), appointment page (late warning with the fee,
+  cancel confirm, move), portal booking/move (`/portal/book[?move=]`), forms (`/portal/forms/[id]`), shared documents.
+  **PORTAL-004** partial: portal pages done, no staff "share a document" screen yet.
+- **FORM-002/004/005/006** – `/app/clinic/intake` (list, starter forms, new form) + builder `/app/clinic/intake/[form]`
+  (questions, types, required, **Mark clinical**, copy-to-record mapping, sending, signature, Save draft / Publish);
+  record **Forms tab** (`patients.view`: list; Send form – `patients.edit`, email + 72 h one-time portal link via comms;
+  Send a questionnaire to the portal – `clinical.write`; portal access on/off) and the **signed copy** (sealed,
+  signature panel, fingerprint, Mark checked, Copy to the record; clinical answers hidden without `clinical.view`,
+  outcome questionnaires clinicians only); Overview **Forms card**. **FORM-007** partial (builder + mapping; no uploads /
+  tablet mode).
+- **Outcome questionnaires (NOTE outcomes):** patient copies without a template (`kind = outcome`), forms built from the
+  records measures (NDI/ODI/NPRS/QuickDASH topics + a plain scale; PSFS from the patient's own activities of the latest
+  PSFS), answered one question at a time, scored by records (`recordOutcome`) into `pms_outcome_measures`, linked back;
+  the Outcomes page links "Send a questionnaire to the patient's portal" and marks "from the patient's portal".
+- **NFR-003** done (noindex header + metadata on `/clinics/*`, limits per client / email / clinic, bot check ready, off).
+
+### 16.5 Results
+Full chain on `1a4b321`+ (code identical to `9e008fb` apart from the nav test): typecheck, lint green; **test:pms
+529/529**; test:medreport 1777/0/3; test:db 929/0/3; test:auth 134/0; **test:site 124/0** (after the nav test update);
+**test:gateway 555/0/2** (incl. **pms-portal-stack** – stand-in + local workerd D1 with wrangler-applied migrations); build
+green. Portal suite 17/17 on SQLite, PGlite, D1 stand-in, local D1.
+E2E on fresh `pms:seed-demo -- --fresh` scratch SQLite + a reports-only clinic (`harbour-clinic`), production build,
+ports 3180–3184, servers stopped, run **21:20–21:30 GMT** (outside clinic hours): **pms-prototype-b 6/6**,
+**pms-portal-screens 15/15** (axe clean at 375 and 1440), clinic-system-shell 10/10, clinic-system-access 13/13,
+pms-records-screens 17/17, pms-billing-screens 21/21. Time-of-day failures (pre-existing, unrelated to M7):
+pms-diary-screens 20/24 (the 4 steps that need today's future appointments / a free slot within the next hour),
+pms-prototype-a 2/10 (its set-up needs a free 45 minutes within the next hour), pms-messages-screens 17/18 (step 13
+Retry needs the seed's "failed" text, which the comms seed does not produce at this hour – the same with the M6 code
+on cs-comms, checked). **Re-run those three in clinic hours.** Runner: `$SCRATCH/run-e2e-portal.sh <script> <port>
+<outdir>` and `$SCRATCH/all-e2e-portal.sh` (scratchpad of this session).
+Screenshots: `/private/tmp/claude-501/-Users-khuram-Projects-Appstackx-bh2-handover/ef471414-85b1-422d-bf98-018c56c69aec/scratchpad/k2design/out-portal/`
+(`prototype-b/`, `portal/` – 375 px patient screens and 1440 px staff screens).
+
+### 16.6 Merge-backs
+`feat/clinic-system` `caa9b4d` merged into cs-diary `6c36133`, cs-records `169d944`, cs-billing `b968b06`, cs-comms
+`c378fc9` (trees identical to `caa9b4d`): typecheck green and **test:pms 529/529** in each; all pushed.
+
+### 16.7 Differences from the design
+- No 10-minute hold of the chosen time (round 2g/2h): the time is re-checked against the diary at Confirm; a taken
+  time says so and the times reload. Reception sees the booking only once it is made.
+- "What's the problem?" is not asked on the booking page (it would be health information in a booking note reception
+  reads) – the health questionnaire (clinical) asks it.
+- Booked screen: "We've sent you a confirmation by text and email" without the addresses (a matched record's addresses
+  must not show); reference format `K7M3-Q9TX`, not `NP-7H2KQ`.
+- Distance from a typed postcode: placed at a site of the same postcode district (no lookup service – nothing is sent);
+  another district gets "use your location". "Use my location" works anywhere.
+- Inside the notice period only Cancel (with the fee) is offered; "Move" says call the clinic.
+- Builder: sending = "with a new patient's first online booking / every online booking / only when staff send it"; no
+  "2 days before", no reminder, no per-site use, no "Preview as patient"; the signed copy has no "Download PDF".
+- Prototype B: no diary-wide activity feed or toast – the drawer's activity line "Booked by the patient online …".
+- The clinician's tabbed outcome screen (round 3 Outcome) is not built: records' Outcomes page + "Send a questionnaire"
+  on the Forms tab. Patient questionnaires use topics + a plain scale (no licensed wording).
+
+### 16.8 Open items
+1. Files outside the portal's ownership changed (smallest change, need Khuram's OK): `next.config.mjs` – `/clinics/*`
+   gets `X-Robots-Tag: noindex` and `Permissions-Policy: geolocation=(self)` (the site-wide `geolocation=()` blocked
+   "Use my location"; ClinForms paths unchanged); `src/lib/site.ts` – `/clinics` is an app area (no cookie banner, no
+   analytics pageviews); the diary's `BookOptions.alsoWrite` and `portal-adapter.ts`; the records Overview Forms card
+   and the Outcomes link; comms `sendDocumentMessage` accepts `portal_link`.
+2. Staff "share a document with the patient" screen (PORTAL-004); completing a form in the clinic (tablet, verified).
+3. PDF of the sealed signed copy; "Preview as patient" in the builder.
+4. Postcode distance needs a postcode-district centroid table (ONS, OGL, ~3,000 rows) to work for any postcode.
+5. Live email (gate B): sign-in links reach patients only once email is live; the Cloudflare cron (16.1) not deployed.
+6. Portal conditional audit rows key on the write's time (as comms/billing key on write ids): two identical writes in
+   the same millisecond could both audit – low risk; a `write_id` column would close it.
+7. Insured patients booking online (BOOK-009, Later), deposits (BOOK-008, Later).
+8. Re-run pms-diary-screens, pms-prototype-a and pms-messages-screens in clinic hours on the merged line.
+
+### 16.9 Decisions for Khuram
+1. Distance from a typed postcode: bundle the ONS postcode-district centroids (OGL, no service called), or keep "same
+   district + Use my location"?
+2. The 10-minute slot hold of the design: build it (a short-lived diary hold reception sees) or keep "re-check at
+   Confirm"?
+3. "What's the problem?" moved from the booking page into the health questionnaire (clinical) – OK?
+4. Staff-sent form links last 72 hours (single use); patient-requested links 15 minutes – OK?
+5. Outcome questionnaires in the portal use section topics + a plain scale (no licensed wording, Q-K8) and show the
+   patient their score – OK until the licences are checked, or hold the feature?
+6. Approve the shared-file edits in 16.8 item 1 (next.config.mjs, src/lib/site.ts).
+7. Inside the notice: patient may cancel online (late, fee flagged) but not move – OK?
+8. Online booking matches an existing record only on email + date of birth + last name; anything else makes a new
+   record for staff to merge (flagged "New patient" on Set-up → Online booking) – OK?
+
+### 16.10 Next
+**M8 Set-up + reports + dashboard** (reporting branch, drop its staff-access tables in favour of cs-access; set-up
+sub-pages without design; dashboard per role incl. billing money tiles and `failedMessagesSummaryFor`).
