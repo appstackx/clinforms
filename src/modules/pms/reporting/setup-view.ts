@@ -72,6 +72,10 @@ export interface AuditRow {
 }
 
 export interface AuditScreen {
+  /** The patient search: the text, the patients it matched (name · number) – null when none was asked for. */
+  patient: { text: string; patients: { id: string; label: string }[]; more: boolean } | null;
+  /** May the member search by patient ("View patients")? */
+  canSearchPatients: boolean;
   rows: AuditRow[];
   hasOlder: boolean;
   hasNewer: boolean;

@@ -223,19 +223,29 @@ export interface BillingHomeView {
   today: string;
 }
 
-/** Chargeable visits from the last 90 days without an invoice, in the member's sites. */
+/**
+ * Chargeable visits from the last 90 days without an invoice, in the member's sites (at most 500, the newest kept),
+ * oldest first. Read a week at a time from today backwards: the source lists at most 500 visits a call, oldest
+ * first, so one 90-day read of a busy clinic would be all old, already invoiced visits and miss this week's.
+ */
 async function uninvoicedVisits(actor: BillingActor): Promise<BillableVisit[]> {
   const ctx = actor.repo();
   const source = billableVisitSource();
   if (!source.connected) return [];
   const today = todayOf(ctx);
-  const visits = await source.listClinicVisits(ctx, actor.tenantId, { from: addDaysIso(today, -90), until: today, siteIds: actor.siteIds ?? null, limit: 500 });
-  const billed = await billedAppointmentIds(
-    ctx,
-    actor.tenantId,
-    visits.map((v) => v.appointmentId),
-  );
-  return visits.filter((v) => !billed.has(v.appointmentId));
+  const start = addDaysIso(today, -90);
+  const out: BillableVisit[] = [];
+  for (let until = today; until >= start && out.length < 500; until = addDaysIso(until, -7)) {
+    const from = addDaysIso(until, -6) < start ? start : addDaysIso(until, -6);
+    const visits = await source.listClinicVisits(ctx, actor.tenantId, { from, until, siteIds: actor.siteIds ?? null, limit: 500 });
+    const billed = await billedAppointmentIds(
+      ctx,
+      actor.tenantId,
+      visits.map((v) => v.appointmentId),
+    );
+    out.unshift(...visits.filter((v) => !billed.has(v.appointmentId)));
+  }
+  return out.slice(-500);
 }
 
 export async function billingHomeFor(actor: BillingActor, options: BillingHomeOptions = {}): Promise<Result<BillingHomeView>> {

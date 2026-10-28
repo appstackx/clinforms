@@ -36,6 +36,8 @@ import { addDays, daysInclusive, eachDay, isoWeekday, monthLabel, monthsOf, peri
 import { ClosureInputSchema, OpeningHoursInputSchema, TimeOfDaySchema, parseAuditSearch, parseReportFilter, timeToMinutes, minutesToTime } from "./schemas";
 import { scopeAllows, scopeFromSiteIds, siteFilterFor, sitesInScope } from "./site-scope";
 import { clipToOpening, closureOn, openSessionsOn, openingInfo } from "./opening";
+import { coveredMinutes, dayUtilisation, mergeIntervals, subtractIntervals } from "./intervals";
+import { checkAvailabilityFacts, checkVisitFacts } from "./fact-checks";
 
 describe("periods (UK calendar)", () => {
   const today = "2026-10-24"; // a Saturday
@@ -227,6 +229,57 @@ describe("opening hours and utilisation", () => {
   });
 });
 
+describe("utilisation never passes 100 %: available = (rota ∪ bookings) − blocked time", () => {
+  it("interval helpers", () => {
+    assert.deepEqual(mergeIntervals([[600, 660], [540, 600], [700, 720], [650, 680], [5, 5]]), [[540, 680], [700, 720]]);
+    assert.equal(coveredMinutes([[540, 600], [570, 630]]), 90, "overlaps counted once");
+    assert.deepEqual(subtractIntervals([[540, 780]], [[600, 660], [700, 1440]]), [[540, 600], [660, 700]]);
+    assert.deepEqual(subtractIntervals([[540, 600]], []), [[540, 600]]);
+  });
+  it("a booking outside the rota / opening hours counts as available time too", () => {
+    // Rota 09:00–12:00 (hours were cut to that after booking); bookings 10:00–11:00 and 14:00–17:00.
+    const u = dayUtilisation([[540, 720]], [[600, 660], [840, 1020]], []);
+    assert.deepEqual(u, { available: 360, booked: 240, blocked: 0 });
+    // The case that showed 275 %: everything booked outside 2 h of opening.
+    const all = dayUtilisation([[480, 600]], [[600, 1020]], []);
+    assert.equal(all.booked / all.available, 420 / 540);
+    assert.ok(all.booked <= all.available);
+  });
+  it("leave and other blocked time come off the available time; a whole day of leave leaves nothing", () => {
+    assert.deepEqual(dayUtilisation([[540, 1020]], [[540, 600]], [[780, 840]]), { available: 420, booked: 60, blocked: 60 });
+    assert.deepEqual(dayUtilisation([[540, 1020]], [], [[0, 1440]]), { available: 0, booked: 0, blocked: 480 });
+    // Double-booked time counts once.
+    assert.deepEqual(dayUtilisation([[540, 600]], [[540, 570], [540, 570]], []), { available: 60, booked: 30, blocked: 0 });
+  });
+  it("by practitioner: the source's clipped booked minutes win over the appointments' own minutes", () => {
+    const facts = [appt({ minutes: 600, siteId: "s1", roomId: null, practitionerId: "p1", outcome: "attended" })];
+    const rows = utilisationByPractitioner(facts, [{ id: "p1" }], [{ practitionerId: "p1", siteId: "s1", month: "2026-10", date: "2026-10-05", minutes: 540, bookedMinutes: 420, blockedMinutes: 0 }]);
+    assert.equal(rows[0].bookedMinutes, 420);
+    assert.equal(rows[0].utilisation, 420 / 540);
+    assert.equal(rows[0].attendedMinutes, 600, "attended minutes still from the appointments");
+  });
+  it("fact checks: booked more than available, or new/returning facts outside the period, are left out", () => {
+    const f = { from: "2026-10-01", to: "2026-10-31", siteIds: null, practitionerId: null, known: { siteIds: ["s1"], roomIds: [], practitionerIds: ["p1"] } };
+    const a = checkAvailabilityFacts(
+      [
+        { practitionerId: "p1", siteId: "s1", month: "2026-10", date: "2026-10-05", minutes: 60, bookedMinutes: 30 },
+        { practitionerId: "p1", siteId: "s1", month: "2026-10", date: "2026-10-05", minutes: 60, bookedMinutes: 90 },
+      ],
+      f,
+    );
+    assert.deepEqual([a.facts.length, a.dropped], [1, 1]);
+    const v = checkVisitFacts(
+      [
+        { month: "2026-10", date: "2026-10-05", siteId: "s1", practitionerId: "p1", firstVisit: true, appointments: 2 },
+        { month: "2026-11", date: "2026-11-05", siteId: "s1", practitionerId: "p1", firstVisit: false, appointments: 1 },
+        { month: "2026-10", date: "2026-10-05", siteId: "s9", practitionerId: "p1", firstVisit: false, appointments: 1 },
+      ],
+      f,
+    );
+    assert.deepEqual([v.facts.length, v.dropped], [1, 2]);
+  });
+});
+
 describe("new and returning patients", () => {
   it("from first visits or first cases: first date in the period = new", () => {
     const mix = patientMixFromFirstDates(
@@ -406,12 +459,13 @@ describe("report catalogue", () => {
     const can = (granted: string[]) => (p: string) => granted.includes(p);
     assert.equal(reportAccess("revenue", can(["reports.all"])), "all");
     assert.equal(reportAccess("attendance", can(["reports.own"])), "own");
+    assert.equal(reportAccess("patients", can(["reports.own"])), "own", "new and returning patients: own caseload like the other appointment reports");
     assert.equal(reportAccess("revenue", can(["reports.own"])), null);
     assert.equal(reportAccess("attendance", can(["reports.export"])), null);
     assert.deepEqual(
       reportsFor(can(["reports.own"])).map((g) => [g.group, g.reports.map((r) => r.id)]),
       [
-        ["Appointments", ["attendance", "utilisation"]],
+        ["Appointments", ["attendance", "utilisation", "patients"]],
         ["Clinical", ["caseload"]],
       ],
     );

@@ -12,17 +12,22 @@ import "server-only";
 import type { RepoContext } from "../../repos/context";
 import { BILLING_REPORTING_SOURCE } from "../billing/reporting-source";
 import { DIARY_REPORTING_SOURCE } from "../diary/reporting-source";
-import type { AppointmentFact, AttendedPatientsFact, AvailabilityFact, DebtFact, RevenueFact } from "../../../modules/pms/reporting/facts";
+import type { AppointmentFact, AttendedPatientsFact, AvailabilityFact, DebtFact, RevenueFact, VisitFact } from "../../../modules/pms/reporting/facts";
 export type { ReportingQuery } from "./query";
 import type { ReportingQuery } from "./query";
 
 export interface DiaryReportingSource {
   /** Appointments that START in [query.start, query.end), aggregated by UK month, site, room, practitioner and outcome. */
   appointmentFacts(ctx: RepoContext, tenantId: string, query: ReportingQuery): Promise<AppointmentFact[]>;
-  /** Practitioners' working time in the period from the rota, by practitioner, site and UK month. */
+  /**
+   * Practitioners' available time in the period by practitioner, site and UK date: the rota (inside the opening
+   * hours, less closures) joined with the time booked, less blocked time – with the booked minutes inside it.
+   */
   availabilityFacts(ctx: RepoContext, tenantId: string, query: ReportingQuery): Promise<AvailabilityFact[]>;
   /** Patients who attended in the period, and how many of them for the first time ever (any site). */
   attendedPatients(ctx: RepoContext, tenantId: string, query: ReportingQuery): Promise<AttendedPatientsFact>;
+  /** Attended appointments by UK date, site and practitioner: the patient's first ever (new) or not (returning). */
+  visitFacts(ctx: RepoContext, tenantId: string, query: ReportingQuery): Promise<VisitFact[]>;
 }
 
 export interface BillingReportingSource {

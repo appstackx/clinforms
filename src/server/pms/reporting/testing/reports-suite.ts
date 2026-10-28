@@ -32,6 +32,8 @@ import { unscopedStatements } from "../../../repos/pms/testing/guarded-db";
 import { testActor } from "../../records/access";
 import { reportCsvFor, reportPageFor, type ReportView } from "../service";
 import { attendanceToday, authorisationsEndingSoon, utilisationTodayBySite } from "../today";
+import { auditPatientFilter } from "../audit-patients";
+import { searchAudit } from "../../../repos/pms/reporting/audit-search";
 
 export interface ReportsSuiteDb {
   db: Kysely<Database>;
@@ -198,6 +200,20 @@ export function defineReportsServiceSuite(label: string, factory: () => Promise<
         SEED,
       );
       await suite.db.updateTable("pms_appointments").set({ treatment_started_at: at(DAY, "11:05") } as never).where("tenant_id", "=", A).where("id", "=", ids[4]).execute();
+      // Monday 07/09/2026 (BST: London = UTC + 1), outside the default period: Tom has a meeting 09:00–10:00 inside
+      // his rota (09:00–12:00), sees Liam 10:00–10:30 and Sarah 13:00–14:00 (outside his rota); Priya is on leave all
+      // day. Liam and Sarah were therefore seen before the default period (returning patients there).
+      await bulkCreateDiaryItems(
+        ctx,
+        A,
+        [
+          { kind: "block" as const, siteId: id.s2, practitionerId: id.p2, startsAt: at("2026-09-07", "08:00"), endsAt: at("2026-09-07", "09:00"), status: "booked" as const, blockKind: "meeting" as const, title: "Team meeting" },
+          { kind: "block" as const, siteId: id.s1, practitionerId: id.p1, startsAt: at("2026-09-06", "23:00"), endsAt: at("2026-09-07", "23:00"), status: "booked" as const, blockKind: "leave" as const, title: "Annual leave" },
+          appt({ ...s2, date: "2026-09-07", start: "09:00", status: "attended" }),
+          appt({ ...s2, patient: id.sarah, date: "2026-09-07", start: "12:00", minutes: 60, status: "attended" }),
+        ],
+        SEED,
+      );
       // Another clinic, same day: never in A's figures.
       const bSite = (await createSite(ctx, B, { name: "Other clinic (fictional)" }, SEED)).id;
       const bPrac = (await createPractitioner(ctx, B, { displayName: "Other Person" }, SEED)).id;
@@ -261,16 +277,84 @@ export function defineReportsServiceSuite(label: string, factory: () => Promise<
       assert.deepEqual([stat(fu, "attended"), stat(fu, "dna")], ["3", "2"]);
     });
 
-    it("utilisation: booked (incl. DNA and late cancellations) ÷ rota time; the closure removes rota time; per practitioner and site", async () => {
+    it("utilisation: booked (incl. DNA and late cancellations) ÷ available time; the closure and blocked time remove rota time; per practitioner and site", async () => {
       const v = await page(owner(), "utilisation");
-      // Priya: 6 Mondays × 240 = 1440 rota min; booked 7 × 30 = 210 (a4 cancelled freed its slot, the block never counts).
-      // Tom: 5 Mondays × 180 = 900 (closed 12/10); booked 45 + 30 = 75.
+      // Priya: 6 Mondays × 240 = 1440 rota min less the 30-min admin block on 26/10 = 1410; booked 7 × 30 = 210 (a4
+      // cancelled freed its slot). Tom: 5 Mondays × 180 = 900 (closed 12/10); booked 45 + 30 = 75.
       assert.deepEqual(rows(v, "practitioners"), [
-        ["Priya Shah", "24", "3.5", "15%", "Harbour Road (fictional)"],
+        ["Priya Shah", "23.5", "3.5", "15%", "Harbour Road (fictional)"],
         ["Tom Hughes", "15", "1.3", "8%", "Mill Lane (fictional)"],
       ]);
-      assert.deepEqual([stat(v, "utilisation"), stat(v, "rota-hours"), stat(v, "unfilled-hours")], ["12%", "39", "34.3"]);
-      assert.deepEqual(rows(v, "sites").map((r) => r[0]), ["Harbour Road (fictional)", "Mill Lane (fictional)"]);
+      assert.deepEqual([stat(v, "utilisation"), stat(v, "rota-hours"), stat(v, "unfilled-hours")], ["12%", "38.5", "33.8"]);
+      assert.match(v.stats.find((x) => x.id === "rota-hours")?.sub ?? "", /0\.5 h leave and blocked time taken off/);
+      assert.deepEqual(rows(v, "sites"), [
+        ["Harbour Road (fictional)", "23.5", "3.5", "15%"],
+        ["Mill Lane (fictional)", "15", "1.3", "8%"],
+      ]);
+    });
+
+    it("utilisation never passes 100 %: a booking outside the rota counts as available time; leave and meetings come off", async () => {
+      // 07/09: Tom's rota 180 min − meeting 60 = 120, + 60 booked outside the rota = 180 available; booked 30 + 60.
+      // Priya is on leave all day (240 rota minutes taken off, no row).
+      const v = await page(owner(), "utilisation", { period: "custom", from: "2026-09-07", to: "2026-09-13" });
+      assert.deepEqual(rows(v, "practitioners"), [["Tom Hughes", "3", "1.5", "50%", "Mill Lane (fictional)"]]);
+      assert.deepEqual(rows(v, "sites"), [["Mill Lane (fictional)", "3", "1.5", "50%"]]);
+      assert.equal(stat(v, "utilisation"), "50%");
+      assert.match(v.stats.find((x) => x.id === "rota-hours")?.sub ?? "", /5 h leave and blocked time taken off/);
+      // Everything outside the opening hours: with the hours cut to 09:00–10:00 on Mondays at Mill Lane, Tom's
+      // rota keeps 60 min, the meeting takes it, the two visits (90 min) are the available time: 100 %, not more.
+      await suite.db.insertInto("pms_site_hours").values({ tenant_id: A, id: "hrs_test_mill_mon", site_id: id.s2, weekday: 1, opens_at: "09:00", closes_at: "10:00", created_by: null, created_at: at(DAY, "08:00") } as never).execute();
+      try {
+        const cut = await page(owner(), "utilisation", { period: "custom", from: "2026-09-07", to: "2026-09-13" });
+        assert.deepEqual(rows(cut, "practitioners"), [["Tom Hughes", "1.5", "1.5", "100%", "Mill Lane (fictional)"]]);
+        const util = await page(owner(), "utilisation");
+        for (const r of [...rows(util, "practitioners"), ...rows(util, "sites")]) assert.ok(Number(r[3].replace("%", "")) <= 100, r.join(" "));
+        const today = await utilisationTodayBySite(owner(), opts);
+        assert.ok(today.ok);
+        // Today at Mill Lane: rota 09:00–10:00 (hours) ∪ the 09:00–10:15 visits = 75 min available, 75 booked.
+        assert.deepEqual(today.value.map((x) => [x.siteName, x.bookedMinutes, x.availableMinutes]), [
+          ["Harbour Road (fictional)", 180, 210],
+          ["Mill Lane (fictional)", 75, 75],
+        ]);
+      } finally {
+        await suite.db.deleteFrom("pms_site_hours").where("tenant_id", "=", A).where("id", "=", "hrs_test_mill_mon").execute();
+      }
+    });
+
+    it("new and returning patients: first attended appointment ever = new (for its practitioner and site); weeks, practitioners, sites, own caseload, CSV", async () => {
+      const v = await page(owner(), "patients");
+      // Attended in the period: Megan 19/10 (her first ever – new), Megan 26/10 × 2, Liam 26/10 (seen 07/09 – returning).
+      assert.deepEqual([stat(v, "seen"), stat(v, "new"), stat(v, "returning")], ["2", "1", "1"]);
+      const weeks = rows(v, "weeks");
+      assert.equal(weeks.length, 6);
+      assert.deepEqual(weeks[4], ["w/c 19/10/2026", "1", "1", "0", "100%"]);
+      assert.deepEqual(weeks[5], ["w/c 26/10/2026", "3", "0", "3", "0%"]);
+      assert.deepEqual(v.chart?.bars.map((b) => b.value), [0, 0, 0, 0, 1, 0]);
+      assert.deepEqual(rows(v, "practitioners"), [
+        ["Priya Shah", "3", "1", "2", "33%"],
+        ["Tom Hughes", "1", "0", "1", "0%"],
+      ]);
+      assert.deepEqual(rows(v, "sites").map((r) => r.slice(0, 3)), [
+        ["Harbour Road (fictional)", "3", "1"],
+        ["Mill Lane (fictional)", "1", "0"],
+      ]);
+      // September: Liam and Sarah's first visits (07/09) are new then.
+      const sep = await page(owner(), "patients", { period: "custom", from: "2026-09-01", to: "2026-09-30" });
+      assert.deepEqual([stat(sep, "seen"), stat(sep, "new"), stat(sep, "returning")], ["2", "2", "0"]);
+      // A clinician sees their own practitioner only; a member limited to Harbour Road sees nothing of Mill Lane.
+      const own = await page(clinician(), "patients", { practitioner: id.p2 });
+      assert.deepEqual([stat(own, "seen"), stat(own, "new"), stat(own, "returning")], ["1", "1", "0"]);
+      assert.equal(own.tables.some((t) => t.id === "practitioners"), false);
+      const limited = await page(adminSiteA(), "patients", { site: id.s2 });
+      assert.deepEqual([stat(limited, "seen"), stat(limited, "new")], ["1", "1"]);
+      assert.equal(JSON.stringify(limited).includes("Mill Lane"), false);
+      assert.equal((await reportPageFor(reception(), "patients", {}, opts)).ok, false, "reception: no reports");
+      const csv = await reportCsvFor(owner(), "patients", {}, opts);
+      assert.ok(csv.ok);
+      assert.match(csv.value.csv, /^\uFEFF?group,name,patients_seen,attended,new_patients,returning_visits,new_share_percent/);
+      assert.match(csv.value.csv, /total,All,2,4,1,3,25/);
+      assert.match(csv.value.csv, /week,2026-10-19,,1,1,0,100/);
+      assert.doesNotMatch(csv.value.csv, /Megan|Liam|Hart/, "no patient names in the CSV");
     });
 
     it("caseload and authorisations from the record", async () => {
@@ -335,7 +419,7 @@ export function defineReportsServiceSuite(label: string, factory: () => Promise<
       assert.deepEqual(today.value, { appointments: 5, done: 2, dna: 1, sites: 1 });
       const util2 = await utilisationTodayBySite(admin, opts);
       assert.ok(util2.ok);
-      assert.deepEqual(util2.value.map((s) => [s.siteName, s.bookedMinutes, s.availableMinutes]), [["Harbour Road (fictional)", 180, 240]]);
+      assert.deepEqual(util2.value.map((s) => [s.siteName, s.bookedMinutes, s.availableMinutes]), [["Harbour Road (fictional)", 180, 210]]);
       const soon = await authorisationsEndingSoon(admin, 5, opts);
       assert.ok(soon.ok);
       assert.deepEqual(soon.value.rows.map((r) => r.code), ["SC-3"]);
@@ -357,7 +441,7 @@ export function defineReportsServiceSuite(label: string, factory: () => Promise<
       const none = await page(unlinkedClinician(), "attendance");
       assert.match(none.notice ?? "", /not linked to a practitioner/);
       assert.deepEqual(none.stats, []);
-      for (const r of ["attendance", "utilisation", "caseload", "revenue", "debtors", "authorisations"] as const) assert.equal((await reportPageFor(reception(), r, {}, opts)).ok, false, `reception: ${r}`);
+      for (const r of ["attendance", "utilisation", "patients", "caseload", "revenue", "debtors", "authorisations"] as const) assert.equal((await reportPageFor(reception(), r, {}, opts)).ok, false, `reception: ${r}`);
       assert.equal((await utilisationTodayBySite(reception(), opts)).ok, false);
     });
 
@@ -385,12 +469,33 @@ export function defineReportsServiceSuite(label: string, factory: () => Promise<
       const u = await utilisationTodayBySite(owner(), opts);
       assert.ok(u.ok);
       assert.deepEqual(u.value.map((s) => [s.siteName, s.bookedMinutes, s.availableMinutes]), [
-        ["Harbour Road (fictional)", 180, 240],
+        ["Harbour Road (fictional)", 180, 210],
         ["Mill Lane (fictional)", 75, 180],
       ]);
       const soon = await authorisationsEndingSoon(owner(), 1, opts);
       assert.ok(soon.ok);
       assert.deepEqual([soon.value.total, soon.value.rows.length, soon.value.rows[0].code], [2, 1, "BW-1"]);
+    });
+
+    it("audit trail by patient name: the patient search (search keys, the member's sites) finds the ids; the entries about them", async () => {
+      const found = await auditPatientFilter(owner(), "hart");
+      assert.ok(!("error" in found));
+      assert.deepEqual(found.ids, [id.megan]);
+      assert.match(found.matches?.patients[0].label ?? "", /^Megan Hart · patient no\. \d+$/);
+      const rows = await searchAudit(ctx, A, { relatedIds: found.ids, limit: 200 });
+      assert.ok(rows.entries.some((e) => e.action === "pms.patient.create" && e.targetId === id.megan), "the record itself");
+      assert.ok(rows.entries.some((e) => e.action === "pms.case.create"), "her cases (detail names her id)");
+      assert.equal(JSON.stringify(rows.entries).includes("Hart"), false, "audit rows hold no names");
+      // A member limited to Harbour Road cannot find Mill Lane's patients (Sarah Quinn) by name.
+      const limited = await auditPatientFilter(adminSiteA(), "Quinn");
+      assert.ok(!("error" in limited));
+      assert.deepEqual(limited.ids, []);
+      const ownerQuinn = await auditPatientFilter(owner(), "Quinn");
+      assert.ok(!("error" in ownerQuinn) && ownerQuinn.ids?.[0] === id.sarah);
+      // No search text: no filter; without "View patients": refused.
+      assert.deepEqual(await auditPatientFilter(owner(), null), { ids: null, matches: null });
+      const noPatients = await auditPatientFilter(adminSiteA({ "patients.view": false }), "hart");
+      assert.ok("error" in noPatients);
     });
 
     it("tenant-scope guard: every clinic-system statement named tenant_id", () => {

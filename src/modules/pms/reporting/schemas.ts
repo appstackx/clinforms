@@ -157,6 +157,11 @@ export interface AuditSearchParams {
   userId: string | null;
   targetType: string | null;
   targetId: string | null;
+  /**
+   * A patient's name (or number, date of birth…) as typed: found with the patient search (the member's sites) and
+   * the entries about those patients shown. Never stored; audit rows themselves hold ids only.
+   */
+  patient: string | null;
   /** Older than this entry (paging). */
   before: string | null;
   /** Newer than this entry (paging back). */
@@ -168,6 +173,14 @@ const AUDIT_AREA = /^[a-z0-9][a-z0-9_.]{0,47}$/;
 const TARGET_TYPE = /^[a-z][a-z0-9_]{0,63}$/;
 const TARGET_ID = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,159}$/;
 const ULID = /^[0-9A-HJKMNP-TV-Z]{26}$/;
+
+/** Patient search text: 2–80 characters, no control characters, spaces collapsed. */
+function patientText(value: string | null | undefined): string | null {
+  if (!value) return null;
+  // eslint-disable-next-line no-control-regex
+  const text = value.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80);
+  return text.length >= 2 ? text : null;
+}
 
 export function parseAuditSearch(source: QuerySource): AuditSearchParams {
   const pick = (key: string, re: RegExp) => {
@@ -184,6 +197,7 @@ export function parseAuditSearch(source: QuerySource): AuditSearchParams {
     userId: pick("user", ID),
     targetType: pick("type", TARGET_TYPE),
     targetId: pick("record", TARGET_ID),
+    patient: patientText(queryValue(source, "patient")),
     before: pick("before", ULID),
     after: pick("after", ULID),
   };

@@ -11,7 +11,7 @@ import { listAudit } from "../../src/server/repos/audit";
 import { listDiary } from "../../src/server/repos/pms/diary/appointments";
 import { listAvailability } from "../../src/server/repos/pms/diary/availability";
 import { listWaitingList } from "../../src/server/repos/pms/diary/waiting-list";
-import { londonRange } from "../../src/modules/pms/diary/time";
+import { addDays, londonRange } from "../../src/modules/pms/diary/time";
 import { findClashes } from "../../src/modules/pms/diary/rules";
 import { DEMO_CLINIC } from "./demo-data";
 import { seedDemoClinic } from "./seed-lib";
@@ -62,17 +62,41 @@ for (const [label, factory] of [
       for (const i of occupying) assert.deepEqual(findClashes({ ...i, patientId: i.kind === "appointment" ? i.patientId : null }, occupying), [], i.id);
       assert.ok((await listAvailability(ctx, tid, { today: "2026-11-09" })).length >= 15);
       assert.equal((await listWaitingList(ctx, tid)).length, 4);
-      assert.ok((await listAudit(ctx, tid, { action: "pms.appointment.bulk_create" })).length <= 12, "one audit row per batch of 40");
+      const batches = Math.ceil((summary.appointments + summary.blocks) / 40) + Math.ceil((summary.historyAppointments + summary.historyBlocks) / 40);
+      assert.ok((await listAudit(ctx, tid, { action: "pms.appointment.bulk_create" })).length <= batches, "one audit row per batch of 40");
+    });
+
+    it("history: six past weeks plus two first-visit weeks, rota time from the start, a few new patients a week, leave every week, all in the past", async () => {
+      const ctx = { db: t.db, cipher, now: () => NOW };
+      const tidRows = (from: string, to: string) =>
+        t.db.selectFrom("pms_appointments").select(["patient_id", "status", "kind", "starts_on", "block_kind", "import_ref"]).where("tenant_id", "=", tid).where("starts_on", ">=", from).where("starts_on", "<=", to).execute();
+      const hist = await tidRows("2026-09-14", "2026-11-08");
+      assert.ok(hist.length > 600, `history rows ${hist.length}`);
+      assert.ok(hist.every((r) => r.import_ref?.startsWith("demo-hist-2026-")), "history refs");
+      assert.ok(hist.filter((r) => r.kind === "appointment").every((r) => ["attended", "dna", "late_cancelled", "cancelled"].includes(r.status)), "every past visit recorded");
+      const weeks = new Set(hist.map((r) => r.import_ref?.slice(10, 20)));
+      assert.equal(weeks.size, 8, Array.from(weeks).join(","));
+      assert.ok(hist.filter((r) => r.block_kind === "leave").length >= 8, "a day of leave each week");
+      // New patients (first attended visit ever) per recent week: a few, never most of the week.
+      const first = new Map<string, string>();
+      for (const r of [...hist, ...(await tidRows("2026-11-09", "2026-11-13"))].filter((x) => x.kind === "appointment" && ["attended", "arrived"].includes(x.status) && x.patient_id).sort((a, b) => a.starts_on.localeCompare(b.starts_on)))
+        if (!first.has(r.patient_id as string)) first.set(r.patient_id as string, r.starts_on);
+      for (const monday of ["2026-09-28", "2026-10-05", "2026-10-12", "2026-10-19", "2026-10-26", "2026-11-02"]) {
+        const n = Array.from(first.values()).filter((d) => d >= monday && d <= addDays(monday, 6)).length;
+        assert.ok(n >= 2 && n <= 12, `${monday}: ${n} new patients`);
+      }
+      const rota = await listAvailability(ctx, tid, { today: "2026-09-14", includeEnded: true });
+      assert.ok(rota.every((r) => r.validFrom === "2026-09-14"), "rota from the start of the history");
     });
 
     it("a second run adds nothing; a later week is added once", async () => {
       const ctx = { db: t.db, cipher, now: () => NOW };
       const again = await seedDiary(ctx, tid, { now: NOW });
-      assert.deepEqual([again.weekExisted, again.appointments, again.rotaEntries, again.waitingList], [true, 0, 0, 0]);
+      assert.deepEqual([again.weekExisted, again.appointments, again.rotaEntries, again.waitingList, again.historyWeeks], [true, 0, 0, 0, 0]);
       const later = new Date("2026-11-18T08:00:00.000Z");
       const next = await seedDiary({ ...ctx, now: () => later }, tid, { now: later });
       assert.equal(next.week, "2026-11-16");
-      assert.ok(next.appointments > 100 && next.rotaEntries === 0);
+      assert.ok(next.appointments > 100 && next.rotaEntries === 0 && next.historyWeeks === 0, "no second history");
       const nextWeek = await listDiary(ctx, tid, { ...londonRange("2026-11-16", 5), includeCancelled: true });
       assert.ok(nextWeek.items.some((i) => i.status === "attended") && nextWeek.items.some((i) => i.status === "booked"));
     });

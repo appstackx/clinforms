@@ -39,7 +39,12 @@ export interface AppointmentFact {
   minutes: number;
 }
 
-/** A practitioner's working time (from the diary's rota) in one month at one site, in minutes. */
+/**
+ * A practitioner's available time in one month (or on one UK date) at one site, in minutes: the rota's windows
+ * (inside the sites' opening hours, less closures) joined with the time actually booked, less blocked time (leave,
+ * meetings…). A source that gives `bookedMinutes` has clipped the bookings itself (booked ≤ available: utilisation
+ * never passes 100 %); without it the reports fall back on the appointments' own minutes.
+ */
 export interface AvailabilityFact {
   practitionerId: string;
   siteId: string | null;
@@ -47,6 +52,23 @@ export interface AvailabilityFact {
   /** The UK date, when the source gives one. */
   date?: string;
   minutes: number;
+  /** Minutes booked inside `minutes` (appointments that held their slot, overlaps once, blocked time out). */
+  bookedMinutes?: number;
+  /** Rota minutes taken away by blocked time (leave, meetings…) – shown, not used in the rate. */
+  blockedMinutes?: number;
+}
+
+/**
+ * Attended appointments of one UK date, site and practitioner, split by whether the appointment was the patient's
+ * FIRST attended appointment ever (a new patient) or not (a returning patient's visit).
+ */
+export interface VisitFact {
+  month: string;
+  date: string;
+  siteId: string | null;
+  practitionerId: string | null;
+  firstVisit: boolean;
+  appointments: number;
 }
 
 /** Patients who attended in the period, split by whether their first attended appointment ever was in it. */

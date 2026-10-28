@@ -38,6 +38,11 @@ describe("demo seed: clinic → diary → records → billing → messages", () 
     assert.ok(comms.planned > 0 && comms.history > 0 && comms.replies === 3 && comms.letters === 2 && !comms.existed, JSON.stringify(comms));
     assert.ok(diary.appointments > 0 && !diary.weekExisted, JSON.stringify(diary));
     assert.ok(billing.invoices > 5 && billing.payments > 0 && billing.uninvoicedLeft > 0 && !billing.existed, JSON.stringify(billing));
+    assert.ok(diary.historyWeeks === 8 && diary.historyAppointments > 600, JSON.stringify(diary));
+    assert.ok(billing.historyInvoices > 300, "the past weeks are invoiced");
+    // "Attended, not invoiced" is this week's (the past weeks are all invoiced; nothing is left as a draft).
+    const left = await t.db.selectFrom("pms_invoices").select((eb) => eb.fn.countAll<number>().as("n")).where("tenant_id", "=", tid).where("status", "=", "draft").executeTakeFirst();
+    assert.equal(Number(left?.n ?? 0), 0, "no drafts left by the seed");
     assert.ok(records.notes > 0 && records.skipped === 0, JSON.stringify(records));
 
     const diaryAgain = await seedDiary(ctx, tid, { now: NOW });
