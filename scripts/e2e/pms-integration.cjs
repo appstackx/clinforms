@@ -133,8 +133,18 @@ async function axe(page, label, include) {
   assert(bad.length === 0, `${label}: ${JSON.stringify(bad)}`);
 }
 
-/** Resolve or acknowledge every open gap on the review screen (from tenant-full-flow.cjs). */
+/** Resolve or acknowledge every open gap on the review screen (from tenant-full-flow.cjs); a card that is still
+ *  moving (an answer just saved) is tried again on the next round instead of failing the step. */
 async function resolveEverything(app) {
+  try {
+    return await resolveOnce(app);
+  } catch (err) {
+    console.log(`   (resolve round retried: ${String(err && err.message).split("\n")[0].slice(0, 120)})`);
+    await app.waitForTimeout(1000);
+    return 0;
+  }
+}
+async function resolveOnce(app) {
   const keys = await app.$$eval("[id^='q-']", (els) => els.map((e) => e.id.slice(2)));
   let actions = 0;
   for (const key of keys) {
@@ -142,14 +152,14 @@ async function resolveEverything(app) {
     for (let guard = 0; guard < 6; guard++) {
       const quick = card.getByRole("button", { name: "Mark resolved" });
       if ((await quick.count()) && !(await card.locator("form").count())) {
-        await quick.first().click();
+        await quick.first().click({ timeout: 8000 });
         await app.waitForTimeout(250);
         actions++;
         continue;
       }
       const res = card.getByRole("button", { name: /^Resolve$/ });
       if (await res.count()) {
-        await res.first().click();
+        await res.first().click({ timeout: 8000 });
         const ta = card.locator("form textarea").last();
         if (!(await ta.inputValue())) await ta.fill("Confirmed with the treating clinician: nothing further to add here.");
         await card.locator("form").getByRole("button", { name: "Mark resolved" }).click();
@@ -159,7 +169,7 @@ async function resolveEverything(app) {
       }
       const ack = card.getByRole("button", { name: "Acknowledge with a reason" });
       if (await ack.count()) {
-        await ack.first().click();
+        await ack.first().click({ timeout: 8000 });
         await card.locator("form textarea").last().fill("Not recorded in the notes; returned without it after checking with the clinician.");
         await card.locator("form").getByRole("button", { name: /Acknowledge/ }).last().click();
         await app.waitForTimeout(250);
@@ -318,7 +328,7 @@ async function answerOpen(app) {
 
     await step("approve in ClinForms → filed back to the case by itself", async () => {
       const app = clinician;
-      for (let round = 0; round < 3; round++) {
+      for (let round = 0; round < 5; round++) {
         await answerOpen(app);
         await resolveEverything(app);
       }
