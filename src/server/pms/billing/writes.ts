@@ -10,6 +10,8 @@
  *   insurer remittance                          billing.pay (+ billing.refund for write-offs and moving to the patient)
  *   credit note, write-off, refund              billing.refund
  *   void an issued invoice                      billing.void
+ *   a payer account's excess / contribution     settings.setup (the clinic's set-up)
+ *   a case's own excess / contribution mode     patients.edit (with the case form)
  */
 import "server-only";
 import { BILLING_COPY } from "../../../modules/pms/billing/copy";
@@ -33,7 +35,10 @@ import { cancelDraftInvoice, createDraftInvoice, getInvoice, issueInvoice } from
 import { openInvoicesFor, recordPayment, removeAllocation } from "../../repos/pms/billing/payments";
 import { getSavedCard, removeSavedCard, saveCard } from "../../repos/pms/billing/saved-cards";
 import { getBillingSettings } from "../../repos/pms/billing/settings";
-import { getAuthorisation } from "../../repos/pms/cases";
+import { getAuthorisation, getCase } from "../../repos/pms/cases";
+import { getReferrer } from "../../repos/pms/referrers";
+import { setCaseContributionMode, setPayerContributionMode } from "../../repos/pms/billing/contribution-terms";
+import { isContributionMode, type ContributionMode } from "../../../modules/pms/billing/excess";
 import { BILLING_NOT_FOUND, attempt, fail, forbidden, invoiceInScope, invoiceSiteVisible, notFound, ok, patientInClinic, siteInScope, type BillingActor, type Result } from "./access";
 import { checkInvoicePaymentLinks, createInvoicePaymentLink } from "./payment-links";
 import { paymentLinkProvider, PaymentProviderError, type PaymentLinkProvider } from "./payments";
@@ -525,5 +530,39 @@ export async function remittanceFor(actor: BillingActor, input: RemittanceInput)
     }
     const allocated = allocations.reduce((a, x) => a + x.amountPence, 0);
     return ok({ paymentId: payment.id, allocatedPence: allocated, writtenOffPence: writtenOff, movedToPatientsPence: moved, unallocatedPence: d.amountPence - allocated });
+  });
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * How the patient's part is billed: per payer account, with an override per case (Khuram's decision 28/10/2026)
+ * ----------------------------------------------------------------------------------------------*/
+
+const PAYER_ACCOUNT_KINDS = new Set(["insurer", "mlc", "solicitor", "employer", "case_manager", "other"]);
+
+/** A payer account's mode: excess per case (default) or patient contribution per visit. */
+export async function setPayerContributionModeFor(actor: BillingActor, referrerId: string, mode: unknown): Promise<Result<{ mode: ContributionMode }>> {
+  if (!actor.can("billing.view") || !actor.can("settings.setup")) return forbidden();
+  if (!isPlausibleRecordId(referrerId)) return notFound();
+  if (!isContributionMode(mode)) return fail("invalid", "Choose how the patient's part is billed.");
+  return attempt("billing.payer_terms", async () => {
+    const r = await getReferrer(actor.repo(), actor.tenantId, referrerId);
+    if (!r || !PAYER_ACCOUNT_KINDS.has(r.kind)) return notFound();
+    await setPayerContributionMode(actor.repo(), actor.tenantId, r.id, mode, actor.actor);
+    return ok({ mode });
+  });
+}
+
+/** A case's own mode ("" / null = as its payer account). The case must be the patient's, in the member's scope. */
+export async function setCaseContributionModeFor(actor: BillingActor, patientId: string, caseId: string, mode: unknown): Promise<Result<{ mode: ContributionMode | null }>> {
+  if (!actor.can("patients.edit")) return forbidden();
+  const own = mode === "" || mode === null || mode === undefined ? null : mode;
+  if (own !== null && !isContributionMode(own)) return fail("invalid", "Choose how the patient's part is billed.");
+  return attempt("billing.case_terms", async () => {
+    const patient = await patientInClinic(actor, patientId);
+    if (!patient || !isPlausibleRecordId(caseId)) return notFound();
+    const c = await getCase(actor.repo(), actor.tenantId, caseId);
+    if (!c || c.patientId !== patient.id) return notFound();
+    await setCaseContributionMode(actor.repo(), actor.tenantId, c.id, own, actor.actor);
+    return ok({ mode: own });
   });
 }

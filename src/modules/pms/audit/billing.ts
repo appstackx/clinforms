@@ -26,6 +26,8 @@ export const BILLING_AUDIT_LABELS: Readonly<Record<string, string>> = {
   "pms.invoice.csv_export": "Invoice list exported (CSV)",
   "pms.saved_card.add": "Card saved (test mode)",
   "pms.saved_card.remove": "Saved card removed",
+  "pms.payer_terms.set": "How a payer account bills the patient's part changed",
+  "pms.case_terms.set": "How a case bills the patient's part changed",
 };
 
 /** Names of the record types its audit rows point at (target_type → label). */
@@ -35,4 +37,6 @@ export const BILLING_AUDIT_TARGETS: Readonly<Record<string, string>> = {
   pms_payment: "Payment",
   pms_billing_settings: "Billing settings",
   pms_patient: "Patient",
+  pms_referrer: "Payer account",
+  pms_case: "Case",
 };

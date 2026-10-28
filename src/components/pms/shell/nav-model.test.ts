@@ -15,7 +15,7 @@ const DESIGN_NAV: PmsNavEntry[] = [
   { id: "diary.rotas", module: "diary", label: "Rotas", href: `${B}/diary/rotas`, order: 12, permission: "diary.manage", group: "manage" },
   { id: "records.patients", module: "records", label: "Patients", href: `${B}/patients`, order: 20, permission: "patients.view", group: "main" },
   { id: "billing.billing", module: "billing", label: "Billing", href: `${B}/billing`, order: 30, permission: "billing.view", group: "main" },
-  { id: "comms.messages", module: "comms", label: "Messages", href: `${B}/messages`, order: 40, permission: "messages.view", group: "main" },
+  { id: "comms.messages", module: "comms", label: "Messages", href: `${B}/messages`, order: 40, permission: "messages.send", group: "main" },
   { id: "portal.booking", module: "portal", label: "Online booking", href: `${B}/online-booking`, order: 50, permission: "booking.manage", group: "main" },
   { id: "reporting.reports", module: "reporting", label: "Reports", href: `${B}/reports`, order: 60, permission: "reports.view", group: "main" },
   { id: "reporting.setup", module: "reporting", label: "Set-up", href: `${B}/setup`, order: 65, permission: "settings.manage", group: "manage" },
@@ -58,10 +58,10 @@ describe("shell navigation by permission", () => {
     assert.equal(icon("foundation.overview"), "overview");
   });
 
-  it("works on this branch's registry: Overview, Diary, Patients and Billing; Rotas (diary.rota) under Set-up for reception and owners", () => {
+  it("works on this branch's registry: Overview, Diary, Patients, Billing and Messages; Rotas (diary.rota) under Set-up for reception and owners; Message settings for owners", () => {
     assert.deepEqual(
       shellNav(PMS_NAV, as("staff")).main.map((i) => i.label),
-      ["Overview", "Diary", "Patients", "Billing"],
+      ["Overview", "Diary", "Patients", "Billing", "Messages"],
     );
     assert.deepEqual(
       shellNav(PMS_NAV, as("staff")).manage.map((i) => i.label),
@@ -69,13 +69,20 @@ describe("shell navigation by permission", () => {
     );
     assert.deepEqual(
       shellNav(PMS_NAV, as("owner")).manage.map((i) => i.label),
-      ["Staff access", "Roles and permissions", "Rotas", "Note templates"],
+      ["Staff access", "Roles and permissions", "Rotas", "Note templates", "Message settings"],
     );
     assert.deepEqual(
       shellNav(PMS_NAV, as("clinician")).main.map((i) => i.label),
-      ["Overview", "Diary", "Patients", "Unsigned notes", "Billing"],
+      ["Overview", "Diary", "Patients", "Unsigned notes", "Billing", "Messages"],
     );
     assert.deepEqual(shellNav(PMS_NAV, as("clinician")).manage, []);
+  });
+
+  it("a badge on an entry (Messages: replies waiting) only when the count is above 0", () => {
+    const withBadge = shellNav(PMS_NAV, as("staff"), { "comms.messages": { count: 3, label: "replies to answer" } }).main.find((i) => i.id === "comms.messages");
+    assert.deepEqual([withBadge?.badge, withBadge?.badgeLabel], [3, "replies to answer"]);
+    const none = shellNav(PMS_NAV, as("staff"), { "comms.messages": { count: 0, label: "replies to answer" } }).main.find((i) => i.id === "comms.messages");
+    assert.equal(none?.badge, undefined);
   });
 });
 

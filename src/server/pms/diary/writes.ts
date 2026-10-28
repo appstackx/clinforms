@@ -9,6 +9,10 @@
  * site it touches (an item at a site outside the member's scope is answered as "no longer exists"), then calls
  * the repositories – which scope everything to the clinic and write the change and its audit row in one batch.
  * Answers are DiaryActionResult with plain words; nothing of an internal error reaches the screen. Server only.
+ *
+ * Messages (M6): after a successful write that books, moves, changes or ends an appointment, the appointment's
+ * messages are planned again (./message-sync.ts → comms) – confirmation if the booking asked for one, reminders,
+ * moved / cancelled / late-cancellation notices, the missed-appointment follow-up.
  */
 import "server-only";
 import { z } from "zod";
@@ -71,6 +75,7 @@ import { listNotesForPatient } from "../../repos/pms/records/notes";
 import { patientDisplayName } from "./view";
 import { clashMessages, diaryAction, fromPmsSave, fromSaveResult, invalid, warningMessages } from "./actions-support";
 import { inScope, type DiaryCaller } from "./caller";
+import { sendWaitingListOfferMessage, syncDiaryMessages, type DiaryMessageEvent } from "./message-sync";
 
 /**
  * The permission each diary write needs (the action of the same name asks for exactly this one). Roles design round 2:
@@ -206,7 +211,7 @@ export async function bookAppointmentFor(caller: DiaryCaller, input: unknown): P
       allowPractitionerOverlap: anyway.on,
       waitingListId: flags.data.waitingListId,
     });
-    return bookAnswer(caller, r, parsed.data.repeat?.occurrences ?? 1);
+    return messagesAfter(caller, bookAnswer(caller, r, parsed.data.repeat?.occurrences ?? 1), "booked");
   });
 }
 
@@ -226,7 +231,7 @@ export async function rebookAppointmentFor(caller: DiaryCaller, input: unknown):
     if (!item || item.kind !== "appointment") return GONE;
     if (!inScope(caller, parsed.data.siteId ?? item.siteId)) return NOT_YOUR_SITE;
     const r = await rebookAppointment(caller.ctx, caller.tenantId, id, parsed.data, caller.actor, { allowPatientOverlap: anyway.on, allowPractitionerOverlap: anyway.on });
-    return bookAnswer(caller, r, 1);
+    return messagesAfter(caller, bookAnswer(caller, r, 1), "booked", r.ok ? r.items.map((i) => i.id) : []);
   });
 }
 
@@ -245,7 +250,7 @@ export async function moveAppointmentFor(caller: DiaryCaller, input: unknown): P
     if (!item) return GONE;
     if (!inScope(caller, parsed.data.siteId ?? item.siteId)) return NOT_YOUR_SITE;
     const r = await moveAppointment(caller.ctx, caller.tenantId, id, parsed.data, caller.actor, { allowPatientOverlap: anyway.on, allowPractitionerOverlap: anyway.on });
-    return withOverride(caller, fromSaveResult(r, "Moved."), r);
+    return messagesAfter(caller, withOverride(caller, fromSaveResult(r, "Moved."), r), "moved", [id], new Map([[id, item.startsAt]]));
   });
 }
 
@@ -262,8 +267,16 @@ export async function resizeAppointmentFor(caller: DiaryCaller, input: unknown):
   return diaryAction("resize", async () => {
     if (!(await scopedItem(caller, id))) return GONE;
     const r = await resizeAppointment(caller.ctx, caller.tenantId, id, parsed.data, caller.actor, { allowPractitionerOverlap: anyway.on });
-    return withOverride(caller, fromSaveResult(r, "Length changed."), r);
+    return messagesAfter(caller, withOverride(caller, fromSaveResult(r, "Length changed."), r), "changed", [id]);
   });
+}
+
+/** Plans the messages of the appointments a successful write touched (never fails the write). */
+async function messagesAfter(caller: DiaryCaller, answer: DiaryActionResult, event: DiaryMessageEvent, ids?: readonly string[], previousStarts?: ReadonlyMap<string, string>): Promise<DiaryActionResult> {
+  if (!answer.ok) return answer;
+  const touched = ids ?? [answer.itemIds ?? [], answer.itemId ? [answer.itemId] : []].flat();
+  if (touched.length) await syncDiaryMessages(caller.ctx, caller.tenantId, touched, caller.actor, event, previousStarts);
+  return answer;
 }
 
 /** A refused move or resize also says whether this member could book over the clash. */
@@ -284,7 +297,8 @@ export async function setAppointmentStatusFor(caller: DiaryCaller, input: unknow
     if (!item) return GONE;
     const r = await setAppointmentStatus(caller.ctx, caller.tenantId, id, parsed.data, caller.actor);
     const label = item.kind === "block" ? (parsed.data.status === "cancelled" ? "Blocked time removed." : "Blocked time restored.") : `${STATUS_LABELS[parsed.data.status]}.`;
-    return fromSaveResult(r, label);
+    if (item.kind !== "appointment") return fromSaveResult(r, label);
+    return messagesAfter(caller, fromSaveResult(r, label), parsed.data.status === "cancelled" || parsed.data.status === "late_cancelled" ? "cancelled" : "status", [id]);
   });
 }
 
@@ -310,7 +324,7 @@ export async function cancelAppointmentFor(caller: DiaryCaller, input: unknown):
       { expectedRev: d.expectedRev, status: late ? "late_cancelled" : "cancelled", cancelReason: d.reason, cancelNote: d.note, feeDue: late ? (d.feeDue ?? true) : undefined, feePence: late ? d.feePence : undefined },
       caller.actor,
     );
-    return fromSaveResult(r, late ? "Cancelled (late cancellation)." : "Cancelled.");
+    return messagesAfter(caller, fromSaveResult(r, late ? "Cancelled (late cancellation)." : "Cancelled."), "cancelled", [id]);
   });
 }
 
@@ -326,7 +340,7 @@ export async function updateAppointmentDetailsFor(caller: DiaryCaller, input: un
   if (!parsed.success) return invalid(parsed.error);
   return diaryAction("details", async () => {
     if (!(await scopedItem(caller, id))) return GONE;
-    return fromSaveResult(await updateAppointmentDetails(caller.ctx, caller.tenantId, id, rev.data, parsed.data, caller.actor), "Saved.");
+    return messagesAfter(caller, fromSaveResult(await updateAppointmentDetails(caller.ctx, caller.tenantId, id, rev.data, parsed.data, caller.actor), "Saved."), "changed", [id]);
   });
 }
 
@@ -345,7 +359,19 @@ export async function cancelSeriesFor(caller: DiaryCaller, input: unknown): Prom
   return diaryAction("cancel_series", async () => {
     const sites = await seriesSitesFrom(caller.ctx, caller.tenantId, d.seriesId, d.fromDate);
     if (sites.some((s) => !inScope(caller, s))) return GONE;
+    const seriesIds = (
+      await caller.ctx.db
+        .selectFrom("pms_appointments")
+        .select("id")
+        .where("tenant_id", "=", caller.tenantId)
+        .where("series_id", "=", d.seriesId)
+        .where("starts_on", ">=", d.fromDate)
+        .where("status", "=", "booked")
+        .limit(500)
+        .execute()
+    ).map((a) => a.id);
     const n = sites.length === 0 ? 0 : await cancelSeriesFrom(caller.ctx, caller.tenantId, d.seriesId, d.fromDate, caller.actor, d.reason ?? "patient");
+    if (n > 0) await syncDiaryMessages(caller.ctx, caller.tenantId, seriesIds, caller.actor, "series");
     return { ok: true, message: n === 0 ? "Nothing left to cancel." : `${n} ${n === 1 ? "appointment" : "appointments"} cancelled.`, warnings: [], itemId: d.seriesId };
   });
 }
@@ -480,7 +506,18 @@ export async function offerWaitingListSlotFor(caller: DiaryCaller, input: unknow
     if (!(await scopedEntry(caller, id))) return ENTRY_GONE;
     const r = await offerWaitingListSlot(caller.ctx, caller.tenantId, id, parsed.data, caller.actor);
     if (!r.ok) return fromPmsSave(r, "", id);
-    return { ok: true, message: "Slot offered. It is not held – book it once the patient says yes.", warnings: [], itemId: r.offer.id, rev: r.entryRev };
+    // "Offer slot by text": the offer goes to the patient by text (else email) through comms – outbox / test only.
+    const entry = await getWaitingListEntry(caller.ctx, caller.tenantId, id);
+    const sent = entry
+      ? await sendWaitingListOfferMessage(
+          caller.ctx,
+          caller.tenantId,
+          { id: r.offer.id, patientId: entry.patientId, startsAt: r.offer.startsAt, endsAt: r.offer.endsAt, siteId: r.offer.siteId, practitionerId: r.offer.practitionerId, serviceId: r.offer.serviceId },
+          caller.actor,
+        )
+      : null;
+    const how = sent?.ok ? (sent.status === "outbox" ? " The text is in the outbox." : " The patient has been sent the offer.") : " The patient could not be messaged – call them.";
+    return { ok: true, message: `Slot offered.${how} It is not held – book it once the patient says yes.`, warnings: [], itemId: r.offer.id, rev: r.entryRev };
   });
 }
 
@@ -548,7 +585,7 @@ export async function bookWaitingListOfferFor(caller: DiaryCaller, input: unknow
       caller.actor,
       { waitingListId: entry.id, offerId: offer.id, allowPatientOverlap: anyway.on, allowPractitionerOverlap: anyway.on },
     );
-    return bookAnswer(caller, r, 1);
+    return messagesAfter(caller, bookAnswer(caller, r, 1), "booked");
   });
 }
 
@@ -728,6 +765,7 @@ export async function startTreatmentFor(caller: DiaryCaller, input: unknown): Pr
       const r = await setAppointmentStatus(caller.ctx, caller.tenantId, item.id, { expectedRev: item.rev, status: "in_treatment" }, caller.actor);
       if (!r.ok) return fromSaveResult(r, "");
       rev = r.item.rev;
+      await syncDiaryMessages(caller.ctx, caller.tenantId, [item.id], caller.actor, "status");
     }
     return { ok: true, message: noteId ? "Treatment started – the note is open." : "Treatment started.", warnings: [], itemId: item.id, rev, ...(noteId ? { noteId } : {}) };
   });

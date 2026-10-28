@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { BILLING_PATH } from "@/components/pms/billing/format";
 import { PRINT_CSS, PrintStatementSheet } from "@/components/pms/billing/print-sheets";
 import { PrintToolbar } from "@/components/pms/billing/print-toolbar";
+import { EmailStatementButton } from "@/components/pms/comms/billing-buttons";
 import { addDaysIso } from "@/modules/pms/billing/status";
 import { ukToday } from "@/modules/pms/core/text";
 import { requireClinicActor } from "@/server/pms/actor";
@@ -33,6 +34,11 @@ export default async function PrintStatementPage({ searchParams }: { searchParam
     <div className="flex flex-col gap-4">
       <style>{PRINT_CSS}</style>
       <PrintToolbar backHref={`${BILLING_PATH}?tab=statements`} backLabel="Back to statements" />
+      {actor.can("messages.send") ? (
+        <div className="print-toolbar mx-auto flex w-full max-w-[794px] justify-end">
+          <EmailStatementButton who={patient ? { patientId: patient } : { payerReferrerId: account }} from={from} until={until} />
+        </div>
+      ) : null}
       <div className="print-root overflow-x-auto">
         <div className="mx-auto w-fit shadow-[0_8px_24px_rgba(15,23,42,0.12)]">
           <PrintStatementSheet clinic={r.value.clinic} statement={r.value.statement} printedBy={r.value.printedBy} printedAt={r.value.printedAt} demo={settings.isDemo} />

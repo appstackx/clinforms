@@ -10,6 +10,7 @@ import { CLINIC_BASE_PATH } from "@/modules/pms/core/modules";
 import { PMS_NAV } from "@/modules/pms/nav";
 import { currentBrand } from "@/server/brand";
 import { requireClinicActor } from "@/server/pms/actor";
+import { unansweredRepliesFor } from "@/server/pms/comms/views";
 import { resolveDiarySiteScope } from "@/server/pms/diary/caller";
 import { hasPackage } from "@/server/pms/entitlements";
 import { listSites } from "@/server/repos/pms/directory";
@@ -30,16 +31,18 @@ export const metadata: Metadata = {
  *
  * Sites: the clinic's active sites, limited to the member's site scope (today every site – the diary's
  * resolveDiarySiteScope, until the foundation's shared read exists: handover §12 open 2). The chosen site is a
- * preference cookie, checked here against that list.
+ * preference cookie, checked here against that list. Badges: Messages shows the replies waiting for an answer
+ * (comms, M6 – messages.send, in the member's site scope).
  */
 export default async function ClinicSystemLayout({ children }: { children: React.ReactNode }) {
   const actor = await requireClinicActor();
   const brand = currentBrand();
   const ctx = actor.repo();
-  const [reports, sites, scope] = await Promise.all([
+  const [reports, sites, scope, replies] = await Promise.all([
     brand.id === "clinforms" ? hasPackage(actor.tenantId, "reports") : Promise.resolve(false),
     listSites(ctx, actor.tenantId),
     resolveDiarySiteScope(actor),
+    unansweredRepliesFor(actor),
   ]);
   const mySites = scope ? sites.filter((s) => scope.has(s.id)) : sites;
   const siteValue = resolveSiteChoice(cookies().get(SITE_COOKIE)?.value, mySites.map((s) => s.id), ALL_SITES);
@@ -49,7 +52,7 @@ export default async function ClinicSystemLayout({ children }: { children: React
       homeHref={CLINIC_BASE_PATH}
       clinicName={actor.clinicName}
       user={{ name: actor.name, email: actor.email, roleLabel: clinicRoleLabel(actor.role, roleLabel(actor.role)), sitesSummary: sitesSummary(mySites.length, sites.length) }}
-      nav={shellNav(PMS_NAV, actor.can)}
+      nav={shellNav(PMS_NAV, actor.can, { "comms.messages": { count: replies, label: "replies to answer" } })}
       sites={{ options: mySites.map((s, i) => ({ id: s.id, name: s.name, note: i === 0 ? "Default" : undefined })), value: siteValue, total: sites.length }}
       searchHref={actor.can("patients.view") ? `${CLINIC_BASE_PATH}/patients` : null}
       clinForms={reports ? { href: "/app", label: "ClinForms" } : null}
