@@ -7,5 +7,5 @@ export const RECORDS_NAV: readonly PmsNavEntry[] = [
   // Design round 2: "Unsigned notes" under Patients for whoever writes notes (clinicians; owners and administrators
   // also see every clinician's). The design's count badge needs the shell (foundation) to take a count – not added.
   { id: "records.unsigned", module: "records", label: "Unsigned notes", href: `${CLINIC_BASE_PATH}/patients/unsigned-notes`, order: 21, permission: "clinical.view", group: "main" },
-  { id: "records.note-templates", module: "records", label: "Note templates", href: `${CLINIC_BASE_PATH}/patients/note-templates`, order: 25, permission: "settings.setup", group: "manage" },
+  // Note templates are reached from Set-up → Record templates (reporting nav, /app/clinic/setup/records).
 ];
