@@ -642,7 +642,7 @@ test:pms 480/480 each).
 | `51677c3` | Diary → messages hook (`src/server/pms/diary/message-sync.ts`, called from `diary/writes.ts`) |
 | `0bc49da` | Seed `scripts/pms/seed-comms.ts` (from `seed-demo.ts` after billing) |
 | `b3c5d10` `e48d1a9` `5bfc0cb` `9640c37` `ac12d6b` | View models + letter follow-ups; shell nav **badge** (foundation shell, own commit); screens; billing buttons; e2e, `comms.md`, designs, contract line |
-| `f9…` merge, `8213dd4` | `feat/clinic-system` `f732a11` (billing follow-up) merged in (no conflicts); shell e2e nav list |
+| `1c72f40` merge, `8213dd4` | `feat/clinic-system` `f732a11` (billing follow-up) merged in (no conflicts); shell e2e nav list |
 
 ### 15.1 Review findings on the October draft (fixed)
 1. **Audit after the write** (settings, template / rule / letter updates, finalise / sent / void, reply dealt with,
