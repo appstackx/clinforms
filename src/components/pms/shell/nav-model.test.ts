@@ -58,11 +58,24 @@ describe("shell navigation by permission", () => {
     assert.equal(icon("foundation.overview"), "overview");
   });
 
-  it("works on this branch's registry: Overview and Patients", () => {
+  it("works on this branch's registry: Overview, Diary and Patients; Rotas (diary.rota) under Set-up for reception and owners", () => {
     assert.deepEqual(
       shellNav(PMS_NAV, as("staff")).main.map((i) => i.label),
-      ["Overview", "Patients"],
+      ["Overview", "Diary", "Patients"],
     );
+    assert.deepEqual(
+      shellNav(PMS_NAV, as("staff")).manage.map((i) => i.label),
+      ["Rotas"],
+    );
+    assert.deepEqual(
+      shellNav(PMS_NAV, as("owner")).manage.map((i) => i.label),
+      ["Staff access", "Roles and permissions", "Rotas", "Note templates"],
+    );
+    assert.deepEqual(
+      shellNav(PMS_NAV, as("clinician")).main.map((i) => i.label),
+      ["Overview", "Diary", "Patients", "Unsigned notes"],
+    );
+    assert.deepEqual(shellNav(PMS_NAV, as("clinician")).manage, []);
   });
 });
 

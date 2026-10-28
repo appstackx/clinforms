@@ -64,7 +64,7 @@ record tabs, audit labels, schema). Everything else is read-only; ask the orches
 | Module | Builds | SQLite / D1 migrations | Postgres twins | Nav `order` band |
 |---|---|---|---|---|
 | **foundation** | Packages (entitlements), shell, brand, shared patient record, directory, demo seed | `0100`–`0109` | `20261024000100`–`…0109` | 0–9 |
-| **diary** | Multi-site diary: availability/rotas, appointments, rooms, statuses (attended, did not attend, late cancellation), recurring bookings, no double booking, day/week views by practitioner and room | `0110`–`0119` | `…0110`–`…0119` | 10–19 |
+| **diary** | Multi-site diary: availability/rotas, appointments, rooms, statuses (booked, arrived, in treatment, attended – "Completed" on screen –, did not attend, late cancellation), recurring bookings, no double booking of rooms (a practitioner only with `diary.override`, logged), day/week views by practitioner and room | `0110`–`0119` | `…0110`–`…0119` | 10–19 |
 | **records** | Patient list and record screens, cases and authorisations screens, clinical notes (templates, sign and lock, amendments, attachments, outcome measures) | `0120`–`0129` | `…0120`–`…0129` | 20–29 |
 | **billing** | Invoices (self-pay, insurer/MLC on account, excess split), credit notes, payments (manual + provider interface), insurer/MLC accounts and statements, debtors | `0130`–`0139` | `…0130`–`…0139` | 30–39 |
 | **comms** | Reminders (SMS/email, outbox by default), message log, templates, letters with merge fields | `0140`–`0149` | `…0140`–`…0149` | 40–49 |
@@ -204,6 +204,11 @@ invl crn pay acct stmt`; comms `msg mtpl ltr`; portal `bkr ptl ifm ifr`; reporti
   `booking.manage`, `reports.view`, `directory.edit`, `settings.manage`, `import.run`) still work as aliases
   (`LEGACY_ALIASES`); new code uses the grid's ids. Site scope: `actor.siteIds` (works at ∪ can see; null = every
   site) from `src/server/pms/access.ts` – apply it to every list and record read.
+- **Appointment statuses for other modules (28/10/2026, Khuram's decision B):** "in treatment" is stored as status
+  `arrived` with `treatment_started_at` set (migration 0117), so an adapter reading `pms_appointments.status` sees
+  `arrived`. Billing's visit source lists only `CHARGEABLE_STATUSES` (attended, dna, late_cancelled –
+  `src/modules/pms/diary/rules.ts`): in treatment is NOT billable until attended. Reports count in treatment as
+  arrived (`reportingStatus`). On screen `attended` is "Completed" everywhere.
 - **Navigation:** add entries to `src/modules/pms/nav/<m>.ts` (`{ id: "<m>.<x>", module, label, href under
   /app/clinic, order in your band, permission, group: "main" | "manage" }`). "manage" entries show in the shell's
   "Set-up" row. **Record tabs:** `src/modules/pms/record-tabs/<m>.ts` (`segment` = your folder under

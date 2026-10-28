@@ -91,6 +91,10 @@ export interface Practitioner {
   displayName: string;
   profession: Profession;
   registrationNumber: string | null;
+  /** The register the number is on ("HCPC"); null on older rows (read as HCPC). */
+  registrationBody: string | null;
+  /** May sign clinical notes with this registration number (Member access → Signing details). */
+  maySign: boolean;
   email: string | null;
   phone: string | null;
   colour: string | null;

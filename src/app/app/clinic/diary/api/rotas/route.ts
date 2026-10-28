@@ -1,6 +1,6 @@
 /**
  * GET /app/clinic/diary/api/rotas?site=…&practitioner=…&ended=1 – rota entries (RotaRow[]) at the member's sites.
- * Changing them needs diary.manage (rotas/actions.ts). JSON, never cached.
+ * Changing them needs diary.rota (rotas/actions.ts). JSON, never cached.
  */
 import { readResponse } from "@/server/pms/diary/actions-support";
 import { diaryCallerOf } from "@/server/pms/diary/caller";

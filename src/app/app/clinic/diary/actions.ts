@@ -20,6 +20,15 @@ import {
   type MoveAppointmentRequest,
   type RebookAppointmentRequest,
   type ResizeAppointmentRequest,
+  type OpenBookingCaseRequest,
+  type RegisterBookingPatientRequest,
+  type SaveWeeklyRotaRequest,
+  type SetDaySheetDobRequest,
+  openBookingCaseFor,
+  registerBookingPatientFor,
+  saveWeeklyRotaFor,
+  setDaySheetDobFor,
+  startTreatmentFor,
   bookAppointmentFor,
   cancelAppointmentFor,
   cancelSeriesFor,
@@ -88,4 +97,34 @@ export async function createBlockAction(input: CreateBlockRequest): Promise<Diar
   const actor = await clinicActionActor({ permission: "diary.book" });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
   return done(await createBlockFor(await diaryCallerOf(actor), input));
+}
+
+export async function registerBookingPatientAction(input: RegisterBookingPatientRequest): Promise<DiaryActionResult> {
+  const actor = await clinicActionActor({ permission: "patients.edit" });
+  if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
+  return done(await registerBookingPatientFor(await diaryCallerOf(actor), input));
+}
+
+export async function openBookingCaseAction(input: OpenBookingCaseRequest): Promise<DiaryActionResult> {
+  const actor = await clinicActionActor({ permission: "patients.edit" });
+  if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
+  return done(await openBookingCaseFor(await diaryCallerOf(actor), input));
+}
+
+export async function startTreatmentAction(input: { id: string }): Promise<DiaryActionResult> {
+  const actor = await clinicActionActor({ permission: "diary.book" });
+  if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
+  return done(await startTreatmentFor(await diaryCallerOf(actor), input));
+}
+
+export async function saveWeeklyRotaAction(input: SaveWeeklyRotaRequest): Promise<DiaryActionResult> {
+  const actor = await clinicActionActor({ permission: "diary.rota" });
+  if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
+  return done(await saveWeeklyRotaFor(await diaryCallerOf(actor), input));
+}
+
+export async function setDaySheetDobAction(input: SetDaySheetDobRequest): Promise<DiaryActionResult> {
+  const actor = await clinicActionActor({ permission: "settings.setup" });
+  if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
+  return done(await setDaySheetDobFor(await diaryCallerOf(actor), input));
 }

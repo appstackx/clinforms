@@ -16,7 +16,7 @@ import { authErrorMessage } from "@/server/auth/errors";
 import { requestHeaders } from "@/server/auth/session";
 import { getDb } from "@/server/db";
 import { authBool } from "@/server/db/schema";
-import { listClinicMembers, roleChangeAllowed, saveMemberAccessFor, setMemberActiveFor } from "@/server/pms/access-screens";
+import { listClinicMembers, roleChangeAllowed, saveMemberAccessFor, saveSigningDetailsFor, setMemberActiveFor, type SigningView } from "@/server/pms/access-screens";
 import { actorErrorMessage, clinicActionActor } from "@/server/pms/actor";
 import { upsertMemberProfile } from "@/server/repos/member-profile";
 
@@ -69,4 +69,21 @@ async function clearCanSign(organizationId: string, userId: string): Promise<voi
   const row = await db.selectFrom("member_profile").selectAll().where("organization_id", "=", organizationId).where("user_id", "=", userId).executeTakeFirst();
   if (!row || !authBool(row.can_sign)) return;
   await upsertMemberProfile({ db }, organizationId, userId, { jobTitle: row.job_title, hcpcNumber: row.hcpc_number, canSign: false });
+}
+
+/**
+ * Member access → "Signing details": register, registration number and "may sign" on the member's practitioner
+ * record (created when they have none). Owners and administrators (settings.members); validated and audited in the
+ * server layer (HCPC: PH + digits; PH-DEMO-NN only in a demo clinic).
+ */
+export async function saveSigningDetailsAction(input: { userId: string; registrationBody: string; registrationNumber: string; maySign: boolean }): Promise<
+  { ok: true; message: string; signing: SigningView } | { ok: false; error: string; fieldErrors?: Record<string, string> }
+> {
+  const actor = await clinicActionActor({ permission: "settings.members" });
+  if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
+  if (!input || typeof input.userId !== "string") return { ok: false, error: "Some details need checking." };
+  const r = await saveSigningDetailsFor(actor, input.userId, { registrationBody: String(input.registrationBody ?? ""), registrationNumber: String(input.registrationNumber ?? ""), maySign: input.maySign === true });
+  if (!r.ok) return { ok: false, error: r.error, fieldErrors: r.fieldErrors };
+  revalidatePath("/app/clinic", "layout");
+  return { ok: true, message: "Signing details saved.", signing: r.value };
 }

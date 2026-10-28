@@ -50,7 +50,8 @@ const STYLES: Readonly<Record<DiaryBlockStatus, DiaryBlockStyle>> = {
   arrived: { tag: "Arrived", label: "Arrived", icon: "user-check", classes: tone("amber"), hatched: false, strikeName: false },
   in_treatment: { tag: "In treatment", label: "In treatment", icon: "activity", classes: tone("teal"), hatched: false, strikeName: false },
   completed: { tag: "Completed", label: "Completed", icon: "check-circle", classes: tone("green"), hatched: false, strikeName: false },
-  attended: { tag: "Attended", label: "Attended", icon: "check-circle", classes: tone("green"), hatched: false, strikeName: false },
+  // Stored "attended" reads "Completed" on screen (Khuram's decision B, 28/10/2026).
+  attended: { tag: "Completed", label: "Completed", icon: "check-circle", classes: tone("green"), hatched: false, strikeName: false },
   dna: { tag: "DNA", label: "Did not attend", icon: "user-x", classes: tone("red"), hatched: false, strikeName: false },
   late_cancelled: {
     tag: "Late cancel",

@@ -11,17 +11,24 @@ import {
   findClashes,
   freeSlots,
   gridHours,
+  isChargeableStatus,
   isLateCancellation,
+  isOverridableClash,
   layoutColumn,
   localSpan,
   occupiesDiary,
+  practitionerOverbookings,
   recurringDates,
+  reportingStatus,
   ruleAppliesOn,
   rulesOverlap,
+  statusOfRow,
+  storedStatus,
   timeOfDay,
   windowsOn,
   withinWorkingHours,
   APPOINTMENT_STATUSES,
+  OCCUPYING_STATUSES,
   type DiaryItemLike,
   type RotaRule,
 } from "./rules";
@@ -112,7 +119,56 @@ describe("statuses", () => {
   });
 
   it("occupying statuses keep the slot; cancellations free it", () => {
-    assert.deepEqual(APPOINTMENT_STATUSES.filter(occupiesDiary), ["booked", "arrived", "attended", "dna"]);
+    assert.deepEqual(APPOINTMENT_STATUSES.filter(occupiesDiary), ["booked", "arrived", "in_treatment", "attended", "dna"]);
+    // The database's list: in treatment is stored as arrived (+ treatment_started_at).
+    assert.deepEqual([...OCCUPYING_STATUSES], ["booked", "arrived", "attended", "dna"]);
+  });
+
+  it("in treatment (Khuram's decision B): booked → arrived → in treatment → attended, each step undone", () => {
+    assert.deepEqual([...APPOINTMENT_STATUSES], ["booked", "arrived", "in_treatment", "attended", "dna", "late_cancelled", "cancelled"]);
+    assert.equal(canChangeStatus("appointment", "arrived", "in_treatment"), true, "Start treatment");
+    assert.equal(canChangeStatus("appointment", "in_treatment", "arrived"), true, "undo goes back to arrived");
+    assert.equal(canChangeStatus("appointment", "in_treatment", "attended"), true, "completed");
+    assert.equal(canChangeStatus("appointment", "attended", "in_treatment"), true, "undo completed");
+    assert.equal(canChangeStatus("appointment", "booked", "in_treatment"), false, "arrive first");
+    assert.equal(canChangeStatus("appointment", "in_treatment", "dna"), false);
+    assert.equal(canChangeStatus("appointment", "in_treatment", "cancelled"), false);
+    assert.equal(canChangeStatus("block", "booked", "in_treatment"), false);
+    assert.equal(canMove("in_treatment"), false, "treatment under way");
+    assert.equal(storedStatus("in_treatment"), "arrived");
+    assert.equal(storedStatus("attended"), "attended");
+    assert.equal(statusOfRow("arrived", "2026-10-27T13:30:00.000Z"), "in_treatment");
+    assert.equal(statusOfRow("arrived", null), "arrived");
+    assert.equal(statusOfRow("attended", "2026-10-27T13:30:00.000Z"), "attended", "completed keeps when treatment started");
+    // Billing: not billable until attended; reports count in treatment as arrived.
+    assert.equal(isChargeableStatus("in_treatment"), false);
+    assert.equal(isChargeableStatus("arrived"), false);
+    assert.equal(isChargeableStatus("attended"), true);
+    assert.equal(isChargeableStatus("dna"), true);
+    assert.equal(isChargeableStatus("late_cancelled"), true);
+    assert.equal(reportingStatus("in_treatment"), "arrived");
+    // On screen "attended" is "Completed" everywhere; in treatment has its own words.
+    assert.equal(STATUS_LABELS.attended, "Completed");
+    assert.equal(STATUS_TAGS.attended, "Completed");
+    assert.equal(STATUS_LABELS.in_treatment, "In treatment");
+    assert.equal(STATUS_LABELS.dna, "Did not attend");
+  });
+
+  it("double-booking (Khuram's decision A): only a practitioner's other appointment, or the patient's own, may be overridden", () => {
+    const base = { withId: "x", startsAt: "a", endsAt: "b" };
+    assert.equal(isOverridableClash({ ...base, resource: "practitioner", withKind: "appointment" }), true);
+    assert.equal(isOverridableClash({ ...base, resource: "practitioner", withKind: "block" }), false, "never over leave or a meeting");
+    assert.equal(isOverridableClash({ ...base, resource: "room", withKind: "appointment" }), false, "rooms stay strict");
+    assert.equal(isOverridableClash({ ...base, resource: "room", withKind: "block" }), false);
+    assert.equal(isOverridableClash({ ...base, resource: "patient", withKind: "appointment" }), true);
+    assert.deepEqual(
+      practitionerOverbookings([
+        { ...base, withId: "p1", resource: "practitioner", withKind: "appointment" },
+        { ...base, withId: "r1", resource: "room", withKind: "appointment" },
+        { ...base, withId: "b1", resource: "practitioner", withKind: "block" },
+      ]).map((c) => c.withId),
+      ["p1"],
+    );
   });
 
   it("allowed changes", () => {

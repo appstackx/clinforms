@@ -22,6 +22,8 @@ export interface DiaryCaller {
   ctx: RepoContext;
   /** The sites the member may see and book at; null = every site of the clinic. */
   siteIds: ReadonlySet<string> | null;
+  /** The member's name and email (a clinical note's author, when the diary starts one). Absent in some tests. */
+  member?: { name: string; email: string };
 }
 
 /** The member's site limit (null = every site). See the note at the top of this file. */
@@ -30,7 +32,7 @@ export async function resolveDiarySiteScope(actor: Pick<ClinicActor, "siteIds">)
 }
 
 export async function diaryCallerOf(actor: ClinicActor): Promise<DiaryCaller> {
-  return { tenantId: actor.tenantId, actor: actor.actor, can: actor.can, ctx: actor.repo(), siteIds: await resolveDiarySiteScope(actor) };
+  return { tenantId: actor.tenantId, actor: actor.actor, can: actor.can, ctx: actor.repo(), siteIds: await resolveDiarySiteScope(actor), member: { name: actor.name, email: actor.email } };
 }
 
 /** Whether the caller may see / book at a site. */

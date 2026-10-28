@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<title>Diary – mobile</title>
+<script src="./vendor/react.js"></script>
+<script src="./vendor/react-dom.js"></script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+*{box-sizing:border-box}
+a{color:#0B7970}
+:focus-visible{outline:2px solid #0E958A;outline-offset:2px}
+@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+</style>
+</helmet>
+<div style="width: 375px; height: 812px; background: #F8FAFC; color: #0F172A; font-family: Inter, system-ui, -apple-system, sans-serif; font-size: 14px; line-height: 20px; display: flex; flex-direction: column; position: relative; overflow: hidden">
+<header style="background: #FFFFFF; border-bottom: 1px solid #E2E8F0; padding: 8px 8px 8px 4px; display: flex; align-items: center; gap: 4px">
+<button type="button" aria-label="Open menu" style="width: 44px; height: 44px; border: 0; background: transparent; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; color: #0F172A"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"></path></svg></button>
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 18px">
+<h1 style="margin: 0; font-size: 17px; font-weight: 600">My diary</h1>
+<button type="button" style="border: 0; background: transparent; padding: 0; font: inherit; font-size: 12px; color: #475569; display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; min-height: 24px">Harbour Road<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg></button>
+</div>
+<button type="button" aria-label="Search patients" style="width: 44px; height: 44px; border: 0; background: transparent; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; color: #0F172A"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 3a8 8 0 1 0 0 16 8 8 0 0 0 0-16zM21 21l-4.3-4.3"></path></svg></button>
+<span aria-hidden="true" style="width: 32px; height: 32px; border-radius: 999px; background: #CCFBF1; color: #0B5F58; display: inline-flex; align-items: center; justify-content: center; font-weight: 600; font-size: 12px; margin-right: 4px">PS</span>
+</header>
+
+<nav aria-label="Choose day" style="background: #FFFFFF; border-bottom: 1px solid #E2E8F0; padding: 8px 12px; display: flex; gap: 6px">
+<sc-for list="{{days}}" as="d" hint-placeholder-count="6">
+<button type="button" aria-pressed="{{d.sel}}" style="flex: 1; height: 52px; border-radius: 10px; border: 1px solid {{d.bd}}; background: {{d.bg}}; color: {{d.fg}}; font: inherit; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 16px; padding: 0">
+<span style="font-size: 11px; font-weight: 500">{{d.dow}}</span><span style="font-size: 15px; font-weight: 600">{{d.n}}</span>
+</button>
+</sc-for>
+</nav>
+
+<div style="flex: 1; overflow-y: auto; padding: 12px 16px 16px; display: flex; flex-direction: column; gap: 8px">
+<div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: #475569">
+<span>Tue 27/10/2026 · 9 appointments</span>
+<span style="display: inline-flex; align-items: center; gap: 4px; color: #864E0E; font-weight: 500"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 6v6l4 2"></path></svg>3 unsigned notes</span>
+</div>
+<sc-for list="{{items}}" as="a" hint-placeholder-count="8">
+<sc-if value="{{a.isNow}}" hint-placeholder-val="{{false}}">
+<div aria-hidden="true" style="display: flex; align-items: center; gap: 8px; color: #0B7970; font-size: 11px; font-weight: 600"><span>Now 10:40</span><span style="flex: 1; border-top: 2px solid #0E958A"></span></div>
+</sc-if>
+<sc-if value="{{a.isBlock}}" hint-placeholder-val="{{false}}">
+<div style="display: flex; gap: 12px; align-items: center; padding: 8px 12px; border-radius: 12px; border: 1px dashed #CBD5E1; color: #475569; font-size: 13px; background: repeating-linear-gradient(135deg,#F8FAFC 0 6px,#F1F5F9 6px 12px)"><span style="font-variant-numeric: tabular-nums; font-weight: 600; width: 44px">{{a.time}}</span>{{a.name}}</div>
+</sc-if>
+<sc-if value="{{a.isAppt}}" hint-placeholder-val="{{true}}">
+<button type="button" onClick="{{a.open}}" style="display: flex; gap: 12px; align-items: stretch; padding: 10px 12px; min-height: 64px; border-radius: 12px; border: 1px solid {{a.bd}}; background: {{a.bg}}; color: #0F172A; font: inherit; text-align: left; width: 100%">
+<span style="display: flex; flex-direction: column; width: 44px; flex: none; font-variant-numeric: tabular-nums"><strong style="font-size: 14px">{{a.time}}</strong><span style="font-size: 12px; color: #475569">{{a.dur}}</span></span>
+<span style="display: flex; flex-direction: column; flex: 1; min-width: 0; gap: 2px">
+<span style="font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-decoration: {{a.deco}}">{{a.name}}</span>
+<span style="font-size: 12px; color: #475569; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{a.service}}</span>
+</span>
+<span style="align-self: center; display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px 0 6px; border-radius: 999px; font-size: 12px; font-weight: 500; white-space: nowrap; background: {{a.pillBg}}; color: {{a.fg}}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{a.icon}}"></path></svg>{{a.label}}</span>
+</button>
+</sc-if>
+</sc-for>
+</div>
+
+<nav aria-label="Main" style="background: #FFFFFF; border-top: 1px solid #E2E8F0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); padding: 4px 4px 8px">
+<a href="DiaryMobile.dc.html" aria-current="page" style="min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; text-decoration: none; color: #0B7970; font-size: 11px; font-weight: 600"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"></path></svg>Diary</a>
+<a href="PatientMobile.dc.html" style="min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; text-decoration: none; color: #475569; font-size: 11px; font-weight: 500"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"></path></svg>Patients</a>
+<a href="NoteEditor.dc.html" style="min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; text-decoration: none; color: #475569; font-size: 11px; font-weight: 500; position: relative"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"></path></svg>Notes (3)</a>
+<a href="Messages.dc.html" style="min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; text-decoration: none; color: #475569; font-size: 11px; font-weight: 500"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>Messages</a>
+</nav>
+
+<sc-if value="{{sheetOpen}}" hint-placeholder-val="{{false}}">
+<div style="position: absolute; inset: 0; background: rgba(15,23,42,.45); display: flex; flex-direction: column; justify-content: flex-end; z-index: 10">
+<button type="button" aria-label="Close" onClick="{{close}}" style="flex: 1; border: 0; background: transparent"></button>
+<section role="dialog" aria-modal="true" aria-label="Appointment details" style="background: #FFFFFF; border-radius: 16px 16px 0 0; padding: 8px 16px 20px; display: flex; flex-direction: column; gap: 14px">
+<span aria-hidden="true" style="align-self: center; width: 40px; height: 4px; border-radius: 4px; background: #CBD5E1"></span>
+<div style="display: flex; gap: 12px; align-items: flex-start">
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px">
+<strong style="font-size: 18px; line-height: 24px">{{s.name}}</strong>
+<span style="color: #475569">{{s.time}} · {{s.service}}</span>
+<span style="display: inline-flex; align-self: flex-start; align-items: center; gap: 4px; height: 24px; padding: 0 8px 0 6px; border-radius: 999px; font-size: 12px; font-weight: 500; white-space: nowrap; background: {{s.pillBg}}; color: {{s.fg}}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{s.icon}}"></path></svg>{{s.label}}</span>
+</div>
+<button type="button" aria-label="Close" onClick="{{close}}" style="width: 44px; height: 44px; border: 0; border-radius: 10px; background: #F1F5F9; display: inline-flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"></path></svg></button>
+</div>
+<sc-if value="{{s.alert}}" hint-placeholder-val="{{false}}"><div role="note" style="padding: 10px 12px; border-radius: 10px; background: #FFFBEB; border: 1px solid #FBD38D; display: flex; gap: 8px"><svg style="flex: none; margin-top: 2px" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#864E0E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01"></path></svg><span><strong>Alert:</strong> {{s.alertText}}</span></div></sc-if>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<sc-for list="{{acts}}" as="b" hint-placeholder-count="2">
+<button type="button" onClick="{{b.run}}" style="height: 48px; border-radius: 10px; border: {{b.border}}; background: {{b.bg}}; color: {{b.fg}}; font: inherit; font-size: 15px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 8px"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{b.icon}}"></path></svg>{{b.label}}</button>
+</sc-for>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px">
+<a href="PatientMobile.dc.html" style="height: 48px; border-radius: 10px; border: 1px solid #E2E8F0; color: #0F172A; text-decoration: none; font-weight: 500; display: flex; align-items: center; justify-content: center">Open record</a>
+<a href="tel:07700900412" style="height: 48px; border-radius: 10px; border: 1px solid #E2E8F0; color: #0F172A; text-decoration: none; font-weight: 500; display: flex; align-items: center; justify-content: center">Call patient</a>
+</div>
+</div>
+</section>
+</div>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":375,"height":812}}'>
+class Component extends DCLogic {
+  constructor(p) {
+    super(p);
+    this.state = { sel: null, items: [
+      { id: 1, time: '08:00', dur: 30, name: 'Ravi Patel', i: false, st: 'done' },
+      { id: 2, time: '08:30', dur: 30, name: 'Owen Price', i: false, st: 'dna' },
+      { id: 3, time: '09:00', dur: 45, name: 'Margaret Ellis', i: true, st: 'done' },
+      { id: 4, time: '10:00', dur: 30, name: 'Liam O’Connor', i: false, st: 'done' },
+      { id: 5, time: '10:30', dur: 30, name: 'Chloe Bennett', i: false, st: 'treat' },
+      { id: 'now' },
+      { id: 6, time: '11:00', dur: 45, name: 'Emily Turner', i: true, st: 'arrived', alert: 'Latex allergy' },
+      { id: 'b1', time: '12:30', name: 'Lunch until 13:30', block: true },
+      { id: 7, time: '14:00', dur: 30, name: 'Hannah Wright', i: false, st: 'late' },
+      { id: 8, time: '15:00', dur: 30, name: 'George Lewis', i: false, st: 'booked' },
+      { id: 9, time: '16:00', dur: 45, name: 'Isla Morgan', i: true, st: 'booked' }
+    ] };
+  }
+  renderVals() {
+    const st = this.state;
+    const I = {
+      cal: 'M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z',
+      ucheck: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM16 11l2 2 4-4',
+      act: 'M22 12h-4l-3 9L9 3l-3 9H2',
+      done: 'M22 11.08V12a10 10 0 1 1-5.93-9.14M22 4L12 14.01l-3-3',
+      ux: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM17 8l5 5M22 8l-5 5',
+      calx: 'M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM10 14l4 4M14 14l-4 4',
+      pen: 'M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z'
+    };
+    const S = {
+      booked: { bg: '#FFFFFF', bd: '#E2E8F0', pillBg: '#E8EEFB', fg: '#1842B4', icon: I.cal, label: 'Booked' },
+      arrived: { bg: '#FFFBEB', bd: '#FBD38D', pillBg: '#FEF3C7', fg: '#864E0E', icon: I.ucheck, label: 'Arrived' },
+      treat: { bg: '#F0FDFA', bd: '#99E2D8', pillBg: '#D5F5F0', fg: '#0B5F58', icon: I.act, label: 'In treatment' },
+      done: { bg: '#FFFFFF', bd: '#E2E8F0', pillBg: '#DCFCE7', fg: '#166534', icon: I.done, label: 'Completed' },
+      dna: { bg: '#FFFFFF', bd: '#E2E8F0', pillBg: '#FEE2E2', fg: '#991B1B', icon: I.ux, label: 'DNA' },
+      late: { bg: '#F8FAFC', bd: '#E2E8F0', pillBg: '#FFEDD5', fg: '#9A3412', icon: I.calx, label: 'Late cancel' }
+    };
+    const items = st.items.map(a => {
+      if (a.id === 'now') return { isNow: true, isAppt: false, isBlock: false };
+      if (a.block) return { isBlock: true, isAppt: false, isNow: false, time: a.time, name: a.name };
+      const s = S[a.st];
+      return Object.assign({}, s, { isAppt: true, isNow: false, isBlock: false, time: a.time, dur: a.dur + ' min', name: a.name,
+        service: (a.i ? 'Initial assessment' : 'Follow-up') + ' · Room 1', deco: a.st === 'late' ? 'line-through' : 'none',
+        open: () => this.setState({ sel: a.id }) });
+    });
+    const sa = st.items.find(a => a.id === st.sel);
+    const set = (v) => this.setState({ items: st.items.map(x => x.id === st.sel ? Object.assign({}, x, { st: v }) : x), sel: null });
+    const btn = (label, icon, run, primary) => ({ label, icon, run, bg: primary ? '#0B7970' : '#FFFFFF', fg: primary ? '#FFFFFF' : '#0F172A', border: primary ? '0' : '1px solid #E2E8F0' });
+    let acts = [], s = {};
+    if (sa) {
+      s = Object.assign({}, S[sa.st], { name: sa.name, time: sa.time + ' (' + sa.dur + ' min)', service: sa.i ? 'Initial assessment' : 'Follow-up', alert: !!sa.alert, alertText: sa.alert || '' });
+      if (sa.st === 'booked') acts = [btn('Mark arrived', I.ucheck, () => set('arrived'), true), btn('Did not attend', I.ux, () => set('dna'))];
+      else if (sa.st === 'arrived') acts = [btn('Start treatment', I.act, () => set('treat'), true)];
+      else if (sa.st === 'treat') acts = [btn('Complete and write note', I.pen, () => set('done'), true)];
+      else acts = [btn('Write or view note', I.pen, () => this.setState({ sel: null }))];
+    }
+    const days = [['Mon', 26], ['Tue', 27], ['Wed', 28], ['Thu', 29], ['Fri', 30], ['Sat', 31]].map(([dow, n]) => {
+      const sel = n === 27;
+      return { dow, n, sel: sel ? 'true' : 'false', bg: sel ? '#0B7970' : '#FFFFFF', fg: sel ? '#FFFFFF' : '#0F172A', bd: sel ? '#0B7970' : '#E2E8F0' };
+    });
+    return { days, items, sheetOpen: !!sa, s, acts, close: () => this.setState({ sel: null }) };
+  }
+}
+</script>
+</body>
+</html>

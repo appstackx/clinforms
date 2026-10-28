@@ -7,3 +7,4 @@ export * from "./availability";
 export * from "./slots";
 export * from "./waiting-list";
 export { isClashError } from "./shared";
+export * from "./settings";

@@ -55,8 +55,9 @@ export const APPOINTMENT_STATUS_STYLES: Readonly<Record<string, StatusStyle>> = 
   arrived: s("Arrived", "amber", "user-check"),
   in_treatment: s("In treatment", "teal", "activity"),
   completed: s("Completed", "green", "check-circle"),
-  // The diary stores "attended" (src/modules/pms/diary/rules.ts) – same look as the design's "Completed".
-  attended: s("Attended", "green", "check-circle"),
+  // The diary stores "attended" (src/modules/pms/diary/rules.ts); on screen it is the design's "Completed"
+  // (Khuram's decision B, 28/10/2026).
+  attended: s("Completed", "green", "check-circle"),
   dna: s("Did not attend (DNA)", "red", "user-x"),
   late_cancelled: s("Late cancellation", "orange", "calendar-x"),
   cancelled: s("Cancelled", "slate", "x-circle", true),

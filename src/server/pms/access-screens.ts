@@ -17,7 +17,10 @@ import { parseMemberRole } from "../auth/roles";
 import { getDb } from "../db";
 import { RepoInputError } from "../repos/context";
 import { getMemberAccess, listAccessChanges, listMemberAccess, listRoleOverrides, saveMemberAccess, saveRolePermissions, setMemberActive, type AccessSaveResult } from "../repos/pms/access";
-import { findPractitionerByUser, listSites } from "../repos/pms/directory";
+import { findPractitionerByUser, listSites, setPractitionerSigning } from "../repos/pms/directory";
+import { getPmsSettings } from "../repos/pms/settings";
+import { isDemoClinic } from "../admin/clinic-plan";
+import { checkSigning, isRegistrationBody, type RegistrationBody, type SigningInput } from "../../modules/pms/core/signing";
 import type { ClinicActor } from "./actor";
 
 export interface ClinicMember {
@@ -143,6 +146,10 @@ export interface MemberScreen {
   sites: Site[];
   registrationNumber: string | null;
   professionTitle: string | null;
+  /** Signing details on the member's practitioner record (null: no record yet – saving creates one). */
+  signing: SigningView;
+  /** Owners and administrators (settings.members) change signing details – never for reception, who never sign. */
+  canEditSigning: boolean;
   lastChange: { at: string; who: string; items: AccessChangeItem[] } | null;
   /** Why the form is read-only, or null when it can be changed. */
   readOnly: string | null;
@@ -173,6 +180,8 @@ export async function loadMemberScreen(actor: ScreenActor, userId: string): Prom
       sites,
       registrationNumber: practitioner?.registrationNumber ?? null,
       professionTitle: practitioner ? professionTitle(practitioner.profession) : null,
+      signing: signingView(practitioner),
+      canEditSigning: member.role !== "staff",
       lastChange: changes[0] ? { at: changes[0].at, who: nameOf(changes[0].byUserId), items: changes[0].items } : null,
       readOnly: readOnlyReason(actor, member),
       assignable: actor.role === "owner" || actor.role === "admin" ? (["admin", "clinician", "staff"] as PmsRole[]) : [],
@@ -232,4 +241,67 @@ export async function setMemberActiveFor(actor: ScreenActor, userId: string, act
   if (!member) return NOT_FOUND;
   if (readOnlyReason(actor, member)) return FORBIDDEN;
   return { ok: true, value: await setMemberActive(actor.repo(), actor.tenantId, member.userId, member.role, active, actor.actor) };
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Signing details (Member access → "Signing details"; My account shows the member's own, read only)
+ * ----------------------------------------------------------------------------------------------*/
+
+export interface SigningView {
+  /** The member has a practitioner record. */
+  linked: boolean;
+  registrationBody: RegistrationBody;
+  registrationNumber: string | null;
+  maySign: boolean;
+  /** "Physiotherapist" (the record's profession), or null without a record. */
+  title: string | null;
+}
+
+function signingView(p: { registrationBody: string | null; registrationNumber: string | null; maySign: boolean; profession: string } | null): SigningView {
+  return {
+    linked: p !== null,
+    registrationBody: p && isRegistrationBody(p.registrationBody) ? p.registrationBody : "HCPC",
+    registrationNumber: p?.registrationNumber ?? null,
+    maySign: p ? p.maySign : false,
+    title: p ? professionTitle(p.profession) : null,
+  };
+}
+
+/**
+ * A demo clinic accepts the made-up PH-DEMO-NN numbers: main's clinic plan flag (set by ClinForms platform staff)
+ * or the clinic system's own demo flag (set by `pms:seed-demo`). Read on the server, never from the form.
+ */
+async function demoClinicOf(actor: Pick<ScreenActor, "tenantId" | "repo">): Promise<boolean> {
+  const ctx = actor.repo();
+  const [plan, settings] = await Promise.all([isDemoClinic(ctx.db, actor.tenantId), getPmsSettings(ctx, actor.tenantId).catch(() => null)]);
+  return plan || settings?.isDemo === true;
+}
+
+/**
+ * Saves a member's signing details (settings.members): register, registration number (HCPC: PH + digits; PH-DEMO-NN
+ * in a demo clinic only) and "may sign" – on their practitioner record, created when they have none. Audited
+ * ("pms.practitioner.signing_update", field names only). Reception never signs, so their details cannot be set.
+ */
+export async function saveSigningDetailsFor(actor: ScreenActor, userId: string, input: SigningInput): Promise<ScreenResult<SigningView>> {
+  if (!actor.can("settings.members")) return FORBIDDEN;
+  const member = (await listClinicMembers(actor)).find((m) => m.userId === userId);
+  if (!member) return NOT_FOUND;
+  if (member.role === "staff") return { ok: false, code: "invalid", error: "Reception never signs clinical notes. Change their role to Clinician first." };
+  const checked = checkSigning(
+    { registrationBody: String(input.registrationBody ?? ""), registrationNumber: String(input.registrationNumber ?? ""), maySign: input.maySign === true },
+    { demoClinic: await demoClinicOf(actor) },
+  );
+  if (!checked.ok) return { ok: false, code: "invalid", error: "Check the signing details.", fieldErrors: checked.fieldErrors as Record<string, string> };
+  try {
+    const r = await setPractitionerSigning(actor.repo(), actor.tenantId, { userId: member.userId, name: member.name, email: member.email }, checked.value, actor.actor);
+    return { ok: true, value: signingView(r.practitioner) };
+  } catch (err) {
+    if (err instanceof RepoInputError) return { ok: false, code: "invalid", error: err.message };
+    throw err;
+  }
+}
+
+/** My account: the member's own signing details, read only (any member of the clinic). */
+export async function loadMySigning(actor: Pick<ScreenActor, "tenantId" | "userId" | "repo">): Promise<SigningView> {
+  return signingView(await findPractitionerByUser(actor.repo(), actor.tenantId, actor.userId));
 }

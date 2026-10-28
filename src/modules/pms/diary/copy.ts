@@ -5,10 +5,15 @@
 import type { AppointmentStatus, BlockKind, CancelReason, ClashResource, TimeOfDay, WaitingPriority, WaitingStatus } from "./rules";
 import type { DiaryWarning } from "./types";
 
+/**
+ * On screen "attended" is "Completed" everywhere in the clinic system (Khuram's decision B, 28/10/2026 – the design
+ * system's word); the stored status stays "attended".
+ */
 export const STATUS_LABELS: Readonly<Record<AppointmentStatus, string>> = {
   booked: "Booked",
   arrived: "Arrived",
-  attended: "Attended",
+  in_treatment: "In treatment",
+  attended: "Completed",
   dna: "Did not attend",
   late_cancelled: "Late cancellation",
   cancelled: "Cancelled",
@@ -18,7 +23,8 @@ export const STATUS_LABELS: Readonly<Record<AppointmentStatus, string>> = {
 export const STATUS_TAGS: Readonly<Record<AppointmentStatus, string>> = {
   booked: "Booked",
   arrived: "Arrived",
-  attended: "Attended",
+  in_treatment: "In treatment",
+  attended: "Completed",
   dna: "DNA",
   late_cancelled: "Late cancel",
   cancelled: "Cancelled",
@@ -28,7 +34,8 @@ export const STATUS_TAGS: Readonly<Record<AppointmentStatus, string>> = {
 export const STATUS_ACTIONS: Readonly<Record<AppointmentStatus, string>> = {
   booked: "Mark as booked",
   arrived: "Mark arrived",
-  attended: "Mark attended",
+  in_treatment: "Start treatment",
+  attended: "Mark completed",
   dna: "Did not attend",
   late_cancelled: "Late cancellation",
   cancelled: "Cancel appointment",
@@ -72,6 +79,11 @@ export const TIME_OF_DAY_LABELS: Readonly<Record<TimeOfDay, string>> = {
   evening: "Evenings",
 };
 
+/** The marker on two appointments of one practitioner at the same time (an allowed, logged double-booking). */
+export const DOUBLE_BOOKED_LABEL = "Double-booked";
+/** The override's tick box (booking dialog, keyboard move). */
+export const OVERRIDE_LABEL = "Book anyway (double-booking is logged)";
+
 export const CLASH_LABELS: Readonly<Record<ClashResource, string>> = {
   practitioner: "The practitioner is already booked",
   room: "The room is already in use",
@@ -82,6 +94,7 @@ export const WARNING_LABELS: Readonly<Record<DiaryWarning, string>> = {
   outside_hours: "Booked outside the practitioner's working hours.",
   authorisation_short: "The authorisation has fewer sessions left than were booked.",
   authorisation_used_up: "The authorisation has no sessions left, so this session was not counted against it.",
+  double_booked: "The practitioner is double-booked at this time. The double-booking is logged.",
 };
 
 export const DIARY_COPY = {
@@ -91,6 +104,7 @@ export const DIARY_COPY = {
   changedElsewhere: "Someone else changed this a moment ago. The page has been refreshed – check it and try again.",
   recordGone: "This no longer exists.",
   notAllowed: "You do not have permission to do that.",
+  noOverride: "You do not have permission to override clashes. Choose a free time.",
   notAtYourSites: "That site is not one of yours.",
   checkFields: "Check the highlighted fields.",
   emptyDay: "Nothing booked yet.",

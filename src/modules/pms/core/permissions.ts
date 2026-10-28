@@ -56,7 +56,7 @@ const N = false;
 export const ACCESS_PERMISSION_DEFS = [
   { id: "diary.view", group: "Diary", label: "View the diary", hint: "", phrase: "view the diary", defaults: [Y, Y, Y, Y] },
   { id: "diary.book", group: "Diary", label: "Book, move and cancel appointments", hint: "", phrase: "book, move and cancel appointments", defaults: [Y, Y, Y, Y] },
-  { id: "diary.override", group: "Diary", label: "Override clashes", hint: "Double-book a practitioner or room", phrase: "override diary clashes", defaults: [Y, Y, N, N] },
+  { id: "diary.override", group: "Diary", label: "Override clashes", hint: "Double-book a practitioner (logged) – never a room", phrase: "override diary clashes", defaults: [Y, Y, N, N] },
   { id: "diary.rota", group: "Diary", label: "Edit rotas and the waiting list", hint: "", phrase: "edit rotas and the waiting list", defaults: [Y, Y, N, Y] },
   { id: "patients.view", group: "Patients", label: "View patient details and contacts", hint: "", phrase: "view patient details and contacts", defaults: [Y, Y, Y, Y] },
   { id: "patients.edit", group: "Patients", label: "Create and edit patients", hint: "", phrase: "create and edit patients", defaults: [Y, Y, Y, Y] },

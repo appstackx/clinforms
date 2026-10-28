@@ -2,9 +2,13 @@
  * `pms_appointments` (+ `pms_appointment_series`) – the diary: appointments and blocked time.
  *
  * - No double booking: a practitioner or a room is never in two occupying items at once. The repositories check
- *   first (to say what is in the way), the database refuses it anyway (migration 0110's triggers – also for
+ *   first (to say what is in the way), the database refuses it anyway (migration 0119's triggers – also for
  *   writes racing each other); a refused write comes back as { reason: "clash" }. One patient is not booked into
- *   two places at once either (checked here).
+ *   two places at once either (checked here). The exception (Khuram's decision A): `allowPractitionerOverlap` –
+ *   the server passes it only for a member holding "diary.override" – books or moves over the practitioner's
+ *   other APPOINTMENT (never blocked time, never a room): the row carries overbook_write_id = write_id, which the
+ *   trigger lets through for that one write, and the audit row names the appointments double-booked.
+ * - Status "in treatment" is stored as arrived + treatment_started_at (migration 0117, rules.ts storedStatus).
  * - Concurrent edits: every change carries the revision the screen showed (expectedRev); a stale one gets
  *   { reason: "conflict" } and changes nothing.
  * - Times: forms give a UK date and "HH:MM"; the rows hold UTC instants (Europe/London incl. clock changes).
@@ -23,6 +27,9 @@ import {
   canMove,
   findClashes,
   isCancelledStatus,
+  practitionerOverbookings,
+  statusOfRow,
+  storedStatus,
   recurringDates,
   withinWorkingHours,
   CANCEL_REASONS,
@@ -119,6 +126,8 @@ function toAppointment(ctx: RepoContext, r: AppointmentRow): Appointment {
     importRef: r.import_ref,
     createdBy: r.created_by,
     createdAt: r.created_at,
+    confirmationRequested: isOn(r.confirmation_requested),
+    treatmentStartedAt: r.treatment_started_at ?? null,
   };
 }
 
@@ -165,6 +174,11 @@ export interface BookOptions {
   /** Book although the patient has another appointment at the same time (two practitioners seeing them together). */
   allowPatientOverlap?: boolean;
   /**
+   * Double-book the practitioner over their other APPOINTMENTS (never blocked time, never a room). The caller checks
+   * "diary.override"; the audit row lists the appointments double-booked.
+   */
+  allowPractitionerOverlap?: boolean;
+  /**
    * The waiting-list entry this booking settles: marked booked in the same atomic write, and nothing is booked
    * when the entry was booked or removed meanwhile (it must be this patient's open entry).
    */
@@ -173,6 +187,11 @@ export interface BookOptions {
   offerId?: string;
   /** The appointment this booking replaces (rebookAppointment) – recorded in the audit row. */
   rebookOf?: string;
+  /**
+   * Dates of a recurring booking reception unticked ("untick to skip"): left out before the clash check and counted
+   * as skipped. The first date (the booking itself) cannot be skipped.
+   */
+  skipDates?: readonly string[];
 }
 
 const OPEN_WAITING = ["waiting", "offered"];
@@ -199,7 +218,9 @@ export async function bookAppointment(ctx: RepoContext, tenantId: string, input:
   const duration = d.durationMinutes ?? service.durationMinutes;
   if (duration > MAX_APPOINTMENT_MINUTES) throw new RepoInputError(`Appointment: at most ${MAX_APPOINTMENT_MINUTES} minutes.`);
 
-  const dates = d.repeat ? recurringDates(d.date, d.repeat.intervalWeeks, d.repeat.occurrences) : [d.date];
+  const unticked = new Set((options.skipDates ?? []).filter((x) => x !== d.date));
+  const allDates = d.repeat ? recurringDates(d.date, d.repeat.intervalWeeks, d.repeat.occurrences) : [d.date];
+  const dates = allDates.filter((x) => !unticked.has(x));
   const spans = dates.map((date) => {
     const startsAt = localStart(date, d.startTime);
     return { date, startsAt, endsAt: addMinutesIso(startsAt, duration) };
@@ -211,7 +232,14 @@ export async function bookAppointment(ctx: RepoContext, tenantId: string, input:
       findClashes({ ...s, practitionerId: d.practitionerId, roomId: d.roomId ?? null, patientId: options.allowPatientOverlap ? null : d.patientId }, nearby).map((c) => ({ ...c, date: s.date })),
     );
   };
-  const clashes = await clashesFor(spans);
+  const overbooked = new Map<string, string[]>();
+  const blocking = (all: Awaited<ReturnType<typeof clashesFor>>) => {
+    if (!options.allowPractitionerOverlap) return all;
+    overbooked.clear();
+    for (const c of practitionerOverbookings(all)) overbooked.set(c.date, [...(overbooked.get(c.date) ?? []), c.withId]);
+    return all.filter((c) => !(c.resource === "practitioner" && c.withKind === "appointment"));
+  };
+  const clashes = blocking(await clashesFor(spans));
   let free = spans;
   if (clashes.length > 0) {
     if (!options.skipClashes) return { ok: false, reason: "clash", clashes };
@@ -222,8 +250,12 @@ export async function bookAppointment(ctx: RepoContext, tenantId: string, input:
 
   const at = nowIso(ctx);
   const seriesId = d.repeat ? pmsId(P.series, ctx) : null;
+  // A double-booking the member chose: the rows that overlap the practitioner's other appointments carry
+  // overbook_write_id = write_id (the clash trigger lets exactly this write through).
+  const overbookWrite = overbooked.size > 0 ? newWriteId(ctx) : null;
   const rows = free.map((s) => {
     const id = pmsId(P.appointment, ctx);
+    const flag = overbookWrite && overbooked.has(s.date) ? overbookWrite : null;
     return {
       tenant_id: tenantId,
       id,
@@ -255,6 +287,8 @@ export async function bookAppointment(ctx: RepoContext, tenantId: string, input:
       status_at: null,
       status_by: null,
       import_ref: null,
+      confirmation_requested: d.sendConfirmation ? 1 : 0,
+      ...(flag ? { write_id: flag, overbook_write_id: flag } : {}),
       created_by: actor.userId,
       created_at: at,
       updated_at: at,
@@ -318,7 +352,12 @@ export async function bookAppointment(ctx: RepoContext, tenantId: string, input:
     targetId: rows[0].id,
     detail: {
       count: rows.length,
-      ...(seriesId ? { seriesId, skipped: spans.length - rows.length } : {}),
+      ...(seriesId ? { seriesId, skipped: spans.length - rows.length + unticked.size } : {}),
+      // Reception booked over the patient's other appointment on purpose ("Book anyway") – logged here.
+      ...(options.allowPatientOverlap ? { patientOverlapAllowed: true } : {}),
+      // A practitioner double-booking ("diary.override"): the appointments it overlaps.
+      ...(overbookWrite ? { overbooked: true, doubleBookedWith: Array.from(new Set(Array.from(overbooked.values()).flat())).slice(0, 20) } : {}),
+      ...(d.sendConfirmation ? { confirmation: "requested" } : {}),
       source: d.source ?? "staff",
       ...(waitingListId ? { waitingListId } : {}),
       ...(options.offerId ? { offerId: options.offerId } : {}),
@@ -332,7 +371,7 @@ export async function bookAppointment(ctx: RepoContext, tenantId: string, input:
   } catch (err) {
     if (err instanceof RepoInputError) throw err;
     if (isClashError(err)) {
-      const now = await clashesFor(free);
+      const now = blocking(await clashesFor(free));
       if (now.length > 0) return { ok: false, reason: "clash", clashes: now };
       throw new RepoInputError("That time was taken a moment ago. Refresh the diary and try again.");
     }
@@ -340,13 +379,14 @@ export async function bookAppointment(ctx: RepoContext, tenantId: string, input:
   }
 
   const warnings: DiaryWarning[] = [];
+  if (overbookWrite) warnings.push("double_booked");
   if (!(await insideWorkingHours(ctx, tenantId, d.practitionerId, free))) warnings.push("outside_hours");
   if (authorisation && authorisation.sessionsAuthorised !== null) {
     const pending = await pendingAuthorisationBookings(ctx, tenantId, authorisation.id);
     if (authorisation.sessionsUsed + pending > authorisation.sessionsAuthorised) warnings.push("authorisation_short");
   }
   const items = await listByIds(ctx, tenantId, rows.map((r) => r.id));
-  return { ok: true, items, seriesId, skippedDates: spans.filter((s) => !free.includes(s)).map((s) => s.date), warnings };
+  return { ok: true, items, seriesId, skippedDates: allDates.filter((date) => unticked.has(date) || !free.some((s) => s.date === date)), warnings };
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -419,7 +459,7 @@ interface Placement {
 }
 
 /** Puts a booked / arrived item at a new place and time: clash check, then the change and its audit row in one batch. */
-async function relocate(ctx: RepoContext, tenantId: string, row: AppointmentRow, to: Placement, expectedRev: number, actor: PmsActor, options: { allowPatientOverlap?: boolean }): Promise<DiarySaveResult> {
+async function relocate(ctx: RepoContext, tenantId: string, row: AppointmentRow, to: Placement, expectedRev: number, actor: PmsActor, options: MoveOptions): Promise<DiarySaveResult> {
   const id = row.id;
   const fields = [
     to.startsAt !== row.starts_at ? "startsAt" : null,
@@ -436,13 +476,33 @@ async function relocate(ctx: RepoContext, tenantId: string, row: AppointmentRow,
       { id, ...span, practitionerId: to.practitionerId, roomId: to.roomId, patientId: options.allowPatientOverlap || row.kind === "block" ? null : row.patient_id },
       await occupyingNear(ctx, tenantId, { spans: [span], practitionerId: to.practitionerId, roomId: to.roomId, patientId: row.kind === "appointment" ? row.patient_id : null, excludeId: id }),
     );
-  const clashes = await check();
+  // A double-booking the member chose (diary.override, appointments only): practitioner clashes with other
+  // appointments are let through for this write and logged.
+  const overridable = options.allowPractitionerOverlap === true && row.kind === "appointment";
+  let overbooked: string[] = [];
+  const blocking = (all: DiaryClash[]) => {
+    if (!overridable) return all;
+    overbooked = Array.from(new Set(practitionerOverbookings(all).map((c) => c.withId)));
+    return all.filter((c) => !(c.resource === "practitioner" && c.withKind === "appointment"));
+  };
+  const clashes = blocking(await check());
   if (clashes.length > 0) return { ok: false, reason: "clash", clashes };
   const at = nowIso(ctx);
   const writeId = newWriteId(ctx);
   const update = ctx.db
     .updateTable(T)
-    .set({ starts_at: to.startsAt, ends_at: to.endsAt, starts_on: to.startsOn, site_id: to.siteId, practitioner_id: to.practitionerId, room_id: to.roomId, rev: expectedRev + 1, write_id: writeId, updated_at: at })
+    .set({
+      starts_at: to.startsAt,
+      ends_at: to.endsAt,
+      starts_on: to.startsOn,
+      site_id: to.siteId,
+      practitioner_id: to.practitionerId,
+      room_id: to.roomId,
+      rev: expectedRev + 1,
+      write_id: writeId,
+      overbook_write_id: overbooked.length > 0 ? writeId : null,
+      updated_at: at,
+    })
     .where("tenant_id", "=", tenantId)
     .where("id", "=", id)
     .where("rev", "=", expectedRev)
@@ -451,7 +511,12 @@ async function relocate(ctx: RepoContext, tenantId: string, row: AppointmentRow,
     ctx,
     tenantId,
     actor,
-    { action: row.kind === "block" ? "pms.block.move" : "pms.appointment.move", targetType: "pms_appointment", targetId: id, detail: { fields, rev: expectedRev + 1 } },
+    {
+      action: row.kind === "block" ? "pms.block.move" : "pms.appointment.move",
+      targetType: "pms_appointment",
+      targetId: id,
+      detail: { fields, rev: expectedRev + 1, ...(overbooked.length > 0 ? { overbooked: true, doubleBookedWith: overbooked.slice(0, 20) } : {}) },
+    },
     T,
     writeId,
     id,
@@ -460,11 +525,12 @@ async function relocate(ctx: RepoContext, tenantId: string, row: AppointmentRow,
   try {
     [updated] = await runChange(ctx, [update, audit]);
   } catch (err) {
-    if (isClashError(err)) return { ok: false, reason: "clash", clashes: await check() };
+    if (isClashError(err)) return { ok: false, reason: "clash", clashes: blocking(await check()) };
     throw translateDbError(err, MESSAGES);
   }
   if (updated === 0) return staleResult(ctx, tenantId, id);
   const warnings: DiaryWarning[] = [];
+  if (overbooked.length > 0) warnings.push("double_booked");
   if (row.kind === "appointment" && to.practitionerId && !(await insideWorkingHours(ctx, tenantId, to.practitionerId, [span]))) warnings.push("outside_hours");
   return { ok: true, item: await itemById(ctx, tenantId, id), warnings };
 }
@@ -473,7 +539,7 @@ async function movableRow(ctx: DbContext, tenantId: string, id: string, expected
   const row = await currentRow(ctx, tenantId, id);
   if (!row) return { ok: false, reason: "not_found" };
   if (num(row.rev) !== expectedRev) return { ok: false, reason: "conflict", currentRev: num(row.rev) };
-  const status = row.status as AppointmentStatus;
+  const status = statusOfRow(row.status, row.treatment_started_at);
   if (!canMove(status)) {
     throw new RepoInputError(isCancelledStatus(status) ? "Reinstate the cancelled appointment before moving it." : `An appointment marked "${STATUS_LABELS[status]}" cannot be moved.`);
   }
@@ -484,7 +550,13 @@ async function movableRow(ctx: DbContext, tenantId: string, id: string, expected
  * Moves an appointment (or blocked time) to another time, day, practitioner, room or site – drag and drop and the
  * keyboard "Move" form both end here. Only booked and arrived items move.
  */
-export async function moveAppointment(ctx: RepoContext, tenantId: string, id: string, input: MoveAppointmentInput, actor: PmsActor, options: { allowPatientOverlap?: boolean } = {}): Promise<DiarySaveResult> {
+export interface MoveOptions {
+  allowPatientOverlap?: boolean;
+  /** Double-book the practitioner over their other appointments (the caller checks "diary.override"). Logged. */
+  allowPractitionerOverlap?: boolean;
+}
+
+export async function moveAppointment(ctx: RepoContext, tenantId: string, id: string, input: MoveAppointmentInput, actor: PmsActor, options: MoveOptions = {}): Promise<DiarySaveResult> {
   assertTenantId(tenantId);
   assertId(id, "appointment id");
   const d = parseInput(MoveAppointmentSchema, input, "Move");
@@ -505,7 +577,7 @@ export async function moveAppointment(ctx: RepoContext, tenantId: string, id: st
 }
 
 /** Makes an appointment (or blocked time) longer or shorter: same start, new end (dragging the bottom edge). */
-export async function resizeAppointment(ctx: RepoContext, tenantId: string, id: string, input: ResizeAppointmentInput, actor: PmsActor): Promise<DiarySaveResult> {
+export async function resizeAppointment(ctx: RepoContext, tenantId: string, id: string, input: ResizeAppointmentInput, actor: PmsActor, options: MoveOptions = {}): Promise<DiarySaveResult> {
   assertTenantId(tenantId);
   assertId(id, "appointment id");
   const d = parseInput(ResizeAppointmentSchema, input, "Length");
@@ -519,7 +591,7 @@ export async function resizeAppointment(ctx: RepoContext, tenantId: string, id: 
     { startsAt: row.starts_at, endsAt: addMinutesIso(row.starts_at, d.durationMinutes), startsOn: row.starts_on, siteId: row.site_id, practitionerId: row.practitioner_id, roomId: row.room_id },
     d.expectedRev,
     actor,
-    {},
+    { allowPractitionerOverlap: options.allowPractitionerOverlap },
   );
 }
 
@@ -531,7 +603,9 @@ function statusAction(kind: string, from: string, to: AppointmentStatus): string
   if (kind === "block") return to === "cancelled" ? "pms.block.remove" : "pms.block.restore";
   switch (to) {
     case "arrived":
-      return "pms.appointment.arrive";
+      return from === "in_treatment" ? "pms.appointment.status_undo" : "pms.appointment.arrive";
+    case "in_treatment":
+      return from === "attended" ? "pms.appointment.status_undo" : "pms.appointment.start_treatment";
     case "attended":
       return "pms.appointment.attend";
     case "dna":
@@ -553,7 +627,7 @@ export async function setAppointmentStatus(ctx: RepoContext, tenantId: string, i
   const row = await currentRow(ctx, tenantId, id);
   if (!row) return { ok: false, reason: "not_found" };
   if (num(row.rev) !== d.expectedRev) return { ok: false, reason: "conflict", currentRev: num(row.rev) };
-  const from = row.status as AppointmentStatus;
+  const from = statusOfRow(row.status, row.treatment_started_at);
   const to = d.status;
   const kind = row.kind === "block" ? "block" : "appointment";
   if (!canChangeStatus(kind, from, to)) {
@@ -561,7 +635,11 @@ export async function setAppointmentStatus(ctx: RepoContext, tenantId: string, i
   }
   const at = nowIso(ctx);
   const writeId = newWriteId(ctx);
-  const set: Record<string, unknown> = { status: to, status_at: at, status_by: actor.userId, rev: d.expectedRev + 1, write_id: writeId, updated_at: at };
+  const set: Record<string, unknown> = { status: storedStatus(to), status_at: at, status_by: actor.userId, rev: d.expectedRev + 1, write_id: writeId, updated_at: at };
+  // In treatment = arrived + treatment_started_at. Completing keeps when treatment started; any other status
+  // (undo to arrived or booked, did not attend, cancelled) clears it.
+  if (to === "in_treatment") set.treatment_started_at = from === "attended" && row.treatment_started_at ? row.treatment_started_at : at;
+  else if (to !== "attended") set.treatment_started_at = null;
   if (isCancelledStatus(to)) {
     set.cancelled_at = at;
     set.cancelled_by = actor.userId;
@@ -597,7 +675,7 @@ export async function setAppointmentStatus(ctx: RepoContext, tenantId: string, i
   const undoCount = async () => {
     if (counted && row.authorisation_id) await recordAuthorisationUsage(ctx, tenantId, row.authorisation_id, { sessions: -1 }, actor, id);
   };
-  const update = ctx.db.updateTable(T).set(set).where("tenant_id", "=", tenantId).where("id", "=", id).where("rev", "=", d.expectedRev).where("status", "=", from);
+  const update = ctx.db.updateTable(T).set(set).where("tenant_id", "=", tenantId).where("id", "=", id).where("rev", "=", d.expectedRev).where("status", "=", storedStatus(from));
   const detail = {
     from,
     to,
@@ -917,20 +995,36 @@ export async function nextAppointmentsFor(ctx: DbContext, tenantId: string, pati
   return out;
 }
 
+function emptyStatusCounts(): Record<AppointmentStatus, number> {
+  return { booked: 0, arrived: 0, in_treatment: 0, attended: 0, dna: 0, late_cancelled: 0, cancelled: 0 };
+}
+
+/** Grouped counts of the status column → per status ("arrived" rows with treatment_started_at are in treatment). */
+function addStatusCounts(out: Record<AppointmentStatus, number>, rows: readonly { status: string; n: unknown; started: unknown }[]): void {
+  for (const r of rows) {
+    if (!(r.status in out)) continue;
+    if (r.status === "arrived") {
+      const started = num(r.started as number);
+      out.in_treatment += started;
+      out.arrived += num(r.n as number) - started;
+    } else out[r.status as AppointmentStatus] += num(r.n as number);
+  }
+}
+
 /** A patient's appointments per status (the record's Appointments tab), optionally only at some sites. */
 export async function countPatientAppointmentsByStatus(ctx: DbContext, tenantId: string, patientId: string, options: { siteIds?: readonly string[] } = {}): Promise<Record<AppointmentStatus, number>> {
   assertTenantId(tenantId);
   assertId(patientId, "patient id");
-  const out: Record<AppointmentStatus, number> = { booked: 0, arrived: 0, attended: 0, dna: 0, late_cancelled: 0, cancelled: 0 };
+  const out = emptyStatusCounts();
   if (options.siteIds && options.siteIds.length === 0) return out;
   let q = ctx.db
     .selectFrom(T)
-    .select(["status", (eb) => eb.fn.countAll<number>().as("n")])
+    .select(["status", (eb) => eb.fn.countAll<number>().as("n"), (eb) => eb.fn.count<number>("treatment_started_at").as("started")])
     .where("tenant_id", "=", tenantId)
     .where("patient_id", "=", patientId)
     .where("kind", "=", "appointment");
   if (options.siteIds) q = q.where("site_id", "in", options.siteIds.slice(0, 90) as string[]);
-  for (const r of await q.groupBy("status").execute()) out[r.status as AppointmentStatus] = num(r.n);
+  addStatusCounts(out, await q.groupBy("status").execute());
   return out;
 }
 
@@ -953,15 +1047,14 @@ export async function countAppointmentsByStatus(ctx: DbContext, tenantId: string
   assertTenantId(tenantId);
   let query = ctx.db
     .selectFrom(T)
-    .select(["status", (eb) => eb.fn.countAll<number>().as("n")])
+    .select(["status", (eb) => eb.fn.countAll<number>().as("n"), (eb) => eb.fn.count<number>("treatment_started_at").as("started")])
     .where("tenant_id", "=", tenantId)
     .where("kind", "=", "appointment")
     .where("starts_at", ">=", q.from)
     .where("starts_at", "<", q.to);
   if (q.siteId) query = query.where("site_id", "=", q.siteId);
-  const rows = await query.groupBy("status").execute();
-  const out: Record<AppointmentStatus, number> = { booked: 0, arrived: 0, attended: 0, dna: 0, late_cancelled: 0, cancelled: 0 };
-  for (const r of rows) out[r.status as AppointmentStatus] = num(r.n);
+  const out = emptyStatusCounts();
+  addStatusCounts(out, await query.groupBy("status").execute());
   return out;
 }
 
