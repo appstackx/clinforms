@@ -11,7 +11,7 @@ import { listPatientHistory } from "../../repos/pms/records/history";
 import { attempt, guard, notFound, ok, patientInClinic, type RecordsActor, type Result } from "./access";
 
 /** Audit target types whose details are clinical. */
-export const CLINICAL_TARGET_TYPES: readonly string[] = ["pms_note", "pms_outcome", "pms_attachment"];
+export const CLINICAL_TARGET_TYPES: readonly string[] = ["pms_note", "pms_outcome", "pms_attachment", "pms_clinical_flag"];
 
 export function redactClinicalDetail(entries: readonly AuditEntry[], canSeeClinical: boolean): AuditEntry[] {
   if (canSeeClinical) return entries.slice();

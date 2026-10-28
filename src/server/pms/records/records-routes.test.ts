@@ -81,12 +81,12 @@ describe("records module entry points", () => {
           assert.match(permission, /^clinical\./, `${rel(f).join("/")} ${name} needs a clinical permission`);
           assert.equal(pmsCan("staff", permission as Parameters<typeof pmsCan>[1]), false, `${name}: reception must not hold ${permission}`);
         }
-        if (rel(f)[0] === "note-templates") assert.equal(permission, "settings.manage", name);
+        if (rel(f)[0] === "note-templates") assert.equal(permission, "settings.setup", name);
       }
     }
   });
 
-  it("every route handler goes through clinicRoute with a permission; files need clinical.*, the export patients.export", () => {
+  it("every route handler goes through clinicRoute with a permission; files need clinical.*, the export reports.export", () => {
     for (const f of files.filter((x) => x.endsWith("route.ts"))) {
       const src = fs.readFileSync(f, "utf8");
       const handlers = Array.from(src.matchAll(/export const (GET|POST|PUT|PATCH|DELETE|HEAD) = clinicRoute(?:<[^>]*>)?\(\{ permission: "([a-z.]+)" \}/g));
@@ -94,7 +94,7 @@ describe("records module entry points", () => {
       assert.ok(!/export (async )?function (GET|POST|PUT|PATCH|DELETE)/.test(src), `${rel(f).join("/")}: no handler outside clinicRoute`);
       for (const [, method, permission] of handlers) {
         if (isClinical(f)) assert.match(permission, /^clinical\./, `${rel(f).join("/")} ${method}`);
-        if (rel(f)[1] === "export") assert.equal(permission, "patients.export");
+        if (rel(f)[1] === "export") assert.equal(permission, "reports.export");
         if (isClinical(f) || rel(f)[1] === "export") assert.equal(pmsCan("staff", permission as Parameters<typeof pmsCan>[1]), false);
       }
     }

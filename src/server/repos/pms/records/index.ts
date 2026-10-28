@@ -11,3 +11,5 @@ export * from "./notes";
 export * from "./outcomes";
 export * from "./subject-access";
 export * from "./templates";
+export * from "./patient-extras";
+export * from "./patient-list";

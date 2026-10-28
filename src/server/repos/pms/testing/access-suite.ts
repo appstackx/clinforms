@@ -214,6 +214,10 @@ export function defineAccessSuite(label: string, factory: () => Promise<AccessSu
       assert.ok(signed);
       assert.equal((await amendNoteFor(tom, ids.megan, signed.id, { kind: "addendum", text: "Not mine (fictional)" })).ok, false);
       assert.equal((await amendNoteFor(priya, ids.megan, signed.id, { kind: "addendum", text: "Own addendum (fictional)" })).ok, true);
+      // Signing and amending need a registration number on the member's practitioner profile (Khuram, 28/10/2026).
+      const noReg = await amendNoteFor(owner, ids.megan, signed.id, { kind: "addendum", text: "Owner addendum (fictional)" });
+      assert.equal(!noReg.ok && noReg.code, "registration");
+      await createPractitioner(ctx, A, { displayName: "Helen Ward (fictional)", registrationNumber: "PH-DEMO-02", userId: OWNER.userId }, OWNER);
       assert.equal((await amendNoteFor(owner, ids.megan, signed.id, { kind: "addendum", text: "Owner addendum (fictional)" })).ok, true);
     });
 

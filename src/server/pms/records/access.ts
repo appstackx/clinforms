@@ -30,7 +30,8 @@ export type RecordsActor = Pick<ClinicActor, "tenantId" | "userId" | "name" | "e
     role?: string;
   };
 
-export type FailureCode = "forbidden" | "not_found" | "invalid" | "conflict" | "locked" | "error";
+/** "registration": signing or amending a clinical note without a registration number on the member's profile. */
+export type FailureCode = "forbidden" | "not_found" | "invalid" | "conflict" | "locked" | "registration" | "error";
 
 export interface Failure {
   ok: false;
@@ -48,6 +49,12 @@ export const NOT_FOUND_MESSAGE = "This record no longer exists in this clinic.";
 export const CONFLICT_MESSAGE = "Someone else changed this record while you were editing it. Reload the page to see their changes, then make yours again.";
 export const LOCKED_MESSAGE = "This note is signed and locked. Add an amendment instead.";
 export const ERROR_MESSAGE = "Something went wrong. Please try again.";
+/**
+ * Khuram's decision 28/10/2026: a clinical note is signed (and amended) only by a member with a registration number
+ * on their practitioner profile – shown on Member access (Set-up → Staff access → the member).
+ */
+export const REGISTRATION_NEEDED_MESSAGE =
+  "Add your registration number to sign notes. It is kept on your practitioner profile (Set-up → Staff access → your name): ask the clinic owner or an administrator to add it.";
 
 export function ok<T>(value: T): { ok: true; value: T } {
   return { ok: true, value };
@@ -107,6 +114,11 @@ export async function patientInClinic(actor: RecordsActor, patientId: unknown): 
 export async function noteAuthorOf(actor: RecordsActor): Promise<NoteAuthor & { practitionerId: string | null }> {
   const practitioner = await findPractitionerByUser(actor.repo(), actor.tenantId, actor.userId);
   return { name: actor.name || actor.email, registration: practitioner?.registrationNumber ?? null, practitionerId: practitioner?.id ?? null };
+}
+
+/** null when the member has a registration number to sign with; otherwise the refusal (nothing is signed). */
+export function registrationFailure(author: Pick<NoteAuthor, "registration">): Failure | null {
+  return author.registration && author.registration.trim() ? null : fail("registration", REGISTRATION_NEEDED_MESSAGE);
 }
 
 /**

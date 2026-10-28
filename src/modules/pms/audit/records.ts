@@ -24,6 +24,10 @@ export const RECORDS_AUDIT_LABELS: Readonly<Record<string, string>> = {
   "pms.patient.anonymise": "Patient record anonymised",
   "pms.note.bulk_create": "Clinical notes added in bulk",
   "pms.outcome.bulk_create": "Outcome measures added in bulk",
+  "pms.patient_extras.update": "Pronouns changed",
+  "pms.clinical_flag.add": "Clinical flag added",
+  "pms.clinical_flag.end": "Clinical flag ended",
+  "pms.patients.export": "Patient list exported (CSV)",
 };
 
 /** Names of the record types its audit rows point at (target_type → label). */
@@ -33,4 +37,7 @@ export const RECORDS_AUDIT_TARGETS: Readonly<Record<string, string>> = {
   pms_outcome: "Outcome measure",
   pms_attachment: "Attached file",
   pms_records_settings: "Clinical note settings",
+  pms_patient_extras: "Patient details",
+  pms_clinical_flag: "Clinical flag",
+  pms_patient_list: "Patient list",
 };

@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<title>Patient record</title>
+<script src="./vendor/react.js"></script>
+<script src="./vendor/react-dom.js"></script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+*{box-sizing:border-box}
+a{color:#0B7970}a:hover{color:#095E57}
+:focus-visible{outline:2px solid #0E958A;outline-offset:2px}
+@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+</style>
+</helmet>
+<div style="min-height: 100vh; background: #F8FAFC; color: #0F172A; font-family: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 14px; line-height: 20px; display: flex; flex-direction: column">
+<header style="background: #FFFFFF; border-bottom: 1px solid #E2E8F0; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 10px 16px; min-height: 56px">
+<div style="display: flex; align-items: center; gap: 10px">
+<span aria-hidden="true" style="width: 28px; height: 28px; border-radius: 8px; background: #0B7970; color: #FFFFFF; display: inline-flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg></span>
+<nav aria-label="Product areas" style="display: flex; background: #F1F5F9; border-radius: 10px; padding: 3px; gap: 2px">
+<a href="AppShell.dc.html" aria-current="page" style="height: 30px; padding: 0 12px; border-radius: 8px; background: #FFFFFF; box-shadow: 0 1px 2px rgba(15,23,42,.08); font-weight: 600; color: #0F172A; text-decoration: none; display: inline-flex; align-items: center">{{product}}</a>
+<a href="#clinforms" style="height: 30px; padding: 0 12px; border-radius: 8px; font-weight: 500; color: #475569; text-decoration: none; display: inline-flex; align-items: center">ClinForms</a>
+</nav>
+</div>
+<button type="button" style="height: 36px; padding: 0 10px; border: 1px solid #CBD5E1; border-radius: 8px; background: #FFFFFF; font: inherit; font-weight: 500; display: inline-flex; align-items: center; gap: 8px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0B7970" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0zM12 7a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"></path></svg>Harbour Road<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg></button>
+<div role="search" style="flex: 1 1 260px; max-width: 480px; height: 36px; padding: 0 10px; border: 1px solid #CBD5E1; border-radius: 8px; display: flex; align-items: center; gap: 8px; background: #F8FAFC">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 3a8 8 0 1 0 0 16 8 8 0 0 0 0-16zM21 21l-4.3-4.3"></path></svg>
+<input type="search" aria-label="Search patients" placeholder="Search patients – name, DOB, phone, email" style="border: 0; font: inherit; flex: 1; min-width: 0; background: transparent">
+</div>
+<button type="button" style="margin-left: auto; height: 40px; padding: 0 8px 0 4px; border: 0; border-radius: 8px; background: transparent; font: inherit; display: inline-flex; align-items: center; gap: 8px; color: #0F172A">
+<span aria-hidden="true" style="width: 32px; height: 32px; border-radius: 999px; background: {{user.avBg}}; color: {{user.avFg}}; display: inline-flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px">{{user.init}}</span>
+<span style="display: flex; flex-direction: column; align-items: flex-start; line-height: 16px"><span style="font-weight: 600">{{user.name}}</span><span style="font-size: 12px; color: #64748B">{{user.role}}</span></span>
+</button>
+</header>
+
+<div style="display: flex; flex-wrap: wrap; flex: 1; align-items: stretch">
+<nav aria-label="Clinic" style="flex: 1 1 216px; background: #FFFFFF; border-right: 1px solid #E2E8F0; padding: 12px 8px; display: flex; flex-direction: column; gap: 2px">
+<a href="DiaryDay.dc.html" style="height: 36px; padding: 0 10px; border-radius: 8px; display: flex; align-items: center; gap: 10px; text-decoration: none; color: #334155; font-weight: 500"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"></path></svg>Diary</a>
+<a href="PatientList.dc.html" aria-current="page" style="height: 36px; padding: 0 10px; border-radius: 8px; display: flex; align-items: center; gap: 10px; text-decoration: none; color: #0B5F58; background: #E6F7F5; font-weight: 600"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"></path></svg>Patients</a>
+<sc-if value="{{isClin}}" hint-placeholder-val="{{true}}"><a href="NoteEditor.dc.html" style="height: 36px; padding: 0 10px; border-radius: 8px; display: flex; align-items: center; gap: 10px; text-decoration: none; color: #334155; font-weight: 500"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"></path></svg><span style="flex: 1">Unsigned notes</span><span style="font-size: 12px; font-weight: 600; background: #FEF3C7; color: #864E0E; border-radius: 999px; padding: 0 7px; line-height: 20px">3</span></a></sc-if>
+<a href="BillingList.dc.html" style="height: 36px; padding: 0 10px; border-radius: 8px; display: flex; align-items: center; gap: 10px; text-decoration: none; color: #334155; font-weight: 500"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 7c0-5.333-8-5.333-8 0M10 7v14M6 21h12M6 13h10"></path></svg>Billing</a>
+<a href="Messages.dc.html" style="height: 36px; padding: 0 10px; border-radius: 8px; display: flex; align-items: center; gap: 10px; text-decoration: none; color: #334155; font-weight: 500"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>Messages</a>
+</nav>
+
+<main style="flex: 999 1 560px; min-width: 0; padding: 16px 24px 32px; display: flex; flex-direction: column; gap: 16px">
+<nav aria-label="Breadcrumb" style="font-size: 13px; color: #64748B; display: flex; gap: 6px; align-items: center"><a href="PatientList.dc.html">Patients</a><span aria-hidden="true">/</span><span>Emily Turner</span></nav>
+
+<section aria-label="Patient summary" style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 20px; display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start">
+<span aria-hidden="true" style="width: 56px; height: 56px; border-radius: 999px; background: #FCE7F3; color: #9D174D; font-size: 20px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; flex: none">ET</span>
+<div style="flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 8px">
+<div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px">
+<h1 style="margin: 0; font-size: 24px; line-height: 32px; font-weight: 600">Emily Turner</h1>
+<span style="color: #475569">Mrs · she/her</span>
+</div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 20px; color: #334155; font-variant-numeric: tabular-nums">
+<span>DOB 27/09/1982 (44)</span><span>07700 900218</span><span>emily.turner@example.com</span><span>Patient no. HR-10482</span>
+</div>
+<div style="display: flex; flex-wrap: wrap; gap: 6px">
+<span style="display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px 0 7px; border-radius: 6px; font-size: 12px; font-weight: 600; white-space: nowrap; background: #FEF3C7; color: #864E0E"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01"></path></svg>Alert: latex allergy</span>
+<sc-if value="{{isClin}}" hint-placeholder-val="{{true}}"><span style="display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px 0 7px; border-radius: 6px; font-size: 12px; font-weight: 600; white-space: nowrap; background: #FEF3C7; color: #864E0E"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01"></path></svg>Clinical: on anticoagulants</span></sc-if>
+<span style="display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px 0 7px; border-radius: 6px; font-size: 12px; font-weight: 500; white-space: nowrap; background: #F0FDF4; color: #166534"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10zM9 12l2 2 4-4"></path></svg>Consent: reminders ✓ · treatment ✓</span>
+<span style="display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px 0 7px; border-radius: 6px; font-size: 12px; font-weight: 500; white-space: nowrap; background: #F1F5F9; color: #334155"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM4.93 4.93l14.14 14.14"></path></svg>No marketing</span>
+</div>
+</div>
+<div style="flex: 0 1 300px; min-width: 240px; border: 1px solid #E2E8F0; border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px">
+<span style="font-size: 12px; font-weight: 600; color: #475569; text-transform: uppercase; letter-spacing: .04em">Next appointment</span>
+<div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap"><strong style="font-variant-numeric: tabular-nums">Today 11:00–11:45</strong><span style="display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px 0 6px; border-radius: 999px; font-size: 12px; font-weight: 500; white-space: nowrap; background: #FEF3C7; color: #864E0E"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM16 11l2 2 4-4"></path></svg>Arrived</span></div>
+<span style="color: #475569">Initial assessment · Priya Shah · Room 1</span>
+</div>
+<div style="display: flex; gap: 8px; flex-wrap: wrap; width: 100%">
+<a href="BookingDialog.dc.html" style="height: 36px; padding: 0 14px; border-radius: 8px; background: #0B7970; color: #FFFFFF; text-decoration: none; font-weight: 500; display: inline-flex; align-items: center; gap: 6px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>Book</a>
+<sc-if value="{{isClin}}" hint-placeholder-val="{{true}}"><a href="NoteEditor.dc.html" style="height: 36px; padding: 0 14px; border-radius: 8px; border: 1px solid #E2E8F0; background: #FFFFFF; color: #0F172A; text-decoration: none; font-weight: 500; display: inline-flex; align-items: center; gap: 6px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"></path></svg>New note</a></sc-if>
+<a href="Messages.dc.html" style="height: 36px; padding: 0 14px; border-radius: 8px; border: 1px solid #E2E8F0; background: #FFFFFF; color: #0F172A; text-decoration: none; font-weight: 500; display: inline-flex; align-items: center; gap: 6px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"></path></svg>Send message</a>
+<a href="InvoiceDetail.dc.html" style="height: 36px; padding: 0 14px; border-radius: 8px; border: 1px solid #E2E8F0; background: #FFFFFF; color: #0F172A; text-decoration: none; font-weight: 500; display: inline-flex; align-items: center; gap: 6px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2zM1 10h22"></path></svg>Take payment</a>
+<button type="button" aria-label="More actions" style="height: 36px; width: 36px; border-radius: 8px; border: 1px solid #E2E8F0; background: #FFFFFF; display: inline-flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M5 12h.01M12 12h.01M19 12h.01"></path></svg></button>
+</div>
+</section>
+
+<div role="tablist" aria-label="Patient record sections" onKeyDown="{{tabKey}}" style="display: flex; gap: 2px; border-bottom: 1px solid #E2E8F0; overflow-x: auto">
+<sc-for list="{{tabs}}" as="t" hint-placeholder-count="10">
+<button type="button" role="tab" id="{{t.id}}" aria-selected="{{t.sel}}" tabindex="{{t.ti}}" onClick="{{t.pick}}" style="height: 44px; padding: 0 12px; border: 0; background: transparent; font: inherit; font-weight: 500; color: {{t.fg}}; border-bottom: 2px solid {{t.line}}; margin-bottom: -1px; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; cursor: pointer">{{t.label}}<sc-if value="{{t.hasCount}}" hint-placeholder-val="{{false}}"><span style="font-size: 12px; background: #F1F5F9; color: #334155; border-radius: 999px; padding: 0 6px; line-height: 18px">{{t.count}}</span></sc-if></button>
+</sc-for>
+</div>
+
+<div role="tabpanel" aria-label="{{panelLabel}}" style="display: flex; flex-direction: column; gap: 16px">
+
+<sc-if value="{{p.overview}}" hint-placeholder-val="{{true}}">
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr)); gap: 16px; align-items: start">
+<div style="display: flex; flex-direction: column; gap: 16px">
+<div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 16px 20px; display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; align-items: center; gap: 8px"><h2 style="margin: 0; font-size: 16px; font-weight: 600; flex: 1">Open case</h2><button type="button" onClick="{{goCases}}" style="border: 0; background: none; padding: 0; font: inherit; color: #0B7970; font-weight: 500; cursor: pointer">All cases</button></div>
+<div style="display: flex; flex-direction: column; gap: 2px"><strong>Right shoulder – rotator cuff</strong><span style="color: #475569">Opened 27/10/2026 · Bluewell Health (fictional) · Auth BW-55021</span></div>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<div style="display: flex; justify-content: space-between; font-size: 13px"><span>Authorised sessions</span><strong>1 used of 6 · 5 left</strong></div>
+<div role="progressbar" aria-label="Authorised sessions used" aria-valuemin="0" aria-valuemax="6" aria-valuenow="1" style="height: 8px; border-radius: 999px; background: #E2E8F0; overflow: hidden"><div style="width: 16.6%; height: 100%; background: #0E958A"></div></div>
+</div>
+<div style="display: flex; gap: 8px; flex-wrap: wrap">
+<button type="button" onClick="{{goCases}}" style="height: 36px; padding: 0 12px; border-radius: 8px; border: 1px solid #1842B4; background: #FFFFFF; color: #1842B4; font: inherit; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; cursor: pointer"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 15l2 2 4-4"></path></svg>Complete referrer form</button>
+</div>
+</div>
+<div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 16px 20px; display: flex; flex-direction: column; gap: 10px">
+<h2 style="margin: 0; font-size: 16px; font-weight: 600">Upcoming appointments</h2>
+<ul style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column">
+<sc-for list="{{upcoming}}" as="u" hint-placeholder-count="3">
+<li style="display: flex; gap: 12px; align-items: center; padding: 8px 0; border-top: 1px solid #F1F5F9"><span style="font-variant-numeric: tabular-nums; font-weight: 500; width: 150px">{{u.when}}</span><span style="flex: 1; color: #334155">{{u.what}}</span><span style="display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px 0 6px; border-radius: 999px; font-size: 12px; font-weight: 500; white-space: nowrap; background: {{u.bg}}; color: {{u.fg}}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{u.icon}}"></path></svg>{{u.status}}</span></li>
+</sc-for>
+</ul>
+</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 16px">
+<sc-if value="{{isClin}}" hint-placeholder-val="{{true}}">
+<div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 16px 20px; display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; align-items: center"><h2 style="margin: 0; font-size: 16px; font-weight: 600; flex: 1">Latest notes</h2><button type="button" onClick="{{goNotes}}" style="border: 0; background: none; padding: 0; font: inherit; color: #0B7970; font-weight: 500; cursor: pointer">All notes</button></div>
+<sc-for list="{{notes}}" as="n" hint-placeholder-count="2">
+<a href="NoteEditor.dc.html" style="display: flex; gap: 10px; align-items: center; padding: 8px 10px; border: 1px solid #E2E8F0; border-radius: 10px; text-decoration: none; color: #0F172A">
+<span style="flex: 1; min-width: 0; display: flex; flex-direction: column"><strong style="font-weight: 600">{{n.title}}</strong><span style="font-size: 12px; color: #64748B">{{n.meta}}</span></span>
+<span style="display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px 0 6px; border-radius: 999px; font-size: 12px; font-weight: 500; white-space: nowrap; background: {{n.bg}}; color: {{n.fg}}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{n.icon}}"></path></svg>{{n.state}}</span>
+</a>
+</sc-for>
+</div>
+</sc-if>
+<div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 16px 20px; display: flex; flex-direction: column; gap: 10px">
+<h2 style="margin: 0; font-size: 16px; font-weight: 600">Account</h2>
+<dl style="margin: 0; display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 6px 12px">
+<dt style="color: #64748B">Patient balance</dt><dd style="margin: 0; font-weight: 600">£0.00</dd>
+<dt style="color: #64748B">Insurer balance</dt><dd style="margin: 0">£50.00 issued to Bluewell Health (fictional)</dd>
+<dt style="color: #64748B">Payment card</dt><dd style="margin: 0">None saved</dd>
+</dl>
+</div>
+<div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 16px 20px; display: flex; flex-direction: column; gap: 6px">
+<h2 style="margin: 0; font-size: 16px; font-weight: 600">Forms</h2>
+<div style="display: flex; align-items: center; gap: 8px"><span style="flex: 1">New patient intake form</span><span style="display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px 0 6px; border-radius: 999px; font-size: 12px; font-weight: 500; white-space: nowrap; background: #DCFCE7; color: #166534"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"></path></svg>Signed 26/10/2026</span></div>
+</div>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{p.appointments}}" hint-placeholder-val="{{false}}">
+<div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; overflow-x: auto">
+<table style="width: 100%; border-collapse: collapse; min-width: 640px">
+<thead><tr style="background: #F8FAFC; text-align: left; font-size: 12px; color: #475569"><th scope="col" style="padding: 10px 16px">Date</th><th scope="col" style="padding: 10px 12px">Service</th><th scope="col" style="padding: 10px 12px">Practitioner</th><th scope="col" style="padding: 10px 12px">Status</th><th scope="col" style="padding: 10px 16px; text-align: right">Invoice</th></tr></thead>
+<tbody>
+<sc-for list="{{appts}}" as="a" hint-placeholder-count="4">
+<tr style="border-top: 1px solid #E2E8F0"><td style="padding: 10px 16px; font-variant-numeric: tabular-nums">{{a.when}}</td><td style="padding: 10px 12px">{{a.what}}</td><td style="padding: 10px 12px">Priya Shah</td><td style="padding: 10px 12px"><span style="display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px 0 6px; border-radius: 999px; font-size: 12px; font-weight: 500; white-space: nowrap; background: {{a.bg}}; color: {{a.fg}}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{a.icon}}"></path></svg>{{a.status}}</span></td><td style="padding: 10px 16px; text-align: right">{{a.inv}}</td></tr>
+</sc-for>
+</tbody>
+</table>
+</div>
+</sc-if>
+
+<sc-if value="{{p.cases}}" hint-placeholder-val="{{false}}">
+<div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 20px; display: flex; flex-direction: column; gap: 16px">
+<div style="display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: flex-start">
+<div style="flex: 1; min-width: 240px; display: flex; flex-direction: column; gap: 4px">
+<div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap"><h2 style="margin: 0; font-size: 18px; font-weight: 600">Right shoulder – rotator cuff</h2><span style="display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 999px; font-size: 12px; font-weight: 500; background: #D5F5F0; color: #0B5F58">Open</span></div>
+<span style="color: #475569">Opened 27/10/2026 · Lead clinician Priya Shah</span>
+</div>
+<button type="button" style="height: 36px; padding: 0 12px; border-radius: 8px; border: 1px solid #E2E8F0; background: #FFFFFF; font: inherit; font-weight: 500">Edit case</button>
+<button type="button" style="height: 36px; padding: 0 12px; border-radius: 8px; border: 1px solid #E2E8F0; background: #FFFFFF; font: inherit; font-weight: 500">Discharge</button>
+</div>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); gap: 12px">
+<div style="border: 1px solid #E2E8F0; border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px"><span style="font-size: 12px; color: #64748B">Referrer</span><strong>Dr A. Fenwick</strong><span style="color: #475569; font-size: 13px">Westgate Surgery (fictional)</span></div>
+<div style="border: 1px solid #E2E8F0; border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px"><span style="font-size: 12px; color: #64748B">Insurer</span><strong>Bluewell Health (fictional)</strong><span style="color: #475569; font-size: 13px">Policy BWH-883201 · excess £20.00 per visit</span></div>
+<div style="border: 1px solid #E2E8F0; border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px"><span style="font-size: 12px; color: #64748B">Authorisation BW-55021</span><strong>1 used of 6 · 5 left</strong><div role="progressbar" aria-label="Sessions used" aria-valuemin="0" aria-valuemax="6" aria-valuenow="1" style="height: 8px; border-radius: 999px; background: #E2E8F0; overflow: hidden"><div style="width: 16.6%; height: 100%; background: #0E958A"></div></div><span style="color: #475569; font-size: 13px">Valid until 27/01/2027</span></div>
+</div>
+
+<div style="border: 1px solid #C7D4F5; background: #F5F8FF; border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; gap: 10px; align-items: flex-start; flex-wrap: wrap">
+<svg style="flex: none; margin-top: 2px" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1842B4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 15l2 2 4-4"></path></svg>
+<div style="flex: 1; min-width: 220px; display: flex; flex-direction: column; gap: 2px">
+<strong>Referrer and insurer forms</strong>
+<span style="color: #334155">{{cf.text}}</span>
+</div>
+<sc-if value="{{cf.idle}}" hint-placeholder-val="{{true}}"><button type="button" onClick="{{cfStart}}" style="height: 36px; padding: 0 14px; border-radius: 8px; border: 0; background: #1842B4; color: #FFFFFF; font: inherit; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; cursor: pointer">Complete referrer form<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"></path></svg></button></sc-if>
+<sc-if value="{{cf.open}}" hint-placeholder-val="{{false}}"><div style="display: flex; gap: 8px; flex-wrap: wrap"><a href="#clinforms" style="height: 36px; padding: 0 14px; border-radius: 8px; border: 1px solid #1842B4; color: #1842B4; text-decoration: none; font-weight: 500; display: inline-flex; align-items: center">Continue in ClinForms</a><button type="button" onClick="{{cfFinish}}" style="height: 36px; padding: 0 14px; border-radius: 8px; border: 0; background: #1842B4; color: #FFFFFF; font: inherit; font-weight: 500; cursor: pointer">Simulate: form completed</button></div></sc-if>
+</div>
+<sc-if value="{{cf.open}}" hint-placeholder-val="{{false}}"><div role="status" style="display: flex; gap: 8px; align-items: center; font-size: 13px; color: #334155"><span style="display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px 0 6px; border-radius: 999px; font-size: 12px; font-weight: 500; background: #FEF3C7; color: #864E0E"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 6v6l4 2"></path></svg>In progress</span>Bluewell Health (fictional) initial report – started 27/10/2026 11:52 by Priya Shah</div></sc-if>
+<sc-if value="{{cf.filed}}" hint-placeholder-val="{{false}}">
+<div role="status" style="display: flex; gap: 10px; align-items: center; padding: 10px 12px; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 10px; flex-wrap: wrap">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#BA1C1C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6"></path></svg>
+<span style="flex: 1; min-width: 200px; display: flex; flex-direction: column"><strong>Bluewell initial report – E Turner.pdf</strong><span style="font-size: 12px; color: #64748B">Completed in ClinForms · filed to this case and Attachments · 27/10/2026 12:04</span></span>
+<span style="display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px 0 6px; border-radius: 999px; font-size: 12px; font-weight: 500; background: #DCFCE7; color: #166534"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"></path></svg>Filed</span>
+<a href="#pdf" style="font-weight: 500">View</a>
+</div>
+</sc-if>
+</div>
+<details style="border-top: 1px solid #E2E8F0; padding-top: 12px"><summary style="cursor: pointer; font-weight: 500">Closed cases (2)</summary><ul style="margin: 8px 0 0; padding-left: 18px; color: #334155"><li>Low back pain – 03/2024 to 06/2024 · self-pay · 6 sessions</li><li>Left ankle sprain – 09/2022 to 10/2022 · self-pay · 3 sessions</li></ul></details>
+</div>
+</sc-if>
+
+<sc-if value="{{p.notes}}" hint-placeholder-val="{{false}}">
+<div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 16px 20px; display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; align-items: center; gap: 8px"><h2 style="margin: 0; font-size: 16px; font-weight: 600; flex: 1">Clinical notes</h2><a href="NoteEditor.dc.html" style="height: 36px; padding: 0 14px; border-radius: 8px; background: #0B7970; color: #FFFFFF; text-decoration: none; font-weight: 500; display: inline-flex; align-items: center">New note</a></div>
+<sc-for list="{{allNotes}}" as="n" hint-placeholder-count="4">
+<a href="NoteEditor.dc.html" style="display: flex; gap: 10px; align-items: center; padding: 10px 12px; border: 1px solid #E2E8F0; border-radius: 10px; text-decoration: none; color: #0F172A">
+<span style="flex: 1; min-width: 0; display: flex; flex-direction: column"><strong style="font-weight: 600">{{n.title}}</strong><span style="font-size: 12px; color: #64748B">{{n.meta}}</span></span>
+<span style="display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px 0 6px; border-radius: 999px; font-size: 12px; font-weight: 500; white-space: nowrap; background: {{n.bg}}; color: {{n.fg}}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{n.icon}}"></path></svg>{{n.state}}</span>
+</a>
+</sc-for>
+</div>
+</sc-if>
+
+<sc-if value="{{p.outcomes}}" hint-placeholder-val="{{false}}">
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(380px, 100%), 1fr)); gap: 16px">
+<sc-for list="{{charts}}" as="c" hint-placeholder-count="2">
+<figure style="margin: 0; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 16px 20px; display: flex; flex-direction: column; gap: 8px">
+<figcaption style="display: flex; flex-direction: column; gap: 2px"><strong style="font-size: 15px">{{c.title}}</strong><span style="font-size: 12px; color: #64748B">{{c.sub}}</span></figcaption>
+<svg role="img" aria-label="{{c.aria}}" viewBox="0 0 360 160" style="width: 100%; height: auto">
+<line x1="36" y1="20" x2="350" y2="20" stroke="#F1F5F9"></line><line x1="36" y1="70" x2="350" y2="70" stroke="#F1F5F9"></line><line x1="36" y1="120" x2="350" y2="120" stroke="#E2E8F0"></line>
+<text x="30" y="24" text-anchor="end" font-size="10" fill="#64748B">{{c.yMax}}</text><text x="30" y="74" text-anchor="end" font-size="10" fill="#64748B">{{c.yMid}}</text><text x="30" y="124" text-anchor="end" font-size="10" fill="#64748B">0</text>
+<polyline points="{{c.points}}" fill="none" stroke="#0E958A" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"></polyline>
+<sc-for list="{{c.dots}}" as="d" hint-placeholder-count="4"><circle cx="{{d.x}}" cy="{{d.y}}" r="4" fill="#FFFFFF" stroke="#0B7970" stroke-width="2"></circle><text x="{{d.x}}" y="{{d.ly}}" text-anchor="middle" font-size="11" font-weight="600" fill="#0F172A">{{d.v}}</text><text x="{{d.x}}" y="145" text-anchor="middle" font-size="10" fill="#64748B">{{d.date}}</text></sc-for>
+</svg>
+<span style="font-size: 13px; color: #166534; font-weight: 500">{{c.change}}</span>
+</figure>
+</sc-for>
+<div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 16px 20px; display: flex; flex-direction: column; gap: 8px">
+<strong style="font-size: 15px">Record a score</strong>
+<div style="display: flex; flex-wrap: wrap; gap: 8px"><sc-for list="{{measures}}" as="m" hint-placeholder-count="5"><button type="button" style="height: 36px; padding: 0 12px; border-radius: 8px; border: 1px solid #E2E8F0; background: #FFFFFF; font: inherit; font-weight: 500">{{m}}</button></sc-for></div>
+<span style="font-size: 12px; color: #64748B">Patients can also complete questionnaires in the portal before their visit.</span>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{p.simple}}" hint-placeholder-val="{{false}}">
+<div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 8px 20px">
+<sc-for list="{{simpleRows}}" as="s" hint-placeholder-count="3">
+<div style="display: flex; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid #F1F5F9; flex-wrap: wrap"><span style="font-variant-numeric: tabular-nums; color: #475569; width: 140px">{{s.a}}</span><span style="flex: 1; min-width: 200px">{{s.b}}</span><span style="font-size: 13px; color: #475569">{{s.c}}</span></div>
+</sc-for>
+</div>
+</sc-if>
+</div>
+</main>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"role":{"editor":"enum","options":["clinician","reception","owner"],"default":"clinician"},"$preview":{"width":1440,"height":1300}}'>
+class Component extends DCLogic {
+  constructor(p) { super(p); this.state = { tab: 'overview', cf: 'idle' }; }
+  renderVals() {
+    const st = this.state;
+    const role = this.props.role ?? 'clinician';
+    const clin = role !== 'reception';
+    const I = {
+      cal: 'M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z',
+      ucheck: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM16 11l2 2 4-4',
+      done: 'M22 11.08V12a10 10 0 1 1-5.93-9.14M22 4L12 14.01l-3-3',
+      lock: 'M5 11h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2zM7 11V7a5 5 0 0 1 10 0v4',
+      clock: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 6v6l4 2',
+      diff: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M12 12v6M9 15h6'
+    };
+    const all = [
+      { key: 'overview', label: 'Overview' }, { key: 'appointments', label: 'Appointments', count: 4 },
+      { key: 'cases', label: 'Cases', count: 1 }, { key: 'notes', label: 'Clinical notes', count: 2, clin: true },
+      { key: 'outcomes', label: 'Outcomes', clin: true }, { key: 'attachments', label: 'Attachments', count: 2 },
+      { key: 'invoices', label: 'Invoices', count: 1 }, { key: 'messages', label: 'Messages' },
+      { key: 'forms', label: 'Forms', count: 1 }, { key: 'history', label: 'History' }
+    ].filter(t => clin || !t.clin);
+    const cur = all.find(t => t.key === st.tab) ? st.tab : 'overview';
+    const tabs = all.map(t => ({ id: 'tab-' + t.key, label: t.label, sel: cur === t.key ? 'true' : 'false', ti: cur === t.key ? '0' : '-1',
+      fg: cur === t.key ? '#0F172A' : '#64748B', line: cur === t.key ? '#0E958A' : 'transparent',
+      hasCount: !!t.count, count: t.count || '', pick: () => this.setState({ tab: t.key }) }));
+    const tabKey = (e) => {
+      const i = all.findIndex(t => t.key === cur);
+      if (e.key === 'ArrowRight') this.setState({ tab: all[(i + 1) % all.length].key });
+      if (e.key === 'ArrowLeft') this.setState({ tab: all[(i - 1 + all.length) % all.length].key });
+    };
+    const simple = {
+      attachments: [{ a: '26/10/2026', b: 'GP referral letter – Westgate Surgery (fictional).pdf', c: 'Uploaded by Jess Taylor' }, { a: '27/10/2026', b: 'Shoulder ultrasound report.pdf', c: 'Uploaded by patient' }],
+      invoices: [{ a: '27/10/2026', b: 'INV-04833 · Patient excess £20.00', c: 'Paid' }, { a: '27/10/2026', b: 'INV-04834 · Bluewell Health (fictional) £50.00', c: 'Issued' }],
+      messages: [{ a: '26/10/2026 10:00', b: 'Reminder text: appointment Tue 27/10 at 11:00', c: 'Delivered' }, { a: '26/10/2026 10:14', b: 'Patient replied: "Yes, see you then"', c: 'Read by Jess Taylor' }],
+      forms: [{ a: '26/10/2026', b: 'New patient intake form', c: 'Signed by Emily Turner (typed signature)' }],
+      history: [{ a: '27/10/2026 10:52', b: 'Marked as arrived', c: 'Jess Taylor' }, { a: '26/10/2026 09:12', b: 'Booked online – initial assessment', c: 'Patient' }, { a: '26/10/2026 09:12', b: 'Patient record created', c: 'Online booking' }]
+    };
+    const stat = (s) => ({ booked: ['#E8EEFB', '#1842B4', I.cal, 'Booked'], arrived: ['#FEF3C7', '#864E0E', I.ucheck, 'Arrived'] })[s];
+    const up = (when, what, s) => { const x = stat(s); return { when, what, bg: x[0], fg: x[1], icon: x[2], status: x[3] }; };
+    const noteRow = (title, meta, s) => {
+      const m = { signed: ['#DCFCE7', '#166534', I.lock, 'Signed'], unsigned: ['#FEF3C7', '#864E0E', I.clock, 'Unsigned'], amended: ['#E8EEFB', '#1842B4', I.diff, 'Amended'] }[s];
+      return { title, meta, bg: m[0], fg: m[1], icon: m[2], state: m[3] };
+    };
+    const chart = (title, sub, max, vals, dates, change) => {
+      const xs = vals.map((v, i) => 60 + i * (270 / (vals.length - 1)));
+      const ys = vals.map(v => 120 - (v / max) * 100);
+      return { title, sub, yMax: String(max), yMid: String(max / 2), points: xs.map((x, i) => x + ',' + ys[i]).join(' '),
+        dots: vals.map((v, i) => ({ x: xs[i], y: ys[i], ly: ys[i] - 10, v: String(v), date: dates[i] })), change,
+        aria: title + ': ' + vals.map((v, i) => dates[i] + ' ' + v).join(', ') };
+    };
+    const cfText = { idle: 'Opens ClinForms with this case’s details and signed notes filled in. The completed form comes back here.', open: 'Draft open in ClinForms, filled in from this case and 1 signed note.', filed: 'Completed form filed to this case.' };
+    return {
+      product: 'Clinic system', isClin: clin,
+      user: role === 'reception' ? { name: 'Jess Taylor', role: 'Reception', init: 'JT', avBg: '#FEF3C7', avFg: '#864E0E' } : (role === 'owner' ? { name: 'Helen Ward', role: 'Owner', init: 'HW', avBg: '#EDE9FE', avFg: '#5B21B6' } : { name: 'Priya Shah', role: 'Physiotherapist', init: 'PS', avBg: '#CCFBF1', avFg: '#0B5F58' }),
+      tabs, tabKey, panelLabel: all.find(t => t.key === cur).label,
+      p: { overview: cur === 'overview', appointments: cur === 'appointments', cases: cur === 'cases', notes: cur === 'notes', outcomes: cur === 'outcomes', simple: !!simple[cur] },
+      simpleRows: simple[cur] || [],
+      goCases: () => this.setState({ tab: 'cases' }), goNotes: () => this.setState({ tab: 'notes' }),
+      upcoming: [up('Today 11:00', 'Initial assessment', 'arrived'), up('Wed 04/11 11:00', 'Follow-up', 'booked'), up('Wed 11/11 11:00', 'Follow-up', 'booked')],
+      appts: [up('Wed 11/11/2026 11:00', 'Follow-up 30 min', 'booked'), up('Wed 04/11/2026 11:00', 'Follow-up 30 min', 'booked'), Object.assign(up('Tue 27/10/2026 11:00', 'Initial assessment 45 min', 'arrived'), { inv: 'INV-04833' })].map(a => Object.assign({ inv: '–' }, a)),
+      notes: [noteRow('SOAP initial – right shoulder', 'Today · Priya Shah · draft saved 11:40', 'unsigned')],
+      allNotes: [noteRow('SOAP initial – right shoulder', 'Today · Priya Shah · draft saved 11:40', 'unsigned'), noteRow('Discharge – low back pain', '14/06/2024 · Priya Shah · amended 18/06/2024', 'amended'), noteRow('SOAP follow-up – low back pain', '07/06/2024 · Priya Shah', 'signed')],
+      charts: [
+        chart('NPRS – pain', '0–10, lower is better · previous episode (low back)', 10, [7, 6, 4, 2], ['03/05', '17/05', '31/05', '14/06'], '−5 points since first visit (clinically important change)'),
+        chart('ODI – disability', '0–100%, lower is better', 100, [46, 38, 24, 12], ['03/05', '17/05', '31/05', '14/06'], '−34 points since first visit')
+      ],
+      measures: ['NPRS', 'ODI', 'NDI', 'PSFS', 'QuickDASH'],
+      cf: { idle: st.cf === 'idle', open: st.cf === 'open', filed: st.cf === 'filed', text: cfText[st.cf] },
+      cfStart: () => this.setState({ cf: 'open' }), cfFinish: () => this.setState({ cf: 'filed' })
+    };
+  }
+}
+</script>
+</body>
+</html>

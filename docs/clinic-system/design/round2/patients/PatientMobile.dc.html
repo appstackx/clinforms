@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<title>Patients – mobile</title>
+<script src="./vendor/react.js"></script>
+<script src="./vendor/react-dom.js"></script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+*{box-sizing:border-box}
+a{color:#0B7970}
+:focus-visible{outline:2px solid #0E958A;outline-offset:2px}
+</style>
+</helmet>
+<div style="width: 375px; height: 812px; background: #F8FAFC; color: #0F172A; font-family: Inter, system-ui, -apple-system, sans-serif; font-size: 14px; line-height: 20px; display: flex; flex-direction: column; overflow: hidden">
+
+<sc-if value="{{isList}}" hint-placeholder-val="{{true}}">
+<header style="background: #FFFFFF; border-bottom: 1px solid #E2E8F0; padding: 8px 16px 12px; display: flex; flex-direction: column; gap: 8px">
+<div style="display: flex; align-items: center; gap: 8px; min-height: 44px">
+<h1 style="margin: 0; font-size: 20px; font-weight: 600; flex: 1">Patients</h1>
+<button type="button" aria-label="New patient" style="width: 44px; height: 44px; border: 0; border-radius: 10px; background: #0B7970; color: #FFFFFF; display: inline-flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg></button>
+</div>
+<div style="height: 44px; padding: 0 12px; border: 1px solid #CBD5E1; border-radius: 10px; display: flex; align-items: center; gap: 8px; background: #FFFFFF">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#64748B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 3a8 8 0 1 0 0 16 8 8 0 0 0 0-16zM21 21l-4.3-4.3"></path></svg>
+<input type="search" aria-label="Search patients" placeholder="Name, DOB or phone" style="border: 0; font: inherit; font-size: 16px; flex: 1; min-width: 0; background: transparent">
+</div>
+<div style="display: flex; gap: 6px; overflow-x: auto">
+<button type="button" style="height: 32px; padding: 0 12px; border-radius: 999px; border: 1px solid #0E958A; background: #F0FDFA; color: #0B5F58; font: inherit; font-size: 13px; font-weight: 500; white-space: nowrap">My patients</button>
+<button type="button" style="height: 32px; padding: 0 12px; border-radius: 999px; border: 1px solid #E2E8F0; background: #FFFFFF; font: inherit; font-size: 13px; white-space: nowrap">Seen today</button>
+<button type="button" style="height: 32px; padding: 0 12px; border-radius: 999px; border: 1px solid #E2E8F0; background: #FFFFFF; font: inherit; font-size: 13px; white-space: nowrap">Unsigned notes</button>
+</div>
+</header>
+<ul style="list-style: none; margin: 0; padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; flex: 1; overflow-y: auto">
+<sc-for list="{{people}}" as="p" hint-placeholder-count="7">
+<li><button type="button" onClick="{{p.open}}" style="width: 100%; min-height: 64px; border: 1px solid #E2E8F0; border-radius: 12px; background: #FFFFFF; padding: 10px 12px; font: inherit; text-align: left; display: flex; gap: 12px; align-items: center; color: #0F172A">
+<span aria-hidden="true" style="width: 40px; height: 40px; border-radius: 999px; background: {{p.avBg}}; color: {{p.avFg}}; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; flex: none">{{p.init}}</span>
+<span style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+<span style="display: flex; align-items: center; gap: 6px"><strong style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{p.name}}</strong><sc-if value="{{p.alert}}" hint-placeholder-val="{{false}}"><svg style="flex: none" role="img" aria-label="Has alert" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#864E0E" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01"></path></svg></sc-if></span>
+<span style="font-size: 13px; color: #475569">{{p.dob}} · Next: {{p.next}}</span>
+</span>
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"></path></svg>
+</button></li>
+</sc-for>
+</ul>
+</sc-if>
+
+<sc-if value="{{isRecord}}" hint-placeholder-val="{{false}}">
+<header style="background: #FFFFFF; border-bottom: 1px solid #E2E8F0; padding: 4px 8px 12px; display: flex; flex-direction: column; gap: 8px">
+<div style="display: flex; align-items: center; gap: 4px; min-height: 44px">
+<button type="button" onClick="{{back}}" aria-label="Back to patients" style="width: 44px; height: 44px; border: 0; background: transparent; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg></button>
+<span style="flex: 1; font-size: 13px; color: #475569">Patients</span>
+<button type="button" aria-label="More actions" style="width: 44px; height: 44px; border: 0; background: transparent; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M5 12h.01M12 12h.01M19 12h.01"></path></svg></button>
+</div>
+<div style="display: flex; gap: 12px; align-items: center; padding: 0 8px">
+<span aria-hidden="true" style="width: 48px; height: 48px; border-radius: 999px; background: #FCE7F3; color: #9D174D; font-size: 17px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; flex: none">ET</span>
+<div style="display: flex; flex-direction: column; min-width: 0"><h1 style="margin: 0; font-size: 20px; line-height: 26px; font-weight: 600">Emily Turner</h1><span style="font-size: 13px; color: #475569">DOB 27/09/1982 (44) · she/her</span></div>
+</div>
+<div style="display: flex; gap: 6px; flex-wrap: wrap; padding: 0 8px">
+<span style="display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px 0 6px; border-radius: 6px; font-size: 12px; font-weight: 600; white-space: nowrap; background: #FEF3C7; color: #864E0E"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01"></path></svg>Latex allergy</span>
+<span style="display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px 0 6px; border-radius: 6px; font-size: 12px; font-weight: 600; white-space: nowrap; background: #FEF3C7; color: #864E0E"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01"></path></svg>Anticoagulants</span>
+</div>
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; padding: 4px 8px 0">
+<a href="tel:07700900218" style="height: 48px; border-radius: 10px; border: 1px solid #E2E8F0; color: #0F172A; text-decoration: none; font-size: 13px; font-weight: 500; display: flex; flex-direction: column; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>Call</a>
+<a href="NoteEditor.dc.html" style="height: 48px; border-radius: 10px; background: #0B7970; color: #FFFFFF; text-decoration: none; font-size: 13px; font-weight: 500; display: flex; flex-direction: column; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"></path></svg>Note</a>
+<a href="BookingDialog.dc.html" style="height: 48px; border-radius: 10px; border: 1px solid #E2E8F0; color: #0F172A; text-decoration: none; font-size: 13px; font-weight: 500; display: flex; flex-direction: column; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"></path></svg>Book</a>
+</div>
+</header>
+<div role="tablist" aria-label="Record sections" style="display: flex; gap: 2px; background: #FFFFFF; border-bottom: 1px solid #E2E8F0; overflow-x: auto; padding: 0 8px">
+<sc-for list="{{tabs}}" as="t" hint-placeholder-count="5">
+<button type="button" role="tab" aria-selected="{{t.sel}}" onClick="{{t.pick}}" style="height: 44px; padding: 0 12px; border: 0; background: transparent; font: inherit; font-weight: 500; color: {{t.fg}}; border-bottom: 2px solid {{t.line}}; white-space: nowrap">{{t.label}}</button>
+</sc-for>
+</div>
+<div style="flex: 1; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 10px">
+<sc-for list="{{cards}}" as="c" hint-placeholder-count="3">
+<div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px">
+<span style="font-size: 12px; font-weight: 600; color: #475569; text-transform: uppercase; letter-spacing: .04em">{{c.k}}</span>
+<strong>{{c.v}}</strong>
+<span style="font-size: 13px; color: #475569">{{c.s}}</span>
+</div>
+</sc-for>
+</div>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":375,"height":812}}'>
+class Component extends DCLogic {
+  constructor(p) { super(p); this.state = { screen: 'list', tab: 'Overview' }; }
+  renderVals() {
+    const st = this.state;
+    const AV = [['#CCFBF1', '#0B5F58'], ['#DBEAFE', '#1842B4'], ['#FCE7F3', '#9D174D'], ['#FEF3C7', '#864E0E'], ['#EDE9FE', '#5B21B6']];
+    const people = [
+      ['Chloe Bennett', '11/01/1996', 'Wed 09:30'], ['Emily Turner', '27/09/1982', 'Today 11:00', true], ['George Lewis', '05/04/1957', 'Today 15:00'],
+      ['Isla Morgan', '02/07/1988', 'Today 16:00'], ['Liam O’Connor', '21/06/1985', 'Thu 09:00'], ['Margaret Ellis', '14/03/1961', 'Wed 11:30'], ['Ravi Patel', '19/05/1979', 'Thu 10:00']
+    ].map((p, i) => ({ name: p[0], dob: p[1], next: p[2], alert: !!p[3], init: p[0].split(' ').map(s => s[0]).join(''), avBg: AV[i % 5][0], avFg: AV[i % 5][1], open: () => this.setState({ screen: 'record' }) }));
+    const T = ['Overview', 'Cases', 'Notes', 'Outcomes', 'Appointments'];
+    const content = {
+      Overview: [{ k: 'Next appointment', v: 'Today 11:00 · Initial assessment', s: 'Arrived 10:52 · Room 1' }, { k: 'Open case', v: 'Right shoulder – rotator cuff', s: 'Bluewell Health (fictional) · 1 of 6 sessions used' }, { k: 'Notes', v: 'SOAP initial – unsigned', s: 'Draft saved 11:40' }],
+      Cases: [{ k: 'Open', v: 'Right shoulder – rotator cuff', s: 'Auth BW-55021 · 5 sessions left · valid to 27/01/2027' }, { k: 'Closed', v: 'Low back pain', s: '03/2024 – 06/2024 · 6 sessions' }],
+      Notes: [{ k: 'Today', v: 'SOAP initial – right shoulder', s: 'Unsigned · tap to continue' }, { k: '14/06/2024', v: 'Discharge – low back pain', s: 'Amended 18/06/2024' }],
+      Outcomes: [{ k: 'NPRS (pain)', v: '7 → 2', s: 'Previous episode, 4 scores' }, { k: 'ODI', v: '46% → 12%', s: 'Previous episode, 4 scores' }],
+      Appointments: [{ k: 'Upcoming', v: 'Wed 04/11 11:00 · Follow-up', s: 'Priya Shah · Room 1' }, { k: 'Upcoming', v: 'Wed 11/11 11:00 · Follow-up', s: 'Priya Shah · Room 1' }]
+    };
+    return {
+      isList: st.screen === 'list', isRecord: st.screen === 'record', people,
+      back: () => this.setState({ screen: 'list' }),
+      tabs: T.map(label => ({ label, sel: st.tab === label ? 'true' : 'false', fg: st.tab === label ? '#0F172A' : '#64748B', line: st.tab === label ? '#0E958A' : 'transparent', pick: () => this.setState({ tab: label }) })),
+      cards: content[st.tab]
+    };
+  }
+}
+</script>
+</body>
+</html>

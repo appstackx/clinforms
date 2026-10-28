@@ -5,7 +5,12 @@
  */
 import { z } from "zod";
 
-export const DEFAULT_UNSIGNED_NOTE_DAYS = 3;
+/**
+ * Design round 2 (note editor): "Sign within 24 hours of the visit" – a draft is overdue from the day after the
+ * consultation. Was 3 days before the design; the clinic can raise it (1–60). The database column's own DEFAULT (3,
+ * migration 0122) is never used: a row is only written with the value chosen on the settings screen.
+ */
+export const DEFAULT_UNSIGNED_NOTE_DAYS = 1;
 export const MAX_UNSIGNED_NOTE_DAYS = 60;
 
 export interface RecordsSettings {
@@ -36,4 +41,14 @@ export function overdueCutoff(today: string, days: number): string {
 /** Days since the consultation (0 = today). */
 export function daysSince(seenOn: string, today: string): number {
   return Math.round((Date.parse(`${today}T00:00:00.000Z`) - Date.parse(`${seenOn}T00:00:00.000Z`)) / 86_400_000);
+}
+
+/** "24 h" for one day, else "N days" – the unsigned-notes badge ("Over 24 h") and its explanation. */
+export function overdueWindowLabel(days: number): string {
+  return days === 1 ? "24 h" : `${days} days`;
+}
+
+/** "Sign within 24 hours of the visit." / "Sign within 3 days of the visit." */
+export function signWithinText(days: number): string {
+  return days === 1 ? "Sign within 24 hours of the visit." : `Sign within ${days} days of the visit.`;
 }

@@ -66,7 +66,7 @@ export function CaseForm({ action, patientId, values = {}, options, submitLabel 
 
       <Fieldset legend="Who pays">
         <div className="space-y-1.5">
-          <label htmlFor="case-payer-type" className="block text-sm font-medium text-slate-800">
+          <label htmlFor="case-payer-type" className="block text-sm font-medium text-foreground">
             Payer
           </label>
           <select
@@ -74,7 +74,7 @@ export function CaseForm({ action, patientId, values = {}, options, submitLabel 
             name="payerType"
             value={payerType}
             onChange={(e) => setPayerType(e.target.value as PayerType)}
-            className="block h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm focus:border-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-600/30 sm:max-w-xs"
+            className="block h-10 w-full rounded-lg border border-input-strong bg-white px-3 text-sm text-foreground shadow-sm focus:border-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-600/30 sm:max-w-xs"
           >
             {PAYER_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>

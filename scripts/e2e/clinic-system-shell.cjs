@@ -161,7 +161,7 @@ const navLabels = (page) => page.locator("header nav[aria-label='Clinic'] a").al
       const products = await a.locator("nav[aria-label='Product areas'] a").allInnerTexts();
       assert(products[0] === "Clinic system" && /^ClinForms/.test(products[1] || ""), `products: ${products.join(", ")}`);
       const labels = await a.locator("nav[aria-label='Clinic system'] a").allInnerTexts();
-      assert(JSON.stringify(labels) === JSON.stringify(["Overview", "Patients", "Staff access", "Roles and permissions"]), `clinic nav: ${labels.join(", ")}`);
+      assert(JSON.stringify(labels) === JSON.stringify(["Overview", "Patients", "Unsigned notes", "Staff access", "Roles and permissions", "Note templates"]), `clinic nav: ${labels.join(", ")}`);
       assert((await a.locator("button[aria-haspopup='listbox']").first().innerText()).includes("Bletchley (fictional)"), "site switcher shows the first site");
       await a.locator("main h1").first().click();
       await a.keyboard.press("/");
@@ -169,7 +169,7 @@ const navLabels = (page) => page.locator("header nav[aria-label='Clinic'] a").al
       await a.keyboard.type("Hart");
       await a.keyboard.press("Enter");
       await a.waitForURL(/\/app\/clinic\/patients\?q=Hart/);
-      assert((await a.locator("main").innerText()).includes("Hart, Megan"), "the search finds Megan Hart (listed as \"Hart, Megan\")");
+      assert((await a.locator("main").innerText()).includes("Megan Hart"), "the search finds Megan Hart (the records list shows first name first)");
       await a.click("button[aria-haspopup='menu']");
       const menu = await a.locator("[role='menu'][aria-label='Account']").innerText();
       assert(/Role: Owner/.test(menu) && /Sign out/.test(menu) && /Switch to ClinForms/.test(menu), `menu: ${menu.replace(/\s+/g, " ")}`);

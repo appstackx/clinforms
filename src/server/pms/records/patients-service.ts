@@ -5,7 +5,8 @@
  *   patients.view   – search, details, possible duplicates
  *   patients.edit   – register, edit, record a death
  *   patients.merge  – archive a record, restore an archived one
- *   settings.manage – legal hold, anonymise (owner / admin)
+ *   settings.setup  – legal hold (owner / admin)
+ *   patients.merge  – anonymise (owner / admin by default; "Merge or archive patients")
  */
 import { fieldErrors, patientInputSchema, patientPatchSchema, type PatientInput, type PatientPatch } from "../../../modules/pms/core/schemas";
 import { ukToday } from "../../../modules/pms/core/text";
@@ -123,7 +124,7 @@ export async function setPatientStatusFor(actor: RecordsActor, patientId: string
 
 /** Puts the record on hold (kept as it is whatever the record-keeping rules say) or takes the hold off. */
 export async function setLegalHoldFor(actor: RecordsActor, patientId: string, hold: boolean): Promise<Result<{ changed: boolean }>> {
-  const denied = guard(actor, "settings.manage");
+  const denied = guard(actor, "settings.setup");
   if (denied) return denied;
   return attempt("patient_hold", async () => {
     const patient = await patientInClinic(actor, patientId);
@@ -141,7 +142,7 @@ export interface AnonymiseState {
 
 /** Whether the record may be anonymised today, and why not. */
 export async function anonymiseEligibilityFor(actor: RecordsActor, patientId: string): Promise<Result<AnonymiseState>> {
-  const denied = guard(actor, "settings.manage");
+  const denied = guard(actor, "patients.merge");
   if (denied) return denied;
   return attempt("anonymise_check", async () => {
     const patient = await patientInClinic(actor, patientId);
@@ -154,7 +155,7 @@ export async function anonymiseEligibilityFor(actor: RecordsActor, patientId: st
 
 /** Anonymises the record after the record-keeping period (confirmed by typing the patient's number). */
 export async function anonymisePatientFor(actor: RecordsActor, patientId: string, confirm: { confirmNumber: number; reviewed: boolean }): Promise<Result<AnonymiseResult>> {
-  const denied = guard(actor, "settings.manage");
+  const denied = guard(actor, "patients.merge");
   if (denied) return denied;
   if (!Number.isInteger(confirm.confirmNumber)) return fail("invalid", "Type the patient's number to confirm.", { fieldErrors: { confirmNumber: "Type the number shown above." } });
   return attempt("anonymise", async () => {

@@ -4,8 +4,10 @@
  * Rules: ./access.ts. Reception (staff) holds none of the clinical permissions, so every function here refuses
  * them BEFORE reading anything.
  *
- *   clinical.view  – list and read notes; the unsigned-notes list (own drafts; all authors' for settings.manage)
+ *   clinical.view  – list and read notes; the unsigned-notes list (own drafts; all authors' for settings.setup)
  *   clinical.write – start, save, discard and sign one's OWN drafts (the repository checks the author too)
+ *   signing and amending also need a registration number on the member's practitioner profile (Khuram, 28/10/2026):
+ *   without one the draft is still saved, but signNote / addAmendment are never reached ("registration" failure)
  *   clinical.amend – add an amendment to a signed note: a clinician only to notes they wrote or signed; owners and
  *                    admins holding it to anyone's (mayAmendNote, roles design round 2)
  */
@@ -26,16 +28,18 @@ import {
   createNoteDraft,
   discardNoteDraft,
   getNote,
+  latestSignedNoteId,
   listNotesForPatient,
   listUnsignedNotes,
   recordNoteView,
   saveNoteDraft,
+  setDraftTemplate,
   signNote,
   type UnsignedCount,
 } from "../../repos/pms/records/notes";
 import { getRecordsSettings } from "../../repos/pms/records/settings";
 import { listNoteTemplates } from "../../repos/pms/records/templates";
-import { attempt, fail, forbidden, guard, noteAuthorOf, notFound, ok, patientInClinic, saveFailure, type RecordsActor, type Result } from "./access";
+import { attempt, fail, forbidden, guard, noteAuthorOf, notFound, ok, patientInClinic, registrationFailure, saveFailure, type RecordsActor, type Result } from "./access";
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -53,11 +57,11 @@ export interface NoteView {
   note: ClinicalNote;
   /** The member wrote it. */
   mine: boolean;
-  /** The member may change it now (their own draft, clinical.edit). */
+  /** The member may change it now (their own draft, clinical.write). */
   editable: boolean;
-  /** The member may sign it now (their own draft, clinical.sign). */
+  /** The member may sign it now (their own draft, clinical.write). */
   signable: boolean;
-  /** The member may add an amendment (a signed, not anonymised note, clinical.sign). */
+  /** The member may add an amendment (a signed, not anonymised note, clinical.amend – own notes for clinicians). */
   amendable: boolean;
 }
 
@@ -95,7 +99,7 @@ export async function getNoteFor(actor: RecordsActor, patientId: string, noteId:
 
 /** The templates a new note can start from (built-in first, then the clinic's own in use). */
 export async function templatesForNewNote(actor: RecordsActor): Promise<Result<NoteTemplate[]>> {
-  const denied = guard(actor, "clinical.edit");
+  const denied = guard(actor, "clinical.write");
   if (denied) return denied;
   return attempt("note_templates", async () => ok(await listNoteTemplates(actor.repo(), actor.tenantId)));
 }
@@ -110,7 +114,7 @@ export interface StartNoteInput {
 
 /** Starts a draft from a template for the patient; the member is the author. */
 export async function startNoteFor(actor: RecordsActor, patientId: string, input: StartNoteInput): Promise<Result<NoteSummary>> {
-  const denied = guard(actor, "clinical.edit");
+  const denied = guard(actor, "clinical.write");
   if (denied) return denied;
   if (!ISO_DATE.test(String(input.seenOn ?? ""))) return fail("invalid", "Enter the consultation date.", { fieldErrors: { seenOn: "Enter the consultation date." } });
   if (!input.templateId) return fail("invalid", "Choose a template.", { fieldErrors: { templateId: "Choose a template." } });
@@ -140,7 +144,7 @@ export interface SaveNoteInput {
   bodyChart?: BodyChart | null;
   seenOn?: string;
   caseId?: string | null;
-  /** Sign straight after saving (needs clinical.sign). */
+  /** Sign straight after saving (needs a registration number on the member's profile). */
   sign?: boolean;
 }
 
@@ -149,7 +153,7 @@ export interface SaveNoteInput {
  * save worked but the signing did not (e.g. an empty note), the failure says so and carries the new revision.
  */
 export async function saveNoteFor(actor: RecordsActor, patientId: string, noteId: string, input: SaveNoteInput): Promise<Result<{ rev: number; signed: boolean }>> {
-  const denied = guard(actor, "clinical.edit", ...(input.sign ? (["clinical.sign"] as const) : []));
+  const denied = guard(actor, "clinical.write");
   if (denied) return denied;
   if (input.seenOn !== undefined && !ISO_DATE.test(input.seenOn)) return fail("invalid", "Enter the consultation date.", { fieldErrors: { seenOn: "Enter the consultation date." } });
   const sections = NoteSectionsSchema.safeParse(input.sections ?? {});
@@ -177,7 +181,10 @@ export async function saveNoteFor(actor: RecordsActor, patientId: string, noteId
     rev = s.rev;
     saved = true;
     if (!input.sign) return ok({ rev, signed: false });
-    const signed = await signNote(actor.repo(), actor.tenantId, note.id, rev, await noteAuthorOf(actor), actor.actor);
+    const signer = await noteAuthorOf(actor);
+    const noRegistration = registrationFailure(signer);
+    if (noRegistration) return noRegistration;
+    const signed = await signNote(actor.repo(), actor.tenantId, note.id, rev, signer, actor.actor);
     if (!signed.ok) return saveFailure(signed);
     return ok({ rev: signed.rev, signed: true });
   });
@@ -185,21 +192,64 @@ export async function saveNoteFor(actor: RecordsActor, patientId: string, noteId
   return result;
 }
 
+/** Switches the member's own draft to another template (text under shared section keys is kept). */
+export async function changeNoteTemplateFor(actor: RecordsActor, patientId: string, noteId: string, expectedRev: number, templateId: string): Promise<Result<{ rev: number }>> {
+  const denied = guard(actor, "clinical.write");
+  if (denied) return denied;
+  if (typeof templateId !== "string" || !templateId) return fail("invalid", "Choose a template.", { fieldErrors: { templateId: "Choose a template." } });
+  return attempt("note_template_change", async () => {
+    const note = await noteOfPatient(actor, patientId, noteId);
+    if (!note) return notFound();
+    const r = await setDraftTemplate(actor.repo(), actor.tenantId, note.id, expectedRev, templateId, actor.actor);
+    return r.ok ? ok({ rev: r.rev }) : saveFailure(r);
+  });
+}
+
+export interface LastNoteCopy {
+  noteId: string;
+  seenOn: string;
+  templateName: string;
+  /** Section key → text (the editor fills the sections the current note shares). */
+  sections: Record<string, string>;
+}
+
+/**
+ * "Copy from last note": the text of the patient's latest signed note other than this one (decrypted – the
+ * opening is recorded in the patient's history, like any note read). null when there is none.
+ */
+export async function lastNoteForCopyFor(actor: RecordsActor, patientId: string, excludeNoteId?: string): Promise<Result<LastNoteCopy | null>> {
+  const denied = guard(actor, "clinical.write");
+  if (denied) return denied;
+  return attempt("copy_last_note", async () => {
+    const patient = await patientInClinic(actor, patientId);
+    if (!patient) return notFound();
+    const id = await latestSignedNoteId(actor.repo(), actor.tenantId, patient.id, excludeNoteId);
+    if (!id) return ok(null);
+    const note = await getNote(actor.repo(), actor.tenantId, id);
+    if (!note || note.patientId !== patient.id) return ok(null);
+    await recordNoteView(actor.repo(), actor.tenantId, note.id, actor.actor);
+    return ok({ noteId: note.id, seenOn: note.seenOn, templateName: note.templateName, sections: note.sections });
+  });
+}
+
 /** Signs the member's own draft as it was last saved. */
 export async function signNoteFor(actor: RecordsActor, patientId: string, noteId: string, expectedRev: number): Promise<Result<{ rev: number }>> {
-  const denied = guard(actor, "clinical.sign");
+  const denied = guard(actor, "clinical.write");
   if (denied) return denied;
   return attempt("sign_note", async () => {
     const note = await noteOfPatient(actor, patientId, noteId);
     if (!note) return notFound();
-    const signed = await signNote(actor.repo(), actor.tenantId, note.id, expectedRev, await noteAuthorOf(actor), actor.actor);
+    const signer = await noteAuthorOf(actor);
+    const noRegistration = registrationFailure(signer);
+    if (noRegistration) return noRegistration;
+    const signed = await signNote(actor.repo(), actor.tenantId, note.id, expectedRev, signer, actor.actor);
     return signed.ok ? ok({ rev: signed.rev }) : saveFailure(signed);
   });
 }
 
 /** Throws the member's own draft away (kept, hidden by default). */
 export async function discardNoteFor(actor: RecordsActor, patientId: string, noteId: string, expectedRev: number): Promise<Result<{ rev: number }>> {
-  const denied = guard(actor, "clinical.edit");
+  const denied = guard(actor, "clinical.write");
   if (denied) return denied;
   return attempt("discard_note", async () => {
     const note = await noteOfPatient(actor, patientId, noteId);
@@ -219,7 +269,10 @@ export async function amendNoteFor(actor: RecordsActor, patientId: string, noteI
     const note = await noteOfPatient(actor, patientId, noteId);
     if (!note) return notFound();
     if (!mayAmendNote(actor.role, actor.can, ownNote(actor, note))) return forbidden();
-    return ok(await addAmendment(actor.repo(), actor.tenantId, note.id, input, await noteAuthorOf(actor), actor.actor));
+    const signer = await noteAuthorOf(actor);
+    const noRegistration = registrationFailure(signer);
+    if (noRegistration) return noRegistration;
+    return ok(await addAmendment(actor.repo(), actor.tenantId, note.id, input, signer, actor.actor));
   });
 }
 
@@ -244,14 +297,14 @@ export interface UnsignedNotesView {
 }
 
 /**
- * The unsigned-notes list: a clinician's own drafts, or – for owners/administrators (settings.manage) – every
+ * The unsigned-notes list: a clinician's own drafts, or – for owners/administrators (settings.setup) – every
  * author's, with a count per author and the overdue ones (consultation N or more days ago, N per clinic) flagged.
  */
 export async function unsignedNotesFor(actor: RecordsActor, options: { scope?: "mine" | "all"; overdueOnly?: boolean; limit?: number } = {}): Promise<Result<UnsignedNotesView>> {
   const denied = guard(actor, "clinical.view");
   if (denied) return denied;
   const scope = options.scope === "all" ? "all" : "mine";
-  if (scope === "all" && !actor.can("settings.manage")) return forbidden();
+  if (scope === "all" && !actor.can("settings.setup")) return forbidden();
   return attempt("unsigned_notes", async () => {
     const ctx = actor.repo();
     const today = ukToday(ctx.now ? ctx.now() : new Date());

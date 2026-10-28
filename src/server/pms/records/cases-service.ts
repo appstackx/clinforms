@@ -5,6 +5,9 @@
  *   patients.view – list and read cases and authorisations (the case page lists its clinical notes only for
  *                   members with clinical.view)
  *   patients.edit – open and change cases, add and change authorisations
+ *   patients.referral – "See referral reason and case notes": the case's referral reason and case notes (encrypted).
+ *                   On for every role by default – reception too (Khuram, 28/10/2026) – and the owner can switch it
+ *                   off per role or per member; without it the text never leaves the server and may not be changed.
  *
  * On top of the repositories: every case/authorisation of a request must be the patient's own, the payer account
  * must be a directory entry of a kind that can pay for the case's payer type (an insurer for an insured case…), and
@@ -49,6 +52,28 @@ export async function listCasesFor(actor: RecordsActor, patientId: string): Prom
     const patient = await patientInClinic(actor, patientId);
     if (!patient) return notFound();
     return ok(await listCasesForPatient(actor.repo(), actor.tenantId, patient.id));
+  });
+}
+
+export interface CaseReferral {
+  caseId: string;
+  referralReason: string | null;
+  notes: string | null;
+}
+
+/**
+ * The referral reason and case notes of each of a patient's cases (the Cases tab) – patients.referral. Without it the
+ * answer is a refusal, never the text.
+ */
+export async function caseReferralsFor(actor: RecordsActor, patientId: string): Promise<Result<CaseReferral[]>> {
+  const denied = guard(actor, "patients.view", "patients.referral");
+  if (denied) return denied;
+  return attempt("case_referrals", async () => {
+    const patient = await patientInClinic(actor, patientId);
+    if (!patient) return notFound();
+    const summaries = await listCasesForPatient(actor.repo(), actor.tenantId, patient.id);
+    const cases = await Promise.all(summaries.map((c) => getCase(actor.repo(), actor.tenantId, c.id)));
+    return ok(cases.filter((c): c is Case => Boolean(c)).map((c) => ({ caseId: c.id, referralReason: c.referralReason, notes: c.notes })));
   });
 }
 

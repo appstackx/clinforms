@@ -1,7 +1,8 @@
 /**
  * Tables of the records module (owned by the records builder – docs/clinic-system/contract.md §3–4), migrations
- * 0120–0122 / 20261024000120–…122: note templates, clinical notes and amendments, outcome measures, attached files
- * (metadata + encrypted chunks), patient anonymisations and the clinic's record-keeping settings for notes.
+ * 0120–0125 / 20261024000120–…125: note templates, clinical notes and amendments, outcome measures, attached files
+ * (metadata + encrypted chunks), patient anonymisations, the clinic's record-keeping settings for notes, and (0125)
+ * the patient's pronouns and clinical flags.
  *
  * - PRIMARY KEY (tenant_id, id) everywhere; foreign keys include tenant_id AND the patient where a row belongs to
  *   one (a note's case, an amendment's note, an outcome's note, a file's note are the same patient's).
@@ -179,6 +180,34 @@ export interface PmsRecordsSettingsTable {
   updated_at: IsoTimestamp;
 }
 
+/** One row per patient (id = the patient's id, 0125): what the shared patient table does not hold. */
+export interface PmsPatientExtrasTable {
+  tenant_id: string;
+  id: string;
+  rev: number;
+  pronouns: string | null;
+  updated_by: string | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
+/** Clinical flags (0125, K2-PAT-014): the words encrypted; ended, never deleted. */
+export interface PmsClinicalFlagsTable {
+  tenant_id: string;
+  id: string;
+  rev: number;
+  patient_id: string;
+  flag_enc: string | null;
+  /** "active" | "ended" */
+  status: WithDefault<string>;
+  created_by: string | null;
+  ended_at: IsoTimestamp | null;
+  ended_by: string | null;
+  anonymised_at: IsoTimestamp | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
 export interface RecordsTables {
   pms_note_templates: PmsNoteTemplatesTable;
   pms_clinical_notes: PmsClinicalNotesTable;
@@ -188,6 +217,8 @@ export interface RecordsTables {
   pms_attachment_chunks: PmsAttachmentChunksTable;
   pms_patient_anonymisations: PmsPatientAnonymisationsTable;
   pms_records_settings: PmsRecordsSettingsTable;
+  pms_patient_extras: PmsPatientExtrasTable;
+  pms_clinical_flags: PmsClinicalFlagsTable;
 }
 
 /** Foreign-key order (parents first). */
@@ -200,6 +231,8 @@ export const RECORDS_TABLES = [
   "pms_attachment_chunks",
   "pms_patient_anonymisations",
   "pms_records_settings",
+  "pms_patient_extras",
+  "pms_clinical_flags",
 ] as const satisfies readonly (keyof RecordsTables)[];
 
 export const RECORDS_PRIMARY_KEYS: { readonly [T in (typeof RECORDS_TABLES)[number]]: readonly (keyof RecordsTables[T] & string)[] } = {
@@ -211,10 +244,12 @@ export const RECORDS_PRIMARY_KEYS: { readonly [T in (typeof RECORDS_TABLES)[numb
   pms_attachment_chunks: ["tenant_id", "id"],
   pms_patient_anonymisations: ["tenant_id", "id"],
   pms_records_settings: ["tenant_id", "id"],
+  pms_patient_extras: ["tenant_id", "id"],
+  pms_clinical_flags: ["tenant_id", "id"],
 };
 
 /** Timestamp columns besides created_at / updated_at (TEXT in SQLite, timestamptz in Postgres). */
-export const RECORDS_TIMESTAMP_COLUMNS: readonly string[] = ["signed_at", "discarded_at", "anonymised_at", "error_at", "withdrawn_at", "started_at", "done_at"];
+export const RECORDS_TIMESTAMP_COLUMNS: readonly string[] = ["signed_at", "discarded_at", "anonymised_at", "error_at", "withdrawn_at", "started_at", "done_at", "ended_at"];
 
 /** Every records table holds one clinic's own data (offboarding exports and deletes them). */
 export const RECORDS_TENANT_TABLES: readonly (typeof RECORDS_TABLES)[number][] = RECORDS_TABLES;

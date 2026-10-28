@@ -4,6 +4,7 @@ import type { FailureCode } from "./access";
 export function failureStatus(code: FailureCode): number {
   switch (code) {
     case "forbidden":
+    case "registration":
       return 403;
     case "not_found":
       return 404;
