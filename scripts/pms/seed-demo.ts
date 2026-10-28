@@ -18,6 +18,7 @@
  */
 import { DEMO_CLINIC } from "./demo-data";
 import { seedDiary } from "./seed-diary";
+import { seedSetup } from "./seed-setup";
 import { assertDemoClinic, seedDemoClinic } from "./seed-lib";
 import { seedBilling } from "./seed-billing";
 import { seedComms } from "./seed-comms";
@@ -27,6 +28,7 @@ import { createClinic } from "../../src/server/auth/platform";
 import { getDataCipher } from "../../src/server/crypto";
 import { getDb, getDbKind } from "../../src/server/db";
 import { CliError, appUrl, applyTarget, flag, parseArgs, requireYesForProduction, resolveTarget, runCli, str } from "../admin/cli";
+import { pmsNow } from "../../src/modules/pms/core/clock";
 
 void runCli(async () => {
   const args = parseArgs(process.argv.slice(2));
@@ -73,15 +75,16 @@ void runCli(async () => {
     await assertDemoClinic(db, slug, { markDemo: true });
   }
   const summary = await seedDemoClinic(
-    { db, cipher: getDataCipher() },
+    { db, cipher: getDataCipher(), now: pmsNow },
     { tenantId: slug, markDemo: markDemo || local, fresh, patients, seed, log: (line) => console.log(`  ${line}`) },
   );
   // Module demonstration data (contract §9): the diary first, then clinical records for the seeded cases, then
   // billing (invoices for part of the diary week, payments, a remittance).
-  await seedDiary({ db, cipher: getDataCipher() }, slug, { log: (line) => console.log(`  ${line}`) });
-  await seedRecords({ db, cipher: getDataCipher() }, slug, { log: (line) => console.log(`  ${line}`) });
+  await seedSetup({ db, cipher: getDataCipher(), now: pmsNow }, slug, { log: (line) => console.log(`  ${line}`) });
+  await seedDiary({ db, cipher: getDataCipher(), now: pmsNow }, slug, { log: (line) => console.log(`  ${line}`) });
+  await seedRecords({ db, cipher: getDataCipher(), now: pmsNow }, slug, { log: (line) => console.log(`  ${line}`) });
   await seedBilling({ db, cipher: getDataCipher() }, slug, { log: (line) => console.log(`  ${line}`) });
   await seedComms({ db, cipher: getDataCipher() }, slug, { log: (line) => console.log(`  ${line}`) });
-  await seedPortal({ db, cipher: getDataCipher() }, slug, { log: (line) => console.log(`  ${line}`) });
+  await seedPortal({ db, cipher: getDataCipher(), now: pmsNow }, slug, { log: (line) => console.log(`  ${line}`) });
   console.log(`Done: ${summary.patients} patients, ${summary.cases} cases, ${summary.authorisations} authorisations in ${slug} (fictional data). The clinic system is on for this clinic.`);
 });

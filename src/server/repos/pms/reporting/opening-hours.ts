@@ -5,6 +5,7 @@
  * Read by the utilisation reports (available time) and, later, by online booking.
  */
 import { REPORTING_ID_PREFIXES as P } from "../../../../modules/pms/reporting/ids";
+import { openingInfo, type OpeningInfo } from "../../../../modules/pms/reporting/opening";
 import { daysInclusive } from "../../../../modules/pms/reporting/periods";
 import { ClosureInputSchema, OpeningHoursInputSchema, timeToMinutes, type ClosureInput, type OpeningHoursInput } from "../../../../modules/pms/reporting/schemas";
 import type { PmsActor } from "../../../../modules/pms/core/types";
@@ -155,4 +156,16 @@ function chunk<T>(items: readonly T[], size: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
   return out;
+}
+
+/**
+ * When the given sites are open between two dates (the diary's rota windows are clipped to this): their opening
+ * sessions (sites without any are "not set") and the closures touching the period. Two queries whatever the period.
+ */
+export async function openingInfoFor(ctx: DbContext, tenantId: string, siteIds: readonly string[] | null, from: string, to: string): Promise<OpeningInfo> {
+  assertTenantId(tenantId);
+  if (siteIds && siteIds.length === 0) return openingInfo([], []);
+  const ids = siteIds ? Array.from(new Set(siteIds)) : undefined;
+  const [sessions, closures] = await Promise.all([listOpeningHours(ctx, tenantId, ids ? { siteIds: ids } : {}), listClosures(ctx, tenantId, { from, to, siteIds: ids })]);
+  return openingInfo(sessions, closures);
 }
