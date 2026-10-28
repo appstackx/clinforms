@@ -25,6 +25,7 @@ import { testActor, type BillingActor } from "../../src/server/pms/billing/acces
 import { uninvoicedVisitsFor } from "../../src/server/pms/billing/views";
 import { invoiceVisitsFor, takePaymentFor } from "../../src/server/pms/billing/writes";
 import { SEED_ACTOR } from "./seed-lib";
+import { pmsNow } from "../../src/modules/pms/core/clock";
 
 export interface SeedBillingOptions {
   now?: Date;
@@ -41,7 +42,7 @@ export interface SeedBillingSummary {
 const REF = "demo-billing";
 
 export async function seedBilling(base: Pick<RepoContext, "db" | "cipher">, tenantId: string, options: SeedBillingOptions = {}): Promise<SeedBillingSummary> {
-  const now = options.now ?? new Date();
+  const now = options.now ?? pmsNow();
   const ctx: RepoContext = { ...base, now: () => now };
   const log = options.log ?? (() => undefined);
   if (!(await getPmsSettings(ctx, tenantId)).isDemo) throw new RepoInputError("Billing demo data is only for a clinic flagged as a demonstration clinic.");
@@ -60,7 +61,14 @@ export async function seedBilling(base: Pick<RepoContext, "db" | "cipher">, tena
       ctx,
       tenantId,
       0,
-      { paymentLinksEnabled: true, accountTermsDays: 30, selfPayTermsDays: 14, paymentInstructions: "Bank transfer: Riverside Physiotherapy (fictional) · sort code 00-00-00 · account 00000000" },
+      {
+        paymentLinksEnabled: true,
+        accountTermsDays: 30,
+        selfPayTermsDays: 14,
+        // Bank details for invoices (Set-up → Billing settings, migration 0139) – fictional, all zeros.
+        bankDetails: { accountName: "Riverside Physiotherapy (fictional)", sortCode: "00-00-00", accountNumber: "00000000" },
+        paymentInstructions: "Please quote the invoice number.",
+      },
       SEED_ACTOR,
     );
   }

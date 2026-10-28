@@ -13,6 +13,7 @@ import { auditInsertWhenExists } from "../../audit";
 import { ulid } from "../../context";
 import type { PmsAppointmentsTable } from "../../../db/pms-schema/diary";
 import { RepoInputError, assertActor, isOn, num, numOrNull, type DbContext, type PmsActor, type PmsAuditEntry } from "../context";
+import { pmsNowMs } from "../../../../modules/pms/core/clock";
 
 export const APPOINTMENTS = "pms_appointments";
 export type AppointmentRow = Selectable<PmsAppointmentsTable>;
@@ -93,7 +94,7 @@ export type DiaryWriteTable = "pms_appointments" | "pms_availability" | "pms_wai
 
 /** A fresh write id ("w_<ULID>"). */
 export function newWriteId(ctx: DbContext): string {
-  return `w_${ulid(ctx.now ? ctx.now().getTime() : Date.now())}`;
+  return `w_${ulid(ctx.now ? ctx.now().getTime() : pmsNowMs())}`;
 }
 
 /** Rows of `table` carrying `writeId` (and, when given, with this id). */

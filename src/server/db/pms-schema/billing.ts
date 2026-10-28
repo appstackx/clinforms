@@ -32,6 +32,8 @@ export interface PmsBillingSettingsTable {
   late_cancel_charge_percent: WithDefault<number>;
   payment_instructions: string | null;
   payment_links_enabled: WithDefault<number>;
+  /** JSON {"accountName","sortCode","accountNumber"} (0139), NULL = none. */
+  bank_details_json: string | null;
   updated_by: string | null;
   created_at: IsoTimestamp;
   updated_at: IsoTimestamp;

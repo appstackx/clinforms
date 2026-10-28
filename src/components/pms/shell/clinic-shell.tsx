@@ -17,17 +17,28 @@ import {
   BarChart3,
   Calendar,
   ChevronDown,
+  ClipboardList,
+  Clock,
+  DoorOpen,
+  FileText,
   Globe,
   Keyboard,
+  Home,
   LayoutDashboard,
+  List,
+  Lock,
   LogOut,
+  MapPin,
   Menu,
   MessageSquare,
   PoundSterling,
   Search,
+  ShieldCheck,
   SlidersHorizontal,
+  Target,
   Upload,
   User,
+  UserRound,
   Users,
   X,
   type LucideIcon,
@@ -40,7 +51,7 @@ import { PmsAvatar } from "../ui/pms-avatar";
 import { GLOBAL_SHORTCUTS, isPlainKey, isTypingTarget, type ShortcutGroup } from "../ui/shortcuts";
 import { SiteSwitcher, type SiteOption } from "../ui/site-switcher";
 import { ToastProvider } from "../ui/toast";
-import { currentNavId, type ShellNav, type ShellNavIcon, type ShellNavItem } from "./nav-model";
+import { currentNavId, currentSection, sectionItems, SETUP_ENTRY_ID, type ShellNav, type ShellNavIcon, type ShellNavItem } from "./nav-model";
 import { SITE_COOKIE, SITE_COOKIE_MAX_AGE } from "./site-cookie";
 
 export interface ClinicShellProps {
@@ -61,7 +72,7 @@ export interface ClinicShellProps {
 }
 
 const NAV_ICONS: Readonly<Record<ShellNavIcon, LucideIcon>> = {
-  overview: LayoutDashboard,
+  overview: Home,
   diary: Calendar,
   patients: Users,
   billing: PoundSterling,
@@ -70,6 +81,16 @@ const NAV_ICONS: Readonly<Record<ShellNavIcon, LucideIcon>> = {
   reports: BarChart3,
   setup: SlidersHorizontal,
   import: Upload,
+  site: MapPin,
+  room: DoorOpen,
+  list: List,
+  shield: ShieldCheck,
+  file: FileText,
+  lock: Lock,
+  clock: Clock,
+  user: UserRound,
+  target: Target,
+  form: ClipboardList,
 };
 
 const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [{ title: "Everywhere", shortcuts: GLOBAL_SHORTCUTS }];
@@ -83,10 +104,17 @@ export function ClinicShell(props: ClinicShellProps) {
   const [navOpen, setNavOpen] = React.useState(false);
   const [shortcutsOpen, setShortcutsOpen] = React.useState(false);
   const searchRef = React.useRef<HTMLInputElement>(null);
-  const current = currentNavId(pathname, [...nav.main, ...nav.manage]);
+  const section = currentSection(pathname, nav);
+  const current = currentNavId(pathname, sectionItems(nav)) ?? (section?.id === "setup" ? SETUP_ENTRY_ID : null);
+  // In a section (Set-up, Reports) the left list is the section's; "← Clinic navigation" shows the main list again.
+  const [showMain, setShowMain] = React.useState(false);
+  const sectionView = section !== null && !showMain;
 
-  // The phone menu closes when the page changes.
-  React.useEffect(() => setNavOpen(false), [pathname]);
+  // The phone menu closes, and a section's list comes back, when the page changes.
+  React.useEffect(() => {
+    setNavOpen(false);
+    setShowMain(false);
+  }, [pathname]);
 
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -207,21 +235,35 @@ export function ClinicShell(props: ClinicShellProps) {
           >
             <div className="flex flex-col gap-0.5 px-2 py-3 md:sticky md:top-0 md:max-h-screen md:min-h-[calc(100vh-57px)]">
               {siteSwitcher("mb-2 px-1 md:hidden")}
-              <nav aria-label={productName} className="flex flex-col gap-0.5">
-                {nav.main.map((item) => (
-                  <NavLink key={item.id} item={item} current={current === item.id} />
-                ))}
-                {nav.manage.length > 0 ? (
-                  <>
-                    <span className="mt-3 px-2.5 pb-1 text-xs font-semibold uppercase tracking-[0.04em] text-[#475569]" id="clinic-nav-setup">
-                      Set-up
-                    </span>
-                    {nav.manage.map((item) => (
-                      <NavLink key={item.id} item={item} current={current === item.id} />
-                    ))}
-                  </>
-                ) : null}
-              </nav>
+              {sectionView && section ? (
+                <nav aria-label={section.label} className="flex flex-col gap-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setShowMain(true)}
+                    className={cn("mb-1 self-start rounded px-2.5 text-[13px] font-medium text-[#0B5F58] underline underline-offset-2 hover:text-[#08463F]", focusRing)}
+                    data-testid="shell-back-to-main"
+                  >
+                    ← Clinic navigation
+                  </button>
+                  <span className="px-2.5 pb-1.5 text-[17px] font-semibold text-foreground" id="clinic-nav-section">
+                    {section.label}
+                  </span>
+                  {section.groups.map((g, gi) => (
+                    <React.Fragment key={g.label ?? gi}>
+                      {g.label ? <span className="mt-2 px-2.5 pb-1 text-xs font-semibold uppercase tracking-[0.04em] text-[#475569]">{g.label}</span> : null}
+                      {g.items.map((item) => (
+                        <NavLink key={item.id} item={item} current={current === item.id} plain={section.id !== "setup"} />
+                      ))}
+                    </React.Fragment>
+                  ))}
+                </nav>
+              ) : (
+                <nav aria-label={productName} className="flex flex-col gap-0.5">
+                  {nav.main.map((item) => (
+                    <NavLink key={item.id} item={item} current={current === item.id || (item.id === SETUP_ENTRY_ID && section?.id === "setup")} />
+                  ))}
+                </nav>
+              )}
               <div className="mt-4 flex flex-col gap-2 border-t border-border px-1 pt-3 md:mt-auto">
                 {clinForms ? (
                   <Link href={clinForms.href} className={cn("flex h-9 items-center gap-2.5 rounded-[8px] px-2.5 font-medium text-[#1842B4] hover:bg-[#EFF4FF]", focusRing)}>
@@ -243,7 +285,7 @@ export function ClinicShell(props: ClinicShellProps) {
   );
 }
 
-function NavLink({ item, current }: { item: ShellNavItem; current: boolean }) {
+function NavLink({ item, current, plain = false }: { item: ShellNavItem; current: boolean; plain?: boolean }) {
   const Icon = NAV_ICONS[item.icon] ?? LayoutDashboard;
   return (
     <Link
@@ -255,7 +297,7 @@ function NavLink({ item, current }: { item: ShellNavItem; current: boolean }) {
         focusRing,
       )}
     >
-      <Icon className="h-[18px] w-[18px] shrink-0" aria-hidden />
+      {plain ? null : <Icon className="h-[18px] w-[18px] shrink-0" aria-hidden />}
       <span className="min-w-0 flex-1 truncate">{item.label}</span>
       {item.badge ? (
         <span className="min-w-5 rounded-full bg-[#EFF4FF] px-1.5 text-center text-xs font-semibold tabular-nums text-[#1842B4]" data-testid={`nav-badge-${item.id}`}>

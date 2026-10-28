@@ -5,6 +5,7 @@
 import "server-only";
 import { formatPence } from "../../../modules/pms/core/text";
 import type { CaseSummary } from "../../../modules/pms/core/types";
+import type { ContributionMode } from "../../../modules/pms/billing/excess";
 import { PAYER_TYPE_LABELS } from "../../../modules/pms/records/copy";
 import type { RepoContext } from "../../repos/context";
 
@@ -19,11 +20,16 @@ export async function referrerNames(ctx: RepoContext, tenantId: string, ids: rea
   return out;
 }
 
-/** "Self-pay", "Bluewell Health (fictional)", "Bluewell Health (fictional) – excess £20.00", or the payer type. */
-export function payerLabel(c: Pick<CaseSummary, "payerType" | "payerReferrerId">, names: ReadonlyMap<string, string>, excessPence?: number | null): string {
+/**
+ * "Self-pay", "Bluewell Health (fictional)", "Bluewell Health (fictional) – excess £20.00" (excess per case) or
+ * "Bluewell Health (fictional) – patient pays £20.00 a visit" (patient contribution per visit – the case's billing
+ * mode, handover §14.8), or the payer type.
+ */
+export function payerLabel(c: Pick<CaseSummary, "payerType" | "payerReferrerId">, names: ReadonlyMap<string, string>, excessPence?: number | null, mode: ContributionMode = "per_case"): string {
   if (c.payerType === "self_pay") return PAYER_TYPE_LABELS.self_pay;
   const name = (c.payerReferrerId ? names.get(c.payerReferrerId) : undefined) ?? PAYER_TYPE_LABELS[c.payerType] ?? "Payer";
-  return typeof excessPence === "number" && excessPence > 0 ? `${name} – excess ${formatPence(excessPence)}` : name;
+  if (!(typeof excessPence === "number" && excessPence > 0)) return name;
+  return mode === "per_visit" ? `${name} – patient pays ${formatPence(excessPence)} a visit` : `${name} – excess ${formatPence(excessPence)}`;
 }
 
 /** Payer words for the cases of a list of appointments (case id → label). */

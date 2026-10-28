@@ -23,6 +23,7 @@ import { getPmsSettings } from "../settings";
 import { RepoInputError, assertActor, assertId, assertTenantId, nowIso, pmsAuditQuery, pmsId, type RepoContext } from "../context";
 import { lastSignedNoteDate } from "./notes";
 import type { AnonymisationRecord } from "../../../../modules/pms/records/types";
+import { pmsNow } from "../../../../modules/pms/core/clock";
 
 const AN = "pms_patient_anonymisations";
 
@@ -56,7 +57,7 @@ export async function anonymiseEligibility(ctx: RepoContext, tenantId: string, p
     getAnonymisation(ctx, tenantId, patientId),
     patientLastTreatment(ctx, tenantId, patientId, patient.lastSeenOn),
   ]);
-  const today = ukToday(ctx.now ? ctx.now() : new Date());
+  const today = ukToday(ctx.now ? ctx.now() : pmsNow());
   const check = anonymiseCheck(
     { dateOfBirth: patient.dateOfBirth, lastTreatmentOn: last, legalHold: patient.legalHold, status: patient.status, alreadyAnonymised: done?.status === "done" },
     today,

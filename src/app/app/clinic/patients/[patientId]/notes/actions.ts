@@ -15,6 +15,7 @@ import { intField, optional, text } from "@/server/pms/records/forms";
 import { amendNoteFor, changeNoteTemplateFor, discardNoteFor, lastNoteForCopyFor, saveNoteFor, startNoteFor, type LastNoteCopy } from "@/server/pms/records/notes-service";
 import type { BodyChart } from "@/modules/pms/records/body-chart";
 import { patientPath } from "@/server/pms/records/record";
+import { pmsNow } from "../../../../../../modules/pms/core/clock";
 
 function sectionsFrom(form: FormData): Record<string, string> {
   const out: Record<string, string> = {};
@@ -114,7 +115,7 @@ export async function saveNoteDraftAction(input: EditorSave): Promise<EditorResu
   const result = await saveNoteFor(actor, String(input.patientId), String(input.noteId), { expectedRev: Number(input.expectedRev), sections: input.sections ?? {}, bodyChart: input.bodyChart, sign: input.sign === true });
   if (!result.ok) return failed(result);
   if (result.value.signed) revalidatePath(patientPath(String(input.patientId)), "layout");
-  return { ok: true, rev: result.value.rev, signed: result.value.signed, savedAt: new Date().toISOString() };
+  return { ok: true, rev: result.value.rev, signed: result.value.signed, savedAt: pmsNow().toISOString() };
 }
 
 export async function changeNoteTemplateAction(input: { patientId: string; noteId: string; expectedRev: number; templateId: string }): Promise<EditorResult<{ rev: number }>> {

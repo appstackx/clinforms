@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<title>Set-up</title>
+<script src="./vendor/react.js"></script>
+<script src="./vendor/react-dom.js"></script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+*{box-sizing:border-box}
+a{color:#0B7970}a:hover{color:#095E57}
+:focus-visible{outline:2px solid #0E958A;outline-offset:2px}
+</style>
+</helmet>
+<div style="min-height: 100vh; background: #F8FAFC; color: #0F172A; font-family: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 14px; line-height: 20px; display: flex; flex-direction: column">
+<header style="background: #FFFFFF; border-bottom: 1px solid #E2E8F0; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 10px 16px; min-height: 56px">
+<div style="display: flex; align-items: center; gap: 10px">
+<span aria-hidden="true" style="width: 28px; height: 28px; border-radius: 8px; background: #0B7970; color: #FFFFFF; display: inline-flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg></span>
+<nav aria-label="Product areas" style="display: flex; background: #F1F5F9; border-radius: 10px; padding: 3px; gap: 2px">
+<a href="AppShell.dc.html" aria-current="page" style="height: 30px; padding: 0 12px; border-radius: 8px; background: #FFFFFF; box-shadow: 0 1px 2px rgba(15,23,42,.08); font-weight: 600; color: #0F172A; text-decoration: none; display: inline-flex; align-items: center">{{product}}</a>
+<a href="#clinforms" style="height: 30px; padding: 0 12px; border-radius: 8px; font-weight: 500; color: #475569; text-decoration: none; display: inline-flex; align-items: center">ClinForms</a>
+</nav>
+</div>
+<button type="button" style="margin-left: auto; height: 40px; padding: 0 8px 0 4px; border: 0; border-radius: 8px; background: transparent; font: inherit; display: inline-flex; align-items: center; gap: 8px; color: #0F172A">
+<span aria-hidden="true" style="width: 32px; height: 32px; border-radius: 999px; background: #EDE9FE; color: #5B21B6; display: inline-flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px">HW</span>
+<span style="display: flex; flex-direction: column; align-items: flex-start; line-height: 16px"><span style="font-weight: 600">Helen Ward</span><span style="font-size: 12px; color: #64748B">Owner</span></span>
+</button>
+</header>
+
+<div style="display: flex; flex-wrap: wrap; flex: 1; align-items: stretch">
+<nav aria-label="Set-up" style="flex: 1 1 240px; background: #FFFFFF; border-right: 1px solid #E2E8F0; padding: 16px 10px; display: flex; flex-direction: column; gap: 2px">
+<a href="AppShell.dc.html" style="font-size: 13px; padding: 0 8px 10px">← Clinic navigation</a>
+<h1 style="margin: 0; padding: 0 8px 8px; font-size: 18px; font-weight: 600">Set-up</h1>
+<sc-for list="{{sections}}" as="s" hint-placeholder-count="10"><button type="button" aria-current="{{s.cur}}" onClick="{{s.pick}}" style="min-height: 36px; padding: 6px 10px; border: 0; border-radius: 8px; background: {{s.bg}}; color: {{s.fg}}; font: inherit; font-weight: {{s.fw}}; text-align: left; display: flex; align-items: center; gap: 10px; cursor: pointer"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{s.icon}}"></path></svg>{{s.label}}</button></sc-for>
+<a href="RotaWaiting.dc.html" style="min-height: 36px; padding: 6px 10px; border-radius: 8px; color: #334155; text-decoration: none; font-weight: 500; display: flex; align-items: center; gap: 10px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 6v6l4 2"></path></svg>Practitioner rotas</a>
+<a href="Roles.dc.html" style="min-height: 36px; padding: 6px 10px; border-radius: 8px; color: #334155; text-decoration: none; font-weight: 500; display: flex; align-items: center; gap: 10px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10zM9 12l2 2 4-4"></path></svg>Roles and permissions</a>
+<a href="Import.dc.html" style="min-height: 36px; padding: 6px 10px; border-radius: 8px; color: #334155; text-decoration: none; font-weight: 500; display: flex; align-items: center; gap: 10px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"></path></svg>Import data</a>
+</nav>
+
+<main style="flex: 999 1 560px; min-width: 0; padding: 20px 24px 32px; display: flex; flex-direction: column; gap: 16px">
+
+<sc-if value="{{v.sites}}" hint-placeholder-val="{{true}}">
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px"><div style="flex: 1; min-width: 240px"><h2 style="margin: 0; font-size: 20px; line-height: 28px; font-weight: 600">Sites and opening hours</h2><span style="color: #475569">11 sites · the diary only shows times inside opening hours.</span></div><button type="button" style="height: 36px; padding: 0 14px; border-radius: 8px; border: 0; background: #0B7970; color: #FFFFFF; font: inherit; font-weight: 500">Add site</button></div>
+<div style="display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start">
+<div style="flex: 1 1 260px; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; overflow: hidden">
+<sc-for list="{{sites}}" as="x" hint-placeholder-count="11"><button type="button" onClick="{{x.pick}}" style="width: 100%; min-height: 44px; border: 0; border-bottom: 1px solid #F1F5F9; background: {{x.bg}}; padding: 8px 14px; font: inherit; text-align: left; display: flex; align-items: center; gap: 8px; cursor: pointer; color: #0F172A"><span style="flex: 1; font-weight: {{x.fw}}">{{x.name}}</span><span style="font-size: 12px; color: #475569">{{x.rooms}}</span></button></sc-for>
+</div>
+<div style="flex: 2 1 420px; display: flex; flex-direction: column; gap: 16px">
+<div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 16px 20px; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 12px">
+<div style="display: flex; flex-direction: column; gap: 4px"><label for="s-n" style="font-weight: 500">Site name</label><input id="s-n" type="text" value="{{siteName}}" style="height: 36px; padding: 0 10px; border: 1px solid #CBD5E1; border-radius: 8px; font: inherit"></div>
+<div style="display: flex; flex-direction: column; gap: 4px"><label for="s-p" style="font-weight: 500">Phone</label><input id="s-p" type="tel" value="07700 900000" style="height: 36px; padding: 0 10px; border: 1px solid #CBD5E1; border-radius: 8px; font: inherit"></div>
+<div style="display: flex; flex-direction: column; gap: 4px; grid-column: 1 / -1"><label for="s-a" style="font-weight: 500">Address</label><input id="s-a" type="text" value="12 Harbour Road, Northgate ZZ99 9AA" style="height: 36px; padding: 0 10px; border: 1px solid #CBD5E1; border-radius: 8px; font: inherit"></div>
+</div>
+<div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; overflow: hidden">
+<h3 style="margin: 0; padding: 12px 20px; font-size: 15px; font-weight: 600; border-bottom: 1px solid #E2E8F0">Opening hours</h3>
+<sc-for list="{{hours}}" as="h" hint-placeholder-count="7"><div style="display: flex; align-items: center; gap: 12px; padding: 8px 20px; border-bottom: 1px solid #F1F5F9; flex-wrap: wrap"><span style="width: 100px; font-weight: 500">{{h.day}}</span><sc-if value="{{h.open}}" hint-placeholder-val="{{true}}"><input aria-label="{{h.day}} opens" type="text" value="{{h.from}}" style="width: 72px; height: 32px; padding: 0 8px; border: 1px solid #CBD5E1; border-radius: 8px; font: inherit; font-variant-numeric: tabular-nums">–<input aria-label="{{h.day}} closes" type="text" value="{{h.to}}" style="width: 72px; height: 32px; padding: 0 8px; border: 1px solid #CBD5E1; border-radius: 8px; font: inherit; font-variant-numeric: tabular-nums"></sc-if><sc-if value="{{h.closed}}" hint-placeholder-val="{{false}}"><span style="color: #64748B">Closed</span></sc-if></div></sc-for>
+</div>
+<div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 14px 20px; display: flex; flex-direction: column; gap: 8px">
+<div style="display: flex; align-items: center"><h3 style="margin: 0; font-size: 15px; font-weight: 600; flex: 1">Closures</h3><button type="button" style="height: 32px; padding: 0 10px; border-radius: 8px; border: 1px solid #E2E8F0; background: #FFFFFF; font: inherit; font-size: 13px; font-weight: 500">Add closure</button></div>
+<div style="display: flex; gap: 12px; padding: 8px 0; border-top: 1px solid #F1F5F9; flex-wrap: wrap"><span style="width: 200px; font-variant-numeric: tabular-nums">25/12/2026 – 28/12/2026</span><span style="flex: 1">Christmas</span><span style="font-size: 13px; color: #475569">All sites</span></div>
+<div style="display: flex; gap: 12px; padding: 8px 0; border-top: 1px solid #F1F5F9; flex-wrap: wrap"><span style="width: 200px; font-variant-numeric: tabular-nums">01/01/2027</span><span style="flex: 1">New Year's Day (bank holiday)</span><span style="font-size: 13px; color: #475569">All sites</span></div>
+</div>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{v.services}}" hint-placeholder-val="{{false}}">
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px"><div style="flex: 1; min-width: 240px"><h2 style="margin: 0; font-size: 20px; line-height: 28px; font-weight: 600">Services and durations</h2><span style="color: #475569">What can be booked, for how long, and whether patients can book it online.</span></div><button type="button" style="height: 36px; padding: 0 14px; border-radius: 8px; border: 0; background: #0B7970; color: #FFFFFF; font: inherit; font-weight: 500">Add service</button></div>
+<div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; overflow-x: auto">
+<table style="width: 100%; border-collapse: collapse; min-width: 760px">
+<thead><tr style="background: #F8FAFC; text-align: left; font-size: 12px; color: #475569"><th scope="col" style="padding: 10px 16px">Service</th><th scope="col" style="padding: 10px 12px">Type</th><th scope="col" style="padding: 10px 12px">Duration</th><th scope="col" style="padding: 10px 12px">Standard price</th><th scope="col" style="padding: 10px 12px">Note template</th><th scope="col" style="padding: 10px 16px">Online</th></tr></thead>
+<tbody>
+<sc-for list="{{services}}" as="x" hint-placeholder-count="6"><tr style="border-top: 1px solid #E2E8F0"><td style="padding: 10px 16px; font-weight: 500">{{x.name}}</td><td style="padding: 10px 12px">{{x.type}}</td><td style="padding: 10px 12px; font-variant-numeric: tabular-nums">{{x.dur}}</td><td style="padding: 10px 12px; font-variant-numeric: tabular-nums">{{x.price}}</td><td style="padding: 10px 12px">{{x.tpl}}</td><td style="padding: 10px 16px"><button type="button" role="switch" aria-checked="{{x.onStr}}" aria-label="{{x.lbl}}" onClick="{{x.toggle}}" style="width: 36px; height: 20px; border-radius: 999px; border: 0; padding: 2px; background: {{x.swBg}}; display: flex; justify-content: {{x.swJ}}; cursor: pointer"><span style="width: 16px; height: 16px; border-radius: 999px; background: #FFFFFF"></span></button></td></tr></sc-for>
+</tbody>
+</table>
+</div>
+</sc-if>
+
+<sc-if value="{{v.staff}}" hint-placeholder-val="{{false}}">
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px"><div style="flex: 1; min-width: 240px"><h2 style="margin: 0; font-size: 20px; line-height: 28px; font-weight: 600">Staff access</h2><span style="color: #475569">Role decides what someone can see. Site limits decide where. <a href="Roles.dc.html">Edit roles and permissions</a></span></div><button type="button" style="height: 36px; padding: 0 14px; border-radius: 8px; border: 0; background: #0B7970; color: #FFFFFF; font: inherit; font-weight: 500">Invite someone</button></div>
+<div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; overflow-x: auto">
+<table style="width: 100%; border-collapse: collapse; min-width: 820px">
+<thead><tr style="background: #F8FAFC; text-align: left; font-size: 12px; color: #475569"><th scope="col" style="padding: 10px 16px">Person</th><th scope="col" style="padding: 10px 12px">Role</th><th scope="col" style="padding: 10px 12px">Sites</th><th scope="col" style="padding: 10px 12px">Registration</th><th scope="col" style="padding: 10px 16px">Last active</th></tr></thead>
+<tbody>
+<sc-for list="{{staff}}" as="x" hint-placeholder-count="6"><tr style="border-top: 1px solid #E2E8F0"><td style="padding: 10px 16px"><div style="display: flex; flex-direction: column"><a href="MemberAccess.dc.html" style="font-weight: 600">{{x.name}}</a><span style="font-size: 12px; color: #64748B">{{x.email}}</span></div></td><td style="padding: 10px 12px"><select aria-label="{{x.roleLbl}}" style="height: 32px; padding: 0 8px; border: 1px solid #CBD5E1; border-radius: 8px; font: inherit; font-size: 13px; background: #FFFFFF"><option>{{x.role}}</option><option>Owner / admin</option><option>Clinician</option><option>Reception</option></select></td><td style="padding: 10px 12px"><div style="display: flex; gap: 4px; flex-wrap: wrap"><sc-for list="{{x.sites}}" as="s" hint-placeholder-count="2"><span style="height: 22px; padding: 0 8px; border-radius: 6px; background: #F1F5F9; color: #334155; font-size: 12px; font-weight: 500; display: inline-flex; align-items: center; white-space: nowrap">{{s}}</span></sc-for></div></td><td style="padding: 10px 12px; font-variant-numeric: tabular-nums">{{x.reg}}</td><td style="padding: 10px 16px; color: #475569">{{x.last}}</td></tr></sc-for>
+</tbody>
+</table>
+</div>
+<div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 16px 20px; display: flex; flex-direction: column; gap: 10px">
+<h3 style="margin: 0; font-size: 15px; font-weight: 600">What each role can do</h3>
+<div style="overflow-x: auto"><table style="width: 100%; border-collapse: collapse; min-width: 620px; font-size: 13px">
+<thead><tr style="text-align: left; color: #475569"><th scope="col" style="padding: 6px 8px">Area</th><th scope="col" style="padding: 6px 8px">Owner / admin</th><th scope="col" style="padding: 6px 8px">Clinician</th><th scope="col" style="padding: 6px 8px">Reception</th></tr></thead>
+<tbody>
+<sc-for list="{{matrix}}" as="m" hint-placeholder-count="6"><tr style="border-top: 1px solid #F1F5F9"><th scope="row" style="padding: 8px; text-align: left; font-weight: 500">{{m.area}}</th><td style="padding: 8px">{{m.o}}</td><td style="padding: 8px">{{m.c}}</td><td style="padding: 8px">{{m.r}}</td></tr></sc-for>
+</tbody></table></div>
+</div>
+</sc-if>
+
+<sc-if value="{{v.online}}" hint-placeholder-val="{{false}}">
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px"><div style="flex: 1; min-width: 240px"><h2 style="margin: 0; font-size: 20px; line-height: 28px; font-weight: 600">Online booking policy</h2><span style="color: #475569">Applies to the public booking pages and patient portal.</span></div><a href="OnlineBooking.dc.html" style="height: 36px; padding: 0 14px; border-radius: 8px; border: 1px solid #E2E8F0; background: #FFFFFF; color: #0F172A; text-decoration: none; font-weight: 500; display: inline-flex; align-items: center; gap: 6px">Preview booking page<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"></path></svg></a></div>
+<div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 16px 20px; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); gap: 16px">
+<div style="display: flex; flex-direction: column; gap: 4px"><label for="ob-min" style="font-weight: 500">Earliest booking</label><select id="ob-min" style="height: 36px; padding: 0 10px; border: 1px solid #CBD5E1; border-radius: 8px; font: inherit; background: #FFFFFF"><option>2 hours from now</option></select></div>
+<div style="display: flex; flex-direction: column; gap: 4px"><label for="ob-max" style="font-weight: 500">Furthest ahead</label><select id="ob-max" style="height: 36px; padding: 0 10px; border: 1px solid #CBD5E1; border-radius: 8px; font: inherit; background: #FFFFFF"><option>8 weeks</option></select></div>
+<div style="display: flex; flex-direction: column; gap: 4px"><label for="ob-late" style="font-weight: 500">Late cancellation if less than</label><select id="ob-late" style="height: 36px; padding: 0 10px; border: 1px solid #CBD5E1; border-radius: 8px; font: inherit; background: #FFFFFF"><option>24 hours before</option></select></div>
+<div style="display: flex; flex-direction: column; gap: 4px"><label for="ob-fee" style="font-weight: 500">Late cancellation and DNA fee</label><select id="ob-fee" style="height: 36px; padding: 0 10px; border: 1px solid #CBD5E1; border-radius: 8px; font: inherit; background: #FFFFFF"><option>Full appointment fee</option><option>50% of fee</option><option>No fee</option></select></div>
+<div style="display: flex; flex-direction: column; gap: 4px"><label for="ob-hold" style="font-weight: 500">Hold a chosen slot for</label><select id="ob-hold" style="height: 36px; padding: 0 10px; border: 1px solid #CBD5E1; border-radius: 8px; font: inherit; background: #FFFFFF"><option>10 minutes</option></select></div>
+<fieldset style="border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px"><legend style="font-weight: 500; padding: 0; margin-bottom: 8px">Patients can</legend>
+<label style="display: flex; gap: 8px; align-items: center"><input type="checkbox" checked="checked" style="width: 16px; height: 16px; margin: 0; accent-color: #0B7970">Book as a new patient</label>
+<label style="display: flex; gap: 8px; align-items: center"><input type="checkbox" checked="checked" style="width: 16px; height: 16px; margin: 0; accent-color: #0B7970">Cancel and rebook in the portal</label>
+<label style="display: flex; gap: 8px; align-items: center"><input type="checkbox" style="width: 16px; height: 16px; margin: 0; accent-color: #0B7970">Choose "anyone available"</label></fieldset>
+<div style="grid-column: 1 / -1; display: flex; flex-direction: column; gap: 4px"><label for="ob-text" style="font-weight: 500">Policy shown to patients</label><textarea id="ob-text" rows="3" style="padding: 10px 12px; border: 1px solid #CBD5E1; border-radius: 8px; font: inherit; line-height: 22px">Cancel or move free of charge up to 24 hours before. Later than that, or if you don't attend, the full fee may be charged.</textarea></div>
+</div>
+</sc-if>
+
+<sc-if value="{{v.generic}}" hint-placeholder-val="{{false}}">
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px"><div style="flex: 1; min-width: 240px"><h2 style="margin: 0; font-size: 20px; line-height: 28px; font-weight: 600">{{g.title}}</h2><span style="color: #475569">{{g.desc}}</span></div><button type="button" style="height: 36px; padding: 0 14px; border-radius: 8px; border: 0; background: #0B7970; color: #FFFFFF; font: inherit; font-weight: 500">{{g.add}}</button></div>
+<div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; overflow-x: auto">
+<table style="width: 100%; border-collapse: collapse; min-width: 640px">
+<thead><tr style="background: #F8FAFC; text-align: left; font-size: 12px; color: #475569"><sc-for list="{{g.cols}}" as="c" hint-placeholder-count="4"><th scope="col" style="padding: 10px 16px">{{c}}</th></sc-for></tr></thead>
+<tbody><sc-for list="{{g.rows}}" as="row" hint-placeholder-count="4"><tr style="border-top: 1px solid #E2E8F0"><sc-for list="{{row}}" as="cell" hint-placeholder-count="4"><td style="padding: 10px 16px">{{cell}}</td></sc-for></tr></sc-for></tbody>
+</table>
+</div>
+</sc-if>
+
+<div style="display: flex; gap: 8px; justify-content: flex-end; border-top: 1px solid #E2E8F0; padding-top: 14px"><button type="button" style="height: 36px; padding: 0 14px; border-radius: 8px; border: 1px solid #E2E8F0; background: #FFFFFF; font: inherit; font-weight: 500">Discard changes</button><button type="button" style="height: 36px; padding: 0 14px; border-radius: 8px; border: 0; background: #0B7970; color: #FFFFFF; font: inherit; font-weight: 500">Save</button></div>
+</main>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1000}}'>
+class Component extends DCLogic {
+  constructor(p) { super(p); this.state = { sec: 'sites', site: 0, onl: { 0: true, 1: true, 3: true } }; }
+  renderVals() {
+    const st = this.state;
+    const I = {
+      pin: 'M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0zM12 7a3 3 0 1 0 0 6 3 3 0 0 0 0-6z', door: 'M3 21h18M5 21V3h14v18M15 12h.01',
+      list: 'M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01', pound: 'M18 7c0-5.333-8-5.333-8 0M10 7v14M6 21h12M6 13h10',
+      shield: 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z', file: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6',
+      key: 'M5 11h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2zM7 11V7a5 5 0 0 1 10 0v4',
+      globe: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z'
+    };
+    const S = [['sites', 'Sites and hours', I.pin], ['rooms', 'Rooms', I.door], ['services', 'Services', I.list], ['prices', 'Price lists', I.pound], ['payers', 'Referrers and insurers', I.shield], ['templates', 'Record templates', I.file], ['staff', 'Staff access', I.key], ['online', 'Online booking', I.globe]];
+    const sections = S.map(([k, label, icon]) => ({ label, icon, cur: st.sec === k ? 'page' : 'false', bg: st.sec === k ? '#E6F7F5' : 'transparent', fg: st.sec === k ? '#0B5F58' : '#334155', fw: st.sec === k ? 600 : 500, pick: () => this.setState({ sec: k }) }));
+    const siteNames = ['Harbour Road', 'Kingsmead', 'Elm Park', 'Castle Street', 'Millbrook', 'Station Yard', 'Westfield', 'Abbey Lane', 'Brookside', 'Market Square', 'Highfield'];
+    const sites = siteNames.map((name, i) => ({ name, rooms: (2 + (i * 7) % 3) + ' rooms', bg: st.site === i ? '#F0FDFA' : '#FFFFFF', fw: st.site === i ? 600 : 500, pick: () => this.setState({ site: i }) }));
+    const hours = [['Monday', '08:00', '20:00'], ['Tuesday', '08:00', '20:00'], ['Wednesday', '08:00', '20:00'], ['Thursday', '08:00', '20:00'], ['Friday', '08:00', '18:00'], ['Saturday', '09:00', '13:00'], ['Sunday', '', '']].map(h => ({ day: h[0], from: h[1], to: h[2], open: !!h[1], closed: !h[1] }));
+    const svc = [['Initial assessment', 'Initial', '45 min', '£70.00', 'SOAP initial'], ['Follow-up', 'Follow-up', '30 min', '£55.00', 'SOAP follow-up'], ['Extended follow-up', 'Follow-up', '45 min', '£70.00', 'SOAP follow-up'], ['Sports massage', 'Treatment', '45 min', '£60.00', 'Treatment note'], ['Discharge review', 'Follow-up', '30 min', '£55.00', 'Discharge summary'], ['Telephone review', 'Follow-up', '20 min', '£40.00', 'SOAP follow-up']];
+    const services = svc.map((x, i) => { const on = !!st.onl[i]; return { name: x[0], type: x[1], dur: x[2], price: x[3], tpl: x[4], onStr: on ? 'true' : 'false', lbl: 'Bookable online: ' + x[0], swBg: on ? '#0B7970' : '#CBD5E1', swJ: on ? 'flex-end' : 'flex-start', toggle: () => { const o = Object.assign({}, st.onl); o[i] = !o[i]; this.setState({ onl: o }); } }; });
+    const staff = [
+      ['Helen Ward', 'helen.ward@example.com', 'Owner / admin', ['All sites'], '–', 'Now'],
+      ['Priya Shah', 'priya.shah@example.com', 'Clinician', ['Harbour Road', 'Kingsmead'], 'PH-DEMO-01', 'Today 11:42'],
+      ['Tom Hughes', 'tom.hughes@example.com', 'Clinician', ['Harbour Road'], 'PH-DEMO-02', 'Today 10:31'],
+      ['Aisha Rahman', 'aisha.rahman@example.com', 'Clinician', ['Harbour Road'], 'PH-DEMO-03', 'Today 09:58'],
+      ['Jess Taylor', 'jess.taylor@example.com', 'Reception', ['Harbour Road', 'Kingsmead', 'Elm Park'], '–', 'Now'],
+      ['Mark Ellis', 'mark.ellis@example.com', 'Reception', ['Castle Street'], '–', 'Yesterday']
+    ].map(x => ({ name: x[0], email: x[1], role: x[2], roleLbl: 'Role for ' + x[0], sites: x[3], reg: x[4], last: x[5] }));
+    const matrix = [
+      { area: 'Diary and patient details', o: 'Full', c: 'Full', r: 'Full' },
+      { area: 'Clinical notes and outcomes', o: 'Read, write, sign', c: 'Read, write, sign, amend own', r: 'Not shown' },
+      { area: 'Billing', o: 'Full', c: 'Read only', r: 'Full' },
+      { area: 'Messages and letters', o: 'Full', c: 'Full', r: 'Full (letter content hidden)' },
+      { area: 'Reports and exports', o: 'Full', c: 'Not shown', r: 'Not shown' },
+      { area: 'Set-up and import', o: 'Full', c: 'Not shown', r: 'Not shown' }
+    ];
+    const G = {
+      rooms: { title: 'Rooms', desc: 'Harbour Road · rooms appear as diary columns when grouping by room.', add: 'Add room', cols: ['Room', 'Type', 'Capacity', 'Status'], rows: [['Room 1', 'Treatment room', '1', 'Active'], ['Room 2', 'Treatment room', '1', 'Active'], ['Room 3', 'Treatment room – ground floor', '1', 'Active'], ['Gym', 'Rehab gym', '4', 'Active']] },
+      prices: { title: 'Price lists', desc: 'A patient or insurer uses one price list. The standard list is used otherwise.', add: 'Add price list', cols: ['Price list', 'Initial', 'Follow-up', 'Used by'], rows: [['Standard', '£70.00', '£55.00', 'Self-pay patients'], ['Bluewell Health (fictional)', '£85.00', '£75.00', '1 insurer'], ['Shieldcare Insurance (fictional)', '£80.00', '£60.00', '1 insurer'], ['Medico-legal', '£120.00', '£80.00', '3 solicitors']] },
+      payers: { title: 'Referrers and insurers', desc: 'Who sends patients and who pays.', add: 'Add contact', cols: ['Name', 'Type', 'Excess', 'Invoice terms'], rows: [['Bluewell Health (fictional)', 'Insurer', '£20.00 per visit', '30 days'], ['Shieldcare Insurance (fictional)', 'Insurer', 'None', '30 days'], ['Carter & Lowe Solicitors (fictional)', 'Solicitor', '–', '60 days'], ['Westgate Surgery (fictional)', 'GP referrer', '–', '–']] },
+      templates: { title: 'Record templates', desc: 'Sections and prompts for clinical notes.', add: 'Add template', cols: ['Template', 'Sections', 'Used with', 'Updated'], rows: [['SOAP initial', 'S, O, A, P, body chart, outcome measures', 'Initial assessment', '12/09/2026'], ['SOAP follow-up', 'S, O, A, P', 'Follow-up', '12/09/2026'], ['Discharge summary', 'Summary, outcomes, advice, GP letter', 'Discharge review', '01/07/2026'], ['Treatment note', 'Treatment given, response', 'Sports massage', '01/07/2026']] }
+    };
+    const generic = !!G[st.sec];
+    return {
+      product: 'Clinic system', sections,
+      v: { sites: st.sec === 'sites', services: st.sec === 'services', staff: st.sec === 'staff', online: st.sec === 'online', generic },
+      g: generic ? G[st.sec] : G.rooms,
+      sites, siteName: siteNames[st.site], hours, services, staff, matrix
+    };
+  }
+}
+</script>
+</body>
+</html>

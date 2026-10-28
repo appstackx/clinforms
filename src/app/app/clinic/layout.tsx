@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
+import { reportsSection } from "@/components/pms/reporting/reports-nav";
 import { ClinicShell } from "@/components/pms/shell/clinic-shell";
 import { clinicRoleLabel, shellNav, sitesSummary } from "@/components/pms/shell/nav-model";
 import { resolveSiteChoice, SITE_COOKIE } from "@/components/pms/shell/site-cookie";
@@ -52,7 +53,7 @@ export default async function ClinicSystemLayout({ children }: { children: React
       homeHref={CLINIC_BASE_PATH}
       clinicName={actor.clinicName}
       user={{ name: actor.name, email: actor.email, roleLabel: clinicRoleLabel(actor.role, roleLabel(actor.role)), sitesSummary: sitesSummary(mySites.length, sites.length) }}
-      nav={shellNav(PMS_NAV, actor.can, { "comms.messages": { count: replies, label: "replies to answer" } })}
+      nav={shellNav(PMS_NAV, actor.can, { "comms.messages": { count: replies, label: "replies to answer" } }, reportsSection(actor.can))}
       sites={{ options: mySites.map((s, i) => ({ id: s.id, name: s.name, note: i === 0 ? "Default" : undefined })), value: siteValue, total: sites.length }}
       searchHref={actor.can("patients.view") ? `${CLINIC_BASE_PATH}/patients` : null}
       clinForms={reports ? { href: "/app", label: "ClinForms" } : null}

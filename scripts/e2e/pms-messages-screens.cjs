@@ -49,6 +49,14 @@ function base32Decode(input) {
   }
   return Buffer.from(out);
 }
+
+// The clinic system's TEST clock (src/modules/pms/core/clock.ts – never in a production build): when the runner
+// sets PMS_TEST_CLOCK=1 PMS_TEST_NOW PMS_TEST_NOW_SET_AT for the seed, the dev server and this script, all three
+// agree on "now" (e.g. 10:30 today), so the steps that need clinic hours pass at any hour. Two-step codes keep
+// the real clock.
+const CLOCK_OFFSET = process.env.PMS_TEST_CLOCK === "1" && process.env.PMS_TEST_NOW && process.env.PMS_TEST_NOW_SET_AT ? Date.parse(process.env.PMS_TEST_NOW) - Number(process.env.PMS_TEST_NOW_SET_AT) : 0;
+const clockNow = () => Date.now() + CLOCK_OFFSET;
+
 function totp(key, at = Date.now()) {
   const counter = Math.floor(at / 30000);
   const buf = Buffer.alloc(8);
@@ -159,7 +167,7 @@ async function viewData(page, q) {
 const ready = (page) => page.waitForSelector("[data-diary-ready=true]");
 const hhmm = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 const londonNow = () => {
-  const p = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", hour: "2-digit", minute: "2-digit", hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
+  const p = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", hour: "2-digit", minute: "2-digit", hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(clockNow()));
   const g = (t) => p.find((x) => x.type === t).value;
   return { date: `${g("year")}-${g("month")}-${g("day")}`, minute: Number(g("hour")) * 60 + Number(g("minute")) };
 };
@@ -167,8 +175,8 @@ const addDays = (date, n) => new Date(Date.parse(`${date}T12:00:00Z`) + n * 8640
 
 /** The signed test webhook (CLINIC_SMS_PROVIDER=test): a patient's text reply. */
 async function simulateReply(page, from, text) {
-  const raw = JSON.stringify({ type: "reply", clinic: CLINIC, from, text, id: `test_in_${crypto.randomBytes(6).toString("hex")}`, receivedAt: new Date().toISOString() });
-  const ts = String(Math.floor(Date.now() / 1000));
+  const raw = JSON.stringify({ type: "reply", clinic: CLINIC, from, text, id: `test_in_${crypto.randomBytes(6).toString("hex")}`, receivedAt: new Date(clockNow()).toISOString() });
+  const ts = String(Math.floor(clockNow() / 1000));
   const sig = `v1=${crypto.createHmac("sha256", HOOK_SECRET).update(`${ts}.${raw}`).digest("hex")}`;
   return page.request.post(`${BASE}/api/clinic-messages/sms`, { data: raw, headers: { "content-type": "application/json", "x-clinic-timestamp": ts, "x-clinic-signature": sig } });
 }

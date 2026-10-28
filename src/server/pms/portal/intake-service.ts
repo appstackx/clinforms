@@ -19,6 +19,7 @@ import { recordOutcome } from "../../repos/pms/records/outcomes";
 import { outcomeAnswersFrom } from "../../../modules/pms/portal/outcome-forms";
 import { ukToday } from "../../../modules/pms/core/text";
 import { logAuthEvent } from "../../email/log";
+import { pmsNow } from "../../../modules/pms/core/clock";
 
 /** A form post → raw answers for checkAnswers (lists for "any choices", "on" for ticks). */
 export function answersFromForm(form: FormData, def: FormDefinition): Record<string, unknown> {
@@ -68,7 +69,7 @@ async function scoreOutcomeResponse(ctx: RepoContext, tenantId: string, response
   if (response.kind !== "outcome" || !response.measure || !response.answers) return null;
   try {
     const answers = outcomeAnswersFrom(response.measure, response.form, response.answers);
-    const takenOn = ukToday(ctx.now ? ctx.now() : new Date());
+    const takenOn = ukToday(ctx.now ? ctx.now() : pmsNow());
     const outcome = await recordOutcome(ctx, tenantId, { patientId: response.patientId, caseId: response.caseId, measure: response.measure, takenOn, answers }, actor);
     await setResponseOutcome(ctx, tenantId, response.id, outcome.id, actor);
     return outcome.id;

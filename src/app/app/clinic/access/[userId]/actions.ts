@@ -19,6 +19,7 @@ import { authBool } from "@/server/db/schema";
 import { listClinicMembers, roleChangeAllowed, saveMemberAccessFor, saveSigningDetailsFor, setMemberActiveFor, type SigningView } from "@/server/pms/access-screens";
 import { actorErrorMessage, clinicActionActor } from "@/server/pms/actor";
 import { upsertMemberProfile } from "@/server/repos/member-profile";
+import { pmsNow } from "../../../../../modules/pms/core/clock";
 
 type Done = { ok: true; message: string } | { ok: false; error: string };
 
@@ -50,7 +51,7 @@ export async function saveMemberAccessAction(input: {
   const r = await saveMemberAccessFor(actor, input.userId, { exceptions: input.exceptions ?? {}, allSites: input.allSites === true, sites: Array.isArray(input.sites) ? input.sites : [] }, input.expectedRev, roleChange);
   if (!r.ok) return { ok: false, error: roleChange ? `The role was changed, but the rest was not saved: ${r.error}` : r.error };
   revalidatePath("/app/clinic", "layout");
-  const time = formatUkDateTime(new Date().toISOString()).slice(11);
+  const time = formatUkDateTime(pmsNow().toISOString()).slice(11);
   if (r.value.changed === 0 && !roleChange) return { ok: true, message: "Nothing to save – their access was already like this." };
   return { ok: true, message: `Saved ${time} by ${actor.name || actor.email}. They will see the changes next time a page loads.` };
 }
