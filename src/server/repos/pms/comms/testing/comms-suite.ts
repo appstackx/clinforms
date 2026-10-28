@@ -370,7 +370,7 @@ export function defineCommsRepoSuite(label: string, factory: () => Promise<Comms
       assert.equal(gp.templateId, null, "standard templates are not rows");
       assert.match(gp.body, /^Dear Dr Ellen Ward \(fictional\),/);
       assert.match(gp.body, /for Neck pain after a road traffic accident\./);
-      assert.match(gp.body, /Sarah Reid\nPhysiotherapist, registration number PH-DEMO-01/);
+      assert.match(gp.body, /Yours sincerely,$/, "the signature is added when the letter is signed");
       assert.equal(gp.subject, "Ms Megan Hart, date of birth 22/11/1991");
       assert.deepEqual(await finaliseLetter(ctx, A, gp.id, gp.rev, STAFF), { ok: false, reason: "unfilled" });
       const filled = gp.body.replace(/\[\[[^\]]*\]\]/g, "Completed by the physiotherapist (fictional).");
@@ -389,7 +389,7 @@ export function defineCommsRepoSuite(label: string, factory: () => Promise<Comms
       assert.equal(sol.subject, "Ms Megan Hart – HP/2291");
       assert.equal(sol.templateId, lt.id);
       const noGp = await startLetter(ctx, A, { patientId: ids.daniel, templateId: "standard:gp-discharge", caseId: ids.danielCase }, STAFF);
-      assert.match(noGp.body, /^Dear \[not recorded: Recipient's name\],/, "a gap the author sees");
+      assert.match(noGp.body, /^Dear \[not recorded: Recipient for "Dear …"[^\]]*\],/, "a gap the author sees");
       await rejects(startLetter(ctx, A, { patientId: ids.daniel, templateId: "standard:gp-discharge", caseId: ids.case }, STAFF), /not one of this patient's cases/);
       await rejects(startLetter(ctx, B, { patientId: ids.megan, templateId: "standard:gp-discharge" }, STAFF_B), /does not exist in this clinic/);
       assert.deepEqual(await voidLetter(ctx, A, noGp.id, STAFF), { ok: true });
@@ -458,6 +458,12 @@ export function defineCommsRepoSuite(label: string, factory: () => Promise<Comms
       assert.equal((await listMessages(ctx, A, { siteIds: new Set(["site_elsewhere"]) })).filter((m) => m.patientId === ids.megan).length, 0);
       assert.ok((await listMessages(ctx, A, { siteIds: new Set([ids.site]) })).some((m) => m.patientId === ids.megan));
       assert.ok((await listSchedule(ctx, A, { siteIds: new Set([ids.site]), statuses: ["pending"] })).length >= 0);
+      // Moved before the confirmation went: the confirmation is re-planned for the new time, no "moved" notice.
+      await syncAppointmentMessages(ctx, A, { id: "appt_megan_m6", patientId: ids.megan, startsAt: "2026-10-30T10:00:00.000Z", siteId: ids.site, active: true }, STAFF, { notify: "confirmation" });
+      await syncAppointmentMessages(ctx, A, { id: "appt_megan_m6", patientId: ids.megan, startsAt: "2026-10-30T11:00:00.000Z", siteId: ids.site, active: true }, STAFF, { notify: "moved" });
+      const moved = (await listScheduleForAppointment(ctx, A, "appt_megan_m6")).filter((r) => r.status === "pending");
+      assert.ok(moved.length > 0 && moved.every((r) => r.kind !== "moved" && r.startsAt === "2026-10-30T11:00:00.000Z"), JSON.stringify(moved.map((r) => [r.kind, r.startsAt])));
+      assert.ok(moved.some((r) => r.kind === "confirmation"));
       // Daniel used the stop-emails link (above): his booking confirmation email is still planned (transactional).
       const kinds = (await listScheduleForAppointment(ctx, A, "appt_daniel_m6")).filter((r) => r.channel === "email").map((r) => [r.kind, r.status]);
       assert.deepEqual(kinds.filter((k) => k[0] === "confirmation"), [["confirmation", "pending"]]);

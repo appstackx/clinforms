@@ -3,7 +3,7 @@
  * never carry a message's text (it is encrypted at rest and only one message is opened at a time): an outbox row
  * says what the message is for ("Reminder · Wed 28/10 11:30") from plain fields.
  */
-import type { LetterRecipientKind, LetterStatus, MessageChannel, MessagePurpose, ReplyIntent, TemplateKind } from "./types";
+import type { Letter, LetterRecipientKind, LetterStatus, MessageChannel, MessagePurpose, ReplyIntent, TemplateKind } from "./types";
 
 /** Outbox row status (design round 2c): Planned, Held – quiet hours, Sent, Delivered, Failed, In the outbox, Opted out / Not sent, Cancelled. */
 export type OutboxState = "planned" | "held" | "sending" | "outbox" | "sent" | "delivered" | "failed" | "skipped" | "cancelled";
@@ -141,4 +141,39 @@ export interface PatientMessagesView {
   consent: { at: string; label: string }[];
   canSend: boolean;
   canLetters: boolean;
+}
+
+/** The patient-facing messages page (design round 3). */
+export interface PatientFacingView {
+  clinicName: string;
+  shortName: string;
+  replyPhone: string | null;
+  replyEmail: string | null;
+  texts: { title: string; when: string; text: string; units: number; segments: number; gsm7: boolean }[];
+  emails: { title: string; subject: string; text: string }[];
+  quietStart: string;
+  quietEnd: string;
+  letter: { title: string; body: string };
+}
+
+
+/** Starting a letter: templates, the patient's cases, possible recipients. */
+export interface LetterStartView {
+  patient: { id: string; name: string };
+  templates: { id: string; name: string; recipientKind: LetterRecipientKind; standard: boolean; hint: string }[];
+  cases: { id: string; title: string }[];
+  recipients: { value: string; label: string; kind: LetterRecipientKind }[];
+}
+
+/** The letter editor and the A4 page. */
+export interface LetterEditorView {
+  letter: Letter;
+  patientName: string;
+  templateName: string;
+  /** What the signature will say when the member signs (their signing details). */
+  signatureWillBe: string;
+  fields: MergeFieldView[];
+  clinic: { name: string; lines: string[]; phone: string | null };
+  emailTo: string | null;
+  sentByEmail: { at: string; status: string } | null;
 }

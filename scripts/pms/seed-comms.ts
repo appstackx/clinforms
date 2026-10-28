@@ -2,8 +2,7 @@
  * Demonstration messages and letters for the demo clinic (contract §9), after the diary, records and billing seeds:
  * message settings (text sender "Riverside", the clinic's reply number and email, quiet hours 20:00–08:00), two
  * reminders (a text 24 hours before, an email two days before at 10:00), the planned messages of the next week's
- * booked appointments, a little history (yesterday's and this morning's reminders – sent, one failed, one kept in the
- * outbox), three replies (one asks to cancel, one a question – both waiting for an answer – and a YES), and two
+ * booked appointments, a little history (yesterday's and this morning's reminders – sent, the first of yesterday's texts failed), three replies (one asks to cancel, one a question – both waiting for an answer – and a YES), and two
  * letters for Megan Hart (a signed letter to her GP, a draft progress report).
  *
  * Everything goes through the comms repositories and server (audited, encrypted). The history is written with a
@@ -45,14 +44,14 @@ export interface SeedCommsSummary {
 let counter = 0;
 const id = () => `seed_${Date.now().toString(36)}_${(counter++).toString(36)}`;
 
-/** The seed's own stand-in test service: accepts everything except the first text to `failNumber`. */
-function seedProviders(failNumber: string | null): DispatchDeps["providers"] {
-  let failed = false;
+/** The seed's own stand-in test service: accepts everything except the first text when `failFirst` (Retry demo). */
+function seedProviders(failFirst: boolean): DispatchDeps["providers"] {
+  let failed = !failFirst;
   const sms: SmsProvider = {
     id: "test",
     mode: "test",
-    async send(m) {
-      if (failNumber && !failed && m.to === failNumber) {
+    async send() {
+      if (!failed) {
         failed = true;
         return { status: "failed", errorCode: "test_undeliverable" };
       }
@@ -111,18 +110,18 @@ export async function seedComms(base: Pick<RepoContext, "db" | "cipher">, tenant
 
   // History: the reminders that went yesterday at 10:00 and this morning at 10:00 (for tomorrow's and the next day's
   // appointments – planned "as of" then and sent with the stand-in test service; one text fails).
-  const p7 = await patient("sim-pat-007");
-  const deps = (fail: string | null): DispatchDeps => ({ providers: seedProviders(fail), linkSecret: null, linkOrigin: "http://clinic.localhost:3180", appointmentStatus: appointmentStatuses });
+  const deps = (failFirst: boolean): DispatchDeps => ({ providers: seedProviders(failFirst), linkSecret: null, linkOrigin: "http://clinic.localhost:3180", appointmentStatus: appointmentStatuses });
   let history = 0;
   for (const day of [-1, 0]) {
-    const sendAt = Date.parse(londonToUtcIso(addDays(today, day), "10:00"));
-    if (sendAt > realNow.getTime()) continue;
-    clock = sendAt - 30 * 60_000;
+    // Planned "as of" 07:00 that day for the next day's first appointments, then sent by the run at 18:00 (today:
+    // now) – the first of yesterday's texts "fails" so Retry can be shown.
+    const planAt = Date.parse(londonToUtcIso(addDays(today, day), "07:00"));
+    if (planAt > realNow.getTime()) continue;
+    clock = planAt;
     const rows = await booked(londonToUtcIso(addDays(today, day + 1), "00:00"), londonToUtcIso(addDays(today, day + 2), "00:00"));
     await plan(rows.slice(0, 12));
-    clock = sendAt;
-    const failNumber = day === 0 && p7?.phone_mobile ? `+44${p7.phone_mobile.replace(/\s+/g, "").slice(1)}` : null;
-    const r = await runDueMessages(ctx, tenantId, deps(failNumber), { actor: SEED_ACTOR });
+    clock = Math.min(Date.parse(londonToUtcIso(addDays(today, day), "18:00")), realNow.getTime());
+    const r = await runDueMessages(ctx, tenantId, deps(day === -1), { actor: SEED_ACTOR });
     history += r.sent + r.failed + r.outbox;
   }
   clock = realNow.getTime();
@@ -143,7 +142,7 @@ export async function seedComms(base: Pick<RepoContext, "db" | "cipher">, tenant
     .orderBy("created_at", "desc")
     .limit(3)
     .execute();
-  const answers = ["C", "Yes, see you then. Is there parking?", "YES"];
+  const answers = ["C", "Can I move to later in the day?", "YES"];
   for (let i = 0; i < sentTexts.length; i++) {
     const t = sentTexts[i];
     if (!t.to_address) continue;

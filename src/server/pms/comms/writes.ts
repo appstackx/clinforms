@@ -29,7 +29,7 @@ import { CommsConfigError } from "./providers";
 
 /** A standard template's id ("standard:<key>"). */
 const STANDARD_PREFIX_GUARD = /^standard:/;
-import { signatureLine, startLetter } from "./letters";
+import { fillLetterFields, signatureLine, startLetter } from "./letters";
 import { LETTER_NOT_FOUND, MESSAGE_NOT_FOUND, type CommsActor } from "./views";
 
 export const NOT_CONFIGURED = "The message service is not set up correctly. Nothing was sent – ask the clinic owner.";
@@ -325,6 +325,11 @@ export async function saveLetterFor(actor: CommsActor, input: unknown): Promise<
     const l = await letterInScope(actor, id);
     if (!l) return fail("not_found", LETTER_NOT_FOUND);
     const clean = { ...patch, recipientEmail: patch.recipientEmail === "" ? null : patch.recipientEmail, recipientPostcode: patch.recipientPostcode === "" ? null : patch.recipientPostcode };
+    if (patch.subject !== undefined || patch.body !== undefined) {
+      const filled = await fillLetterFields(actor.repo(), actor.tenantId, { ...l, recipientName: clean.recipientName ?? l.recipientName, recipientAddress: clean.recipientAddress ?? l.recipientAddress, recipientPostcode: clean.recipientPostcode ?? l.recipientPostcode }, { subject: patch.subject ?? l.subject, body: patch.body ?? l.body });
+      clean.subject = filled.subject;
+      clean.body = filled.body;
+    }
     const r = await updateLetter(actor.repo(), actor.tenantId, l.id, rev, clean, actor.actor);
     if (!r.ok) return r.reason === "locked" ? fail("locked", "This letter is signed and can no longer change.") : saveFailure(r);
     return ok({ rev: r.rev });

@@ -289,7 +289,10 @@ export interface StandardLetterTemplate {
   body: string;
 }
 
-/** "[[…]]" marks text the author must write; a letter cannot be finalised while one remains. */
+/**
+ * "[[…]]" marks text the author must write; a letter cannot be finalised while one remains. Letters end at "Yours
+ * sincerely," – the signature (name, profession, register and number) is added under it when the author signs.
+ */
 export const STANDARD_LETTER_TEMPLATES: readonly StandardLetterTemplate[] = [
   {
     key: "gp-assessment",
@@ -297,7 +300,7 @@ export const STANDARD_LETTER_TEMPLATES: readonly StandardLetterTemplate[] = [
     recipientKind: "gp",
     subject: "{{patient.full_name}}, date of birth {{patient.date_of_birth}}",
     body: [
-      "Dear {{recipient.name}},",
+      "Dear {{recipient.salutation}},",
       "",
       "I assessed your patient on [[date of the assessment]] for {{case.title}}.",
       "",
@@ -310,11 +313,6 @@ export const STANDARD_LETTER_TEMPLATES: readonly StandardLetterTemplate[] = [
       "I will write again when treatment ends. Please contact me if you have any questions.",
       "",
       "Yours sincerely,",
-      "",
-      "",
-      "{{author.name}}",
-      "{{author.profession}}, registration number {{author.registration}}",
-      "{{clinic.name}}",
     ].join("\n"),
   },
   {
@@ -323,7 +321,7 @@ export const STANDARD_LETTER_TEMPLATES: readonly StandardLetterTemplate[] = [
     recipientKind: "gp",
     subject: "Discharge: {{patient.full_name}}, date of birth {{patient.date_of_birth}}",
     body: [
-      "Dear {{recipient.name}},",
+      "Dear {{recipient.salutation}},",
       "",
       "Your patient has now finished a course of treatment with us for {{case.title}}.",
       "",
@@ -336,11 +334,6 @@ export const STANDARD_LETTER_TEMPLATES: readonly StandardLetterTemplate[] = [
       "We have discharged your patient from our care. They are welcome to contact us again if their symptoms return.",
       "",
       "Yours sincerely,",
-      "",
-      "",
-      "{{author.name}}",
-      "{{author.profession}}, registration number {{author.registration}}",
-      "{{clinic.name}}",
     ].join("\n"),
   },
   {
@@ -349,7 +342,7 @@ export const STANDARD_LETTER_TEMPLATES: readonly StandardLetterTemplate[] = [
     recipientKind: "referrer",
     subject: "{{patient.full_name}} – your reference {{case.claim_reference}}",
     body: [
-      "Dear {{recipient.name}},",
+      "Dear {{recipient.salutation}},",
       "",
       "Re: {{patient.full_name}}, date of birth {{patient.date_of_birth}}",
       "",
@@ -362,11 +355,6 @@ export const STANDARD_LETTER_TEMPLATES: readonly StandardLetterTemplate[] = [
       "[[Further sessions requested, or discharge]]",
       "",
       "Yours sincerely,",
-      "",
-      "",
-      "{{author.name}}",
-      "{{author.profession}}, registration number {{author.registration}}",
-      "{{clinic.name}}, {{clinic.phone}}",
     ].join("\n"),
   },
   {
@@ -382,10 +370,6 @@ export const STANDARD_LETTER_TEMPLATES: readonly StandardLetterTemplate[] = [
       "If you would like to continue your treatment, please call us on {{clinic.phone}} to book another appointment. If we do not hear from you within 14 days, we will assume you no longer need our help and close your course of treatment.",
       "",
       "Yours sincerely,",
-      "",
-      "",
-      "{{author.name}}",
-      "{{clinic.name}}",
     ].join("\n"),
   },
   {
@@ -393,7 +377,7 @@ export const STANDARD_LETTER_TEMPLATES: readonly StandardLetterTemplate[] = [
     name: "Letter to the patient",
     recipientKind: "patient",
     subject: "[[Subject]]",
-    body: ["Dear {{patient.full_name}},", "", "[[Your letter]]", "", "Yours sincerely,", "", "", "{{author.name}}", "{{clinic.name}}"].join("\n"),
+    body: ["Dear {{patient.full_name}},", "", "[[Your letter]]", "", "Yours sincerely,"].join("\n"),
   },
   {
     key: "mlc-summary",
@@ -401,7 +385,7 @@ export const STANDARD_LETTER_TEMPLATES: readonly StandardLetterTemplate[] = [
     recipientKind: "referrer",
     subject: "{{patient.full_name}} – your reference {{case.claim_reference}}",
     body: [
-      "Dear {{recipient.name}},",
+      "Dear {{recipient.salutation}},",
       "",
       "Re: {{patient.full_name}}, date of birth {{patient.date_of_birth}}",
       "Date of injury: {{case.injury_on}}",
@@ -416,11 +400,6 @@ export const STANDARD_LETTER_TEMPLATES: readonly StandardLetterTemplate[] = [
       "[[Expected recovery and any further treatment recommended]]",
       "",
       "Yours sincerely,",
-      "",
-      "",
-      "{{author.name}}",
-      "{{author.profession}}, registration number {{author.registration}}",
-      "{{clinic.name}}",
     ].join("\n"),
   },
   {
@@ -434,10 +413,6 @@ export const STANDARD_LETTER_TEMPLATES: readonly StandardLetterTemplate[] = [
       "This is to confirm that {{patient.full_name}} attended appointments at {{clinic.name}} on: {{appointments.attended}}.",
       "",
       "Yours faithfully,",
-      "",
-      "",
-      "{{author.name}}",
-      "{{clinic.name}}",
     ].join("\n"),
   },
   {
@@ -455,9 +430,6 @@ export const STANDARD_LETTER_TEMPLATES: readonly StandardLetterTemplate[] = [
       "To change or cancel, please call us on {{clinic.phone}}. Changes are free with at least 24 hours' notice; otherwise a fee may be charged.",
       "",
       "Yours sincerely,",
-      "",
-      "",
-      "{{clinic.name}}",
     ].join("\n"),
   },
 ];

@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS pms_letters (
   patient_id TEXT NOT NULL,
   case_id TEXT,
   template_id TEXT,
+  template_name TEXT CHECK (template_name IS NULL OR length(template_name) <= 120),
   practitioner_id TEXT,
   recipient_kind TEXT NOT NULL CHECK (recipient_kind IN ('patient', 'gp', 'referrer', 'other')),
   recipient_referrer_id TEXT,

@@ -183,6 +183,7 @@ export interface PmsLettersTable {
   patient_id: string;
   case_id: string | null;
   template_id: string | null;
+  template_name: string | null;
   practitioner_id: string | null;
   recipient_kind: string;
   recipient_referrer_id: string | null;

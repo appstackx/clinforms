@@ -195,6 +195,8 @@ export interface LetterSummary {
   patientId: string;
   caseId: string | null;
   templateId: string | null;
+  /** The template's name when the letter started ("Discharge letter to the GP") – plain, what lists show. */
+  templateName: string | null;
   practitionerId: string | null;
   recipientKind: LetterRecipientKind;
   recipientReferrerId: string | null;

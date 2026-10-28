@@ -14,7 +14,8 @@ import "server-only";
 import { addressFor, messageBlock } from "../../../modules/pms/comms/consent";
 import { CHANNEL_LABELS, CONSENT_SOURCE_LABELS, ERROR_LABELS, INTENT_LABELS, KIND_LABELS, SKIP_REASON_LABELS, TEMPLATE_KIND_LABELS, TEMPLATE_WHEN } from "../../../modules/pms/comms/copy";
 import { STANDARD_LETTER_TEMPLATES } from "../../../modules/pms/comms/defaults";
-import { contextForKind, exampleValues, fieldsFor } from "../../../modules/pms/comms/merge-fields";
+import { contextForKind, exampleValues, fieldsFor, renderTemplate } from "../../../modules/pms/comms/merge-fields";
+import { smsInfo } from "../../../modules/pms/comms/sms";
 import { formatAppointmentDay, formatAppointmentTime, londonParts, londonToUtcIso, addDays } from "../../../modules/pms/comms/schedule";
 import type { LetterRecipientKind, Message, MessageSummary, MessagingContact, ScheduledMessage, TemplateKind } from "../../../modules/pms/comms/types";
 import type {
@@ -28,6 +29,9 @@ import type {
   ReplyRowView,
   ReplyThreadView,
   SendFormView,
+  LetterEditorView,
+  LetterStartView,
+  PatientFacingView,
   TemplateRowView,
   ThreadMessageView,
 } from "../../../modules/pms/comms/view";
@@ -46,11 +50,11 @@ import { getMessage, listMessages, listRepliesTo, messageCounts } from "../../re
 import { listReminderRules } from "../../repos/pms/comms/rules";
 import { listSchedule, scheduleByMessageIds, scheduleCounts } from "../../repos/pms/comms/schedule";
 import { getCommsSettings } from "../../repos/pms/comms/settings";
-import { listMessageTemplates } from "../../repos/pms/comms/templates";
+import { listMessageTemplates, resolveTemplate } from "../../repos/pms/comms/templates";
 import { patientVisibleInScope } from "../access";
 import { attempt, fail, forbidden, notFound, ok, patientInClinic, type RecordsActor, type Result } from "../records/access";
 import { providerStatus } from "./providers";
-import { clinicContact } from "./render";
+import { clinicContact, composeMessage } from "./render";
 import { signatureLine } from "./letters";
 
 export type CommsActor = RecordsActor;
@@ -391,7 +395,7 @@ async function letterRows(actor: CommsActor, letters: Awaited<ReturnType<typeof 
     id: l.id,
     patientId: l.patientId,
     patientName: names.get(l.patientId) ?? "",
-    title: (l.templateId && templateNames.get(l.templateId)) || "Letter",
+    title: l.templateName || (l.templateId && templateNames.get(l.templateId)) || "Letter",
     recipientName: l.recipientName,
     recipientKind: l.recipientKind,
     letterOn: l.letterOn,
@@ -422,12 +426,6 @@ export async function lettersFor(actor: CommsActor, options: { patientId?: unkno
   });
 }
 
-export interface LetterStartView {
-  patient: { id: string; name: string };
-  templates: { id: string; name: string; recipientKind: LetterRecipientKind; standard: boolean; hint: string }[];
-  cases: { id: string; title: string }[];
-  recipients: { value: string; label: string; kind: LetterRecipientKind }[];
-}
 
 const RECIPIENT_HINT: Record<LetterRecipientKind, string> = { gp: "To the GP · clinical", referrer: "To a referrer or payer · clinical", patient: "To the patient", other: "To someone else" };
 
@@ -457,17 +455,6 @@ export async function letterStartFor(actor: CommsActor, patientId: unknown): Pro
   });
 }
 
-export interface LetterEditorView {
-  letter: Letter;
-  patientName: string;
-  templateName: string;
-  /** What the signature will say when the member signs (their signing details). */
-  signatureWillBe: string;
-  fields: MergeFieldView[];
-  clinic: { name: string; lines: string[]; phone: string | null };
-  emailTo: string | null;
-  sentByEmail: { at: string; status: string } | null;
-}
 
 /** One letter for the editor and the A4 page (decrypted). messages.letters – reception never. */
 export async function letterFor(actor: CommsActor, letterId: unknown): Promise<Result<LetterEditorView>> {
@@ -490,7 +477,7 @@ export async function letterFor(actor: CommsActor, letterId: unknown): Promise<R
     return ok({
       letter,
       patientName: names.get(letter.patientId) ?? "",
-      templateName: template?.name ?? "Letter",
+      templateName: letter.templateName ?? template?.name ?? "Letter",
       signatureWillBe: signatureLine(me?.displayName ?? actor.name ?? actor.email, me ? { profession: me.profession, registrationNumber: me.registrationNumber } : null),
       fields: mergeFieldsFor("letter-body", null),
       clinic: { name: clinic.name, lines: [...(clinic.address ?? []), clinic.postcode].filter((x): x is string => Boolean(x)), phone: clinic.phone },
@@ -563,17 +550,60 @@ export async function failedMessagesSummaryFor(actor: CommsActor): Promise<{ cou
   return { count: rows.length, rows: rows.slice(0, 5) };
 }
 
-/** The patient-facing messages page (design round 3): the clinic's templates rendered for a fictional patient. */
-export async function patientFacingFor(actor: CommsActor): Promise<Result<{ rows: TemplateRowView[]; examples: Record<string, string>; quietStart: string; quietEnd: string; letters: { name: string; body: string }[] }>> {
-  const t = await templatesFor(actor);
-  if (!t.ok) return t;
-  const settings = await getCommsSettings(actor.repo(), actor.tenantId);
-  return ok({
-    rows: t.value.rows.filter((r) => r.isDefault || (!r.standard && r.active)),
-    examples: t.value.examples,
-    quietStart: settings.quietStart,
-    quietEnd: settings.quietEnd,
-    letters: STANDARD_LETTER_TEMPLATES.filter((l) => l.key === "appointment-letter").map((l) => ({ name: l.name, body: l.body })),
+/**
+ * The patient-facing messages page (design round 3, "Patient-facing messages"): what patients actually receive –
+ * the clinic's current templates written out with fictional values, exactly as the send run writes them (same
+ * code), with the texts' length. messages.send.
+ */
+export async function patientFacingFor(actor: CommsActor): Promise<Result<PatientFacingView>> {
+  if (!actor.can("messages.send")) return forbidden();
+  return attempt("comms.patient_facing", async () => {
+    const ctx = actor.repo();
+    const settings = await getCommsSettings(ctx, actor.tenantId);
+    const clinic = await clinicContact(ctx, actor.tenantId, settings);
+    const ex = exampleValues();
+    const values = { ...ex, "clinic.name": clinic.name, "clinic.short_name": clinic.shortName, "clinic.phone": clinic.phone ?? ex["clinic.phone"], "site.phone": clinic.phone ?? ex["site.phone"], "billing.balance": "£55.00", "billing.link": "https://pay.example.com/3Qe1", "portal.link": "https://clinic.example.com/portal/7Hx2", "portal.expires": "15 minutes" };
+    const stop = "https://clinic.example.com/api/clinic-messages/unsubscribe?t=…";
+    const write = async (kind: TemplateKind, channel: "sms" | "email") => {
+      const t = await resolveTemplate(ctx, actor.tenantId, kind, channel, null);
+      if (!t) return null;
+      return composeMessage({ kind, channel, purpose: "service", subject: t.subject, body: t.body, values, settings, clinic, stopUrl: channel === "email" ? stop : null });
+    };
+    const texts: PatientFacingView["texts"] = [];
+    for (const [kind, title, when] of [
+      ["reminder", "Appointment reminder", "Before the appointment · held if in quiet hours"],
+      ["confirmation", "Booking confirmation", "When booked, if the booking asks for it"],
+      ["cancelled", "Cancelled with notice", "Straight after a cancellation"],
+      ["late_cancelled", "Late cancellation", "Cancelled under 24 h before"],
+      ["dna", "Did not attend", "1 h after the appointment"],
+      ["offer", "Waiting list offer", "Offer slot by text"],
+    ] as const) {
+      const c = await write(kind, "sms");
+      if (!c) continue;
+      const info = smsInfo(c.text);
+      texts.push({ title, when, text: c.text, units: info.units, segments: info.segments, gsm7: info.encoding === "gsm7" });
+    }
+    const emails: PatientFacingView["emails"] = [];
+    for (const [kind, title] of [
+      ["confirmation", "Booking confirmation email"],
+      ["portal_link", "Portal sign-in email"],
+    ] as const) {
+      const c = await write(kind, "email");
+      if (c) emails.push({ title, subject: c.subject ?? "", text: c.text });
+    }
+    const letter = STANDARD_LETTER_TEMPLATES.find((l) => l.key === "appointment-letter");
+    const letterValues = { ...values, "patient.full_name": "Ms Megan Hart", "appointments.upcoming": "Wed 28/10/2026  11:30  with Sarah Reid\nWed 04/11/2026  11:30  with Sarah Reid\nWed 11/11/2026  11:30  with Sarah Reid" };
+    return ok({
+      clinicName: clinic.name,
+      shortName: clinic.shortName,
+      replyPhone: clinic.phone,
+      replyEmail: clinic.email,
+      texts,
+      emails,
+      quietStart: settings.quietStart,
+      quietEnd: settings.quietEnd,
+      letter: { title: letter?.name ?? "Appointment letter", body: renderTemplate(letter?.body ?? "", letterValues, { missing: "empty" }).text },
+    });
   });
 }
 

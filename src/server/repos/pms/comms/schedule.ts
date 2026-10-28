@@ -84,7 +84,11 @@ export async function syncAppointmentMessages(
     listReminderRules(ctx, tenantId, { activeOnly: true }),
     ctx.db.selectFrom(T).selectAll().where("tenant_id", "=", tenantId).where("appointment_id", "=", appt.id).limit(500).execute(),
   ]);
-  const plan = planAppointmentMessages({ appointment: { startsAt: appt.startsAt, serviceId: appt.serviceId ?? null, active: appt.active }, notify, settings, rules, now: at });
+  // Moved before its booking confirmation went out: the confirmation goes for the new time instead of a "moved"
+  // notice (the patient has not heard of the old time yet).
+  const confirmationPending = existing.some((r) => r.kind === "confirmation" && (r.status === "pending" || r.status === "processing"));
+  const effective = notify === "moved" && confirmationPending ? "confirmation" : notify;
+  const plan = planAppointmentMessages({ appointment: { startsAt: appt.startsAt, serviceId: appt.serviceId ?? null, active: appt.active }, notify: effective, settings, rules, now: at });
   const byKey = new Map(existing.map((r) => [r.dedupe_key, r]));
   const wanted = new Set(plan.map((p) => p.dedupeKey));
   const snapshot = {

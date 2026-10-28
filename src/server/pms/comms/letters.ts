@@ -93,41 +93,24 @@ async function appointmentFacts(ctx: RepoContext, tenantId: string, patientId: s
   return { attended, firstVisit: attended[0] ?? null, lastVisit: attended[attended.length - 1] ?? null, upcoming };
 }
 
-export async function startLetter(ctx: RepoContext, tenantId: string, input: StartLetterInput, actor: PmsActor, fallbackClinicName?: string): Promise<Letter> {
-  const template = await getLetterTemplate(ctx, tenantId, input.templateId);
-  if (!template || !template.active) throw new RepoInputError("Choose a letter template.");
-  const patient = await getPatient(ctx, tenantId, input.patientId);
-  if (!patient) throw new RepoInputError("The patient does not exist in this clinic.");
-  const theCase = input.caseId ? await getCase(ctx, tenantId, input.caseId) : null;
-  if (input.caseId && (!theCase || theCase.patientId !== patient.id)) throw new RepoInputError("The case is not one of this patient's cases.");
-  const practitionerId = input.practitionerId ?? theCase?.practitionerId ?? null;
-  const practitioner = practitionerId ? await getPractitioner(ctx, tenantId, practitionerId) : null;
-  if (practitionerId && !practitioner) throw new RepoInputError("The author is not one of the clinic's practitioners.");
-  const site = theCase?.siteId ? await getSite(ctx, tenantId, theCase.siteId) : null;
-  const payer = theCase?.payerReferrerId ? await getReferrer(ctx, tenantId, theCase.payerReferrerId) : null;
+interface LetterFacts {
+  patient: NonNullable<Awaited<ReturnType<typeof getPatient>>>;
+  theCase: Awaited<ReturnType<typeof getCase>> | null;
+  practitioner: Awaited<ReturnType<typeof getPractitioner>> | null;
+  site: Awaited<ReturnType<typeof getSite>> | null;
+  payer: Awaited<ReturnType<typeof getReferrer>> | null;
+  recipient: { name: string | null; address: string[] | null; postcode: string | null; salutation?: string | null };
+  letterOn: string;
+}
 
-  const kind = input.recipientKind ?? template.recipientKind;
-  let recipientReferrerId: string | null = null;
-  let recipient: { name: string | null; address: string[] | null; postcode: string | null; email: string | null };
-  const fullName = [patient.title, patient.firstName, patient.lastName].filter(Boolean).join(" ");
-  if (kind === "patient") {
-    recipient = { name: fullName, address: patient.address, postcode: patient.postcode, email: patient.email };
-  } else if (kind === "gp") {
-    recipient = { name: patient.gpName ?? (patient.gpPractice ? `The GP, ${patient.gpPractice}` : null), address: [patient.gpPractice ?? "", ...(patient.gpAddress ?? [])].filter(Boolean).slice(0, 6), postcode: patient.gpPostcode, email: null };
-  } else if (kind === "referrer") {
-    recipientReferrerId = input.recipientReferrerId ?? theCase?.payerReferrerId ?? theCase?.referrerId ?? null;
-    const r = recipientReferrerId ? await getReferrer(ctx, tenantId, recipientReferrerId) : null;
-    if (recipientReferrerId && !r) throw new RepoInputError("The recipient is not in the clinic's directory.");
-    recipient = r ? { name: r.contactName ? `${r.contactName}, ${r.name}` : r.name, address: r.address, postcode: r.postcode, email: r.email } : { name: null, address: null, postcode: null, email: null };
-  } else {
-    recipient = { name: input.recipientName ?? null, address: input.recipientAddress ?? null, postcode: input.recipientPostcode ?? null, email: null };
-  }
-
+/** Every letter merge value for a patient, case, author and recipient. */
+async function letterValues(ctx: RepoContext, tenantId: string, f: LetterFacts, fallbackClinicName?: string): Promise<Record<string, string | null>> {
+  const { patient, theCase, practitioner, site, payer, recipient, letterOn } = f;
   const settings = await getCommsSettings(ctx, tenantId);
   const clinic = await clinicContact(ctx, tenantId, settings, fallbackClinicName);
-  const letterOn = input.letterOn ?? ukToday(ctx.now ? ctx.now() : new Date());
   const visits = await appointmentFacts(ctx, tenantId, patient.id, theCase?.id ?? null);
-  const values: Record<string, string | null> = {
+  const fullName = [patient.title, patient.firstName, patient.lastName].filter(Boolean).join(" ");
+  return {
     ...clinicValues(clinic),
     today: formatLongDate(letterOn),
     "patient.first_name": patient.preferredName || patient.firstName,
@@ -156,8 +139,64 @@ export async function startLetter(ctx: RepoContext, tenantId: string, input: Sta
     "author.registration": practitioner?.registrationNumber ?? null,
     "site.name": site?.name ?? null,
     "recipient.name": recipient.name,
+    "recipient.salutation": recipient.salutation ?? recipient.name,
     "recipient.address": lines(recipient.address, recipient.postcode),
   };
+}
+
+/**
+ * Fills merge fields typed into a draft after it started (the editor's "Merge fields"): the letter's own patient,
+ * case, author and recipient; a value not recorded becomes "[not recorded: …]" (still to fill before signing).
+ */
+export async function fillLetterFields(ctx: RepoContext, tenantId: string, letter: Letter, text: { subject: string; body: string }): Promise<{ subject: string; body: string }> {
+  if (!/\{\{/.test(text.subject) && !/\{\{/.test(text.body)) return text;
+  const patient = await getPatient(ctx, tenantId, letter.patientId);
+  if (!patient) return text;
+  const theCase = letter.caseId ? await getCase(ctx, tenantId, letter.caseId) : null;
+  const practitioner = letter.practitionerId ? await getPractitioner(ctx, tenantId, letter.practitionerId) : null;
+  const site = theCase?.siteId ? await getSite(ctx, tenantId, theCase.siteId) : null;
+  const payer = theCase?.payerReferrerId ? await getReferrer(ctx, tenantId, theCase.payerReferrerId) : null;
+  const values = await letterValues(ctx, tenantId, { patient, theCase, practitioner, site, payer, recipient: { name: letter.recipientName, address: letter.recipientAddress, postcode: letter.recipientPostcode }, letterOn: letter.letterOn });
+  return {
+    subject: renderTemplate(text.subject, values, { missing: "marker" }).text.replace(/\s+/g, " ").trim().slice(0, 200),
+    body: renderTemplate(text.body, values, { missing: "marker" }).text,
+  };
+}
+
+export async function startLetter(ctx: RepoContext, tenantId: string, input: StartLetterInput, actor: PmsActor, fallbackClinicName?: string): Promise<Letter> {
+  const template = await getLetterTemplate(ctx, tenantId, input.templateId);
+  if (!template || !template.active) throw new RepoInputError("Choose a letter template.");
+  const patient = await getPatient(ctx, tenantId, input.patientId);
+  if (!patient) throw new RepoInputError("The patient does not exist in this clinic.");
+  const theCase = input.caseId ? await getCase(ctx, tenantId, input.caseId) : null;
+  if (input.caseId && (!theCase || theCase.patientId !== patient.id)) throw new RepoInputError("The case is not one of this patient's cases.");
+  const practitionerId = input.practitionerId ?? theCase?.practitionerId ?? null;
+  const practitioner = practitionerId ? await getPractitioner(ctx, tenantId, practitionerId) : null;
+  if (practitionerId && !practitioner) throw new RepoInputError("The author is not one of the clinic's practitioners.");
+  const site = theCase?.siteId ? await getSite(ctx, tenantId, theCase.siteId) : null;
+  const payer = theCase?.payerReferrerId ? await getReferrer(ctx, tenantId, theCase.payerReferrerId) : null;
+
+  const kind = input.recipientKind ?? template.recipientKind;
+  let recipientReferrerId: string | null = null;
+  let recipient: { name: string | null; address: string[] | null; postcode: string | null; email: string | null; salutation?: string | null };
+  const fullName = [patient.title, patient.firstName, patient.lastName].filter(Boolean).join(" ");
+  if (kind === "patient") {
+    recipient = { name: fullName, address: patient.address, postcode: patient.postcode, email: patient.email, salutation: fullName };
+  } else if (kind === "gp") {
+    recipient = { name: patient.gpName ?? (patient.gpPractice ? "The GP" : null), address: [patient.gpPractice ?? "", ...(patient.gpAddress ?? [])].filter(Boolean).slice(0, 6), postcode: patient.gpPostcode, email: null, salutation: patient.gpName ?? (patient.gpPractice ? "Doctor" : null) };
+  } else if (kind === "referrer") {
+    recipientReferrerId = input.recipientReferrerId ?? theCase?.payerReferrerId ?? theCase?.referrerId ?? null;
+    const r = recipientReferrerId ? await getReferrer(ctx, tenantId, recipientReferrerId) : null;
+    if (recipientReferrerId && !r) throw new RepoInputError("The recipient is not in the clinic's directory.");
+    recipient = r
+      ? { name: r.contactName ? `${r.contactName}, ${r.name}` : r.name, address: r.address, postcode: r.postcode, email: r.email, salutation: r.contactName ?? "Sir or Madam" }
+      : { name: null, address: null, postcode: null, email: null };
+  } else {
+    recipient = { name: input.recipientName ?? null, address: input.recipientAddress ?? null, postcode: input.recipientPostcode ?? null, email: null };
+  }
+
+  const letterOn = input.letterOn ?? ukToday(ctx.now ? ctx.now() : new Date());
+  const values = await letterValues(ctx, tenantId, { patient, theCase, practitioner, site, payer, recipient, letterOn }, fallbackClinicName);
   const subject = renderTemplate(template.subject, values, { missing: "marker" }).text.replace(/\s+/g, " ").trim();
   const body = renderTemplate(template.body, values, { missing: "marker" }).text;
   return createLetter(
@@ -166,6 +205,7 @@ export async function startLetter(ctx: RepoContext, tenantId: string, input: Sta
     {
       patientId: patient.id,
       templateId: template.id,
+      templateName: template.name,
       caseId: theCase?.id ?? null,
       practitionerId: practitioner?.id ?? null,
       recipientKind: kind,

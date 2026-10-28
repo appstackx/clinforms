@@ -103,6 +103,7 @@ export const MERGE_FIELDS: readonly MergeField[] = [
   { key: "author.registration", label: "Author's registration number", group: "Author", contexts: LETTER, example: "PH-DEMO-01" },
   { key: "recipient.name", label: "Recipient's name", group: "Recipient", contexts: ["letter", "document"], example: "Dr Ellen Ward (fictional)" },
   { key: "recipient.address", label: "Recipient's address", group: "Recipient", contexts: LETTER, example: "1 Queensway (fictional)\nBletchley\nMK2 9ZZ" },
+  { key: "recipient.salutation", label: "Recipient for \"Dear …\" (the GP's name, else \"Doctor\")", group: "Recipient", contexts: LETTER, example: "Dr Ellen Ward (fictional)" },
 ];
 
 const BY_KEY = new Map(MERGE_FIELDS.map((f) => [f.key, f]));

@@ -28,6 +28,7 @@ create table if not exists public.pms_letters (
   patient_id text not null,
   case_id text,
   template_id text,
+  template_name text check (template_name is null or length(template_name) <= 120),
   practitioner_id text,
   recipient_kind text not null check (recipient_kind in ('patient', 'gp', 'referrer', 'other')),
   recipient_referrer_id text,

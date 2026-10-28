@@ -390,6 +390,8 @@ export const LetterInputSchema = z.object({
   patientId: PmsIdSchema,
   /** The template the letter was written from (a clinic template id, or a standard one's key). */
   templateId: z.union([PmsIdSchema, z.null()]).optional(),
+  /** The template's name (what lists show – letters' subjects are encrypted). */
+  templateName: z.union([z.string().trim().max(120), z.null()]).optional(),
   ...letterShape,
 });
 export type LetterInput = z.input<typeof LetterInputSchema>;
