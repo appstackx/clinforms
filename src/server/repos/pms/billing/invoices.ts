@@ -16,7 +16,7 @@
  * - Line descriptions, the diagnosis code, notes and the bill-to snapshot are encrypted; lists never decrypt.
  */
 import { sql, type RawBuilder, type Selectable } from "kysely";
-import { EXCESS_DEDUCTION_TEXT, EXCESS_LINE_TEXT, splitExcess } from "../../../../modules/pms/billing/excess";
+import { CONTRIBUTION_DEDUCTION_TEXT, EXCESS_DEDUCTION_TEXT, EXCESS_LINE_TEXT, contributionLineText, fullyCoveredText, patientShares, type ContributionMode } from "../../../../modules/pms/billing/excess";
 import { BILLING_ID_PREFIXES as P } from "../../../../modules/pms/billing/ids";
 import { parseDocumentNumber } from "../../../../modules/pms/billing/numbers";
 import {
@@ -37,6 +37,7 @@ import { runBatch, type BatchQuery } from "../../../db/batch";
 import type { PmsInvoicesTable } from "../../../db/pms-schema/billing";
 import { recordAuthorisationUsage } from "../cases";
 import { RepoInputError, assertId, assertTenantId, decryptField, encryptField, nowIso, num, numOrNull, parseInput, parseLines, pmsAudit, pmsAuditQuery, pmsId, translateDbError, type RepoContext } from "../context";
+import { contributionModeForCase } from "./contribution-terms";
 import { ensureSettingsQuery, getBillingSettings } from "./settings";
 import { INV, LINES, PAY, SUMMARY_COLUMNS, affected, billingAuditWhen, billingBatch, chunks, editToken, isUniqueRefusal, todayOf, toInvoiceLine, toInvoiceSummary } from "./shared";
 
@@ -219,7 +220,8 @@ export async function billedAppointmentIds(ctx: RepoContext, tenantId: string, a
   return out;
 }
 
-/** Excess already billed to the patient on a case (excess lines of draft or issued invoices, less credits). */
+/** Excess already billed to the patient on a case (excess lines of draft or issued invoices, less credits) – per case
+ *  mode only: contributions per visit (invoices with per_visit_contribution_pence) never use up the case's excess. */
 export async function excessBilledForCase(ctx: RepoContext, tenantId: string, caseId: string, excludeInvoiceId?: string): Promise<number> {
   assertTenantId(tenantId);
   let q = ctx.db
@@ -229,6 +231,7 @@ export async function excessBilledForCase(ctx: RepoContext, tenantId: string, ca
     .where("l.tenant_id", "=", tenantId)
     .where("i.case_id", "=", caseId)
     .where("l.kind", "=", "excess")
+    .where("i.per_visit_contribution_pence", "is", null)
     .where("i.status", "in", ["draft", "issued"]);
   if (excludeInvoiceId) q = q.where("i.id", "<>", excludeInvoiceId);
   const row = await q.executeTakeFirst();
@@ -240,13 +243,20 @@ export async function excessBilledForCase(ctx: RepoContext, tenantId: string, ca
  * ----------------------------------------------------------------------------------------------*/
 
 export interface CreateDraftOptions {
-  /** For a payer invoice on a case with an excess: bill the excess not billed yet to the patient. */
+  /**
+   * For a payer invoice on a case with an excess: bill the patient's part to the patient, the way the case bills it
+   * (excess per case or contribution per visit – ./contribution-terms.ts).
+   */
   applyExcess?: boolean;
 }
 
 export interface CreateDraftResult {
+  /**
+   * The invoice made: the payer's – or, when the patient's part covers every visit in full, the patient's (then no
+   * payer invoice is made at all: never a £0 invoice for the payer).
+   */
   invoice: Invoice;
-  /** The patient's excess invoice (a draft), when the excess was split. */
+  /** The patient's excess / contribution invoice (a draft) beside the payer's, when the split made both. */
   excessInvoice: Invoice | null;
 }
 
@@ -268,6 +278,7 @@ function invoiceValues(
     diagnosisCode: string | null;
     notes: string | null;
     importRef: string | null;
+    perVisitContributionPence?: number | null;
   },
   actor: PmsActor,
   at: string,
@@ -297,6 +308,7 @@ function invoiceValues(
     diagnosis_enc: encryptField(ctx, tenantId, INV, "diagnosis_enc", id, v.diagnosisCode),
     notes_enc: encryptField(ctx, tenantId, INV, "notes_enc", id, v.notes),
     import_ref: v.importRef,
+    per_visit_contribution_pence: v.perVisitContributionPence ?? null,
     created_by: actor.userId,
     created_at: at,
     updated_at: at,
@@ -334,107 +346,133 @@ export async function createDraftInvoice(ctx: RepoContext, tenantId: string, inp
   const id = pmsId(P.invoice, ctx);
   const payerType: PayerType = billTo === "payer" && theCase ? theCase.payerType : "self_pay";
 
-  let excess: { id: string; line: PreparedLine } | null = null;
+  // The patient's part of an insured case (excess per case, or a contribution per visit). A treatment line the
+  // patient's part covers in full moves to the patient's invoice (it keeps its visit, so the visit is billed once
+  // and to the patient only); a partly covered line stays on the payer's invoice, less a deduction line.
+  let split: { mode: ContributionMode; id: string; lines: PreparedLine[]; fullyCovered: number } | null = null;
+  let payerLines = lines;
   if (options.applyExcess && billTo === "payer" && theCase && (theCase.excessPence ?? 0) > 0) {
-    const already = await excessBilledForCase(ctx, tenantId, theCase.id);
-    const split = splitExcess({ payerTotalPence: sumTotals(lines).totalPence, excessPence: theCase.excessPence, excessAlreadyBilledPence: already });
-    if (split.patientPence > 0) {
+    const { mode } = await contributionModeForCase(ctx, tenantId, theCase.id, theCase.payerReferrerId);
+    const treat = lines.filter((l) => l.kind === "service" || l.kind === "item").sort((a, b) => (a.serviceOn ?? "").localeCompare(b.serviceOn ?? "") || a.lineNo - b.lineNo);
+    const already = mode === "per_case" ? await excessBilledForCase(ctx, tenantId, theCase.id) : 0;
+    const shares = patientShares(
+      treat.map((l) => ({ key: String(l.lineNo), totalPence: l.totalPence })),
+      mode,
+      theCase.excessPence,
+      already,
+    );
+    const taken = Array.from(shares.values()).reduce((a, n) => a + n, 0);
+    if (taken > 0) {
       if (lines.some((l) => l.vatPence !== 0)) throw new RepoInputError("The excess can be split only on VAT-free treatment. Bill the excess by hand.");
       const vatCode: VatCode = settings.vatRegistered ? "exempt" : "none";
-      lines.push({
+      const patientLine = (from: Partial<PreparedLine> & { description: string; totalPence: number; serviceOn: string | null }): PreparedLine => ({
         id: "",
-        lineNo: lines.length + 1,
-        kind: "excess_deduction",
+        lineNo: 0,
+        kind: "excess",
         serviceId: null,
         appointmentId: null,
         visitStatus: null,
         practitionerId: null,
-        serviceOn: null,
-        description: EXCESS_DEDUCTION_TEXT,
         billingCode: null,
         quantity: 1,
-        unitPricePence: -split.patientPence,
+        unitPricePence: from.totalPence,
         discountPence: 0,
         vatCode,
         vatRateBp: 0,
-        netPence: -split.patientPence,
+        netPence: from.totalPence,
         vatPence: 0,
-        totalPence: -split.patientPence,
+        ...from,
       });
-      excess = {
-        id: pmsId(P.invoice, ctx),
-        line: {
-          id: "",
-          lineNo: 1,
-          kind: "excess",
-          serviceId: null,
-          appointmentId: null,
-          visitStatus: null,
-          practitionerId: null,
-          serviceOn: serviceDates(lines).first,
-          description: EXCESS_LINE_TEXT,
-          billingCode: null,
-          quantity: 1,
-          unitPricePence: split.patientPence,
-          discountPence: 0,
-          vatCode,
-          vatRateBp: 0,
-          netPence: split.patientPence,
-          vatPence: 0,
-          totalPence: split.patientPence,
-        },
-      };
+      const moved = new Set<number>();
+      const patient: PreparedLine[] = [];
+      let partialPence = 0;
+      for (const l of treat) {
+        const take = shares.get(String(l.lineNo)) ?? 0;
+        if (take <= 0) continue;
+        if (take >= l.totalPence) {
+          moved.add(l.lineNo);
+          patient.push({ ...l, kind: "excess", billingCode: null, vatCode, vatRateBp: 0, vatPence: 0, netPence: l.totalPence, description: fullyCoveredText(l.description ?? "Treatment", mode) });
+        } else {
+          partialPence += take;
+          if (mode === "per_visit") patient.push(patientLine({ description: contributionLineText(l.description ?? "Treatment"), totalPence: take, serviceOn: l.serviceOn, serviceId: l.serviceId, practitionerId: l.practitionerId }));
+        }
+      }
+      if (mode === "per_case" && partialPence > 0) patient.push(patientLine({ description: EXCESS_LINE_TEXT, totalPence: partialPence, serviceOn: treat.find((l) => !moved.has(l.lineNo) && (shares.get(String(l.lineNo)) ?? 0) > 0)?.serviceOn ?? null }));
+      payerLines = lines.filter((l) => !moved.has(l.lineNo));
+      if (partialPence > 0) {
+        const text = mode === "per_visit" ? CONTRIBUTION_DEDUCTION_TEXT : EXCESS_DEDUCTION_TEXT;
+        payerLines.push({ ...patientLine({ description: text, totalPence: -partialPence, serviceOn: null }), kind: "excess_deduction", unitPricePence: -partialPence, netPence: -partialPence });
+      }
+      payerLines.forEach((l, i) => (l.lineNo = i + 1));
+      patient.sort((a, b) => (a.serviceOn ?? "").localeCompare(b.serviceOn ?? "")).forEach((l, i) => (l.lineNo = i + 1));
+      split = { mode, id: pmsId(P.invoice, ctx), lines: patient, fullyCovered: moved.size };
     }
   }
-  for (const l of lines) l.id = pmsId(P.invoiceLine, ctx);
-  if (excess) excess.line.id = pmsId(P.invoiceLine, ctx);
+  // Every treatment line went to the patient: no payer invoice.
+  const payerInvoice = payerLines.length > 0;
+  for (const l of payerLines) l.id = pmsId(P.invoiceLine, ctx);
+  if (split) for (const l of split.lines) l.id = pmsId(P.invoiceLine, ctx);
 
-  const common = { patientId: d.patientId, caseId: d.caseId ?? null, siteId: d.siteId ?? null, pricesIncludeVat: settings.pricesIncludeVat };
+  const perVisit = split?.mode === "per_visit" ? theCase?.excessPence ?? null : null;
+  const common = { patientId: d.patientId, caseId: d.caseId ?? null, siteId: d.siteId ?? null, pricesIncludeVat: settings.pricesIncludeVat, perVisitContributionPence: perVisit };
   const queries: BatchQuery[] = [];
-  if (excess) {
+  if (split) {
     queries.push(
       ctx.db.insertInto(INV).values(
         invoiceValues(
           ctx,
           tenantId,
-          excess.id,
-          { ...common, billTo: "patient", payerType: "self_pay", payerReferrerId: null, authorisationId: null, relatedInvoiceId: null, lines: [excess.line], diagnosisCode: null, notes: null, importRef: null },
+          split.id,
+          { ...common, billTo: "patient", payerType: "self_pay", payerReferrerId: null, authorisationId: null, relatedInvoiceId: null, lines: split.lines, diagnosisCode: null, notes: null, importRef: payerInvoice ? null : (d.importRef ?? null) },
           actor,
           at,
         ),
       ),
-      lineInsert(ctx, tenantId, excess.id, excess.line, at),
+      ...split.lines.map((l) => lineInsert(ctx, tenantId, split.id, l, at)),
     );
   }
-  queries.push(
-    ctx.db.insertInto(INV).values(
-      invoiceValues(
-        ctx,
-        tenantId,
-        id,
-        {
-          ...common,
-          billTo,
-          payerType,
-          payerReferrerId: billTo === "payer" ? (theCase?.payerReferrerId ?? null) : null,
-          authorisationId: d.authorisationId ?? null,
-          relatedInvoiceId: excess?.id ?? null,
-          lines,
-          diagnosisCode: d.diagnosisCode ?? null,
-          notes: d.notes ?? null,
-          importRef: d.importRef ?? null,
-        },
-        actor,
-        at,
+  if (payerInvoice) {
+    queries.push(
+      ctx.db.insertInto(INV).values(
+        invoiceValues(
+          ctx,
+          tenantId,
+          id,
+          {
+            ...common,
+            billTo,
+            payerType,
+            payerReferrerId: billTo === "payer" ? (theCase?.payerReferrerId ?? null) : null,
+            authorisationId: d.authorisationId ?? null,
+            relatedInvoiceId: split?.id ?? null,
+            lines: payerLines,
+            diagnosisCode: d.diagnosisCode ?? null,
+            notes: d.notes ?? null,
+            importRef: d.importRef ?? null,
+          },
+          actor,
+          at,
+        ),
       ),
-    ),
-    ...lines.map((l) => lineInsert(ctx, tenantId, id, l, at)),
-  );
-  if (excess) queries.push(ctx.db.updateTable(INV).set({ related_invoice_id: id }).where("tenant_id", "=", tenantId).where("id", "=", excess.id));
-  queries.push(pmsAuditQuery(ctx, tenantId, actor, { action: "pms.invoice.create", targetType: "pms_invoice", targetId: id, detail: { billTo, lines: lines.length, ...(excess ? { excessInvoiceId: excess.id } : {}) } }));
-  if (excess) queries.push(pmsAuditQuery(ctx, tenantId, actor, { action: "pms.invoice.excess_split", targetType: "pms_invoice", targetId: excess.id, detail: { payerInvoiceId: id } }));
+      ...payerLines.map((l) => lineInsert(ctx, tenantId, id, l, at)),
+    );
+    if (split) queries.push(ctx.db.updateTable(INV).set({ related_invoice_id: id }).where("tenant_id", "=", tenantId).where("id", "=", split.id));
+    queries.push(pmsAuditQuery(ctx, tenantId, actor, { action: "pms.invoice.create", targetType: "pms_invoice", targetId: id, detail: { billTo, lines: payerLines.length, ...(split ? { excessInvoiceId: split.id } : {}) } }));
+  }
+  if (split) {
+    if (!payerInvoice) queries.push(pmsAuditQuery(ctx, tenantId, actor, { action: "pms.invoice.create", targetType: "pms_invoice", targetId: split.id, detail: { billTo: "patient", lines: split.lines.length } }));
+    queries.push(
+      pmsAuditQuery(ctx, tenantId, actor, {
+        action: "pms.invoice.excess_split",
+        targetType: "pms_invoice",
+        targetId: split.id,
+        detail: { payerInvoiceId: payerInvoice ? id : null, mode: split.mode, visitsFullyPatient: split.fullyCovered },
+      }),
+    );
+  }
   await billingBatch(ctx, queries, MESSAGES);
-  return { invoice: (await getInvoice(ctx, tenantId, id)) as Invoice, excessInvoice: excess ? await getInvoice(ctx, tenantId, excess.id) : null };
+  if (!payerInvoice && split) return { invoice: (await getInvoice(ctx, tenantId, split.id)) as Invoice, excessInvoice: null };
+  return { invoice: (await getInvoice(ctx, tenantId, id)) as Invoice, excessInvoice: split ? await getInvoice(ctx, tenantId, split.id) : null };
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -735,6 +773,7 @@ function toInvoice(ctx: RepoContext, row: Selectable<PmsInvoicesTable>, lines: I
     issuedBy: row.issued_by,
     authSessions: num(row.auth_sessions),
     authValuePence: num(row.auth_value_pence),
+    perVisitContributionPence: numOrNull(row.per_visit_contribution_pence),
     importRef: row.import_ref,
     createdBy: row.created_by,
   };

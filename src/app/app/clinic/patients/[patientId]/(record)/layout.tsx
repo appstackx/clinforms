@@ -38,8 +38,8 @@ const lowerFirst = (s: string) => (s ? s.charAt(0).toLowerCase() + s.slice(1) : 
  * tab's page checks its own permission again.
  *
  * Differences from the design: "Take payment" needs billing.pay (reception, owner, administrator – not the
- * clinician as drawn) and opens the take-payment dialog on the Invoices tab; "Send message" opens the Messages tab until
- * comms is merged; "Book" opens the diary's booking form for this patient.
+ * clinician as drawn) and opens the take-payment dialog on the Invoices tab; "Send message" opens the Messages tab with
+ * its send form (?send=1); "Book" opens the diary's booking form for this patient.
  */
 export default async function PatientRecordLayout({ children, params }: { children: React.ReactNode; params: { patientId: string } }) {
   const actor = await requireClinicActor({ permission: "patients.view" });
@@ -79,7 +79,7 @@ export default async function PatientRecordLayout({ children, params }: { childr
     { label: "Patient details", href: patientPath(p.id, "details") },
     ...(actor.can("patients.edit") && !h.anonymised ? [{ label: "Edit details", href: patientPath(p.id, "edit") }] : []),
     ...(actor.can("clinical.write") && !h.anonymised ? [{ label: "Clinical flags", href: patientPath(p.id, "details#clinical-flags") }] : []),
-    ...(canMessage ? [{ label: "Send message", href: patientPath(p.id, "tab/messages"), phoneOnly: true }] : []),
+    ...(canMessage ? [{ label: "Send message", href: patientPath(p.id, "messages?send=1"), phoneOnly: true }] : []),
     ...(canPay ? [{ label: "Take payment", href: patientPath(p.id, "invoices?pay=1"), phoneOnly: true }] : []),
     ...(actor.can("reports.export")
       ? [
@@ -200,7 +200,7 @@ export default async function PatientRecordLayout({ children, params }: { childr
             </NewNoteButton>
           ) : null}
           {canMessage ? (
-            <Link href={patientPath(p.id, "tab/messages")} className={cn(action("secondary"), "hidden md:inline-flex")}>
+            <Link href={patientPath(p.id, "messages?send=1")} className={cn(action("secondary"), "hidden md:inline-flex")} data-testid="record-send-button">
               <Send aria-hidden />
               Send message
             </Link>

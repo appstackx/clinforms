@@ -14,6 +14,7 @@ import { pmsAudit } from "../../repos/pms/context";
 import { invoiceState, daysBetweenIso, addDaysIso } from "../../../modules/pms/billing/status";
 import type { Invoice, InvoiceSummary, PaymentMethod } from "../../../modules/pms/billing/types";
 import type {
+  PayerAccountTermsView,
   AgedDebtView,
   BillingFiguresView,
   InvoiceDetailView,
@@ -27,11 +28,13 @@ import type {
   TakePaymentView,
   UninvoicedVisitView,
 } from "../../../modules/pms/billing/view";
+import { DEFAULT_CONTRIBUTION_MODE, patientShares, type ContributionMode } from "../../../modules/pms/billing/excess";
 import { excessPerVisit, visitCharge, type BillableVisit } from "../../../modules/pms/billing/visits";
 import { formatUkDate, ukToday } from "../../../modules/pms/core/text";
 import type { PayerType } from "../../../modules/pms/core/types";
 import type { RepoContext } from "../../repos/context";
 import { getClinicProfile } from "../../repos/clinic-profile";
+import { caseContributionOverrides, contributionModesForCases, payerContributionModes } from "../../repos/pms/billing/contribution-terms";
 import { listCreditNotesForInvoice } from "../../repos/pms/billing/credit-notes";
 import { billingFigures, billedAppointmentIds, excessBilledForCase, getInvoice, listInvoicesPage, type InvoiceListState } from "../../repos/pms/billing/invoices";
 import { listPaymentLinks } from "../../repos/pms/billing/payment-links";
@@ -133,12 +136,15 @@ export interface PricedVisit {
   billTo: "patient" | "payer";
   chargePence: number | null;
   excessPence: number;
+  /** Insured visits: how the case bills the patient's part. */
+  contributionMode: ContributionMode | null;
   payerReferrerId: string | null;
 }
 
 /**
  * Prices visits the way their invoices will be: completed visits of a case with a payer account bill the payer
- * (the case's excess not billed yet goes to the patient, visit by visit in date order); did-not-attend and late
+ * (the patient's part goes to the patient: the case's excess not billed yet, visit by visit in date order – or the
+ * contribution on every visit, as the case or its payer account says); did-not-attend and late
  * cancellation fees, and every self-pay visit, bill the patient. Prices: case price list → default → service.
  */
 export async function priceVisits(ctx: RepoContext, tenantId: string, visits: BillableVisit[]): Promise<PricedVisit[]> {
@@ -170,18 +176,27 @@ export async function priceVisits(ctx: RepoContext, tenantId: string, visits: Bi
     const insured = Boolean(c && c.payerType !== "self_pay" && c.payerReferrerId);
     const billTo = insured && visit.status === "attended" ? "payer" : "patient";
     const charge = list === null ? (visit.status !== "attended" && typeof visit.feePence === "number" ? visit.feePence : null) : visitCharge(visit.status, list, settings, visit.feePence);
-    out.push({ visit, serviceName: names.get(visit.serviceId) ?? "Appointment", billTo, chargePence: charge, excessPence: 0, payerReferrerId: billTo === "payer" ? (c?.payerReferrerId ?? null) : null });
+    out.push({ visit, serviceName: names.get(visit.serviceId) ?? "Appointment", billTo, chargePence: charge, excessPence: 0, contributionMode: null, payerReferrerId: billTo === "payer" ? (c?.payerReferrerId ?? null) : null });
   }
-  // The excess not billed yet, case by case, over that case's payer visits in date order.
-  for (const caseId of caseIds) {
+  // The patient's part, case by case, over that case's payer visits in date order.
+  const insuredCases = caseIds.filter((id) => out.some((p) => p.visit.caseId === id && p.billTo === "payer"));
+  const modes = await contributionModesForCases(
+    ctx,
+    tenantId,
+    insuredCases.map((id) => ({ id, payerReferrerId: cases.get(id)?.payerReferrerId ?? null })),
+  );
+  for (const caseId of insuredCases) {
     const c = cases.get(caseId);
-    if (!c || !c.excessPence) continue;
+    const mode = modes.get(caseId) ?? "per_case";
     const payerVisits = out.filter((p) => p.visit.caseId === caseId && p.billTo === "payer" && p.chargePence !== null).sort((a, b) => a.visit.date.localeCompare(b.visit.date) || (a.visit.startTime ?? "").localeCompare(b.visit.startTime ?? ""));
-    if (payerVisits.length === 0) continue;
-    const left = Math.max(0, c.excessPence - (await excessBilledForCase(ctx, tenantId, caseId)));
-    const split = excessPerVisit(
+    for (const p of payerVisits) p.contributionMode = mode;
+    if (!c || !c.excessPence || payerVisits.length === 0) continue;
+    const already = mode === "per_case" ? await excessBilledForCase(ctx, tenantId, caseId) : 0;
+    const split = patientShares(
       payerVisits.map((p) => ({ key: p.visit.appointmentId, totalPence: p.chargePence ?? 0 })),
-      left,
+      mode,
+      c.excessPence,
+      already,
     );
     for (const p of payerVisits) p.excessPence = split.get(p.visit.appointmentId) ?? 0;
   }
@@ -299,6 +314,8 @@ export async function uninvoicedVisitsFor(actor: BillingActor): Promise<Result<{
         patientPence: charge === null ? 0 : p.billTo === "payer" ? p.excessPence : charge,
         payerPence: payerPart,
         excessPence: p.excessPence,
+        contributionMode: p.contributionMode,
+        caseId: p.visit.caseId,
         waivable: p.visit.status !== "attended",
       };
     });
@@ -310,10 +327,20 @@ export async function uninvoicedVisitsFor(actor: BillingActor): Promise<Result<{
  * One invoice
  * ----------------------------------------------------------------------------------------------*/
 
-/** The excess deduction of an insurer's invoice spread over its treatment lines in date order (display only). */
-export function lineExcess(inv: Pick<Invoice, "lines">): Map<string, number> {
+/**
+ * The deduction of an insurer's invoice over its treatment lines (display only): the contribution on every line
+ * (per visit), or the excess spread over the lines in date order (per case).
+ */
+export function lineExcess(inv: Pick<Invoice, "lines"> & { perVisitContributionPence?: number | null }): Map<string, number> {
   const deduction = -inv.lines.filter((l) => l.kind === "excess_deduction").reduce((a, l) => a + l.totalPence, 0);
   const treat = inv.lines.filter((l) => l.kind === "service" || l.kind === "item").sort((a, b) => (a.serviceOn ?? "").localeCompare(b.serviceOn ?? "") || a.lineNo - b.lineNo);
+  if (deduction > 0 && inv.perVisitContributionPence) {
+    return patientShares(
+      treat.map((l) => ({ key: l.id, totalPence: l.totalPence })),
+      "per_visit",
+      inv.perVisitContributionPence,
+    );
+  }
   return excessPerVisit(
     treat.map((l) => ({ key: l.id, totalPence: l.totalPence })),
     deduction,
@@ -354,7 +381,7 @@ async function detailOf(actor: BillingActor, inv: Invoice): Promise<InvoiceDetai
   const pracs = new Map(practitioners.map((x) => [x.id, x]));
   const excess = lineExcess(inv);
   const caseRow = inv.caseId
-    ? await ctx.db.selectFrom("pms_cases").select(["id", "title", "membership_number"]).where("tenant_id", "=", t).where("id", "=", inv.caseId).executeTakeFirst()
+    ? await ctx.db.selectFrom("pms_cases").select(["id", "title", "membership_number", "excess_pence", "payer_referrer_id"]).where("tenant_id", "=", t).where("id", "=", inv.caseId).executeTakeFirst()
     : undefined;
   const auth = inv.authorisationId ? await getAuthorisation(ctx, t, inv.authorisationId) : null;
   const lines: InvoiceLineView[] = inv.lines
@@ -402,6 +429,21 @@ async function detailOf(actor: BillingActor, inv: Invoice): Promise<InvoiceDetai
         isExcess: partner.lines.some((l) => l.kind === "excess"),
       }
     : null;
+  // How the patient's part was billed: kept on the invoice (per visit) or the case's excess (per case).
+  const hasExcessLines = inv.lines.some((l) => l.kind === "excess");
+  const hasDeduction = inv.lines.some((l) => l.kind === "excess_deduction");
+  let contribution: InvoiceDetailView["contribution"] = null;
+  if (hasExcessLines || hasDeduction || partner || inv.perVisitContributionPence !== null) {
+    const insurerId = inv.payerReferrerId ?? partner?.payerReferrerId ?? caseRow?.payer_referrer_id ?? null;
+    const insurerName = insurerId ? ((await referrerNames(ctx, t, [insurerId])).get(insurerId) ?? null) : null;
+    const mode: ContributionMode = inv.perVisitContributionPence !== null ? "per_visit" : "per_case";
+    contribution = {
+      mode,
+      amountPence: mode === "per_visit" ? inv.perVisitContributionPence : caseRow?.excess_pence === null || caseRow?.excess_pence === undefined ? null : Number(caseRow.excess_pence),
+      insurerName,
+      fullyPatient: inv.billTo === "patient" && !partner && hasExcessLines && inv.lines.some((l) => l.kind === "excess" && l.appointmentId !== null),
+    };
+  }
   return {
     id: inv.id,
     rev: inv.rev,
@@ -417,6 +459,7 @@ async function detailOf(actor: BillingActor, inv: Invoice): Promise<InvoiceDetai
     case: caseRow ? { id: caseRow.id, title: caseRow.title, membershipNumber: caseRow.membership_number } : null,
     authorisation: auth ? { code: auth.code, sessionsUsed: auth.sessionsUsed, sessionsAuthorised: auth.sessionsAuthorised } : null,
     partner: partnerView,
+    contribution,
     siteName: inv.siteId ? (sites.find((s) => s.id === inv.siteId)?.name ?? null) : null,
     issuedOn: inv.issuedOn,
     dueOn: inv.dueOn,
@@ -777,4 +820,36 @@ export async function invoicesCsvFor(actor: BillingActor, filters: { state?: Inv
     await pmsAudit(ctx, t, actor.actor, { action: "pms.invoice.csv_export", targetType: "pms_invoice", targetId: "list", detail: { count: rows.length, filters: Object.keys(filters).filter((k) => Boolean((filters as Record<string, unknown>)[k])) } });
     return ok({ csv, count: rows.length });
   });
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * How the patient's part is billed (payer accounts, cases)
+ * ----------------------------------------------------------------------------------------------*/
+
+/** The payer accounts (insurers, MLC companies, solicitors, employers, case managers) with their mode. */
+export async function payerTermsFor(actor: BillingActor): Promise<Result<{ accounts: PayerAccountTermsView[]; canEdit: boolean }>> {
+  if (!actor.can("billing.view")) return forbidden();
+  return attempt("billing.payer_accounts", async () => {
+    const ctx = actor.repo();
+    const rows = await ctx.db
+      .selectFrom("pms_referrers")
+      .select(["id", "name", "kind", "active"])
+      .where("tenant_id", "=", actor.tenantId)
+      .where("kind", "in", ACCOUNT_KINDS as unknown as string[])
+      .orderBy("name")
+      .limit(500)
+      .execute();
+    const modes = await payerContributionModes(ctx, actor.tenantId);
+    return ok({
+      accounts: rows.map((r) => ({ id: r.id, name: r.name, kind: r.kind, active: Number(r.active) === 1, mode: modes.get(r.id) ?? DEFAULT_CONTRIBUTION_MODE })),
+      canEdit: actor.can("settings.setup"),
+    });
+  });
+}
+
+/** For the case form: each payer account's mode, and the case's own override (null = as its account). */
+export async function caseContributionFor(actor: BillingActor, caseId: string | null): Promise<{ payerModes: Record<string, ContributionMode>; caseMode: ContributionMode | null }> {
+  const ctx = actor.repo();
+  const [payers, own] = await Promise.all([payerContributionModes(ctx, actor.tenantId), caseId ? caseContributionOverrides(ctx, actor.tenantId, [caseId]) : Promise.resolve(new Map<string, ContributionMode>())]);
+  return { payerModes: Object.fromEntries(payers), caseMode: caseId ? (own.get(caseId) ?? null) : null };
 }

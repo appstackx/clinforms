@@ -11,11 +11,12 @@ import { DEMO_CLINIC } from "./demo-data";
 import { seedDiary } from "./seed-diary";
 import { seedDemoClinic } from "./seed-lib";
 import { seedBilling } from "./seed-billing";
+import { seedComms } from "./seed-comms";
 import { seedRecords } from "./seed-records";
 
 const NOW = new Date("2026-10-27T10:00:00.000Z");
 
-describe("demo seed: clinic → diary → records → billing", () => {
+describe("demo seed: clinic → diary → records → billing → messages", () => {
   let t: TestDb;
   const cipher = testCipher();
   before(async () => {
@@ -33,6 +34,8 @@ describe("demo seed: clinic → diary → records → billing", () => {
     const diary = await seedDiary(ctx, tid, { now: NOW });
     const records = await seedRecords(ctx, tid, { now: NOW });
     const billing = await seedBilling(ctx, tid, { now: NOW });
+    const comms = await seedComms(ctx, tid, { now: NOW });
+    assert.ok(comms.planned > 0 && comms.history > 0 && comms.replies === 3 && comms.letters === 2 && !comms.existed, JSON.stringify(comms));
     assert.ok(diary.appointments > 0 && !diary.weekExisted, JSON.stringify(diary));
     assert.ok(billing.invoices > 5 && billing.payments > 0 && billing.uninvoicedLeft > 0 && !billing.existed, JSON.stringify(billing));
     assert.ok(records.notes > 0 && records.skipped === 0, JSON.stringify(records));
@@ -42,5 +45,6 @@ describe("demo seed: clinic → diary → records → billing", () => {
     assert.ok(diaryAgain.weekExisted && diaryAgain.appointments === 0, JSON.stringify(diaryAgain));
     assert.deepEqual([recordsAgain.notes, recordsAgain.outcomes], [0, 0]);
     assert.equal((await seedBilling(ctx, tid, { now: NOW })).existed, true, "billing: nothing added twice");
+    assert.equal((await seedComms(ctx, tid, { now: NOW })).existed, true, "messages: nothing added twice");
   });
 });

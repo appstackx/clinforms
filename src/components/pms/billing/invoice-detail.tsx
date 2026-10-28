@@ -10,11 +10,13 @@ import { useRouter } from "next/navigation";
 import * as React from "react";
 import { CreditCard, Download, Link2, RefreshCw, Shield } from "lucide-react";
 import { cancelDraftAction, checkPaymentLinksAction, creditNoteAction, issueInvoiceAction, paymentLinkAction, refundAction, removeAllocationAction, voidInvoiceAction } from "@/app/app/clinic/billing/actions";
+import { contributionWording } from "@/modules/pms/billing/excess";
 import type { InvoiceDetailView, PrintClinic } from "@/modules/pms/billing/view";
 import { cn } from "@/lib/utils";
 import { ConfirmDialog, PmsButton, StatusPill, pmsButtonVariants, useToast } from "@/components/pms/ui";
 import { BILLING_PATH, date, focusRing, money, parsePounds, poundsText } from "./format";
 import { PrintInvoiceSheet } from "./print-sheets";
+import { EmailInvoiceButton, TextPaymentLinkButton } from "@/components/pms/comms/billing-buttons";
 import { TakePaymentDialog } from "./take-payment-dialog";
 
 export interface InvoiceDetailProps {
@@ -38,6 +40,8 @@ export function InvoiceDetail({ invoice: inv, clinic, howToPay, printedBy, print
   const [amount, setAmount] = React.useState("");
   const [reason, setReason] = React.useState("");
   const [refundMethod, setRefundMethod] = React.useState<"card" | "cash" | "bank_transfer">("card");
+  const words = contributionWording(inv.contribution?.mode ?? "per_case");
+  const coveredVisits = inv.lines.filter((l) => l.kind === "excess" && l.appointmentId !== null).length;
   const [payOpen, setPayOpen] = React.useState(false);
   const issued = inv.status === "issued";
   const isVoid = inv.state === "void";
@@ -105,6 +109,7 @@ export function InvoiceDetail({ invoice: inv, clinic, howToPay, printedBy, print
           </Link>
         )
       ) : null}
+      {issued && !isVoid && can.pay && inv.balancePence > 0 && inv.billTo === "patient" ? <TextPaymentLinkButton invoiceId={inv.id} /> : null}
       {issued && !isVoid && can.pay && inv.balancePence > 0 ? (
         <PmsButton variant="secondary" loading={busy === "link"} onClick={() => void copyLink()} data-testid="copy-payment-link">
           <Link2 aria-hidden />
@@ -153,17 +158,22 @@ export function InvoiceDetail({ invoice: inv, clinic, howToPay, printedBy, print
 
       <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
         <div className="flex min-w-0 flex-col gap-4">
-          {inv.billTo === "payer" || inv.partner ? (
-            <section className="flex flex-col gap-4 rounded-xl border border-border bg-white p-5" aria-labelledby="split-h">
+          {inv.billTo === "payer" || inv.partner || inv.contribution ? (
+            <section className="flex flex-col gap-4 rounded-xl border border-border bg-white p-5" aria-labelledby="split-h" data-testid="split-card" data-mode={inv.contribution?.mode ?? ""}>
               <h2 id="split-h" className="flex items-center gap-2 text-base font-semibold">
                 <Shield className="h-4 w-4 text-[#1842B4]" aria-hidden />
-                Insured visit – split between patient and insurer
+                {words.heading}
               </h2>
+              {inv.contribution ? (
+                <p className="text-sm text-[#334155]" data-testid="split-explain">
+                  {words.explain(inv.contribution.amountPence !== null ? money(inv.contribution.amountPence) : null, inv.contribution.insurerName)}
+                </p>
+              ) : null}
               <div className="grid gap-3 md:grid-cols-2">
                 {(() => {
-                  const here = { label: inv.billTo === "payer" ? "This invoice · insurer balance" : "This invoice · patient excess", name: inv.billToName, total: inv.totalPence, balance: inv.balancePence, state: inv.state };
+                  const here = { label: inv.billTo === "payer" ? "This invoice · insurer balance" : `This invoice · ${words.patientPart.toLowerCase()}`, name: inv.billToName, total: inv.totalPence, balance: inv.balancePence, state: inv.state };
                   const other = inv.partner
-                    ? { label: inv.partner.isExcess ? `Patient excess · ${inv.partner.number ?? "draft"}` : `Insurer · ${inv.partner.number ?? "draft"}`, name: inv.partner.billToName, total: inv.partner.totalPence, balance: inv.partner.balancePence, state: inv.partner.state, id: inv.partner.id }
+                    ? { label: inv.partner.isExcess ? `${words.patientPart} · ${inv.partner.number ?? "draft"}` : `Insurer · ${inv.partner.number ?? "draft"}`, name: inv.partner.billToName, total: inv.partner.totalPence, balance: inv.partner.balancePence, state: inv.partner.state, id: inv.partner.id }
                     : null;
                   const cards = inv.billTo === "payer" ? [other, { ...here, id: null as string | null }] : [{ ...here, id: null as string | null }, other];
                   return cards.map((c, i) =>
@@ -183,8 +193,8 @@ export function InvoiceDetail({ invoice: inv, clinic, howToPay, printedBy, print
                         </span>
                       </div>
                     ) : (
-                      <div key={i} className="rounded-[10px] border border-dashed border-border p-4 text-sm text-[#475569]">
-                        No excess on this invoice.
+                      <div key={i} className="rounded-[10px] border border-dashed border-border p-4 text-sm text-[#475569]" data-testid="split-other-empty">
+                        {inv.contribution?.fullyPatient ? words.fullyPatient(inv.contribution.insurerName, coveredVisits) : words.none}
                       </div>
                     ),
                   );
@@ -256,7 +266,7 @@ export function InvoiceDetail({ invoice: inv, clinic, howToPay, printedBy, print
                     <th scope="col" className="px-3 py-2">Item</th>
                     <th scope="col" className="px-3 py-2">Practitioner</th>
                     <th scope="col" className="px-3 py-2 text-right">Fee</th>
-                    {inv.billTo === "payer" ? <th scope="col" className="px-3 py-2 text-right">Excess</th> : null}
+                    {inv.billTo === "payer" ? <th scope="col" className="px-3 py-2 text-right">{words.column}</th> : null}
                     <th scope="col" className="px-5 py-2 text-right">{inv.billTo === "payer" ? "Insurer pays" : "Amount"}</th>
                   </tr>
                 </thead>
@@ -326,9 +336,7 @@ export function InvoiceDetail({ invoice: inv, clinic, howToPay, printedBy, print
                 Download
               </Link>
             ) : null}
-            <span className={cn(pmsButtonVariants({ variant: "secondary", size: "sm" }), "cursor-not-allowed opacity-60", !issued && "ml-auto")} title="Email comes with Messages" aria-disabled>
-              Email
-            </span>
+            {issued && !isVoid ? <EmailInvoiceButton invoiceId={inv.id} /> : null}
           </div>
           <div className="overflow-hidden rounded-xl bg-[#E2E8F0] p-4" aria-hidden>
             <div className="h-[560px] w-full overflow-hidden">
