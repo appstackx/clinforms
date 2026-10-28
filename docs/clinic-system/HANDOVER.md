@@ -1,5 +1,7 @@
 # K2 clinic system – handover
 
+> **Update 28/10/2026 (latest – read §15 first):** M6 Messages DONE – back end reviewed, diary hook, Messages screens, letter editor, record Messages tab, billing emails, seed, e2e; merged into `feat/clinic-system` `d1f350b`. Next: M7 online booking + portal. See §15.
+
 > **Update 28/10/2026 (latest – read §14 first):** M5 billing DONE – back end, screens, seed, e2e; merged into `feat/clinic-system` `0acf07c`. Next: M6 Messages. See §14.
 
 > **Update 28/10/2026 (latest – read §13 first):** design received for every screen; design system, app shell, configurable permissions, patients/notes and diary SCREENS are built and merged on `feat/clinic-system` `c05be50`; Prototype A passes end to end. Next: billing (M5), running now. See §13.
@@ -626,25 +628,103 @@ the screen); the diary's payer label still says "– excess £x" in both modes (
 payer-account editor belongs with Set-up (M8). `feat/cs-comms` also edits `invoice-detail.tsx` – expect a small
 merge there when M6 merges.
 
-## 15. M6 messages (28/10/2026) – IN PROGRESS (midpoint: back end done on `feat/cs-comms`)
+## 15. M6 messages (28/10/2026) – DONE, merged into `feat/clinic-system`
 
-**Heads:** `feat/cs-comms` `0bc49da` (pushed) = `feat/clinic-system` `0acf07c` merged in (`8f8148a`, no conflicts) + 3 commits.
-`feat/clinic-system` unchanged so far (`0acf07c`). `main` untouched.
+**Heads (all pushed; `main` untouched):** `feat/cs-comms` `8213dd4` · `feat/clinic-system` **`d1f350b`** (merge of
+`feat/cs-comms`, tree identical to it; includes the billing follow-up `f732a11`, merged into cs-comms first) ·
+`feat/cs-diary` `f59a9c8` · `feat/cs-records` `b955bb7` · `feat/cs-billing` `eb15d98` (merged back; typecheck +
+test:pms 480/480 each).
 
-| Commit | What |
+| Commit on `feat/cs-comms` | What |
 |---|---|
-| `aff353b` | Back end reviewed and finished: audit in the same batch everywhere (`commsAuditWhen`, `src/server/repos/pms/comms/shared.ts`); site scope on every list/read; service layer `src/server/pms/comms/{views,writes,billing-mail}.ts` (permission first: `messages.send` / `messages.templates` / `messages.letters`); consent per kind (STOP = no texts; stop-emails link = no reminder emails, confirmations still go; one confirmation text after STOP); new kinds late_cancelled / dna / offer / payment_link / invoice / receipt / statement / letter / portal_link; held-for-quiet-hours flag; Retry (attempts); letter signature line; documents linked to messages; design-round-3 wording. 0140/0141 edited IN PLACE (never on the K2 line or a server DB). D1 stack test `workers/data-gateway/test/pms-comms-stack.test.ts` (stand-in + local workerd D1, 28/28) |
-| `51677c3` | Diary → messages (`src/server/pms/diary/message-sync.ts`, called from `src/server/pms/diary/writes.ts` after every successful book / rebook / move / resize / status / cancel / details / series cancel / offer booking / start treatment; "Offer slot by text" sends the offer) |
-| `0bc49da` | `scripts/pms/seed-comms.ts` (from `seed-demo.ts` after billing) |
+| `8f8148a` | `feat/clinic-system` `0acf07c` merged into the October draft (no conflicts) |
+| `aff353b` | Back end reviewed and finished (see 15.1, 15.2); migrations 0140/0141 edited **in place** (they were never on the K2 line or a server DB) |
+| `51677c3` | Diary → messages hook (`src/server/pms/diary/message-sync.ts`, called from `diary/writes.ts`) |
+| `0bc49da` | Seed `scripts/pms/seed-comms.ts` (from `seed-demo.ts` after billing) |
+| `b3c5d10` `e48d1a9` `5bfc0cb` `9640c37` `ac12d6b` | View models + letter follow-ups; shell nav **badge** (foundation shell, own commit); screens; billing buttons; e2e, `comms.md`, designs, contract line |
+| `f9…` merge, `8213dd4` | `feat/clinic-system` `f732a11` (billing follow-up) merged in (no conflicts); shell e2e nav list |
 
-**Route placement (decision, implemented):** the comms module's three sessionless endpoints stay together under
-`src/app/api/clinic-messages/{cron,sms,unsubscribe}/route.ts` – thin wrappers over `src/server/pms/comms/*`, owned by
-comms (contract §3 to be amended at the end of M6). Not under `/app/clinic` (needs a session), not in portal's public
-route group, not in ClinForms' `/api/cron`. **No `vercel.json` cron entry:** production is on Vercel Hobby (one run a
-day; a `*/15` schedule would fail the deploy) – scheduling is a decision for Khuram (Pro, or a Cloudflare cron that
-calls the route with `CRON_SECRET`).
+### 15.1 Review findings on the October draft (fixed)
+1. **Audit after the write** (settings, template / rule / letter updates, finalise / sent / void, reply dealt with,
+   delivery receipts, opt-out cancellations): now one batch with a conditional audit INSERT (`commsAuditWhen`,
+   `src/server/repos/pms/comms/shared.ts`), as billing. Claims of planned rows (processing ↔ pending) stay unaudited
+   bookkeeping; every claimed row ends in an audited batch; the give-up after 5 attempts is audited.
+2. **No site scope / no permission layer**: new `src/server/pms/comms/{views,writes,billing-mail}.ts` – permission
+   first (`messages.send`, `messages.templates`, `messages.letters` – never reception, a lock), `actor.siteIds` on every
+   list and read (`patientSiteFilter` via `inPatientScope`), ids read back, zod, plain errors.
+3. **Consent too blunt**: per kind now – STOP = no texts (+ one confirmation text); the stop-emails link stops
+   reminder / follow-up emails only (confirmations, change notices, invoices still go – design round 3 wording).
+4. **Run trusted the snapshot only**: the run re-reads the diary status (`appointmentStatuses`) and skips a
+   reminder / confirmation of an appointment no longer booked.
+5. Missing: late-cancellation and DNA messages, waiting-list offers, Retry, held-for-quiet-hours flag, letter
+   signature, documents linked to messages, letter titles in lists (plain `template_name`; subjects stay encrypted).
+6. Wording from design round 3: clinic short name (the SMS sender), "Reply C to cancel" (C = cancel now, not
+   confirm), "STOP to opt out", no product name; merge fields never carry clinical detail (appointment context).
 
-Checks at the midpoint: typecheck, lint green; test:pms 472/472; test:db 872/0/3; comms D1 stack 28/28.
-**Still to do (if picking this up):** screens (Messages: outbox / replies / templates / letters / send; message settings;
-letter editor + A4 print; patient-facing messages page; record Messages tab; record "Send message"; nav badge),
-billing email buttons, e2e `scripts/e2e/pms-messages-screens.cjs`, full chain, merge into `feat/clinic-system`, §15 end.
+### 15.2 What is built (by requirement)
+- **COMMS-002** diary hook: book (confirmation only if "Send confirmation text and email" – `confirmation_requested`),
+  rebook, move (moved notice; if the confirmation has not gone yet, the confirmation for the new time instead),
+  resize / details (refresh), status (arrived etc. cancel reminders; DNA → follow-up 1 h after), cancel (cancelled /
+  late-cancelled notice), series cancel (no notices), waiting-list "Offer slot by text" (sends the offer).
+- **COMMS-003/004** reminder rules, quiet hours (UK time), outbox / test providers only; cron route with CRON_SECRET.
+- **COMMS-008/009/010/011** Messages page (`/app/clinic/messages`): outbox (Today line, filters, View, Retry, "Send due
+  messages now"), replies (thread, answer by text/email, dealt with), templates (owner/admin edit, merge-field chips,
+  count, preview), letters (titles; open with messages.letters), send a message (channel with reasons, marketing only
+  opted-in); Message settings (`/messages/settings`); record **Messages tab** + record "Send message" (`?send=1`);
+  nav badge = replies waiting; patient-facing page (`/messages/patient-view`). Stop-emails link page.
+- **LTR-001/003/004/005** letters: `/letters/new?patient=` → editor (`/letters/[id]`: recipient, merge fields filled on
+  save, Edit / A4 preview, Save draft, Print / Download PDF = print page, Sign (to post), Sign and send by email,
+  Withdraw) → signature line "Name, Profession · HCPC number" from the signer's practitioner record.
+- **Billing hooks**: Email (invoice), Text payment link, emailed receipt in Take payment, Email statement.
+- **Dashboard data source (M8)**: `failedMessagesSummaryFor(actor)` in `src/server/pms/comms/views.ts`.
+- Docs: `docs/clinic-system/comms.md`; designs `docs/clinic-system/design/round3/messages/` (+ README section);
+  contract §3: comms owns `src/app/api/clinic-messages/**`.
+
+### 15.3 Route placement (decision, implemented)
+The three sessionless endpoints stay together, comms-owned: `src/app/api/clinic-messages/{cron,sms,unsubscribe}` – thin
+wrappers over `src/server/pms/comms/{cron,webhook,unsubscribe}.ts`. Not `/app/clinic` (needs a session), not portal's
+public group, not ClinForms' `/api/cron`. **No vercel.json entry** (Hobby = one run a day; `*/15` would fail the
+deploy) – Khuram to choose Pro or a Cloudflare cron calling the route; until then "Send due messages now".
+
+### 15.4 Results
+Full chain on the merged tree: typecheck, lint green; test:pms 480/480; test:medreport 1777/0/3; test:db 880/0/3;
+test:auth 134/0; test:site 124/0 (nav test: Messages + badge); test:gateway 519/0/2 (incl. **pms-comms-stack** 28/28 –
+stand-in + local workerd D1); build green.
+E2E (each on a fresh `pms:seed-demo -- --fresh` scratch SQLite, port 3195, servers stopped; runner in the session
+scratchpad creates clinic B for the shell script): **pms-messages-screens 18/18** (axe clean, 375 px), clinic-system-shell
+10/10, clinic-system-access 13/13, pms-records-screens 17/17, pms-diary-screens 24/24, pms-prototype-a 10/10,
+pms-billing-screens 21/21 (with `stripe-test-stub.cjs`). The diary / prototype "seen" steps still need clinic hours
+(they book within the next hour). Messages e2e server env: `CLINIC_SMS_PROVIDER=test CLINIC_EMAIL_PROVIDER=test
+CRON_SECRET CLINIC_SMS_WEBHOOK_SECRET APP_ORIGIN`. Screenshots:
+`/private/tmp/claude-501/-Users-khuram-Projects-Appstackx-bh2-handover/ef471414-85b1-422d-bf98-018c56c69aec/scratchpad/k2design/out-messages/`.
+
+### 15.5 Differences from the design
+Merge fields are `{{patient.first_name}}` chips (labels on hover), not `{first_name}`; lists show what a message is for
+("Reminder · Fri 30/10 at 11:45"), not its text (encrypted; "View" opens one) – the replies list likewise shows the
+intent, the thread the text; no "Manage booking" / "Add to calendar" / manage links (portal M7) – texts say "call
+<site phone>"; no "Schedule" on Send a message (sends now); no "Opted out of texts – sent by email instead" fallback for
+reminders (skipped with the reason); late-cancel text says "a fee may apply" without the amount; letter editor is plain
+text ("- " bullets, blank-line paragraphs) without the rich-text toolbar; template list shows clinical / not clinical
+by recipient, all letters need messages.letters; "Download PDF" = print page (Save as PDF); urgent closures "send
+anyway" in quiet hours not built.
+
+### 15.6 Open items
+- Scheduling of the run (15.3); live providers K2-COMMS-005/006 (gate B, DPA); delivery receipts only via the test webhook.
+- "Send message" from the diary's appointment drawer (COMMS-011 partial); bulk / recalls (COMMS-012, Later).
+- Letters: Word output and the integration engine (LTR-002/007, M9); discharge letter from the discharge note
+  (LTR-006); `{{latest_outcomes}}` field; portal sharing (M7).
+- Portal's own outbox (`pms_portal_messages`) → comms (§7.3, M7) – the `portal_link` template is ready.
+- Diary write + message sync are two batches: a failed sync is logged and covered by the run's status check (no reconcile job).
+- Reception may see letter-email rows in the outbox (address, "Letter"), not their text.
+
+### 15.7 Decisions for Khuram
+1. Cron for the message run: Vercel Pro `*/15` or a Cloudflare cron (route ready, CRON_SECRET).
+2. Stop-emails link stops reminders only – confirmations and account emails still go (as the design says) – OK?
+3. "C" = cancel (design) – YES confirms; a cancel request goes to a person, the diary never changes by itself – OK?
+4. Moved before the confirmation went → the confirmation for the new time, no "moved" notice – OK?
+5. DNA follow-up on by default (setting), up to 24 h after; waiting-list offers are sent at once (ignore quiet hours).
+6. Migrations 0140/0141 edited in place before first merge – fine since never applied anywhere?
+
+### 15.8 Next
+**M7 Online booking + portal + intake** (portal branch): diary adapter for the portal's bookings, portal outbox → comms
+(`sendDocumentMessage` / templates incl. `portal_link`), public pages, Prototype B e2e.

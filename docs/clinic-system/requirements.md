@@ -235,14 +235,16 @@ backends). Screens uncommitted.
 
 ### 3.7 LTR – letters and templates
 
-Two engines exist: comms (`feat/cs-comms`, plain-text letter templates with merge fields, committed) and
-integration (`cs-integration`, Word/RTF merge-field resolver, **uncommitted**). One must be chosen (K2-LTR-007).
+Letters from templates (comms, M6): start → edit (merge fields, gaps) → sign with the signer's line → A4 print / email
+through the outbox. Two merge-field engines still exist: comms (`src/modules/pms/comms/merge-fields.ts`, plain-text
+letters and messages) and integration (`cs-integration`, Word/RTF resolver, uncommitted) – one must be chosen
+(K2-LTR-007, M9).
 
-- **K2-LTR-001** · MVP · partial · comms · FC 2.3-01 — Letter templates with merge fields from patient, case, payer, practitioner, appointments, invoices, clinic and today. AC: comms letters committed; a value not recorded shows as "[not recorded: …]".
+- **K2-LTR-001** · MVP · done · comms · FC 2.3-01 — Letter templates with merge fields from patient, case, payer, practitioner, appointments, invoices, clinic and today. AC: letter editor with merge fields (filled on start and on save; gaps visible) (M6, e2e).
 - **K2-LTR-002** · MVP · partial-wt · integration · FC 2.3-02 — A clinic's own Word/RTF letter templates are filled in their own layout using ClinForms' existing RTF/Word engine; unknown field names are reported, never guessed, and can be pointed at a field once. AC: merge-field resolver uncommitted; engine wiring missing; Blue Heart's `<<…>>`-style fields resolve.
 - **K2-LTR-003** · MVP · done · comms · FC 2.3-01 — Recipient: the patient, their GP, the case's payer or referrer, or a typed recipient. AC: `startLetter` tests.
 - **K2-LTR-004** · MVP · done · comms · FC none — A letter cannot be finalised while it contains "[not recorded: …]" or "[[…]]" gaps. AC: repository refuses.
-- **K2-LTR-005** · MVP · missing · comms · FC 2.3-05 — Output: PDF (and Word for Word templates), filed on the patient record, optionally emailed through comms (outbox) or shared to the portal. AC: letter downloadable and listed on the record.
+- **K2-LTR-005** · MVP · partial · comms · FC 2.3-05 — Output: PDF (and Word for Word templates), filed on the patient record, optionally emailed through comms (outbox) or shared to the portal. AC: A4 print / Save as PDF, listed on the record, emailed to the recipient through the outbox, marked posted (M6, e2e); Word output for Word templates (K2-LTR-002) and sharing to the portal (M7): missing.
 - **K2-LTR-006** · MVP · partial · records · FC 2.3-04 — Discharge summary letter from the discharge note. AC: discharge template exists; letter generation from it missing.
 - **K2-LTR-007** · MVP · missing · integration · FC none — One merge-field engine for letters and ClinForms (reconcile comms `merge-fields.ts` and integration `merge-fields.ts`). AC: one list of fields, one resolver, both callers use it.
 
@@ -271,22 +273,23 @@ starter forms, typed e-signature, sealing trigger.
 
 ### 3.10 COMMS – communications and reminders
 
-Committed on `feat/cs-comms` (`fc0d3eb`): migrations `0140`/`0141`, rules, repositories, engine, providers
-(outbox default, test adapter), handlers. Uncommitted in `cs-comms`: route files under
-`src/app/api/clinic-messages/{cron,sms,unsubscribe}` (outside the contract's comms routes – needs the
-orchestrator's approval or a move) and a server test. No D1 stack test (`pms-comms-stack.test.ts`) yet.
+M6 (28/10/2026, `feat/cs-comms`, merged into `feat/clinic-system`): back end reviewed and finished (audit in the same
+batch, site scope, consent per kind), diary wired, Messages screens (outbox, replies, templates, letters, send a
+message, message settings, patient-facing messages), the record's Messages tab, billing's emails; routes
+`/api/clinic-messages/{cron,sms,unsubscribe}` (comms-owned); D1 stack test; seed; e2e `pms-messages-screens.cjs`.
+Providers: outbox / test only. See `comms.md` and HANDOVER §15.
 
-- **K2-COMMS-001** · MVP · done · comms · FC 2.5-04 — Message templates with merge fields; appointment messages never carry clinical detail. AC: domain tests.
-- **K2-COMMS-002** · MVP · partial · comms · FC 2.5-01 — Booking, change and cancellation confirmations triggered by diary changes (`syncAppointmentMessages`). AC: hook done; diary not wired.
-- **K2-COMMS-003** · MVP · partial-wt · comms · FC 2.5-02 — Reminder rules (e.g. 24 h before) with quiet hours, UK time and clock changes, run by a cron route protected by `CRON_SECRET`. AC: engine done; cron route uncommitted; a reminder is planned once per appointment and re-planned on a move.
+- **K2-COMMS-001** · MVP · done · comms · FC 2.5-04 — Message templates with merge fields; appointment messages never carry clinical detail. AC: domain tests; standard wording from design round 3 (clinic short name, "STOP to opt out", no condition or treatment) (M6).
+- **K2-COMMS-002** · MVP · done · comms · FC 2.5-01 — Booking, change and cancellation confirmations triggered by diary changes (`syncAppointmentMessages`). AC: diary wired (M6, `src/server/pms/diary/message-sync.ts`): confirmation only when the booking asks for one; moved / cancelled / late-cancellation notices, did-not-attend follow-up; suite + e2e pms-messages-screens.
+- **K2-COMMS-003** · MVP · done · comms · FC 2.5-02 — Reminder rules (e.g. 24 h before) with quiet hours, UK time and clock changes, run by a cron route protected by `CRON_SECRET`. AC: engine + cron route `/api/clinic-messages/cron` (CRON_SECRET; e2e); planned once per appointment, re-planned on a move, held for quiet hours. The schedule entry is a decision for Khuram (Vercel Hobby runs crons once a day – comms.md).
 - **K2-COMMS-004** · MVP · done · comms · FC 2.5-03 — Providers behind interfaces (`CLINIC_SMS_PROVIDER`, `CLINIC_EMAIL_PROVIDER`), default outbox (stored, shown, never sent), test adapter; a live-looking key is refused in this phase. AC: tests.
 - **K2-COMMS-005** · MVP · missing · comms · FC 2.5-03 — Live email adapter (MailerSend; domain `clinforms.co.uk` DNS authorised 24 Oct; click/open tracking off). AC: (ext) sends from the clinic's sender name; bounces recorded; only after gate B.
 - **K2-COMMS-006** · MVP · missing · comms · FC 2.5-03 — Live SMS adapter (candidate MailerSend SMS/WhatsApp – check UK coverage, alphanumeric sender IDs, pricing, WhatsApp template rules first, Q-K3). AC: (ext) delivery status recorded; segments counted into `sms_segments` usage.
 - **K2-COMMS-007** · MVP · done · comms · FC 2.5-03 — SMS segment counting (GSM-7/UCS-2) shown before sending. AC: domain tests.
-- **K2-COMMS-008** · Later · partial-wt · comms · FC 2.5-05 — Two-way SMS: YES/NO/STOP replies via a provider webhook confirm or cancel the appointment. AC: rules and handler done; webhook route uncommitted; live needs provider.
-- **K2-COMMS-009** · MVP · partial-wt · comms · FC 2.5-07, 2.2-02 — PECR: marketing only with recorded opt-in; signed unsubscribe links; consent events log. AC: engine done; unsubscribe route uncommitted.
-- **K2-COMMS-010** · MVP · partial · comms · FC 2.5-08, 2.3-05 — Message log per patient (record tab) and an outbox screen (`/app/clinic/messages`). AC: data done; screens missing.
-- **K2-COMMS-011** · MVP · partial · comms · FC 2.5-06 — One-off message from a record or an appointment. AC: engine done; screen missing.
+- **K2-COMMS-008** · Later · partial · comms · FC 2.5-05 — Two-way SMS: YES/NO/STOP replies via a provider webhook confirm or cancel the appointment. AC: replies inbox, thread and answer (M6); C / NO / YES / STOP read; the test webhook is signed and live only with the test provider; a live provider is K2-COMMS-006.
+- **K2-COMMS-009** · MVP · done · comms · FC 2.5-07, 2.2-02 — PECR: marketing only with recorded opt-in; signed unsubscribe links; consent events log. AC: engine + signed stop-emails route (GET page, POST / one-click); STOP stops texts with one confirmation text; consent events on the record (M6, e2e).
+- **K2-COMMS-010** · MVP · done · comms · FC 2.5-08, 2.3-05 — Message log per patient (record tab) and an outbox screen (`/app/clinic/messages`). AC: outbox `/app/clinic/messages` (planned / held / sent / failed + Retry / not sent) and the record's Messages tab (M6, e2e).
+- **K2-COMMS-011** · MVP · partial · comms · FC 2.5-06 — One-off message from a record or an appointment. AC: "Send a message" on Messages and from the record (M6, e2e); from the diary's appointment drawer: missing.
 - **K2-COMMS-012** · Later · missing · comms · FC 2.5-09, 2.5-10, 2.5-11, 2.5-12, 2.5-13 — Bulk messages, recalls, automations, multi-step journeys, feedback surveys.
 
 ### 3.11 BILL – billing and invoicing (incl. insurer and medico-legal accounts)
@@ -664,9 +667,9 @@ Generated from the requirement lines above (§3, §5). "FC" = feature-comparison
 
 | Priority | done | back end done (screen pending) | partial | partial-wt | missing | total |
 |---|---:|---:|---:|---:|---:|---:|
-| MVP | 65 | 24 | 35 | 23 | 29 | 176 |
-| Later | 0 | 0 | 3 | 1 | 25 | 29 |
-| **All** | 65 | 24 | 38 | 24 | 54 | 205 |
+| MVP | 70 | 24 | 33 | 21 | 28 | 176 |
+| Later | 0 | 0 | 4 | 0 | 25 | 29 |
+| **All** | 70 | 24 | 37 | 21 | 53 | 205 |
 
 | Area | done | back end done (screen pending) | partial | partial-wt | missing |
 |---|---:|---:|---:|---:|---:|
@@ -676,10 +679,10 @@ Generated from the requirement lines above (§3, §5). "FC" = feature-comparison
 | BOOK | 1 | 0 | 5 | 0 | 4 |
 | PAT | 0 | 7 | 3 | 1 | 3 |
 | NOTE | 2 | 5 | 2 | 0 | 2 |
-| LTR | 2 | 0 | 2 | 1 | 2 |
+| LTR | 3 | 0 | 2 | 1 | 1 |
 | FORM | 2 | 0 | 3 | 0 | 2 |
 | PORTAL | 1 | 0 | 5 | 0 | 1 |
-| COMMS | 3 | 0 | 3 | 3 | 3 |
+| COMMS | 7 | 0 | 2 | 0 | 3 |
 | BILL | 12 | 0 | 2 | 0 | 2 |
 | AUTHS | 2 | 0 | 2 | 1 | 1 |
 | PAY | 4 | 0 | 2 | 0 | 0 |
@@ -768,11 +771,11 @@ Generated from the requirement lines above (§3, §5). "FC" = feature-comparison
 | K2-NOTE-009 | MVP | partial | feat/cs-records | 2.2-23 | Notes can be written on a phone (375 px) |
 | K2-NOTE-010 | Later | missing | feat/cs-records | 2.2-12, 2.2-13, 2.2-16 | Note-writing aids (snippets), medical history carried across cases, goals |
 | K2-NOTE-011 | Later | missing | feat/cs-records | 2.2-19 | Restrict a case to its own practitioner |
-| K2-LTR-001 | MVP | partial | feat/cs-comms | 2.3-01 | Letter templates with merge fields from patient, case, payer, practitioner, appointments, … |
+| K2-LTR-001 | MVP | done | feat/cs-comms | 2.3-01 | Letter templates with merge fields from patient, case, payer, practitioner, appointments, … |
 | K2-LTR-002 | MVP | partial-wt | feat/cs-integration | 2.3-02 | A clinic's own Word/RTF letter templates are filled in their own layout using ClinForms' … |
 | K2-LTR-003 | MVP | done | feat/cs-comms | 2.3-01 | Recipient: the patient, their GP, the case's payer or referrer, or a typed recipient |
 | K2-LTR-004 | MVP | done | feat/cs-comms | – | A letter cannot be finalised while it contains "[not recorded: …]" or "[[…]]" gaps |
-| K2-LTR-005 | MVP | missing | feat/cs-comms | 2.3-05 | Output: PDF (and Word for Word templates), filed on the patient record, optionally … |
+| K2-LTR-005 | MVP | partial | feat/cs-comms | 2.3-05 | Output: PDF (and Word for Word templates), filed on the patient record, optionally … |
 | K2-LTR-006 | MVP | partial | feat/cs-records | 2.3-04 | Discharge summary letter from the discharge note |
 | K2-LTR-007 | MVP | missing | feat/cs-integration | – | One merge-field engine for letters and ClinForms (reconcile comms `merge-fields.ts` and … |
 | K2-FORM-001 | MVP | done | feat/cs-portal | 2.2-21 | Starter new-patient intake and consent forms (written for the product) and clinic copies |
@@ -790,15 +793,15 @@ Generated from the requirement lines above (§3, §5). "FC" = feature-comparison
 | K2-PORTAL-006 | MVP | partial | feat/cs-portal | 2.1-32 | Works as mobile web at 375 px |
 | K2-PORTAL-007 | Later | missing | feat/cs-portal | 2.1-30 | View and pay invoices in the portal |
 | K2-COMMS-001 | MVP | done | feat/cs-comms | 2.5-04 | Message templates with merge fields; appointment messages never carry clinical detail |
-| K2-COMMS-002 | MVP | partial | feat/cs-comms | 2.5-01 | Booking, change and cancellation confirmations triggered by diary changes … |
-| K2-COMMS-003 | MVP | partial-wt | feat/cs-comms | 2.5-02 | Reminder rules (e.g |
+| K2-COMMS-002 | MVP | done | feat/cs-comms | 2.5-01 | Booking, change and cancellation confirmations triggered by diary changes … |
+| K2-COMMS-003 | MVP | done | feat/cs-comms | 2.5-02 | Reminder rules (e.g |
 | K2-COMMS-004 | MVP | done | feat/cs-comms | 2.5-03 | Providers behind interfaces (`CLINIC_SMS_PROVIDER`, `CLINIC_EMAIL_PROVIDER`), default … |
 | K2-COMMS-005 | MVP | missing | feat/cs-comms | 2.5-03 | Live email adapter (MailerSend; domain `clinforms.co.uk` DNS authorised 24 Oct; … |
 | K2-COMMS-006 | MVP | missing | feat/cs-comms | 2.5-03 | Live SMS adapter (candidate MailerSend SMS/WhatsApp – check UK coverage, alphanumeric … |
 | K2-COMMS-007 | MVP | done | feat/cs-comms | 2.5-03 | SMS segment counting (GSM-7/UCS-2) shown before sending |
-| K2-COMMS-008 | Later | partial-wt | feat/cs-comms | 2.5-05 | Two-way SMS: YES/NO/STOP replies via a provider webhook confirm or cancel the appointment |
-| K2-COMMS-009 | MVP | partial-wt | feat/cs-comms | 2.5-07, 2.2-02 | PECR: marketing only with recorded opt-in; signed unsubscribe links; consent events log |
-| K2-COMMS-010 | MVP | partial | feat/cs-comms | 2.5-08, 2.3-05 | Message log per patient (record tab) and an outbox screen (`/app/clinic/messages`) |
+| K2-COMMS-008 | Later | partial | feat/cs-comms | 2.5-05 | Two-way SMS: YES/NO/STOP replies via a provider webhook confirm or cancel the appointment |
+| K2-COMMS-009 | MVP | done | feat/cs-comms | 2.5-07, 2.2-02 | PECR: marketing only with recorded opt-in; signed unsubscribe links; consent events log |
+| K2-COMMS-010 | MVP | done | feat/cs-comms | 2.5-08, 2.3-05 | Message log per patient (record tab) and an outbox screen (`/app/clinic/messages`) |
 | K2-COMMS-011 | MVP | partial | feat/cs-comms | 2.5-06 | One-off message from a record or an appointment |
 | K2-COMMS-012 | Later | missing | feat/cs-comms | 2.5-09, 2.5-10, 2.5-11, 2.5-12, 2.5-13 | Bulk messages, recalls, automations, multi-step journeys, feedback surveys |
 | K2-BILL-001 | MVP | done | feat/cs-billing | 2.4-01, 2.1-15 | Invoice from attended appointments (and DNA/late-cancellation charges), priced from the … |
