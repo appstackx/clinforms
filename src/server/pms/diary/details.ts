@@ -16,11 +16,13 @@ import { nowIso } from "../../repos/context";
 import { getCase, listAuthorisations, listCasesForPatient } from "../../repos/pms/cases";
 import { priceFor } from "../../repos/pms/price-lists";
 import { getAppointment } from "../../repos/pms/diary/appointments";
+import { occupyingNear } from "../../repos/pms/diary/shared";
+import { getPatientSummaries } from "../../repos/pms/patients";
 import { getPractitioner, getRoom, getService, getSite } from "../../repos/pms/directory";
 import { getPatient } from "../../repos/pms/patients";
 import { inScope, type DiaryCaller } from "./caller";
 import { payerLabel, referrerNames } from "./payers";
-import { isInitialCategory } from "./view";
+import { doubleBookingsOf, isInitialCategory, patientDisplayName } from "./view";
 
 /** Who booked an appointment, in words: a member's name, the patient (online) or the data import. */
 async function bookedByOf(caller: DiaryCaller, source: string, createdBy: string | null): Promise<string | null> {
@@ -66,6 +68,14 @@ export async function loadAppointmentDetails(caller: DiaryCaller, id: string): P
     bookedByOf(caller, a.source, a.createdBy),
   ]);
   const auth = a.authorisationId ? (auths.find((x) => x.id === a.authorisationId) ?? null) : null;
+  // A logged double-booking: the practitioner's other appointments at the same time (names for roles that may
+  // see patients).
+  const near = a.kind === "appointment" && a.practitionerId ? await occupyingNear(ctx, tenantId, { spans: [a], practitionerId: a.practitionerId, excludeId: a.id }) : [];
+  const nearPatients = options.withPatient ? await getPatientSummaries(ctx, tenantId, near.map((n) => n.patientId).filter((x): x is string => Boolean(x))) : new Map<string, never>();
+  const doubleBookedWith = doubleBookingsOf(a, near, (pid) => {
+    const p = nearPatients.get(pid);
+    return p ? patientDisplayName(p) : null;
+  });
   const view: AppointmentDetailsView = {
     id: a.id,
     rev: a.rev,
@@ -114,6 +124,8 @@ export async function loadAppointmentDetails(caller: DiaryCaller, id: string): P
     seriesLater: Number(later?.n ?? 0),
     nextStatuses: Array.from(nextStatuses(a.kind, a.status)),
     canMove: canMove(a.status),
+    treatmentStarted: a.treatmentStartedAt !== null,
+    doubleBookedWith,
     lateIfCancelledNow: isLateCancellation(a.startsAt, nowIso(ctx)),
     initial: isInitialCategory(service?.category),
     pricePence: price?.pricePence ?? service?.defaultPricePence ?? null,

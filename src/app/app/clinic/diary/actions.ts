@@ -112,7 +112,7 @@ export async function openBookingCaseAction(input: OpenBookingCaseRequest): Prom
 }
 
 export async function startTreatmentAction(input: { id: string }): Promise<DiaryActionResult> {
-  const actor = await clinicActionActor({ permission: "clinical.write" });
+  const actor = await clinicActionActor({ permission: "diary.book" });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
   return done(await startTreatmentFor(await diaryCallerOf(actor), input));
 }

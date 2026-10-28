@@ -70,7 +70,7 @@ export interface PmsAppointmentsTable {
   ends_at: IsoTimestamp;
   /** UK calendar date of the start. */
   starts_on: IsoDate;
-  /** booked | arrived | attended | dna | late_cancelled | cancelled */
+  /** booked | arrived | attended | dna | late_cancelled | cancelled ("in treatment" = arrived + treatment_started_at) */
   status: string;
   block_kind: string | null;
   title: string | null;
@@ -91,6 +91,13 @@ export interface PmsAppointmentsTable {
   write_id: ColumnType<string | null, string | null | undefined, string | null>;
   /** 1 = reception asked for a booking confirmation (text and email) – the messages module sends it (migration 0115). */
   confirmation_requested: WithDefault<number>;
+  /** When treatment started (status "in treatment" while the status column is "arrived") – migration 0117. */
+  treatment_started_at: ColumnType<IsoTimestamp | null, IsoTimestamp | null | undefined, IsoTimestamp | null>;
+  /**
+   * Equal to write_id on the write that double-booked the practitioner on purpose (diary.override): the clash
+   * trigger lets exactly that write through, never a later one (migrations 0118–0119).
+   */
+  overbook_write_id: ColumnType<string | null, string | null | undefined, string | null>;
   created_by: string | null;
   created_at: IsoTimestamp;
   updated_at: IsoTimestamp;

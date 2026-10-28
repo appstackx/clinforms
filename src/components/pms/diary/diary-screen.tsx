@@ -6,6 +6,10 @@
  * cancelled, Waiting list (n), print the day sheet, New appointment (N). Keyboard: Tab to an appointment, Enter
  * opens it, M moves it with the arrow keys (Enter drops, Esc cancels) with a live hint, Shift+↑/↓ shortens or
  * lengthens it; T today, [ and ] previous / next. Every change offers Undo in a toast.
+ *
+ * Double-booking (Khuram's decision A, 28/10/2026): a member holding "diary.override" may drop an appointment over
+ * the practitioner's other appointment with Shift+Enter (keyboard move) or "Move anyway" on the refusal (drag and
+ * drop); the server logs it and both appointments show the clash marker. Rooms and blocked time never.
  */
 import * as React from "react";
 import Link from "next/link";
@@ -35,9 +39,12 @@ export interface DiaryScreenProps {
   cookieSite: string | null;
   can: {
     book: boolean;
-    /** diary.override ("Override clashes"): "Book anyway" in the booking dialog. */
-    manage: boolean;
+    /** diary.rota: rotas and the waiting list. */
+    rota: boolean;
+    /** diary.override: "Book anyway (double-booking is logged)". */
+    override: boolean;
     patientsEdit: boolean;
+    /** clinical.write: Start treatment also opens the note. */
     clinical: boolean;
   };
   payers: { id: string; name: string; kind: string }[];
@@ -140,17 +147,20 @@ export function DiaryScreen({ data, cookieSite, can, payers, unsignedNotes }: Di
 
   const undoToast = (message: string, undo: () => Promise<void>) => toast.success(message, { action: { label: "Undo", onClick: () => void undo() } });
 
-  const saveMove = async (card: DiaryCard, columnIndex: number, start: number) => {
+  const saveMove = async (card: DiaryCard, columnIndex: number, start: number, override = false) => {
     const from = columns.findIndex((c) => c.key === card.columnKey);
     const span = cardSpan(card, columns[from]?.date ?? columns[columnIndex].date);
-    const r = await moveAppointmentAction({ id: card.id, expectedRev: card.rev, ...placement(columnIndex, start) });
+    const r = await moveAppointmentAction({ id: card.id, expectedRev: card.rev, ...placement(columnIndex, start), ...(override ? { override: true } : {}) });
     if (!r.ok) {
-      toast.error([r.error, ...(r.clashes ?? [])].join(" "));
+      const text = [r.error, ...(r.clashes ?? [])].join(" ");
+      // A clash this member may book over (the practitioner's other appointment): offer it, logged.
+      if (r.overridable && can.override && !override) toast.error(text, { action: { label: "Move anyway", onClick: () => void saveMove(card, columnIndex, start, true) } });
+      else toast.error(text);
       if (r.conflict) refresh();
       return;
     }
     refresh();
-    undoToast(`${card.patientName ?? "Appointment"} moved to ${formatHhmm(start)}${p.view === "day" ? ` with ${columns[columnIndex].label}` : ` on ${longDate(columns[columnIndex].date)}`}`, async () => {
+    undoToast(`${card.patientName ?? "Appointment"} moved to ${formatHhmm(start)}${p.view === "day" ? ` with ${columns[columnIndex].label}` : ` on ${longDate(columns[columnIndex].date)}`}${r.warnings.length ? `. ${r.warnings.join(" ")}` : ""}`, async () => {
       const back = await moveAppointmentAction({ id: card.id, expectedRev: r.rev ?? card.rev + 1, ...placement(from, span.start) });
       if (!back.ok) toast.error(back.error);
       refresh();
@@ -175,6 +185,13 @@ export function DiaryScreen({ data, cookieSite, can, payers, unsignedNotes }: Di
 
   const clashWith = (card: DiaryCard, columnIndex: number, start: number, length: number) =>
     clashInColumn(data.cards, columns[columnIndex], card.id, start, start + length) ?? patientClash(data.cards, card, columns[columnIndex].date, start, start + length);
+  /**
+   * Whether this member may drop over `clash` (Shift+Enter): an appointment of the same practitioner – a practitioner
+   * column or a practitioner's week – never a room column, never blocked time, never the patient's own other one
+   * (that needs the booking dialog).
+   */
+  const overridableClash = (card: DiaryCard, clash: DiaryCard, columnIndex: number) =>
+    can.override && card.kind === "appointment" && clash.kind === "appointment" && clash.patientId !== card.patientId && Boolean(columns[columnIndex]?.practitionerId ?? (p.view === "week" && p.by === "practitioner"));
   const clashAt = (cardId: string, columnIndex: number, start: number, length: number) => {
     const card = data.cards.find((c) => c.id === cardId);
     return card ? clashWith(card, columnIndex, start, length) !== null : false;
@@ -206,13 +223,16 @@ export function DiaryScreen({ data, cookieSite, can, payers, unsignedNotes }: Di
         return;
       } else if (e.key === "Enter") {
         e.preventDefault();
-        if (clashAt(card.id, m.columnIndex, m.start, m.length)) {
+        const clash = clashWith(card, m.columnIndex, m.start, m.length);
+        // Shift+Enter: drop over the practitioner's other appointment anyway (diary.override, logged).
+        const anyway = e.shiftKey && clash !== null && overridableClash(card, clash, m.columnIndex);
+        if (clash && !anyway) {
           setMoveMessage("blocked");
           return;
         }
         setMoving(null);
         const span = cardSpan(card, columns[columnIndex].date);
-        if (m.start !== span.start || m.columnIndex !== columnIndex) void saveMove(card, m.columnIndex, m.start);
+        if (m.start !== span.start || m.columnIndex !== columnIndex) void saveMove(card, m.columnIndex, m.start, anyway);
         return;
       } else return;
       e.preventDefault();
@@ -431,6 +451,11 @@ export function DiaryScreen({ data, cookieSite, can, payers, unsignedNotes }: Di
                   ? `${moveMessage === "blocked" ? "Can't drop here – " : ""}${movingClash.patientId && movingClash.patientId === moving.card.patientId ? `the patient already has ${movingClash.practitionerName ?? "another appointment"}` : `clashes with ${movingClash.kind === "block" ? (movingClash.title ?? "blocked time") : (movingClash.patientName ?? "another appointment")}`} ${movingClash.timeLabel}`
                   : "Slot is free"}
               </span>
+              {movingClash && overridableClash(moving.card, movingClash, moving.columnIndex) ? (
+                <span className="text-xs">
+                  <Kbd>Shift+Enter</Kbd> book anyway (double-booking is logged)
+                </span>
+              ) : null}
               <span className="ml-auto flex items-center gap-1 text-xs text-[#475569]">
                 <Kbd>↑↓</Kbd> 15 min <Kbd>←→</Kbd> {p.view === "week" ? "day" : "column"} <Kbd>Enter</Kbd> drop <Kbd>Esc</Kbd> cancel
               </span>
@@ -528,7 +553,7 @@ export function DiaryScreen({ data, cookieSite, can, payers, unsignedNotes }: Di
           services={data.services}
           payers={payers}
           preset={booking}
-          can={{ createPatient: can.patientsEdit, override: can.manage }}
+          can={{ createPatient: can.patientsEdit, override: can.override }}
           onBooked={() => refresh()}
         />
       ) : null}

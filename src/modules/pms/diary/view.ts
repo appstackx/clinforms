@@ -156,6 +156,20 @@ export interface DiaryCard {
   source: AppointmentSource;
   /** A first appointment (the appointment type's category is "initial" or "assessment"): "+" before the type. */
   initial: boolean;
+  /**
+   * A logged double-booking (Khuram's decision A): the same practitioner's other appointments overlapping this one.
+   * Both blocks show the clash marker. Empty for blocked time and in room-only clashes (rooms are never shared).
+   */
+  doubleBookedWith: DoubleBooking[];
+}
+
+/** The other appointment of a double-booked practitioner, as the marker and the drawer name it. */
+export interface DoubleBooking {
+  id: string;
+  /** null for members who may not see patients. */
+  patientName: string | null;
+  /** "09:00–09:45" (UK). */
+  timeLabel: string;
 }
 
 export interface DiaryBookingPreset {
@@ -234,6 +248,10 @@ export interface AppointmentDetailsView {
   seriesLater: number;
   nextStatuses: AppointmentStatus[];
   canMove: boolean;
+  /** Treatment was started (undoing "Completed" goes back to "In treatment"). */
+  treatmentStarted: boolean;
+  /** The practitioner's other appointments at the same time (a logged double-booking). */
+  doubleBookedWith: DoubleBooking[];
   /** Cancelling now would be a late cancellation (the fee is ticked by default). */
   lateIfCancelledNow: boolean;
   /** A first appointment (the type's category is "initial" or "assessment"). */
@@ -264,6 +282,11 @@ export interface BookingCheckOccurrence {
   note: string;
   /** Only the patient's own other appointment is in the way (two practitioners can see them together). */
   patientOnly: boolean;
+  /**
+   * Everything in the way may be booked over with "diary.override" (the practitioner's other appointments, the
+   * patient's own) – never a room or blocked time. Whether THIS member may is the dialog's `can.override`.
+   */
+  overridable: boolean;
   /** Outside the practitioner's rota (bookable, with a warning). */
   outsideHours: boolean;
 }

@@ -4,7 +4,7 @@ import { MemberAccessForm } from "@/components/pms/access/member-access-form";
 import { describeChangeItem, formatUkDateTime } from "@/modules/pms/core/access";
 import { requireClinicActor } from "@/server/pms/actor";
 import { loadMemberScreen } from "@/server/pms/access-screens";
-import { saveMemberAccessAction, setMemberActiveAction } from "./actions";
+import { saveMemberAccessAction, saveSigningDetailsAction, setMemberActiveAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Member access" };
@@ -25,7 +25,8 @@ export default async function MemberAccessPage({ params }: { params: { userId: s
       access={{ active: s.access.active, allSites: s.access.allSites, sites: s.access.sites, exceptions: s.access.exceptions, rev: s.access.rev }}
       overrides={s.overrides}
       sites={s.sites.filter((x) => x.active).map((x) => ({ id: x.id, name: x.name }))}
-      signing={{ registrationNumber: s.registrationNumber, title: s.professionTitle }}
+      signing={{ ...s.signing, canEdit: s.canEditSigning }}
+      saveSigning={saveSigningDetailsAction}
       lastChanged={last ? `Last changed ${formatUkDateTime(last.at)} by ${last.who}: ${last.items.map(describeChangeItem).join("; ")}.` : null}
       readOnly={s.readOnly}
       assignable={s.assignable}

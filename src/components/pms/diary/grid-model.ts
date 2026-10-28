@@ -4,7 +4,7 @@
  * phone list's order. Pure and browser-safe.
  */
 import type { DiaryCard, DiaryColumn } from "@/modules/pms/diary/view";
-import { localSpan } from "@/modules/pms/diary/rules";
+import { localSpan, occupiesDiary } from "@/modules/pms/diary/rules";
 import { formatHhmm, isoWeekday, weekdayName } from "@/modules/pms/diary/time";
 import { formatUkDate } from "@/modules/pms/core/text";
 import type { DiaryBlockStatus } from "../ui/diary-block-model";
@@ -50,7 +50,7 @@ export function blockStatusOf(card: Pick<DiaryCard, "kind" | "status">): DiaryBl
 
 /** Whether the card still occupies its slot (cancelled ones read as free). */
 export function occupies(card: Pick<DiaryCard, "status">): boolean {
-  return card.status === "booked" || card.status === "arrived" || card.status === "attended" || card.status === "dna";
+  return occupiesDiary(card.status);
 }
 
 /**

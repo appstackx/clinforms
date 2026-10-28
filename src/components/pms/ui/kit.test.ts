@@ -38,6 +38,8 @@ describe("status → pill", () => {
   it("covers every status the diary stores", () => {
     for (const status of APPOINTMENT_STATUSES) assert.ok(APPOINTMENT_STATUS_STYLES[status], status);
     assert.equal(statusStyle("appointment", "attended").tone, "green");
+    assert.equal(statusStyle("appointment", "attended").label, "Completed", "attended reads Completed (decision B)");
+    assert.equal(statusStyle("appointment", "in_treatment").label, "In treatment");
   });
 
   it("maps invoice and note states, including billing's stored values", () => {
@@ -63,8 +65,9 @@ describe("status → pill", () => {
       for (const [key, s] of Object.entries(table)) {
         const look = `${s.tone}|${s.icon}|${s.label}`;
         const prev = seen.get(look);
-        // Aliases (unpaid = issued, cancelled = void) are the same state under two stored names.
-        if (prev) assert.ok(["unpaid", "cancelled"].includes(key) || ["unpaid", "cancelled"].includes(prev), `${key} looks like ${prev}`);
+        // Aliases (unpaid = issued, cancelled = void, attended = completed – Khuram's decision B) are the same state under
+        // two stored names.
+        if (prev) assert.ok(["unpaid", "cancelled", "attended"].includes(key) || ["unpaid", "cancelled", "attended"].includes(prev), `${key} looks like ${prev}`);
         seen.set(look, key);
       }
     }

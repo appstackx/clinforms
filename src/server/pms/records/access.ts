@@ -53,6 +53,8 @@ export const ERROR_MESSAGE = "Something went wrong. Please try again.";
  * Khuram's decision 28/10/2026: a clinical note is signed (and amended) only by a member with a registration number
  * on their practitioner profile – shown on Member access (Set-up → Staff access → the member).
  */
+/** Signing switched off for the member on their practitioner record (Member access → Signing details). */
+export const SIGNING_OFF_MESSAGE = "Signing is switched off for you in this clinic. Ask the clinic owner or an administrator (Set-up → Staff access → your name → Signing details).";
 export const REGISTRATION_NEEDED_MESSAGE =
   "Add your registration number to sign notes. It is kept on your practitioner profile (Set-up → Staff access → your name): ask the clinic owner or an administrator to add it.";
 
@@ -111,13 +113,17 @@ export async function patientInClinic(actor: RecordsActor, patientId: unknown): 
 }
 
 /** The member as a note's author or signer: their name and, when they are a practitioner, the registration number. */
-export async function noteAuthorOf(actor: RecordsActor): Promise<NoteAuthor & { practitionerId: string | null }> {
+export async function noteAuthorOf(actor: RecordsActor): Promise<NoteAuthor & { practitionerId: string | null; maySign: boolean }> {
   const practitioner = await findPractitionerByUser(actor.repo(), actor.tenantId, actor.userId);
-  return { name: actor.name || actor.email, registration: practitioner?.registrationNumber ?? null, practitionerId: practitioner?.id ?? null };
+  return { name: actor.name || actor.email, registration: practitioner?.registrationNumber ?? null, practitionerId: practitioner?.id ?? null, maySign: practitioner?.maySign ?? true };
 }
 
-/** null when the member has a registration number to sign with; otherwise the refusal (nothing is signed). */
-export function registrationFailure(author: Pick<NoteAuthor, "registration">): Failure | null {
+/**
+ * null when the member may sign: a registration number on their practitioner record and signing not switched off
+ * there (Member access → Signing details); otherwise the refusal (nothing is signed).
+ */
+export function registrationFailure(author: Pick<NoteAuthor, "registration"> & { maySign?: boolean }): Failure | null {
+  if (author.maySign === false) return fail("registration", SIGNING_OFF_MESSAGE);
   return author.registration && author.registration.trim() ? null : fail("registration", REGISTRATION_NEEDED_MESSAGE);
 }
 

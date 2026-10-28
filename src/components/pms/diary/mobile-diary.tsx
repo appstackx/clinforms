@@ -130,7 +130,7 @@ export function MobileDiary({ date, today, siteName, columns, cards, myColumnKey
               </li>,
             );
           } else {
-            const tone = c.status === "arrived" ? "border-[#FBD38D] bg-[#FFFBEB]" : "border-border bg-white";
+            const tone = c.status === "arrived" ? "border-[#FBD38D] bg-[#FFFBEB]" : c.status === "in_treatment" ? "border-[#99E2D8] bg-[#F0FDFA]" : "border-border bg-white";
             items.push(
               <li key={c.id}>
                 <button type="button" onClick={() => onOpen(c.id)} className={cn("flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left", tone)}>

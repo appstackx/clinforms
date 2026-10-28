@@ -6,17 +6,57 @@
  * Clash rule (also enforced by the database – migration 0110): two diary items clash when they overlap in time
  * (half-open: 09:00–09:30 and 09:30–10:00 do not) and share a practitioner or a room, and both still occupy the
  * diary. Cancelled and late-cancelled items free their slot; attended and did-not-attend items keep it (history).
+ *
+ * Double-booking (Khuram's decision A, 28/10/2026): a PRACTITIONER may be double-booked – two appointments at once –
+ * by a member holding "diary.override", explicitly per booking or move ("Book anyway (double-booking is logged)"),
+ * audited with the clashing appointment; both appointments then show a clash marker. Blocked time (leave, a meeting)
+ * is never booked over. ROOMS stay strict: never two items in one room at once, with or without the override.
+ *
+ * Statuses (Khuram's decision B, 28/10/2026): booked → arrived → in_treatment → attended; "Start treatment" sets
+ * in_treatment, undo goes back to arrived. On screen "attended" reads "Completed" (copy.ts). The database stores
+ * in_treatment as status 'arrived' with treatment_started_at set (migration 0117 – SQLite/D1 cannot widen a CHECK
+ * without rebuilding the table, which D1 refuses while other tables point at it); the repositories map it both
+ * ways (storedStatus / statusOfRow), so every reader outside the diary that reads the raw column sees "arrived" –
+ * exactly how billing and reports must treat it (not billable until attended).
  */
 import { addDays, isIsoDay, isoWeekday, londonDate, londonParts, londonToUtc, minutesBetween, weeksBetween } from "./time";
 
-export const APPOINTMENT_STATUSES = ["booked", "arrived", "attended", "dna", "late_cancelled", "cancelled"] as const;
+export const APPOINTMENT_STATUSES = ["booked", "arrived", "in_treatment", "attended", "dna", "late_cancelled", "cancelled"] as const;
 export type AppointmentStatus = (typeof APPOINTMENT_STATUSES)[number];
 
-/** Statuses that keep their slot (the database's clash triggers use the same list). */
-export const OCCUPYING_STATUSES = ["booked", "arrived", "attended", "dna"] as const satisfies readonly AppointmentStatus[];
+/** What the status column holds (in_treatment is stored as "arrived" + treatment_started_at – see the top). */
+export type StoredAppointmentStatus = Exclude<AppointmentStatus, "in_treatment">;
+
+/** Stored statuses that keep their slot (the database's clash triggers use the same list). */
+export const OCCUPYING_STATUSES = ["booked", "arrived", "attended", "dna"] as const satisfies readonly StoredAppointmentStatus[];
 
 export function occupiesDiary(status: string): boolean {
-  return (OCCUPYING_STATUSES as readonly string[]).includes(status);
+  return status === "in_treatment" || (OCCUPYING_STATUSES as readonly string[]).includes(status);
+}
+
+/** The status column's value for a status. */
+export function storedStatus(status: AppointmentStatus): StoredAppointmentStatus {
+  return status === "in_treatment" ? "arrived" : status;
+}
+
+/** A row's status: the column, plus "in treatment" when an arrived appointment's treatment has started. */
+export function statusOfRow(status: string, treatmentStartedAt: string | null | undefined): AppointmentStatus {
+  return status === "arrived" && treatmentStartedAt ? "in_treatment" : (status as AppointmentStatus);
+}
+
+/**
+ * Statuses an invoice may charge for (billing's visit source): attended, did not attend, late cancellation. Booked,
+ * arrived and in treatment are NOT billable – the visit is not over until it is attended ("Completed").
+ */
+export const CHARGEABLE_STATUSES = ["attended", "dna", "late_cancelled"] as const satisfies readonly AppointmentStatus[];
+
+export function isChargeableStatus(status: string): boolean {
+  return (CHARGEABLE_STATUSES as readonly string[]).includes(status);
+}
+
+/** How reports count a status: in treatment counts as arrived (seen but not yet recorded as attended). */
+export function reportingStatus(status: AppointmentStatus): StoredAppointmentStatus {
+  return storedStatus(status);
 }
 
 export function isCancelledStatus(status: string): boolean {
@@ -66,8 +106,10 @@ export const LATE_CANCELLATION_HOURS = 24;
 const APPOINTMENT_NEXT: Readonly<Record<AppointmentStatus, readonly AppointmentStatus[]>> = {
   booked: ["arrived", "attended", "dna", "cancelled", "late_cancelled"],
   // "booked" from arrived / attended / did not attend = undo a mistaken click.
-  arrived: ["booked", "attended", "dna", "cancelled", "late_cancelled"],
-  attended: ["arrived", "booked"],
+  arrived: ["booked", "in_treatment", "attended", "dna", "cancelled", "late_cancelled"],
+  // Start treatment → in treatment; undo goes back to arrived; completing it is "attended".
+  in_treatment: ["arrived", "attended"],
+  attended: ["in_treatment", "arrived", "booked"],
   dna: ["booked", "attended"],
   // Reinstating needs the slot to be free (the clash check runs again).
   late_cancelled: ["booked", "cancelled"],
@@ -77,6 +119,7 @@ const APPOINTMENT_NEXT: Readonly<Record<AppointmentStatus, readonly AppointmentS
 const BLOCK_NEXT: Readonly<Record<AppointmentStatus, readonly AppointmentStatus[]>> = {
   booked: ["cancelled"],
   arrived: [],
+  in_treatment: [],
   attended: [],
   dna: [],
   late_cancelled: [],
@@ -92,7 +135,10 @@ export function nextStatuses(kind: DiaryItemKind, from: AppointmentStatus): read
   return (kind === "block" ? BLOCK_NEXT : APPOINTMENT_NEXT)[from];
 }
 
-/** Only items that have not happened yet move (attended / did not attend are history; cancelled ones are reinstated first). */
+/**
+ * Only items that have not happened yet move (in treatment, attended and did not attend are under way or history;
+ * cancelled ones are reinstated first).
+ */
 export function canMove(status: AppointmentStatus): boolean {
   return status === "booked" || status === "arrived";
 }
@@ -140,6 +186,20 @@ export interface DiaryClash {
   withKind: DiaryItemKind;
   startsAt: string;
   endsAt: string;
+}
+
+/**
+ * Whether a member holding "diary.override" may book over this clash: the practitioner's other APPOINTMENT
+ * (double-booking, logged) or the patient's own other appointment (two practitioners seeing them together). Room
+ * clashes and blocked time never are.
+ */
+export function isOverridableClash(c: Pick<DiaryClash, "resource" | "withKind">): boolean {
+  return c.resource === "patient" || (c.resource === "practitioner" && c.withKind === "appointment");
+}
+
+/** The practitioner double-bookings among clashes (what an override would log). */
+export function practitionerOverbookings<T extends Pick<DiaryClash, "resource" | "withKind" | "withId">>(clashes: readonly T[]): T[] {
+  return clashes.filter((c) => c.resource === "practitioner" && c.withKind === "appointment");
 }
 
 /** Every way `candidate` clashes with the existing items (practitioner, room, the same patient). */

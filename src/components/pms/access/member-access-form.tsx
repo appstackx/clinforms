@@ -24,12 +24,16 @@ import {
   type PmsRole,
 } from "@/modules/pms/core/permissions";
 
+import { SigningDetailsEditor, SigningDetailsReadOnly, type SaveSigning, type SigningDetailsValue } from "./signing-details";
+
 export interface MemberAccessFormProps {
   member: { userId: string; name: string; email: string; role: PmsRole; twoStep: boolean };
   access: { active: boolean; allSites: boolean; sites: { siteId: string; worksAt: boolean; canSee: boolean }[]; exceptions: Partial<Record<AccessPermission, boolean>>; rev: number };
   overrides: RoleOverride[];
   sites: { id: string; name: string }[];
-  signing: { registrationNumber: string | null; title: string | null };
+  /** Signing details on the member's practitioner record; `canEdit` for owners and administrators (never reception). */
+  signing: SigningDetailsValue & { canEdit: boolean };
+  saveSigning?: SaveSigning;
   lastChanged: string | null;
   readOnly: string | null;
   assignable: PmsRole[];
@@ -394,32 +398,14 @@ export function MemberAccessForm(props: MemberAccessFormProps) {
             <h2 id="sign-h" className="m-0 text-base font-semibold">
               Signing details
             </h2>
-            {role === "clinician" ? (
-              <>
-                <dl className="m-0 grid grid-cols-[repeat(auto-fit,minmax(min(220px,100%),1fr))] gap-3">
-                  <div className="flex flex-col gap-1">
-                    <dt className="font-medium">Professional title</dt>
-                    <dd className="m-0 text-[#334155]">{signing.title ?? "Not set"}</dd>
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <dt className="font-medium">Registration number</dt>
-                    <dd className="m-0 text-[#334155]">{signing.registrationNumber ?? "Not added yet"}</dd>
-                  </div>
-                </dl>
-                <div className="flex flex-col gap-1 rounded-[10px] border border-border bg-[#F8FAFC] px-3.5 py-3">
-                  <span className="text-xs text-[#475569]">How signed notes and letters show it</span>
-                  <span className="font-semibold">
-                    Signed by {member.name}
-                    {signing.title ? `, ${signing.title}` : ""}
-                    {signing.registrationNumber ? ` · ${signing.registrationNumber}` : ""}
-                  </span>
-                </div>
-                <p className="m-0 text-xs text-[#475569]">The registration number is kept on the practitioner’s record in set-up.</p>
-              </>
-            ) : (
+            {member.role === "staff" ? (
               <p className="m-0 text-[#475569]">
-                Only needed for clinicians. Switch the role to Clinician to add a registration number – without one, {first} can’t sign notes.
+                Reception never signs clinical notes. Switch the role to Clinician (and save) to add a registration number – without one, {first} can’t sign notes.
               </p>
+            ) : signing.canEdit && props.saveSigning ? (
+              <SigningDetailsEditor userId={member.userId} name={member.name} value={signing} save={props.saveSigning} />
+            ) : (
+              <SigningDetailsReadOnly name={member.name} value={signing} />
             )}
           </section>
         </div>

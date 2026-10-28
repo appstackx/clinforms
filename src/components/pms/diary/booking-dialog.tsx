@@ -12,6 +12,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { AlertTriangle, CheckCircle2, Search, X } from "lucide-react";
 import { bookAppointmentAction, openBookingCaseAction, rebookAppointmentAction, registerBookingPatientAction } from "@/app/app/clinic/diary/actions";
 import { formatPence } from "@/modules/pms/core/text";
+import { OVERRIDE_LABEL } from "@/modules/pms/diary/copy";
 import type { BookingCheck } from "@/modules/pms/diary/view";
 import { cn } from "@/lib/utils";
 import { PmsButton } from "../ui/button";
@@ -46,7 +47,10 @@ export interface BookingDialogProps {
   can: {
     /** patients.edit: register a new patient, open a new case. */
     createPatient: boolean;
-    /** "Book anyway": diary.override ("Override clashes", roles design round 2). */
+    /**
+     * diary.override ("Override clashes"): "Book anyway (double-booking is logged)" over the practitioner's other
+     * appointment or the patient's own (Khuram's decision A, 28/10/2026). Rooms and blocked time never.
+     */
     override: boolean;
   };
   onBooked: (message: string) => void;
@@ -193,7 +197,7 @@ export function BookingDialog(props: BookingDialogProps) {
   const practitionerName = practitioners.find((p) => p.id === practitionerId)?.name ?? "";
   const roomName = rooms.find((r) => r.id === roomId)?.name ?? null;
   const firstClash = check !== null && check.first.status !== "free";
-  const overridable = firstClash && check.first.patientOnly;
+  const overridable = firstClash && check.first.overridable;
   const blocked = firstClash && !(overridable && override && can.override);
   const toBook = check ? check.occurrences.filter((o, i) => i === 0 || (o.status === "free" && !unticked.has(o.date))).length : occurrences;
   const patientReady = mode === "find" ? patient !== null : np.firstName.trim() !== "" && np.lastName.trim() !== "";
@@ -255,7 +259,7 @@ export function BookingDialog(props: BookingDialogProps) {
       }
       const skipDates = check ? check.occurrences.slice(1).filter((o) => o.status === "free" && unticked.has(o.date)).map((o) => o.date) : [];
       const result = preset.rebookOf
-        ? await rebookAppointmentAction({ id: preset.rebookOf, date, startTime: time, practitionerId, siteId: site.id, roomId: roomId || null, allowPatientOverlap: override && can.override })
+        ? await rebookAppointmentAction({ id: preset.rebookOf, date, startTime: time, practitionerId, siteId: site.id, roomId: roomId || null, override: override && can.override })
         : await bookAppointmentAction({
             patientId: who.id,
             serviceId,
@@ -268,7 +272,7 @@ export function BookingDialog(props: BookingDialogProps) {
             repeat: occurrences > 1 ? { intervalWeeks, occurrences } : null,
             skipClashes: occurrences > 1,
             skipDates,
-            allowPatientOverlap: override && can.override,
+            override: override && can.override,
             waitingListId: preset.waitingListId ?? null,
             sendConfirmation: confirm,
           });
@@ -579,12 +583,12 @@ export function BookingDialog(props: BookingDialogProps) {
                             </button>
                           ) : null}
                           {overridable && can.override ? (
-                            <Checkbox checked={override} onChange={(e) => setOverride(e.target.checked)} label="Book anyway (double-booking is logged)" />
+                            <Checkbox checked={override} onChange={(e) => setOverride(e.target.checked)} label={OVERRIDE_LABEL} />
                           ) : (
                             <span className="text-xs text-[#475569]">
                               {overridable
-                                ? "Only an owner or administrator can book over the patient's other appointment."
-                                : "A practitioner or room cannot be double-booked – choose another time, practitioner or room."}
+                                ? "Only members who may override clashes can double-book – ask the clinic owner or an administrator."
+                                : "A room or blocked time cannot be double-booked – choose another time, practitioner or room."}
                             </span>
                           )}
                         </>

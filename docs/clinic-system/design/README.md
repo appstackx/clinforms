@@ -39,11 +39,23 @@ Fictional data only.
 | `print-day-sheet-a4/` | Printed day sheet (A4 portrait) | `src/app/app/clinic/diary/day-sheet/page.tsx` |
 | `diary-375-px/` | Phone diary ("My diary") | `src/components/pms/diary/mobile-diary.tsx` |
 
-Differences from the mock-ups, and why, are listed in the commit message of the diary screens (feat/cs-diary): no
-"In treatment" status in the diary (Start treatment opens a clinical note), "Book anyway" only over the patient's own
-other appointment (a practitioner or room is never double-booked – K2-DIARY-006), the day sheet prints no phone
-numbers and dates of birth only when the clinic switches it on (K2-DIARY-017 and Khuram's decision of 28/10/2026),
-the clash text keeps names' capitals (the mock-up lower-cased them).
+Differences from the mock-ups, and why, are listed in the commit message of the diary screens (feat/cs-diary): the day
+sheet prints no phone numbers and dates of birth only when the clinic switches it on (K2-DIARY-017 and Khuram's
+decision of 28/10/2026), the clash text keeps names' capitals (the mock-up lower-cased them).
+
+Khuram's decisions of 28/10/2026, now built (matching the mock-ups):
+- **A – double-booking.** A member holding "Override clashes" (`diary.override`) may double-book a PRACTITIONER,
+  explicitly per booking or move ("Book anyway (double-booking is logged)" in the booking dialog, Shift+Enter in the
+  keyboard move, "Move anyway" after a refused drag). It is audited with the clashing appointment's id and both
+  blocks show a "Double-booked" marker (and a note in the drawer). Rooms and blocked time are never double-booked.
+  The database enforces it (migrations 0118–0119): only a write whose `overbook_write_id` equals its new `write_id`
+  passes the practitioner check; the room check is absolute.
+- **B – "In treatment".** booked → arrived → in treatment → attended. "Start treatment" sets it (and opens the
+  linked note for a clinician); undo goes back to arrived. "attended" reads **Completed** everywhere on screen. Stored
+  as arrived + `treatment_started_at` (migration 0117), so billing and reports reading the raw status see "arrived".
+
+Prototype A (`round2h/prototype-a-book-arrive-write-sign-note/`, outside the repo) is reproduced end to end by
+`scripts/e2e/pms-prototype-a.cjs`.
 
 ---
 

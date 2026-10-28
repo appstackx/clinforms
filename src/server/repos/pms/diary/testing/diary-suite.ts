@@ -616,7 +616,7 @@ export function defineDiaryRepoSuite(label: string, factory: () => Promise<Diary
       assert.equal(next.get(a.megan)?.siteId, a.site2);
       const counts = await countPatientAppointmentsByStatus(ctx, A, a.megan);
       assert.ok(counts.booked >= 1 && counts.dna >= 1);
-      assert.deepEqual(await countPatientAppointmentsByStatus(ctx, A, a.megan, { siteIds: [] }), { booked: 0, arrived: 0, attended: 0, dna: 0, late_cancelled: 0, cancelled: 0 });
+      assert.deepEqual(await countPatientAppointmentsByStatus(ctx, A, a.megan, { siteIds: [] }), { booked: 0, arrived: 0, in_treatment: 0, attended: 0, dna: 0, late_cancelled: 0, cancelled: 0 });
       const forSite2 = await addToWaitingList(ctx, A, { patientId: a.megan, siteId: a.site2 }, ACTOR);
       const scoped = await listWaitingList(ctx, A, { siteIds: [a.site] });
       assert.equal(scoped.some((e) => e.id === forSite2.id), false, "an entry for another site is not shown");
@@ -630,6 +630,112 @@ export function defineDiaryRepoSuite(label: string, factory: () => Promise<Diary
       assert.ok(slots.length > 0);
       assert.ok(slots.every((s) => s.date === "2026-12-01" && s.startMinute >= 720 && s.startMinute < 1020), slots.map((s) => `${s.date} ${s.startMinute}`).join(" "));
       assert.equal((await findFreeSlots(ctx, A, { fromDate: "2026-11-24", days: 14, practitionerIds: [a.sarah], serviceId: a.fu, siteIds: [a.site], notBefore: utc("2026-11-01", "00:00") })).length, 0, "no rota at the allowed site");
+    });
+
+    it("double-booking override (0119 triggers): only a flagged write passes the practitioner check, never a room or blocked time; status changes stay possible", async () => {
+      const D = "2026-12-07";
+      const at = new Date(clock).toISOString();
+      const row = (id: string, extra: Record<string, unknown>) => ({
+        tenant_id: A,
+        id,
+        rev: 1,
+        kind: "appointment",
+        site_id: a.site,
+        practitioner_id: a.tom,
+        room_id: null,
+        patient_id: a.daniel,
+        service_id: a.fu,
+        starts_at: utc(D, "09:00"),
+        ends_at: utc(D, "09:30"),
+        starts_on: D,
+        status: "booked",
+        created_at: at,
+        updated_at: at,
+        ...extra,
+      });
+      const first = await bookAppointment(ctx, A, book(a, { practitionerId: a.tom, roomId: a.room1, date: D, startTime: "09:00" }), ACTOR);
+      assert.ok(first.ok);
+      // No flag (or a flag that is not this write's id): refused.
+      await assert.rejects(suite.db.insertInto("pms_appointments").values(row("appt_OVB00000000000000000000001", {})).execute(), /pms_appointments_practitioner_clash/);
+      await assert.rejects(
+        suite.db.insertInto("pms_appointments").values(row("appt_OVB00000000000000000000002", { write_id: "w_A", overbook_write_id: "w_B" })).execute(),
+        /pms_appointments_practitioner_clash/,
+      );
+      // A flagged write in the same room: the room stays absolute.
+      await assert.rejects(
+        suite.db.insertInto("pms_appointments").values(row("appt_OVB00000000000000000000003", { room_id: a.room1, write_id: "w_C", overbook_write_id: "w_C" })).execute(),
+        /pms_appointments_room_clash/,
+      );
+      // A flagged write in another room: allowed.
+      await suite.db.insertInto("pms_appointments").values(row("appt_OVB00000000000000000000004", { room_id: a.room2, write_id: "w_D", overbook_write_id: "w_D" })).execute();
+      // Status changes of either appointment keep working (nothing moves, no new clash).
+      await suite.db.updateTable("pms_appointments").set({ status: "arrived", write_id: "w_E" }).where("tenant_id", "=", A).where("id", "=", "appt_OVB00000000000000000000004").execute();
+      await suite.db.updateTable("pms_appointments").set({ status: "arrived", treatment_started_at: at, write_id: "w_F" }).where("tenant_id", "=", A).where("id", "=", first.ok ? first.items[0].id : "").execute();
+      // The flag is per write: moving the flagged row later without a NEW flagged write id is checked again.
+      await assert.rejects(
+        suite.db.updateTable("pms_appointments").set({ starts_at: utc(D, "09:05"), ends_at: utc(D, "09:35") }).where("tenant_id", "=", A).where("id", "=", "appt_OVB00000000000000000000004").execute(),
+        /pms_appointments_practitioner_clash/,
+      );
+      await assert.rejects(
+        suite.db
+          .updateTable("pms_appointments")
+          .set({ starts_at: utc(D, "09:05"), ends_at: utc(D, "09:35"), write_id: "w_G", overbook_write_id: "w_D" })
+          .where("tenant_id", "=", A)
+          .where("id", "=", "appt_OVB00000000000000000000004")
+          .execute(),
+        /pms_appointments_practitioner_clash/,
+        "an old flag does not carry over",
+      );
+      await suite.db
+        .updateTable("pms_appointments")
+        .set({ starts_at: utc(D, "09:05"), ends_at: utc(D, "09:35"), write_id: "w_H", overbook_write_id: "w_H" })
+        .where("tenant_id", "=", A)
+        .where("id", "=", "appt_OVB00000000000000000000004")
+        .execute();
+      // Never over blocked time, flagged or not.
+      const block = await createBlock(ctx, A, { siteId: a.site, practitionerId: a.tom, blockKind: "leave", date: D, startTime: "11:00", endTime: "12:00" }, ACTOR);
+      assert.ok(block.ok);
+      await assert.rejects(
+        suite.db.insertInto("pms_appointments").values(row("appt_OVB00000000000000000000005", { starts_at: utc(D, "11:00"), ends_at: utc(D, "11:30"), write_id: "w_I", overbook_write_id: "w_I" })).execute(),
+        /pms_appointments_practitioner_clash/,
+      );
+      // Through the repository: allowPractitionerOverlap books over the appointment (warned and logged), never the block.
+      const over = await bookAppointment(ctx, A, book(a, { patientId: a.megan, practitionerId: a.tom, roomId: null, date: D, startTime: "09:10" }), ACTOR, { allowPractitionerOverlap: true, allowPatientOverlap: true });
+      assert.ok(over.ok, JSON.stringify(over));
+      assert.ok(over.ok && over.warnings.includes("double_booked"));
+      const leave = await bookAppointment(ctx, A, book(a, { patientId: a.megan, practitionerId: a.tom, roomId: null, date: D, startTime: "11:00" }), ACTOR, { allowPractitionerOverlap: true });
+      assert.equal(leave.ok, false);
+      assert.deepEqual(!leave.ok && leave.clashes.map((c) => [c.resource, c.withKind]), [["practitioner", "block"]]);
+    });
+
+    it("in treatment: stored as arrived + treatment_started_at; counted on its own; undo clears it, completing keeps it", async () => {
+      const D = "2027-02-01";
+      const r = await bookAppointment(ctx, A, book(a, { patientId: a.daniel, practitionerId: a.tom, roomId: null, date: D, startTime: "15:00" }), ACTOR);
+      assert.ok(r.ok, JSON.stringify(r));
+      const id = r.ok ? r.items[0].id : "";
+      let s = await setAppointmentStatus(ctx, A, id, { expectedRev: 1, status: "arrived" }, ACTOR);
+      assert.ok(s.ok);
+      s = await setAppointmentStatus(ctx, A, id, { expectedRev: 2, status: "in_treatment" }, ACTOR);
+      assert.ok(s.ok && s.item.status === "in_treatment");
+      const raw = await suite.db.selectFrom("pms_appointments").select(["status", "treatment_started_at"]).where("tenant_id", "=", A).where("id", "=", id).executeTakeFirstOrThrow();
+      assert.equal(raw.status, "arrived", "readers of the raw column see arrived (not billable)");
+      assert.ok(raw.treatment_started_at);
+      assert.equal((await countPatientAppointmentsByStatus(ctx, A, a.daniel)).in_treatment, 1);
+      assert.equal((await getAppointment(ctx, A, id))?.status, "in_treatment");
+      await assert.rejects(moveAppointment(ctx, A, id, { expectedRev: 3, date: D, startTime: "16:00" }, ACTOR), RepoInputError, "treatment under way: not moved");
+      s = await setAppointmentStatus(ctx, A, id, { expectedRev: 3, status: "attended" }, ACTOR);
+      assert.ok(s.ok && s.item.status === "attended");
+      const kept = await suite.db.selectFrom("pms_appointments").select(["status", "treatment_started_at"]).where("tenant_id", "=", A).where("id", "=", id).executeTakeFirstOrThrow();
+      assert.equal(kept.status, "attended");
+      assert.ok(kept.treatment_started_at, "completing keeps when treatment started");
+      s = await setAppointmentStatus(ctx, A, id, { expectedRev: 4, status: "in_treatment" }, ACTOR);
+      assert.ok(s.ok && s.item.status === "in_treatment", "undo completed");
+      s = await setAppointmentStatus(ctx, A, id, { expectedRev: 5, status: "arrived" }, ACTOR);
+      assert.ok(s.ok && s.item.status === "arrived", "undo start of treatment");
+      const cleared = await suite.db.selectFrom("pms_appointments").select(["treatment_started_at"]).where("tenant_id", "=", A).where("id", "=", id).executeTakeFirstOrThrow();
+      assert.equal(cleared.treatment_started_at, null);
+      const actions = (await listAudit(ctx, A, { limit: 500 })).filter((e) => e.targetId === id).map((e) => e.action);
+      assert.ok(actions.includes("pms.appointment.start_treatment") && actions.includes("pms.appointment.attend") && actions.includes("pms.appointment.status_undo"));
     });
 
     it("every clinic-system statement named tenant_id", () => {

@@ -8,10 +8,10 @@
  */
 import "server-only";
 import { DIARY_COPY } from "../../../modules/pms/diary/copy";
-import { freeSlots, gridHours, localSpan, occupiesDiary, type BusySpan, type RotaWindow } from "../../../modules/pms/diary/rules";
+import { freeSlots, gridHours, localSpan, occupiesDiary, spansOverlap, type BusySpan, type RotaWindow } from "../../../modules/pms/diary/rules";
 import { formatDayShort, formatHhmm, formatLondonTime, londonRange, weekDates } from "../../../modules/pms/diary/time";
 import type { DiaryItem, DiaryRead } from "../../../modules/pms/diary/types";
-import type { DiaryCard, DiaryColumn, DiaryFreeSlot, DiaryParams, DiaryViewData } from "../../../modules/pms/diary/view";
+import type { DiaryCard, DiaryColumn, DiaryFreeSlot, DiaryParams, DiaryViewData, DoubleBooking } from "../../../modules/pms/diary/view";
 import { nowIso } from "../../repos/context";
 import { listDiary } from "../../repos/pms/diary/appointments";
 import { availabilityWindows } from "../../repos/pms/diary/availability";
@@ -238,6 +238,10 @@ export async function loadDiaryView(caller: DiaryCaller, params: DiaryParams, to
         feeDue: i.feeDue,
         source: i.source,
         initial: isInitialCategory(i.serviceId ? serviceCategory.get(i.serviceId) : null),
+        doubleBookedWith: doubleBookingsOf(i, items, (id) => {
+          const other = patients.get(id);
+          return other ? patientDisplayName(other) : null;
+        }),
       };
     });
   // "% booked" per column: minutes of appointments that keep their slot against the working time of the column.
@@ -296,4 +300,19 @@ export async function loadDiaryView(caller: DiaryCaller, params: DiaryParams, to
       myPractitionerId: options.practitionerId ?? null,
     },
   };
+}
+
+/**
+ * A logged double-booking (Khuram's decision A): the same practitioner's other occupying APPOINTMENTS overlapping
+ * this one (both blocks get the marker). Blocked time and rooms never double-book, so they are not looked at.
+ */
+export function doubleBookingsOf(
+  item: Pick<DiaryItem, "id" | "kind" | "practitionerId" | "startsAt" | "endsAt"> & { status: string },
+  others: readonly (Pick<DiaryItem, "id" | "kind" | "practitionerId" | "startsAt" | "endsAt"> & { status: string; patientId?: string | null })[],
+  nameOf: (patientId: string) => string | null,
+): DoubleBooking[] {
+  if (item.kind !== "appointment" || !item.practitionerId || !occupiesDiary(item.status)) return [];
+  return others
+    .filter((o) => o.id !== item.id && o.kind === "appointment" && o.practitionerId === item.practitionerId && occupiesDiary(o.status) && spansOverlap(o, item))
+    .map((o) => ({ id: o.id, patientName: o.patientId ? nameOf(o.patientId) : null, timeLabel: `${formatLondonTime(o.startsAt)}–${formatLondonTime(o.endsAt)}` }));
 }

@@ -11,7 +11,7 @@ import { PMS_ID_PATTERN } from "../../../modules/pms/core/ids";
 import { PmsIdSchema } from "../../../modules/pms/core/schemas";
 import { formatUkDate } from "../../../modules/pms/core/text";
 import { BLOCK_KIND_LABELS, DIARY_COPY } from "../../../modules/pms/diary/copy";
-import { findClashes, MAX_APPOINTMENT_MINUTES, OCCUPYING_STATUSES, recurringDates, withinWorkingHours, type BlockKind, type DiaryClash, type DiaryItemKind } from "../../../modules/pms/diary/rules";
+import { findClashes, isOverridableClash, MAX_APPOINTMENT_MINUTES, OCCUPYING_STATUSES, recurringDates, withinWorkingHours, type BlockKind, type DiaryClash, type DiaryItemKind } from "../../../modules/pms/diary/rules";
 import { IsoDateSchema } from "../../../modules/pms/core/schemas";
 import { RepeatSchema, TimeSchema } from "../../../modules/pms/diary/schemas";
 import { addMinutesIso, formatHhmm, isoWeekday, weekdayName, formatLondonTime, londonDate, londonParts, londonToUtc, parseHhmm } from "../../../modules/pms/diary/time";
@@ -122,15 +122,16 @@ export async function checkBookingFor(caller: DiaryCaller, input: unknown): Prom
 
   const occurrence = (s: (typeof spans)[number]): BookingCheckOccurrence & { clashes: DiaryClash[] } => {
     const dateLabel = weekdayDate(s.date);
-    if (!s.startsAt || !s.endsAt) return { date: s.date, dateLabel, status: "gap", note: "That time does not exist on this date (the clocks change)", patientOnly: false, outsideHours: false, clashes: [] };
+    if (!s.startsAt || !s.endsAt) return { date: s.date, dateLabel, status: "gap", note: "That time does not exist on this date (the clocks change)", patientOnly: false, overridable: false, outsideHours: false, clashes: [] };
     const clashes = findClashes({ startsAt: s.startsAt, endsAt: s.endsAt, practitionerId: q.practitionerId, roomId: q.roomId ?? null, patientId: q.patientId ?? null }, occupants);
     const outsideHours = !withinWorkingHours(windows, q.practitionerId, s.date, startMinute, startMinute + duration);
-    if (clashes.length === 0) return { date: s.date, dateLabel, status: "free", note: outsideHours ? "Free – outside working hours" : "Free", patientOnly: false, outsideHours, clashes };
+    if (clashes.length === 0) return { date: s.date, dateLabel, status: "free", note: outsideHours ? "Free – outside working hours" : "Free", patientOnly: false, overridable: false, outsideHours, clashes };
     const main = clashes.find((c) => c.resource !== "patient") ?? clashes[0];
     const patientOnly = clashes.every((c) => c.resource === "patient");
     const status = main.withKind === "block" ? "unavailable" : "clash";
     const text = describe(main);
-    return { date: s.date, dateLabel, status, note: text.charAt(0).toUpperCase() + text.slice(1), patientOnly, outsideHours, clashes };
+    const overridable = clashes.every(isOverridableClash);
+    return { date: s.date, dateLabel, status, note: text.charAt(0).toUpperCase() + text.slice(1), patientOnly, overridable, outsideHours, clashes };
   };
   const all = spans.map(occurrence);
   const first = all[0];

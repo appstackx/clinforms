@@ -1,6 +1,7 @@
 /**
  * Browser check of the diary screens (LOCAL only – design round 2): day and week views, the booking dialog, the
- * appointment drawer, moves by keyboard and drag, statuses with Undo, late cancellation with the fee, recurring
+ * appointment drawer, moves by keyboard and drag, statuses with Undo (booked → arrived → in treatment → completed),
+ * double-booking a practitioner with "Override clashes" (dialog and Shift+Enter; rooms never), late cancellation with the fee, recurring
  * bookings with a skipped date, the rota and waiting-list page, the printed day sheet (dates of birth only when the
  * clinic's setting is on), the phone diary at 375 px, keyboard-only use, an axe check of each screen, and what
  * reception, a clinician and the owner may do.
@@ -165,6 +166,7 @@ async function pickPatient(page, q, name) {
   const shot = (page, name, fullPage = false) => page.screenshot({ path: path.join(OUT, `${name}.png`), fullPage });
   let site = null;
   let sarah = null;
+  let doubleAt = null;
 
   try {
     await step("owner, reception and clinician accounts (two-step on)", async () => {
@@ -175,15 +177,15 @@ async function pickPatient(page, q, name) {
       await onboard(clinician, c, "Priya Shah (fictional)");
     });
 
-    await step("navigation by role: Diary for all; Rotas (set-up) for the owner only; reception gets the 404 page for rotas", async () => {
-      for (const [page, rota] of [[owner, true], [reception, false], [clinician, false]]) {
+    await step("navigation by role: Diary for all; Rotas (set-up, diary.rota) for the owner and reception; the clinician gets the 404 page for rotas", async () => {
+      for (const [page, rota] of [[owner, true], [reception, true], [clinician, false]]) {
         await page.goto(DIARY);
         const labels = await page.locator("nav[aria-label='Clinic system'] a").allInnerTexts();
         assert(labels.includes("Diary"), `Diary in nav: ${labels.join(", ")}`);
         assert(labels.includes("Rotas") === rota, `Rotas in nav = ${rota}: ${labels.join(", ")}`);
       }
-      const res = await reception.goto(`${DIARY}/rotas`);
-      assert(res.status() === 404, `reception /rotas: ${res.status()}`);
+      const res = await clinician.goto(`${DIARY}/rotas`);
+      assert(res.status() === 404, `clinician /rotas: ${res.status()}`);
     });
 
     await step("day view (1440): practitioner columns with avatar and % booked, statuses as words, URL carries site and date", async () => {
@@ -192,7 +194,8 @@ async function pickPatient(page, q, name) {
       await owner.waitForSelector("text=Tuesday 27/10/2026");
       const headers = await owner.locator("main").innerText();
       assert(/% booked/.test(headers), "% booked in the headers");
-      assert(/Attended|Booked/.test(headers), "status words on the blocks");
+      assert(/Completed|Booked/.test(headers), "status words on the blocks (attended reads Completed)");
+      assert(!/\bAttended\b/.test(headers), "no Attended on screen");
       const data = await viewData(owner, "date=2026-10-27");
       site = data.site.id;
       sarah = data.columns.find((c) => c.practitionerId && c.windows.length > 0).practitionerId;
@@ -314,6 +317,94 @@ async function pickPatient(page, q, name) {
       }
     });
 
+    await step("double-booking (decision A): the owner books a practitioner twice with Book anyway – logged, marked on both blocks; a room never", async () => {
+      const DB = "2026-11-30";
+      const data = await viewData(owner, `date=${DB}&site=${site}`);
+      const col = data.columns.find((c) => c.practitionerId === booked.practitionerId);
+      // Free slots come one appointment length each: three in a row leave room to move by 15 minutes.
+      const starts = new Set(col.freeSlots.map((x) => x.startMinute));
+      const free = col.freeSlots.find((x) => x.startMinute % 15 === 0 && x.startMinute >= 9 * 60 && starts.has(x.endMinute) && starts.has(x.endMinute + (x.endMinute - x.startMinute)));
+      assert(free, "a free stretch on the rota");
+      const hh = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+      doubleAt = { date: DB, minute: free.startMinute, time: hh(free.startMinute) };
+      // Megan, normally (with the rota's room).
+      await owner.goto(`${DIARY}?date=${DB}&site=${site}`);
+      await ready(owner);
+      await owner.click("main button:visible:has-text('New appointment')");
+      await pickPatient(owner, "Megan", "Megan Hart");
+      await owner.selectOption("#bk-pr", booked.practitionerId);
+      await owner.fill("#bk-dt", DB);
+      await owner.selectOption("#bk-tm", doubleAt.time);
+      await owner.waitForSelector("text=Slot available");
+      const room = await owner.inputValue("#bk-rm");
+      await owner.click("role=dialog >> button:has-text('Book appointment')");
+      await owner.waitForSelector("text=Appointment booked");
+      await owner.click("text=Back to diary");
+      // Daniel, same practitioner, same time, SAME room: the room is strict – no Book anyway.
+      await owner.click("main button:visible:has-text('New appointment')");
+      await pickPatient(owner, "Daniel", "Daniel Brooks");
+      await owner.selectOption("#bk-pr", booked.practitionerId);
+      await owner.fill("#bk-dt", DB);
+      await owner.selectOption("#bk-tm", doubleAt.time);
+      if (room) {
+        await owner.selectOption("#bk-rm", room);
+        await owner.waitForSelector("text=This time clashes");
+        assert((await owner.locator("text=Book anyway (double-booking is logged)").count()) === 0, "no override over a room");
+        assert(/room or blocked time cannot be double-booked/.test(await owner.locator("#bk-slot").innerText()), "says why");
+        await shot(owner, "1440-booking-dialog-room-strict");
+      }
+      // No room: only the practitioner clashes – the owner (Override clashes) may book anyway.
+      await owner.selectOption("#bk-rm", "");
+      await owner.waitForSelector("text=This time clashes");
+      await owner.waitForSelector("text=Book anyway (double-booking is logged)");
+      await owner.check("text=Book anyway (double-booking is logged)");
+      await shot(owner, "1440-booking-dialog-book-anyway");
+      await owner.click("role=dialog >> button:has-text('Book appointment')");
+      await owner.waitForSelector("text=Appointment booked");
+      await owner.click("text=Back to diary");
+      // Both blocks carry the marker; the drawer names the other appointment.
+      await owner.waitForSelector(`[role=group] button:has-text("Daniel Brooks")`);
+      assert((await owner.locator("[data-double-booked=true]").count()) >= 2, "a marker on both blocks");
+      const after = await viewData(owner, `date=${DB}&site=${site}`);
+      const pair = after.cards.filter((c) => c.doubleBookedWith && c.doubleBookedWith.length > 0).map((c) => c.patientName).sort();
+      assert(JSON.stringify(pair) === JSON.stringify(["Daniel Brooks", "Megan Hart"]), `marked: ${pair.join(", ")}`);
+      await shot(owner, "1440-double-booked-markers");
+      await owner.click(`[role=group] button:has-text("Megan Hart")`);
+      await owner.waitForSelector("[data-testid=double-booked-note] >> text=Daniel Brooks");
+      await shot(owner, "1440-drawer-double-booked");
+      await owner.keyboard.press("Escape");
+      // Reception (no Override clashes) sees the same clash but no Book anyway.
+      await reception.goto(`${DIARY}?date=${DB}&site=${site}`);
+      await ready(reception);
+      await reception.click("main button:visible:has-text('New appointment')");
+      await pickPatient(reception, "Megan", "Megan Hart");
+      await reception.selectOption("#bk-pr", booked.practitionerId);
+      await reception.selectOption("#bk-rm", "");
+      await reception.fill("#bk-dt", DB);
+      await reception.selectOption("#bk-tm", doubleAt.time);
+      await reception.waitForSelector("text=This time clashes");
+      assert((await reception.locator("text=Book anyway (double-booking is logged)").count()) === 0, "no Book anyway for reception");
+      await reception.keyboard.press("Escape");
+    });
+
+    await step("keyboard override: Shift+Enter drops a move over the practitioner's other appointment (owner, logged)", async () => {
+      await owner.goto(`${DIARY}?date=${doubleAt.date}&site=${site}`);
+      await ready(owner);
+      const block = owner.locator(`button[data-status=booked]:has-text("Daniel Brooks")`).first();
+      await block.focus();
+      await owner.keyboard.press("m");
+      await owner.waitForSelector("text=/Moving Daniel Brooks/");
+      await owner.keyboard.press("ArrowDown");
+      const hint = await owner.locator("[aria-live=polite]").first().innerText();
+      assert(/clashes with Megan Hart/.test(hint) && /book anyway/i.test(hint), `hint offers Shift+Enter: ${hint}`);
+      await owner.keyboard.press("Enter");
+      await owner.waitForSelector("text=/Can't drop here/");
+      await shot(owner, "1440-keyboard-move-override-hint");
+      await owner.keyboard.press("Shift+Enter");
+      await owner.waitForSelector("[role=status] >> text=/Daniel Brooks moved to/");
+      assert(/double-booked/i.test(await owner.locator("[role=status]").first().innerText()), "the toast says it is double-booked");
+    });
+
     await step("owner: leave on a Monday (rota page), then a weekly series with that date skipped", async () => {
       await owner.goto(`${DIARY}/rotas?practitioner=${booked.practitionerId}&site=${site}`);
       await owner.waitForSelector("text=Weekly working pattern");
@@ -405,7 +496,7 @@ async function pickPatient(page, q, name) {
       await reception.waitForSelector("[role=status] >> text=late cancellation recorded");
     });
 
-    await step("clinician: no Book anyway; Start treatment on an arrived patient opens a clinical note", async () => {
+    await step("clinician: Start treatment on an arrived patient → In treatment and the linked clinical note opens", async () => {
       await clinician.goto(`${DIARY}?date=${MON1}&site=${site}`);
       await ready(clinician);
       await clinician.locator(`button[data-status=booked]:has-text("Megan Hart")`).first().click();
@@ -413,15 +504,31 @@ async function pickPatient(page, q, name) {
       await clinician.waitForSelector("aside button:has-text('Start treatment')");
       await clinician.click("aside button:has-text('Start treatment')");
       await clinician.waitForURL(/\/patients\/[^/]+\/notes\/[^/]+$/, { timeout: 20000 });
+      await clinician.goto(`${DIARY}?date=${MON1}&site=${site}`);
+      await ready(clinician);
+      await clinician.waitForSelector(`button[data-status=in_treatment]:has-text("Megan Hart")`);
     });
 
-    await step("reception: no Start treatment (no clinical notes for reception)", async () => {
+    await step("reception: In treatment → Undo start of treatment (back to arrived) → Start treatment sets the status only (no note) → Completed", async () => {
       await reception.goto(`${DIARY}?date=${MON1}&site=${site}`);
       await ready(reception);
-      await reception.locator(`button[data-status=arrived]:has-text("Megan Hart")`).first().click();
+      await reception.locator(`button[data-status=in_treatment]:has-text("Megan Hart")`).first().click();
       await reception.waitForSelector("aside >> text=Quick actions");
-      assert((await reception.locator("aside button:has-text('Start treatment')").count()) === 0, "no Start treatment");
+      assert((await reception.locator("aside button:has-text('Open note')").count()) === 0, "no note for reception");
+      await shot(reception, "1440-drawer-in-treatment");
+      await reception.click("aside button:has-text('Undo start of treatment')");
+      await reception.waitForSelector(`button[data-status=arrived]:has-text("Megan Hart")`);
+      await reception.locator(`button[data-status=arrived]:has-text("Megan Hart")`).first().click();
+      await reception.waitForSelector("aside button:has-text('Start treatment')");
       assert((await reception.locator("aside button:has-text('Undo arrival')").count()) === 1, "Undo arrival");
+      await reception.click("aside button:has-text('Start treatment')");
+      await reception.waitForSelector(`button[data-status=in_treatment]:has-text("Megan Hart")`);
+      assert(/\/app\/clinic\/diary/.test(reception.url()), "reception stays in the diary");
+      await reception.locator(`button[data-status=in_treatment]:has-text("Megan Hart")`).first().click();
+      await reception.waitForSelector("aside button:has-text('Completed')");
+      await reception.click("aside button:has-text('Completed')");
+      await reception.waitForSelector(`button[data-status=attended]:has-text("Megan Hart")`);
+      assert(/Completed/.test(await reception.locator(`button[data-status=attended]:has-text("Megan Hart")`).first().innerText()), "reads Completed");
     });
 
     await step("waiting list: entries with wants / available / waiting; Book opens the booking dialog for the patient", async () => {
@@ -429,7 +536,8 @@ async function pickPatient(page, q, name) {
       await reception.waitForSelector("text=Waiting list");
       const text = await reception.locator("main").innerText();
       assert(/Wants/.test(text) && /Available/.test(text) && /Waiting/.test(text), "entry details");
-      assert(!/Weekly working pattern/.test(text), "reception: no rota editor");
+      // Roles design round 2: reception holds diary.rota by default – the rota editor shows beside the list.
+      assert(/Weekly working pattern/.test(text), "reception (diary.rota): the rota editor too");
       await axe(reception, "waiting list");
       await reception.locator("article a:has-text('Book')").first().click();
       await reception.waitForSelector("role=dialog >> text=Chosen:");
@@ -460,8 +568,13 @@ async function pickPatient(page, q, name) {
     await step("patient record → Appointments tab lists Megan's appointments", async () => {
       await reception.goto(`${BASE}/app/clinic/patients?q=Hart`);
       await reception.locator("main a:has-text('Megan')").first().click();
-      await reception.locator("nav[aria-label='Patient record'] a:has-text('Appointments')").click();
+      await reception.locator("nav[aria-label='Patient record sections'] a:has-text('Appointments')").click();
+      await reception.waitForURL(/\/appointments$/);
+      await reception.waitForSelector("main h2:has-text('Appointments')");
       await reception.waitForSelector("text=Upcoming appointments");
+      // The diary's tab renders inside the record (the records layout: summary card and tabs).
+      assert((await reception.locator("section[aria-label='Patient summary']").count()) === 1, "inside the record layout");
+      assert(/\/appointments$/.test(reception.url()), reception.url());
       await shot(reception, "1440-patient-appointments");
     });
 

@@ -17,7 +17,7 @@ import type { PmsPermission } from "../../../modules/pms/core/permissions";
 import { PAYER_TYPES, PmsIdSchema, type PatientInput } from "../../../modules/pms/core/schemas";
 import { formatUkDate, isIsoDate } from "../../../modules/pms/core/text";
 import { DIARY_COPY, STATUS_LABELS } from "../../../modules/pms/diary/copy";
-import { CANCEL_REASONS, isLateCancellation } from "../../../modules/pms/diary/rules";
+import { CANCEL_REASONS, isLateCancellation, isOverridableClash } from "../../../modules/pms/diary/rules";
 import {
   AppointmentDetailsPatchSchema,
   AppointmentStatusChangeSchema,
@@ -37,7 +37,7 @@ import {
   WaitingListStatusSchema,
 } from "../../../modules/pms/diary/schemas";
 import { addDays, formatHhmm, londonParts, parseHhmm, weekdayName } from "../../../modules/pms/diary/time";
-import type { BookResult, DiaryActionResult } from "../../../modules/pms/diary/types";
+import type { BookResult, DiaryActionResult, DiarySaveResult } from "../../../modules/pms/diary/types";
 import { nowIso } from "../../repos/context";
 import {
   bookAppointment,
@@ -67,6 +67,7 @@ import type { RecordsActor } from "../records/access";
 import { registerPatientFor } from "../records/patients-service";
 import { openCaseFor } from "../records/cases-service";
 import { startNoteFor, templatesForNewNote } from "../records/notes-service";
+import { listNotesForPatient } from "../../repos/pms/records/notes";
 import { patientDisplayName } from "./view";
 import { clashMessages, diaryAction, fromPmsSave, fromSaveResult, invalid, warningMessages } from "./actions-support";
 import { inScope, type DiaryCaller } from "./caller";
@@ -98,7 +99,8 @@ export const DIARY_ACTION_PERMISSIONS = {
   setDaySheetDobAction: "settings.setup",
   registerBookingPatientAction: "patients.edit",
   openBookingCaseAction: "patients.edit",
-  startTreatmentAction: "clinical.write",
+  // Start treatment sets "In treatment" (anyone who books); a member who writes notes also gets the linked note.
+  startTreatmentAction: "diary.book",
   saveWeeklyRotaAction: "diary.rota",
 } as const satisfies Record<string, PmsPermission>;
 
@@ -130,7 +132,26 @@ async function scopedItem(caller: DiaryCaller, id: string) {
   return item && inScope(caller, item.siteId) ? item : null;
 }
 
-function bookAnswer(r: BookResult, occurrences: number): DiaryActionResult {
+/**
+ * "Book anyway" (Khuram's decision A, 28/10/2026): the member asked to book over a clash. Only "diary.override"
+ * may (the practitioner's other appointments, the patient's own other appointment – never a room or blocked time:
+ * the repositories and the database refuse those whatever is asked). `allowPatientOverlap` is the first build's name.
+ */
+function overrideOf(caller: DiaryCaller, override: unknown, allowPatientOverlap: unknown): { ok: true; on: boolean } | { ok: false; result: DiaryActionResult } {
+  const on = override === true || allowPatientOverlap === true;
+  if (on && !caller.can("diary.override")) return { ok: false, result: { ok: false, error: DIARY_COPY.noOverride } };
+  return { ok: true, on };
+}
+
+/** A refused clash: the message, and whether this member could book over it. */
+function clashAnswer(caller: DiaryCaller, clashes: readonly { resource: "practitioner" | "room" | "patient"; withKind: "appointment" | "block" }[]): { patientOnly: boolean; overridable: boolean } {
+  return {
+    patientOnly: clashes.every((c) => c.resource === "patient"),
+    overridable: clashes.length > 0 && clashes.every(isOverridableClash) && caller.can("diary.override"),
+  };
+}
+
+function bookAnswer(caller: DiaryCaller, r: BookResult, occurrences: number): DiaryActionResult {
   if (!r.ok) {
     const clashDates = new Set(r.clashes.map((c) => c.date));
     return {
@@ -138,7 +159,7 @@ function bookAnswer(r: BookResult, occurrences: number): DiaryActionResult {
       error: occurrences > 1 ? `${clashDates.size} of the ${occurrences} dates are not free.` : "That time is not free.",
       clashes: clashMessages(r.clashes),
       canSkipClashes: occurrences > 1 && clashDates.size < occurrences,
-      patientOnly: r.clashes.every((c) => c.resource === "patient"),
+      ...clashAnswer(caller, r.clashes),
     };
   }
   const n = r.items.length;
@@ -158,6 +179,7 @@ const BookingFlagsSchema = z.object({
   skipClashes: z.boolean().optional(),
   skipDates: z.array(z.string().refine(isIsoDate, "A date as YYYY-MM-DD")).max(52).optional(),
   allowPatientOverlap: z.boolean().optional(),
+  override: z.boolean().optional(),
   waitingListId: z.preprocess((v) => (v === "" || v === null ? undefined : v), PmsIdSchema.optional()),
 });
 
@@ -168,20 +190,23 @@ const BookingFlagsSchema = z.object({
 /** Books an appointment or a recurring series (optionally settling a waiting-list entry). */
 export async function bookAppointmentFor(caller: DiaryCaller, input: unknown): Promise<DiaryActionResult> {
   if (!allowed(caller, "bookAppointmentAction")) return NOT_ALLOWED;
-  const { skipClashes, skipDates, allowPatientOverlap, waitingListId, ...booking } = obj(input);
-  const flags = BookingFlagsSchema.safeParse({ skipClashes, skipDates, allowPatientOverlap, waitingListId });
+  const { skipClashes, skipDates, allowPatientOverlap, override, waitingListId, ...booking } = obj(input);
+  const flags = BookingFlagsSchema.safeParse({ skipClashes, skipDates, allowPatientOverlap, override, waitingListId });
   if (!flags.success) return invalid(flags.error);
   const parsed = BookAppointmentSchema.safeParse(booking);
   if (!parsed.success) return invalid(parsed.error);
   if (!inScope(caller, parsed.data.siteId)) return NOT_YOUR_SITE;
+  const anyway = overrideOf(caller, flags.data.override, flags.data.allowPatientOverlap);
+  if (!anyway.ok) return anyway.result;
   return diaryAction("book", async () => {
     const r = await bookAppointment(caller.ctx, caller.tenantId, parsed.data, caller.actor, {
       skipClashes: flags.data.skipClashes === true,
       skipDates: flags.data.skipDates,
-      allowPatientOverlap: flags.data.allowPatientOverlap === true,
+      allowPatientOverlap: anyway.on,
+      allowPractitionerOverlap: anyway.on,
       waitingListId: flags.data.waitingListId,
     });
-    return bookAnswer(r, parsed.data.repeat?.occurrences ?? 1);
+    return bookAnswer(caller, r, parsed.data.repeat?.occurrences ?? 1);
   });
 }
 
@@ -190,16 +215,18 @@ export async function rebookAppointmentFor(caller: DiaryCaller, input: unknown):
   if (!allowed(caller, "rebookAppointmentAction")) return NOT_ALLOWED;
   const { id, rest } = withId(input);
   if (!id) return GONE;
-  const { skipClashes: _s, allowPatientOverlap, ...rebook } = rest;
+  const { skipClashes: _s, allowPatientOverlap, override, ...rebook } = rest;
   void _s;
   const parsed = RebookAppointmentSchema.safeParse(rebook);
   if (!parsed.success) return invalid(parsed.error);
+  const anyway = overrideOf(caller, override, allowPatientOverlap);
+  if (!anyway.ok) return anyway.result;
   return diaryAction("rebook", async () => {
     const item = await scopedItem(caller, id);
     if (!item || item.kind !== "appointment") return GONE;
     if (!inScope(caller, parsed.data.siteId ?? item.siteId)) return NOT_YOUR_SITE;
-    const r = await rebookAppointment(caller.ctx, caller.tenantId, id, parsed.data, caller.actor, { allowPatientOverlap: allowPatientOverlap === true });
-    return bookAnswer(r, 1);
+    const r = await rebookAppointment(caller.ctx, caller.tenantId, id, parsed.data, caller.actor, { allowPatientOverlap: anyway.on, allowPractitionerOverlap: anyway.on });
+    return bookAnswer(caller, r, 1);
   });
 }
 
@@ -208,15 +235,17 @@ export async function moveAppointmentFor(caller: DiaryCaller, input: unknown): P
   if (!allowed(caller, "moveAppointmentAction")) return NOT_ALLOWED;
   const { id, rest } = withId(input);
   if (!id) return GONE;
-  const { allowPatientOverlap, ...move } = rest;
+  const { allowPatientOverlap, override, ...move } = rest;
   const parsed = MoveAppointmentSchema.safeParse(move);
   if (!parsed.success) return invalid(parsed.error);
+  const anyway = overrideOf(caller, override, allowPatientOverlap);
+  if (!anyway.ok) return anyway.result;
   return diaryAction("move", async () => {
     const item = await scopedItem(caller, id);
     if (!item) return GONE;
     if (!inScope(caller, parsed.data.siteId ?? item.siteId)) return NOT_YOUR_SITE;
-    const r = await moveAppointment(caller.ctx, caller.tenantId, id, parsed.data, caller.actor, { allowPatientOverlap: allowPatientOverlap === true });
-    return fromSaveResult(r, "Moved.");
+    const r = await moveAppointment(caller.ctx, caller.tenantId, id, parsed.data, caller.actor, { allowPatientOverlap: anyway.on, allowPractitionerOverlap: anyway.on });
+    return withOverride(caller, fromSaveResult(r, "Moved."), r);
   });
 }
 
@@ -225,15 +254,25 @@ export async function resizeAppointmentFor(caller: DiaryCaller, input: unknown):
   if (!allowed(caller, "resizeAppointmentAction")) return NOT_ALLOWED;
   const { id, rest } = withId(input);
   if (!id) return GONE;
-  const parsed = ResizeAppointmentSchema.safeParse(rest);
+  const { override, ...resize } = rest;
+  const parsed = ResizeAppointmentSchema.safeParse(resize);
   if (!parsed.success) return invalid(parsed.error);
+  const anyway = overrideOf(caller, override, undefined);
+  if (!anyway.ok) return anyway.result;
   return diaryAction("resize", async () => {
     if (!(await scopedItem(caller, id))) return GONE;
-    return fromSaveResult(await resizeAppointment(caller.ctx, caller.tenantId, id, parsed.data, caller.actor), "Length changed.");
+    const r = await resizeAppointment(caller.ctx, caller.tenantId, id, parsed.data, caller.actor, { allowPractitionerOverlap: anyway.on });
+    return withOverride(caller, fromSaveResult(r, "Length changed."), r);
   });
 }
 
-/** Arrived, attended, did not attend (with the fee flag), undo, reinstate; removing / restoring blocked time. */
+/** A refused move or resize also says whether this member could book over the clash. */
+function withOverride(caller: DiaryCaller, answer: DiaryActionResult, r: DiarySaveResult): DiaryActionResult {
+  if (answer.ok || r.ok || r.reason !== "clash") return answer;
+  return { ...answer, ...clashAnswer(caller, r.clashes) };
+}
+
+/** Arrived, in treatment, completed (attended), did not attend (with the fee flag), undo, reinstate; blocked time. */
 export async function setAppointmentStatusFor(caller: DiaryCaller, input: unknown): Promise<DiaryActionResult> {
   if (!allowed(caller, "setAppointmentStatusAction")) return NOT_ALLOWED;
   const { id, rest } = withId(input);
@@ -465,6 +504,7 @@ const BookOfferSchema = z.object({
   authorisationId: z.preprocess((v) => (v === "" ? null : v), z.union([PmsIdSchema, z.null()]).optional()),
   notes: z.string().max(2000).optional(),
   allowPatientOverlap: z.boolean().optional(),
+  override: z.boolean().optional(),
 });
 
 /**
@@ -477,6 +517,8 @@ export async function bookWaitingListOfferFor(caller: DiaryCaller, input: unknow
   if (!id) return ENTRY_GONE;
   const parsed = BookOfferSchema.safeParse(rest);
   if (!parsed.success) return invalid(parsed.error);
+  const anyway = overrideOf(caller, parsed.data.override, parsed.data.allowPatientOverlap);
+  if (!anyway.ok) return anyway.result;
   return diaryAction("waiting_book_offer", async () => {
     const offer = await getWaitingListOffer(caller.ctx, caller.tenantId, id);
     if (!offer || !inScope(caller, offer.siteId)) return ENTRY_GONE;
@@ -504,9 +546,9 @@ export async function bookWaitingListOfferFor(caller: DiaryCaller, input: unknow
         notes: parsed.data.notes,
       },
       caller.actor,
-      { waitingListId: entry.id, offerId: offer.id, allowPatientOverlap: parsed.data.allowPatientOverlap === true },
+      { waitingListId: entry.id, offerId: offer.id, allowPatientOverlap: anyway.on, allowPractitionerOverlap: anyway.on },
     );
-    return bookAnswer(r, 1);
+    return bookAnswer(caller, r, 1);
   });
 }
 
@@ -515,10 +557,11 @@ export async function bookWaitingListOfferFor(caller: DiaryCaller, input: unknow
  * ----------------------------------------------------------------------------------------------*/
 
 type Id = { id: string };
-export type BookAppointmentRequest = import("../../../modules/pms/diary/schemas").BookAppointmentInput & { skipClashes?: boolean; skipDates?: string[]; allowPatientOverlap?: boolean; waitingListId?: string | null };
-export type RebookAppointmentRequest = Id & import("../../../modules/pms/diary/schemas").RebookAppointmentInput & { allowPatientOverlap?: boolean };
-export type MoveAppointmentRequest = Id & import("../../../modules/pms/diary/schemas").MoveAppointmentInput & { allowPatientOverlap?: boolean };
-export type ResizeAppointmentRequest = Id & import("../../../modules/pms/diary/schemas").ResizeAppointmentInput;
+/** `override`: "Book anyway (double-booking is logged)" – needs diary.override (`allowPatientOverlap` is the old name). */
+export type BookAppointmentRequest = import("../../../modules/pms/diary/schemas").BookAppointmentInput & { skipClashes?: boolean; skipDates?: string[]; allowPatientOverlap?: boolean; override?: boolean; waitingListId?: string | null };
+export type RebookAppointmentRequest = Id & import("../../../modules/pms/diary/schemas").RebookAppointmentInput & { allowPatientOverlap?: boolean; override?: boolean };
+export type MoveAppointmentRequest = Id & import("../../../modules/pms/diary/schemas").MoveAppointmentInput & { allowPatientOverlap?: boolean; override?: boolean };
+export type ResizeAppointmentRequest = Id & import("../../../modules/pms/diary/schemas").ResizeAppointmentInput & { override?: boolean };
 export type AppointmentStatusRequest = Id & import("../../../modules/pms/diary/schemas").AppointmentStatusChange;
 export type CancelAppointmentRequest = Id & import("../../../modules/pms/diary/schemas").CancelAppointmentInput;
 export type AppointmentDetailsRequest = Id & { expectedRev: number } & import("../../../modules/pms/diary/schemas").AppointmentDetailsPatch;
@@ -565,6 +608,7 @@ function recordsActorOf(caller: DiaryCaller): RecordsActor {
     name: caller.member?.name ?? "",
     email: caller.member?.email ?? "",
     can: caller.can,
+    siteIds: caller.siteIds,
     actor: caller.actor,
     repo: () => caller.ctx,
   };
@@ -649,9 +693,11 @@ export async function openBookingCaseFor(caller: DiaryCaller, input: unknown): P
 const StartTreatmentSchema = z.object({ id: PmsIdSchema });
 
 /**
- * "Start treatment" for an arrived patient: starts the clinician's clinical note for this appointment (the clinic's
- * first note template, linked to the appointment and its case) and answers the note's id – the drawer opens it.
- * clinical.write (the records service checks it again). The diary has no "in treatment" status of its own.
+ * "Start treatment" (Khuram's decision B, 28/10/2026) for an arrived patient: the appointment becomes "In
+ * treatment" (undo: back to arrived). For a member who writes notes (clinical.write) it also opens the clinical
+ * note linked to the appointment – their own draft for it when there is one, else a new one (the clinic's first
+ * note template, linked to the appointment and its case) – and answers its id (noteId) so the drawer opens it.
+ * diary.book (anyone who books may mark it); the records service checks clinical.write again for the note.
  */
 export async function startTreatmentFor(caller: DiaryCaller, input: unknown): Promise<DiaryActionResult> {
   if (!allowed(caller, "startTreatmentAction")) return NOT_ALLOWED;
@@ -660,15 +706,30 @@ export async function startTreatmentFor(caller: DiaryCaller, input: unknown): Pr
   return diaryAction("start_treatment", async () => {
     const item = await scopedItem(caller, parsed.data.id);
     if (!item || item.kind !== "appointment" || !item.patientId) return GONE;
-    if (item.status !== "arrived") return { ok: false, error: "Mark the patient as arrived first." };
-    const actor = recordsActorOf(caller);
-    const templates = await templatesForNewNote(actor);
-    if (!templates.ok) return { ok: false, error: templates.error };
-    const template = templates.value[0];
-    if (!template) return { ok: false, error: "The clinic has no note templates yet. Add one in the clinic's set-up first." };
-    const note = await startNoteFor(actor, item.patientId, { templateId: template.id, seenOn: item.startsOn, caseId: item.caseId, appointmentId: item.id });
-    if (!note.ok) return { ok: false, error: note.error };
-    return { ok: true, message: "Treatment started – the note is open.", warnings: [], itemId: note.value.id };
+    if (item.status !== "arrived" && item.status !== "in_treatment") return { ok: false, error: "Mark the patient as arrived first." };
+    let noteId: string | undefined;
+    if (caller.can("clinical.write")) {
+      const actor = recordsActorOf(caller);
+      const own = await listNotesForPatient(caller.ctx, caller.tenantId, item.patientId, { appointmentId: item.id });
+      const draft = own.find((n) => n.status === "draft" && n.authorUserId === caller.actor.userId);
+      if (draft) noteId = draft.id;
+      else {
+        const templates = await templatesForNewNote(actor);
+        if (!templates.ok) return { ok: false, error: templates.error };
+        const template = templates.value[0];
+        if (!template) return { ok: false, error: "The clinic has no note templates yet. Add one in the clinic's set-up first." };
+        const note = await startNoteFor(actor, item.patientId, { templateId: template.id, seenOn: item.startsOn, caseId: item.caseId, appointmentId: item.id });
+        if (!note.ok) return { ok: false, error: note.error };
+        noteId = note.value.id;
+      }
+    }
+    let rev = item.rev;
+    if (item.status === "arrived") {
+      const r = await setAppointmentStatus(caller.ctx, caller.tenantId, item.id, { expectedRev: item.rev, status: "in_treatment" }, caller.actor);
+      if (!r.ok) return fromSaveResult(r, "");
+      rev = r.item.rev;
+    }
+    return { ok: true, message: noteId ? "Treatment started – the note is open." : "Treatment started.", warnings: [], itemId: item.id, rev, ...(noteId ? { noteId } : {}) };
   });
 }
 

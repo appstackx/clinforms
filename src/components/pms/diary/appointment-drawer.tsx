@@ -3,6 +3,8 @@
  * The appointment's side drawer (design round 2, "Diary – day view"): name with status and type, the patient's
  * alert, When / Service / With / Payer / Mobile, quick actions by status, cancelling (late cancellation with the
  * fee), the rest of a recurring booking, and "Booked by …" at the bottom. Blocked time gets its own short drawer.
+ * Statuses (Khuram's decision B): Arrived → Start treatment ("In treatment"; a clinician's note opens) → Completed;
+ * each step can be undone. A logged double-booking shows a note naming the other appointment.
  * The data comes from the appointments route when it opens; changes go through the diary's server actions and the
  * screen shows the undo toast.
  */
@@ -13,7 +15,7 @@ import { Activity, AlertTriangle, CalendarCheck, CalendarX2, CreditCard, Move, R
 import { cancelAppointmentAction, cancelSeriesAction, setAppointmentStatusAction, startTreatmentAction } from "@/app/app/clinic/diary/actions";
 import { CLINIC_BASE_PATH } from "@/modules/pms/core/modules";
 import { formatPence, formatUkDate } from "@/modules/pms/core/text";
-import { BLOCK_KIND_LABELS, CANCEL_REASON_LABELS } from "@/modules/pms/diary/copy";
+import { BLOCK_KIND_LABELS, CANCEL_REASON_LABELS, DOUBLE_BOOKED_LABEL } from "@/modules/pms/diary/copy";
 import { CANCEL_REASONS, type AppointmentStatus, type BlockKind, type CancelReason } from "@/modules/pms/diary/rules";
 import { londonDate } from "@/modules/pms/diary/time";
 import type { DiaryActionResult } from "@/modules/pms/diary/types";
@@ -28,7 +30,7 @@ import { weekdayDate } from "./grid-model";
 
 export interface DrawerPermissions {
   book: boolean;
-  /** clinical.write: "Start treatment" opens a clinical note. */
+  /** clinical.write: "Start treatment" also opens the clinical note for the appointment. */
   clinical: boolean;
 }
 
@@ -133,13 +135,19 @@ export function AppointmentDrawer({ id, version, can, onClose, onChanged, onErro
       (r) => ({ id: d.id, rev: r.rev ?? d.rev + 1, status: "booked" }),
     );
 
+  /** Start treatment (or, once in treatment, open the note again): the status, and the clinician's note. */
   const startTreatment = async () => {
     if (!d) return;
     setBusy("treat");
     const r = await startTreatmentAction({ id: d.id });
     setBusy(null);
-    if (!r.ok) return onError(r.error);
-    if (d.patient && r.itemId) router.push(`${CLINIC_BASE_PATH}/patients/${d.patient.id}/notes/${r.itemId}`);
+    if (!r.ok) {
+      onError(r.error);
+      if (r.conflict) router.refresh();
+      return;
+    }
+    if (d.status === "arrived") onChanged(`${name} – treatment started`, { id: d.id, rev: r.rev ?? d.rev + 1, status: "arrived" });
+    if (d.patient && r.noteId) router.push(`${CLINIC_BASE_PATH}/patients/${d.patient.id}/notes/${r.noteId}`);
   };
 
   const action = (key: string, label: string, Icon: React.ComponentType<{ className?: string }>, onClick: () => void, opts: { primary?: boolean; danger?: boolean; kbd?: string } = {}) => (
@@ -181,22 +189,28 @@ export function AppointmentDrawer({ id, version, can, onClose, onChanged, onErro
   const actions: React.ReactNode[] = [];
   if (d && can.book && d.kind === "appointment") {
     const s = d.status;
+    const complete = (primary: boolean) => action("attended", "Completed", CheckCircle2, () => setStatus("attended", `${name} marked as completed`), { primary });
     if (s === "booked") {
       actions.push(action("arrived", "Arrived", UserCheck, () => setStatus("arrived", `${name} marked as arrived`), { primary: true, kbd: "A" }));
       actions.push(action("dna", "Did not attend", UserX, () => setStatus("dna", `${name} marked as DNA`), { kbd: "D" }));
       actions.push(action("cancel", "Cancel…", XCircle, () => setCancelOpen(true), { danger: true }));
       if (d.canMove) actions.push(action("move", "Move", Move, () => onMove(d.id), { kbd: "M" }));
-      actions.push(action("attended", "Attended", CheckCircle2, () => setStatus("attended", `${name} marked as attended`)));
+      actions.push(complete(false));
     } else if (s === "arrived") {
-      if (can.clinical) actions.push(action("treat", "Start treatment", Activity, () => void startTreatment(), { primary: true }));
-      actions.push(action("attended", "Attended", CheckCircle2, () => setStatus("attended", `${name} marked as attended`), { primary: !can.clinical }));
+      actions.push(action("treat", "Start treatment", Activity, () => void startTreatment(), { primary: true }));
+      actions.push(complete(false));
       actions.push(action("cancel", "Cancel…", XCircle, () => setCancelOpen(true), { danger: true }));
       actions.push(action("booked", "Undo arrival", CalendarCheck, () => setStatus("booked", "Arrival removed")));
+    } else if (s === "in_treatment") {
+      if (can.clinical) actions.push(action("treat", "Open note", Activity, () => void startTreatment(), { primary: true }));
+      actions.push(complete(!can.clinical));
+      actions.push(action("arrived", "Undo start of treatment", CalendarCheck, () => setStatus("arrived", "Back to arrived")));
     } else if (s === "attended") {
-      actions.push(action("arrived", "Undo attended", CalendarCheck, () => setStatus("arrived", "Attendance removed")));
+      const back: AppointmentStatus = d.treatmentStarted ? "in_treatment" : "arrived";
+      actions.push(action(back, "Undo completed", CalendarCheck, () => setStatus(back, "Completion removed")));
     } else if (s === "dna") {
       actions.push(action("booked", "Undo DNA", CalendarCheck, () => setStatus("booked", "DNA removed")));
-      actions.push(action("attended", "Attended", CheckCircle2, () => setStatus("attended", `${name} marked as attended`)));
+      actions.push(complete(false));
     } else {
       actions.push(action("booked", "Restore booking", CalendarCheck, () => setStatus("booked", "Booking restored")));
     }
@@ -249,6 +263,21 @@ export function AppointmentDrawer({ id, version, can, onClose, onChanged, onErro
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 py-4 text-[#334155]">
         {loadError ? <p role="alert" className="text-destructive-strong">{loadError}</p> : null}
+        {d && d.doubleBookedWith.length > 0 ? (
+          <div role="note" data-testid="double-booked-note" className="flex items-start gap-2 rounded-[10px] border border-[#FDBA74] bg-[#FFF7ED] px-3.5 py-3 text-[#0F172A]">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[#9A3412]" aria-hidden />
+            <span>
+              <strong>{DOUBLE_BOOKED_LABEL}:</strong> {d.practitionerName ?? "The practitioner"} also has{" "}
+              {d.doubleBookedWith.map((x, i) => (
+                <React.Fragment key={x.id}>
+                  {i > 0 ? ", " : ""}
+                  {x.patientName ?? "another appointment"} {x.timeLabel}
+                </React.Fragment>
+              ))}
+              . The double-booking is logged.
+            </span>
+          </div>
+        ) : null}
         {d?.alertText ? (
           <div role="note" className="flex items-start gap-2 rounded-[10px] border border-[#FBD38D] bg-[#FFFBEB] px-3.5 py-3 text-[#0F172A]">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[#864E0E]" aria-hidden />

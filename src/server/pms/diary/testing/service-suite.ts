@@ -68,6 +68,7 @@ import {
   updateRotaEntryFor,
   updateWaitingListEntryFor,
   setDaySheetDobFor,
+  startTreatmentFor,
 } from "../writes";
 import { checkBookingFor } from "../booking-check";
 
@@ -1329,6 +1330,115 @@ export function defineDiaryServiceSuite(
         }),
         /booked or removed/,
       );
+    });
+
+    it("double-booking (Khuram's decision A): refused without diary.override; with it allowed, audited, marked on both; rooms and blocked time never", async () => {
+      const MON2 = "2027-01-11";
+      const owner = caller(A, "owner", null, "user_owner_01");
+      const first = await bookAppointmentFor(staff(), booking(a, { date: MON2, startTime: "09:00", roomId: a.roomA1 }));
+      ok(first);
+      const firstId = first.itemId as string;
+      // Same practitioner, another room, overlapping: reception (no diary.override) is refused and cannot ask.
+      const other = booking(a, { patientId: a.daniel, date: MON2, startTime: "09:15", roomId: a.roomA2 });
+      const plain = await bookAppointmentFor(staff(), other);
+      refused(plain, /not free/);
+      assert.equal(!plain.ok && plain.overridable, false, "reception may not book over it");
+      refused(await bookAppointmentFor(staff(), { ...other, override: true }), /permission to override/);
+      refused(await bookAppointmentFor(staff(), { ...other, allowPatientOverlap: true }), /permission to override/);
+      // The owner sees it may be overridden…
+      const ownerPlain = await bookAppointmentFor(owner, other);
+      assert.equal(!ownerPlain.ok && ownerPlain.overridable, true);
+      // …and books anyway: allowed, warned, audited with the clashing appointment.
+      const anyway = await bookAppointmentFor(owner, { ...other, override: true });
+      ok(anyway);
+      assert.ok(anyway.warnings.some((w) => /double-booked/i.test(w)), anyway.warnings.join(" "));
+      const secondId = anyway.itemId as string;
+      const audit = (await listAudit(ctx, A, { action: "pms.appointment.book" })).find((e) => e.targetId === secondId);
+      assert.ok(audit, "audited");
+      assert.equal((audit!.detail as Record<string, unknown>).overbooked, true);
+      assert.deepEqual((audit!.detail as Record<string, unknown>).doubleBookedWith, [firstId]);
+      // Both blocks carry the marker; the drawer names the other appointment.
+      const view = await loadDiaryView(owner, parseDiaryParams({ date: MON2, site: a.siteA }, MON2), MON2);
+      assert.ok(view.ok);
+      const cards = view.ok ? view.data.cards : [];
+      assert.deepEqual(cards.find((c) => c.id === firstId)?.doubleBookedWith.map((x) => x.id), [secondId]);
+      assert.deepEqual(cards.find((c) => c.id === secondId)?.doubleBookedWith.map((x) => x.id), [firstId]);
+      assert.equal(cards.find((c) => c.id === secondId)?.doubleBookedWith[0].patientName, "Megan Hart");
+      const d1 = await loadAppointmentDetails(staff(), firstId);
+      assert.ok(d1.ok && d1.data.doubleBookedWith.length === 1 && d1.data.doubleBookedWith[0].id === secondId);
+      // A double-booked appointment can still go through its day (arrived, in treatment) – no new clash.
+      const det = await loadAppointmentDetails(staff(), secondId);
+      ok(await setAppointmentStatusFor(staff(), { id: secondId, expectedRev: det.ok ? det.data.rev : 0, status: "arrived" }));
+      // ROOM stays strict: the owner cannot put a third appointment in Room 1 at the same time, override or not.
+      const room = await bookAppointmentFor(owner, booking(a, { patientId: a.daniel, practitionerId: a.tom, date: MON2, startTime: "09:00", roomId: a.roomA1, override: true }));
+      refused(room, /not free/);
+      assert.equal(!room.ok && room.overridable, false, "a room clash is never overridable");
+      // Nor over the practitioner's blocked time.
+      ok(await createBlockFor(owner, { siteId: a.siteA, practitionerId: a.sarah, blockKind: "meeting", date: MON2, startTime: "11:00", endTime: "12:00" }));
+      refused(await bookAppointmentFor(owner, booking(a, { patientId: a.daniel, date: MON2, startTime: "11:00", roomId: a.roomA2, override: true })), /not free/);
+      // Moving onto the practitioner's other appointment: refused for reception, allowed with the override (logged).
+      const third = await bookAppointmentFor(staff(), booking(a, { patientId: a.daniel, date: MON2, startTime: "10:00", roomId: a.roomA2 }));
+      ok(third);
+      const t3 = third.itemId as string;
+      const moveTo = { id: t3, expectedRev: third.rev as number, date: MON2, startTime: "09:00" };
+      refused(await moveAppointmentFor(staff(), moveTo), /not free/);
+      refused(await moveAppointmentFor(staff(), { ...moveTo, override: true }), /permission to override/);
+      // 09:00 with Sarah in Room 2: Room 2 holds the 09:15 appointment – the room refuses even with the override.
+      refused(await moveAppointmentFor(owner, { ...moveTo, override: true }), /not free/);
+      const moved = await moveAppointmentFor(owner, { ...moveTo, startTime: "09:30", roomId: null, override: true });
+      ok(moved);
+      const moveAudit = (await listAudit(ctx, A, { action: "pms.appointment.move" })).find((e) => e.targetId === t3);
+      assert.ok(moveAudit && (moveAudit.detail as Record<string, unknown>).overbooked === true, "the move is logged as a double-booking");
+      // The flag is per write: moving it again without the override is checked again.
+      refused(await moveAppointmentFor(owner, { id: t3, expectedRev: moved.rev as number, date: MON2, startTime: "09:15" }), /not free/);
+    });
+
+    it("statuses (Khuram's decision B): Start treatment → In treatment (+ the clinician's note), undo, Completed; reception gets no note", async () => {
+      const day = "2027-01-18";
+      const r = await bookAppointmentFor(staff(), booking(a, { date: day, startTime: "09:00" }));
+      ok(r);
+      const id = r.itemId as string;
+      ok(await setAppointmentStatusFor(staff(), { id, expectedRev: r.rev as number, status: "arrived" }));
+      // Reception: Start treatment sets the status only.
+      const recep = await startTreatmentFor({ ...staff(), member: { name: "Jess Taylor", email: "user_reception_01@example.com" } }, { id });
+      ok(recep);
+      assert.equal(recep.noteId, undefined, "no note for reception");
+      let det = await loadAppointmentDetails(staff(), id);
+      assert.ok(det.ok && det.data.status === "in_treatment" && det.data.treatmentStarted);
+      assert.ok(det.ok && det.data.nextStatuses.includes("attended") && det.data.nextStatuses.includes("arrived") && !det.data.canMove);
+      assert.equal((await listAudit(ctx, A, { action: "pms.appointment.start_treatment" })).filter((e) => e.targetId === id).length, 1, "audited");
+      // Undo → arrived; the clinician starts treatment: status AND the note linked to the appointment.
+      ok(await setAppointmentStatusFor(staff(), { id, expectedRev: det.ok ? det.data.rev : 0, status: "arrived" }));
+      det = await loadAppointmentDetails(staff(), id);
+      assert.ok(det.ok && det.data.status === "arrived" && !det.data.treatmentStarted);
+      const clin: DiaryCaller = { ...caller(A, "clinician", null, "user_clinician_01"), member: { name: "Sarah Reid", email: "user_clinician_01@example.com" } };
+      const started = await startTreatmentFor(clin, { id });
+      ok(started);
+      assert.ok(started.noteId, "the note opens");
+      // Again (e.g. "Open note"): the same draft, not a second note; the status stays.
+      const again = await startTreatmentFor(clin, { id });
+      ok(again);
+      assert.equal(again.noteId, started.noteId);
+      // The day sheet and the patient's tab read "In treatment"; the counts have their own bucket.
+      const sheet = await loadDaySheet(staff(), { siteId: a.siteA, date: day });
+      assert.ok(sheet.ok && sheet.data.groups.some((g) => g.rows.some((x) => x.id === id && x.statusLabel === "In treatment")));
+      const tab = await loadPatientAppointments(staff(), a.megan);
+      assert.ok(tab.ok && tab.data.counts.in_treatment >= 1);
+      // Completed (attended): reads "Completed"; undo goes back to in treatment.
+      det = await loadAppointmentDetails(staff(), id);
+      ok(await setAppointmentStatusFor(clin, { id, expectedRev: det.ok ? det.data.rev : 0, status: "attended" }));
+      const done = await loadDaySheet(staff(), { siteId: a.siteA, date: day });
+      assert.ok(done.ok && done.data.groups.some((g) => g.rows.some((x) => x.id === id && x.status === "attended" && x.statusLabel === "Completed")));
+      det = await loadAppointmentDetails(staff(), id);
+      assert.ok(det.ok && det.data.treatmentStarted && det.data.nextStatuses.includes("in_treatment"));
+      ok(await setAppointmentStatusFor(staff(), { id, expectedRev: det.ok ? det.data.rev : 0, status: "in_treatment" }));
+      det = await loadAppointmentDetails(staff(), id);
+      assert.ok(det.ok && det.data.status === "in_treatment");
+      // Start treatment needs an arrived patient; a role without diary.book cannot.
+      const b2 = await bookAppointmentFor(staff(), booking(a, { patientId: a.daniel, date: day, startTime: "10:00" }));
+      ok(b2);
+      refused(await startTreatmentFor(staff(), { id: b2.itemId }), /arrived first/);
+      refused(await startTreatmentFor(caller(A, ["clinic.view", "diary.view"]), { id }), /permission/);
     });
 
     it("safe errors: an internal failure answers a plain message and leaks nothing", async () => {

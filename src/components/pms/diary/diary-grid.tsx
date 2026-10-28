@@ -7,7 +7,8 @@
  * and resizes are handled by the screen (onBlockKey) – this component draws the preview it is given.
  */
 import * as React from "react";
-import { AlertTriangle, Ban, Globe } from "lucide-react";
+import { AlertTriangle, Ban, CopyPlus, Globe } from "lucide-react";
+import { DOUBLE_BOOKED_LABEL } from "@/modules/pms/diary/copy";
 import type { DiaryCard, DiaryColumn } from "@/modules/pms/diary/view";
 import { formatHhmm } from "@/modules/pms/diary/time";
 import { layoutColumn } from "@/modules/pms/diary/rules";
@@ -254,8 +255,28 @@ export function DiaryGrid(props: DiaryGridProps) {
                             onPointerDown={(e) => startDrag(e, card, ci, false)}
                           />
                           <span id={`dg-${card.id}`} className="sr-only">
-                            {[card.practitionerName, card.roomName, card.hasAlerts ? "has an alert" : null, card.source === "online" ? "booked online" : null].filter(Boolean).join(", ")}
+                            {[
+                              card.practitionerName,
+                              card.roomName,
+                              card.hasAlerts ? "has an alert" : null,
+                              card.source === "online" ? "booked online" : null,
+                              card.doubleBookedWith.length > 0 ? `${DOUBLE_BOOKED_LABEL.toLowerCase()} with ${card.doubleBookedWith.map((x) => `${x.patientName ?? "another appointment"} ${x.timeLabel}`).join(", ")}` : null,
+                            ]
+                              .filter(Boolean)
+                              .join(", ")}
                           </span>
+                          {card.doubleBookedWith.length > 0 ? (
+                            // The clash marker of a logged double-booking (Khuram's decision A) – on both blocks.
+                            <span
+                              aria-hidden
+                              data-double-booked="true"
+                              title={`${DOUBLE_BOOKED_LABEL} with ${card.doubleBookedWith.map((x) => `${x.patientName ?? "another appointment"} ${x.timeLabel}`).join(", ")}`}
+                              className="pointer-events-none absolute bottom-1 right-1.5 z-[2] inline-flex items-center gap-0.5 rounded-[4px] border border-[#FDBA74] bg-[#FFF7ED] px-1 text-[10px] font-semibold leading-[14px] text-[#9A3412]"
+                            >
+                              <CopyPlus className="h-2.5 w-2.5" />
+                              {lengthMin >= 30 && !compact ? DOUBLE_BOOKED_LABEL : null}
+                            </span>
+                          ) : null}
                           {(card.hasAlerts || card.source === "online") && lengthMin > 15 ? (
                             <span aria-hidden className="pointer-events-none absolute right-2 top-[22px] flex gap-1 text-[#864E0E]">
                               {card.hasAlerts ? <AlertTriangle className="h-3 w-3" /> : null}
