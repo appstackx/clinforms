@@ -1,6 +1,6 @@
 # K2 clinic system – handover
 
-> **Update 28/10/2026 (M5 billing – IN PROGRESS, read §14 first):** billing BACK END done and pushed on `feat/cs-billing` `0d5a728` (not yet merged into `feat/clinic-system`); screens, seed and e2e next. See §14.
+> **Update 28/10/2026 (latest – read §14 first):** M5 billing DONE – back end, screens, seed, e2e; merged into `feat/clinic-system` `0acf07c`. Next: M6 Messages. See §14.
 
 > **Update 28/10/2026 (latest – read §13 first):** design received for every screen; design system, app shell, configurable permissions, patients/notes and diary SCREENS are built and merged on `feat/clinic-system` `c05be50`; Prototype A passes end to end. Next: billing (M5), running now. See §13.
 
@@ -475,51 +475,92 @@ updated at every milestone so another account can continue if the weekly limit i
 | M11 | Towards production | Khuram's go only |
 
 
-## 14. M5 billing (28/10/2026) – IN PROGRESS (midpoint)
+## 14. M5 billing (28/10/2026) – DONE, merged into `feat/clinic-system`
 
-**Where:** worktree `/Users/khuram/Projects/Appstackx/clinforms-wt/cs-billing`, branch `feat/cs-billing`, pushed.
-`feat/clinic-system` is still `c05be50` (billing NOT merged yet). `main` untouched.
+**Heads (all pushed; `main` untouched):** `feat/cs-billing` `022b3e5` · `feat/clinic-system` `0acf07c` (merge of
+`feat/cs-billing`, tree identical to it) · `feat/cs-diary` `2a3811b` · `feat/cs-records` `b8035d9` (both merged
+back, typecheck + test:pms green).
 
-| Commit | What |
+| Commit on `feat/cs-billing` | What |
 |---|---|
-| `547eec6` | `origin/feat/clinic-system` (`c05be50`) merged into the October draft – no conflicts; records test updated (billing's Invoices tab replaces its stand-in) |
-| `94926a8` | Diary fixes from §13.4: (2) arrived / in treatment / completed only from 60 min before the start, DNA only after it (rule + server check + tests; existing diary suites now change statuses on the visit's own time); (3) Double-booked marker is part of the block's top line (never covers text); (4) record "Book" → `diary?patient=<id>` opens the booking form with the patient and open case. Plus `waiveAppointmentFee` for billing |
-| `0d5a728` | Billing back end (review fixes + new work, below) |
+| `547eec6` | `feat/clinic-system` (`c05be50`) merged into the October draft (no conflicts) |
+| `94926a8` | Diary fixes from §13.4: (2) seen statuses only from 60 min before the start, DNA only after it (rule + server + tests); (3) Double-booked marker in the block's top line; (4) record Book → booking form for the patient; `waiveAppointmentFee` |
+| `0d5a728` | Billing back end: review fixes + void / write-off / transfer, remittance, saved TEST cards, site scope, diary visit adapter |
+| `aa095b3` `6c0857e` `ab50aee` `022b3e5` | screens; wiring (drawer, record, patient list); seed + e2e (+ diary/prototype/shell e2e updates); designs |
 
-### 14.1 Review findings on the October draft (fixed in `0d5a728`)
-1. **Authorisation sessions double-counted**: the diary counts a session when a visit is completed; the draft's
-   `issueInvoice` counted the same sessions again. Now billing counts the VALUE and only hand-entered treatments'
-   sessions (`sessionsUsedBy`).
-2. **No site scope** on invoices/payments: `site_id` added (0133 invoices, 0135 payments; set from the visits / the
-   site the payment was taken at); every billing read applies `actor.siteIds`; out-of-scope = "no such invoice".
-3. **Audit after the batch** in issue, unallocate, reverse, link status: now in the same batch with a conditional
-   `INSERT … WHERE EXISTS` (`billingAuditWhen`); the credit note's authorisation reset is inside its batch (the
-   foundation's `recordAuthorisationUsage` still audits itself just after).
-4. **Lines from the client**: invoicing visits takes appointment ids only; visits, prices, payers and fees are read
-   on the server from the diary adapter.
-5. Missing: void, write-offs, short payments, saved card, clinic-wide "attended not invoiced", invoice search.
+### 14.1 Review findings on the October draft (fixed)
+1. **Authorisation sessions double-counted** (diary on completion + billing on issue): billing now counts the VALUE
+   and only hand-entered treatments' sessions.
+2. **No site scope** on invoices/payments: `site_id` (0133/0135); every billing read applies `actor.siteIds`;
+   out-of-scope = "no such invoice".
+3. **Audit after the batch** (issue, unallocate, reverse, link status): now in the same batch (conditional
+   `INSERT … WHERE EXISTS`, `billingAuditWhen`); credit note's authorisation reset inside its batch.
+4. **Lines from the client**: invoicing visits takes appointment ids only; visits, prices, payers, fees are read on
+   the server from the diary adapter.
+5. Missing pieces added: void, write-offs, short payments, saved card, clinic-wide "attended, not invoiced", search.
 
-### 14.2 What the back end does now
-- Diary visit adapter `src/server/pms/diary/billing-visits.ts` (wired in `visit-source.ts`): CHARGEABLE_STATUSES
-  only – completed, and DNA / late cancellation only with the diary's fee flag; never arrived / in treatment.
-- Pricing (`priceVisits`): completed visits of a case with a payer bill the payer; DNA/late fees and self-pay bill
-  the patient; case price list → default → service price; the case's excess (one amount per case) is taken from
-  the first visits in date order and goes on its own patient invoice (`excess_deduction` on the insurer's).
-- Credit note kinds (0132): credit, write_off, void, transfer (all numbered CN). Void (0134 `voided_at`) =
-  `billing.void`, refused while payments are on it. Write-off / transfer keep the visit billed.
-- Remittance (`remittanceFor`): one insurer payment over many invoices; per invoice short payment → leave /
-  write off (reason) / move to patient (patient invoice + transfer credit). Write-off and move need `billing.refund`.
-- Take payment (`takePaymentFor`): card on file (saved TEST card, 0136), card now (reader, recorded by hand), cash
-  (change), bank transfer, payment link. Refunds go back to the card through the test provider when the payment
-  was taken through it. `stripe_test` still refuses non-test keys; new `CLINIC_STRIPE_TEST_API_BASE` accepts only
-  Stripe's host or a loopback address (for the local e2e stub).
-- Server layer `src/server/pms/billing/{access,views,writes}.ts`; tests `src/server/pms/billing/testing/service-suite.ts`
-  on SQLite, PGlite, D1 stand-in and local D1.
+### 14.2 What is built
+- **Back end** (`src/server/pms/billing/{access,views,writes}.ts`, repos in `src/server/repos/pms/billing/`):
+  diary adapter `src/server/pms/diary/billing-visits.ts` (CHARGEABLE_STATUSES; DNA/late only with the fee flag;
+  never arrived/in treatment); pricing (case list → default → service; insured completed visits bill the payer,
+  the case excess goes to the patient from the first visits in date order; DNA/late fees bill the patient);
+  credit note kinds credit / write_off / void / transfer (0132; void 0134 `voided_at`, refused while paid);
+  remittance with leave / write off / move to patient; take payment (card on file = saved TEST card 0136, card now,
+  cash with change, bank transfer, payment link); refunds (to the card via the test provider); CSV export
+  (reports.export, formula cells defused, audited). Migrations 0132–0136 with Postgres twins.
+- **Screens** (`src/app/app/clinic/billing/**`, `src/components/pms/billing/**`): Billing home (totals, tabs
+  Invoices / Attended, not invoiced / Aged debt / Remittances / Statements, search, chips, CSV), Invoice visits
+  (choose → preview → issue), Invoice detail (split card, items with excess, payments and adjustments, A4 preview,
+  Issue / Record payment / Copy payment link / Check for payment / Credit note / Refund / Void / take a payment
+  off), Take payment dialog (and 375 px sheet), Remittance allocation, A4 print invoice and statement (print
+  stylesheet; Save as PDF).
+- **Wiring**: diary drawer "Take payment" (billing.pay); record Account card (+ "Save a test card") and Invoices tab
+  (`?pay=1` opens Take payment; header "Take payment" → it); patient list Balance column and "Owes money" filter
+  (billing.view); nav "Billing"; "Billing settings" nav entry removed (no screen yet).
+- **Seed** `scripts/pms/seed-billing.ts` (called from `seed-demo.ts` after records): settings, historic invoices in
+  every age band, payments, a remittance, a credit note, a void, a saved test card, half the week's completed visits
+  invoiced; DNA/late fees left to invoice. Idempotent.
+- **Tests**: billing service suite (`src/server/pms/billing/testing/service-suite.ts`) on SQLite, PGlite, D1
+  stand-in and local D1; e2e `scripts/e2e/pms-billing-screens.cjs` with the provider's local TEST stand-in
+  `scripts/e2e/stripe-test-stub.cjs` (`CLINIC_STRIPE_TEST_API_BASE`, loopback or Stripe only).
+- Designs committed: `docs/clinic-system/design/round3/billing/` (+ README; postcodes → `ZZ99 9xx`, see there).
 
-Checks at `0d5a728`: test:pms 412/412, lint clean, billing D1 stack 46/46, parity 11/11 (full chain not yet run).
+### 14.3 Results
+Full chain on `022b3e5` (= `feat/clinic-system` `0acf07c`): typecheck, lint green; test:pms 412/412; test:medreport
+1777 pass/0 fail/3 skipped; test:db 812/0/3; test:auth 134/0; test:site 123/0 (nav test updated for Billing); test:gateway
+487/0/2 (billing D1 stack incl. local workerd D1); build green. Merge-backs: cs-diary and cs-records typecheck + test:pms 412/412.
+E2E (each on a fresh `pms:seed-demo -- --fresh` scratch SQLite, ports 3180–3199, servers stopped):
+clinic-system-shell 10/10, clinic-system-access 13/13, pms-records-screens 17/17, pms-diary-screens 24/24,
+pms-prototype-a 10/10, **pms-billing-screens 18/18** (axe clean). The diary/prototype scripts now book their
+"seen" steps within the next hour (they need the clinic's opening hours, as Prototype A always did).
+Screenshots: `/private/tmp/claude-501/-Users-khuram-Projects-Appstackx-bh2-handover/ef471414-85b1-422d-bf98-018c56c69aec/scratchpad/k2design/out-billing/`.
 
-### 14.3 Next (in this order)
-Screens (billing list/tabs, invoice detail, take payment incl. 375 px, invoice visits, remittance, print invoice +
-statement), wiring (drawer Take payment, record Account card + Invoices tab, patient list Balance + Owes money,
-nav), billing seed from `seed-demo.ts`, `scripts/e2e/pms-billing-screens.cjs`, full chain, merge into
-`feat/clinic-system`, merge back into cs-diary/cs-records, finish this section.
+### 14.4 Differences from the design
+Invoice numbers `INV00052` (prefix + 5 digits, ≤ 10 chars) not `INV-04835`; "Completed" instead of "Attended";
+aged debt has a 1–30 days column; largest overdue accounts link to a statement (sending reminders / links needs
+Messages); email of receipts, invoices and statements disabled until Messages (M6); Download = print page (Save as
+PDF); payer invoices' "Record payment" opens the remittance page; card on file needs a saved TEST card; the excess
+is one amount per case taken visit by visit (design shows £20 on every visit – decision 1 below).
+
+### 14.5 Open items
+- Billing settings screen (VAT, prefix, terms, bank details) – defaults/seed only; with Set-up (M8).
+- Email/SMS of receipts, statements, payment links – M6. Dashboard money tiles – M8.
+- A £0 insurer invoice is made (reads "Paid") when the excess covers the whole visit.
+- Insurer e-billing claims CSV (BILL-011) has a back end but no screen; the October react-pdf PDFs remain beside the
+  HTML print views – keep one.
+- `docs/clinic-system/billing.md` is referenced in code comments but does not exist.
+- Live card payments need the clinic system's own Stripe account (CLAUDE.md, Q-K4); test mode only today.
+- `round2/set-up` and `round2/import-from-previous-system` designs still carry an `NG… 0..` postcode.
+
+### 14.6 Decisions for Khuram
+1. Excess: one amount per case consumed visit by visit (built) vs a per-visit patient contribution as drawn?
+2. "Seen" statuses from 60 minutes before the start, DNA only after it – confirm the window.
+3. Authorisation sessions counted only by the diary (visit booked under the authorisation, on completion); billing
+   counts value – confirm.
+4. DNA / late-cancellation fees always billed to the patient, never the insurer – confirm.
+5. Void refused while payments are on it; reception cannot credit, refund or void (role defaults) – confirm.
+6. Design postcodes replaced with `ZZ99 9xx` (docs only); the app keeps the `MK… 9ZZ` demo units – OK?
+
+### 14.7 Next
+**M6 Messages** (comms branch): diary hook, outbox, letters, patient-facing messages, Messages tab – and then the
+billing emails (receipts, statements, payment links).

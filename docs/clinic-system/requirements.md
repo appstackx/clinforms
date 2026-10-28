@@ -295,27 +295,27 @@ Committed on `feat/cs-billing` (`8ef137d`, `e0185da`): migrations `0130`/`0131`,
 (payment links, visit source, e-billing channels, PDFs), suites incl. real local D1. **No screens** (routes
 `/app/clinic/billing/**` and the invoices tab are missing).
 
-- **K2-BILL-001** · MVP · partial · billing · FC 2.4-01, 2.1-15 — Invoice from attended appointments (and DNA/late-cancellation charges), priced from the case's price list (payer list → default list → service price). AC: domain and repositories done; the visit source's diary adapter is not wired (one line at integration).
+- **K2-BILL-001** · MVP · done · billing · FC 2.4-01, 2.1-15 — Invoice from attended appointments (and DNA/late-cancellation charges), priced from the case's price list (payer list → default list → service price). AC: diary visit adapter (CHARGEABLE_STATUSES; DNA/late only with the fee flag; never arrived/in treatment) wired (M5); service suite on 4 backends; e2e pms-billing-screens.
 - **K2-BILL-002** · MVP · done · billing · FC 2.4-03 — Bill-to self-pay, insurer on account, medico-legal company/solicitor on account, employer; bill-to frozen and encrypted when issued. AC: suite.
-- **K2-BILL-003** · MVP · done · billing · FC 2.4-04 — Insurance excess/shortfall split between patient and payer on the same visits. AC: domain tests.
+- **K2-BILL-003** · MVP · done · billing · FC 2.4-04 — Insurance excess/shortfall split between patient and payer on the same visits. AC: domain tests; the case's excess is taken from the first visits in date order and shown per line (M5).
 - **K2-BILL-004** · MVP · done · billing · FC 2.4-05 — Price per payer (price lists per service and payer). AC: `priceFor` tests.
 - **K2-BILL-005** · MVP · done · billing · FC 2.4-02 — VAT per line (exempt default for physio treatment; standard/reduced/zero), prices inclusive or exclusive; VAT summary when the clinic is registered. AC: domain tests.
 - **K2-BILL-006** · MVP · done · billing · FC 2.4-01 — Gap-free sequential numbers per clinic with prefix, at most 10 characters (insurer limit), assigned on issue. AC: constraint + suite.
-- **K2-BILL-007** · MVP · done · billing · FC 2.4-01 — Invoice states draft → issued → part paid/paid, cancel (draft) and void via credit note; revision-checked edits. AC: suite.
+- **K2-BILL-007** · MVP · done · billing · FC 2.4-01 — Invoice states draft → issued → part paid/paid, cancel (draft) and void via credit note; revision-checked edits. AC: suite; void = credit note of kind void + voided_at, refused while paid (M5).
 - **K2-BILL-008** · MVP · done · billing · FC 2.4-06 — Credit notes with proportional VAT; release the appointments; give authorisation usage back; never over-credit. AC: suite.
-- **K2-BILL-009** · MVP · done · billing · FC 2.4-08 — Statements per patient and per payer account, as PDF. AC: PDF tests; demonstration notice on demo clinics.
-- **K2-BILL-010** · MVP · partial · billing · FC 2.4-09, 2.6-05 — Debtors and aged debt (by payer and patient, age bands). AC: repository done; screen missing.
+- **K2-BILL-009** · MVP · done · billing · FC 2.4-08 — Statements per patient and per payer account, as PDF. AC: PDF tests; A4 print views of invoices and patient/account statements (M5, browser Save as PDF); demonstration notice on demo clinics.
+- **K2-BILL-010** · MVP · done · billing · FC 2.4-09, 2.6-05 — Debtors and aged debt (by payer and patient, age bands). AC: repository; aged debt tab by account type and age band, largest overdue accounts (M5).
 - **K2-BILL-011** · MVP · done · billing · FC 2.4-14 — Insurer claims export (CSV, logged) with codes and pre-authorisation number; the Healthcode channel is listed as "not connected" and refuses. AC: tests.
 - **K2-BILL-012** · MVP · done · billing · FC 2.4-19 — Accounts CSV exports with a formula-injection guard. AC: tests.
-- **K2-BILL-013** · MVP · missing · billing · FC 2.4-01 — Billing screens: invoice list, draft from appointments, issue, credit, payments, statements, debtors, billing settings (VAT, prefix, terms, bank details), the patient's Invoices tab. AC: e2e invoice → payment → statement.
+- **K2-BILL-013** · MVP · partial · billing · FC 2.4-01 — Billing screens: invoice list, draft from appointments, issue, credit, payments, statements, debtors, billing settings (VAT, prefix, terms, bank details), the patient's Invoices tab. AC: M5 – invoice list (search, chips, CSV), invoice visits (choose → preview → issue), invoice detail (issue, credit, refund, void, payment link), take payment (incl. 375 px), remittance, statements, aged debt, the patient's Invoices tab and Account card; e2e pms-billing-screens 18/18. Missing: billing settings screen (VAT, prefix, terms, bank details – defaults apply; with Set-up, M8).
 - **K2-BILL-014** · Later · missing · billing · FC 2.4-14 — Healthcode e-billing (registration is per practice system; 2–6 months). MVP only if Dell's insurers refuse other routes (Q-D3).
-- **K2-BILL-015** · Later · missing · billing · FC 2.4-06, 2.4-10 — Discounts, write-offs and debt chasing.
+- **K2-BILL-015** · Later · partial · billing · FC 2.4-06, 2.4-10 — Discounts, write-offs and debt chasing.
 - **K2-BILL-016** · Later · missing · billing · FC 2.4-19, 2.4-20 — Ledger codes, period lock, accounting-software sync.
 
 ### 3.12 AUTHS – treatment authorisations
 
 - **K2-AUTHS-001** · MVP · done · foundation · FC 2.2-08 — Authorisation per case: insurer/MLC code, sessions and/or value, valid from/to, encrypted notes. AC: foundation suite.
-- **K2-AUTHS-002** · MVP · done · foundation · FC 2.2-08 — Usage recorded atomically, never over the limit or below zero; diary (attended) and billing (issue) use it; undo/credit give it back. AC: suite.
+- **K2-AUTHS-002** · MVP · done · foundation · FC 2.2-08 — Usage recorded atomically, never over the limit or below zero; diary (attended) and billing (issue) use it; undo/credit give it back. AC: suite; a diary visit's session is counted once (by the diary on completion); billing counts the value and only hand-entered treatments' sessions (M5 fix).
 - **K2-AUTHS-003** · MVP · partial · diary · FC 2.2-08 — Booking or attending beyond the remaining sessions or after expiry shows a warning (`canUseAuthorisation`). AC: rule done; warning in booking dialog to verify.
 - **K2-AUTHS-004** · MVP · partial-wt · reporting · FC 2.2-09 — Expiring authorisations list (by date and by sessions left). AC: `listExpiringAuthorisations` done; report page uncommitted.
 - **K2-AUTHS-005** · MVP · partial · records · FC 2.2-08 — Authorisation screens on the case page (add, edit, remaining). AC: case page uncommitted.
@@ -323,12 +323,12 @@ Committed on `feat/cs-billing` (`8ef137d`, `e0185da`): migrations `0130`/`0131`,
 
 ### 3.13 PAY – payments
 
-- **K2-PAY-001** · MVP · done · billing · FC 2.4-07 — Record payments by hand (cash, card on an outside terminal, bank transfer, other) and allocate across invoices; never over-allocate. AC: constraints + suite.
-- **K2-PAY-002** · MVP · done · billing · FC 2.4-06 — Refunds, reversals and removal of a mistaken payment, audited. AC: suite.
-- **K2-PAY-003** · MVP · partial · billing · FC 2.4-07 — Insurer remittance: one payment allocated across many invoices of one payer, matched by invoice number. AC: allocation model done; remittance screen missing.
+- **K2-PAY-001** · MVP · done · billing · FC 2.4-07 — Record payments by hand (cash, card on an outside terminal, bank transfer, other) and allocate across invoices; never over-allocate. AC: constraints + suite; take-payment dialog (card now, cash with change, bank transfer) (M5).
+- **K2-PAY-002** · MVP · done · billing · FC 2.4-06 — Refunds, reversals and removal of a mistaken payment, audited. AC: suite; refunds from the invoice (to the card through the test provider when it was taken there) (M5).
+- **K2-PAY-003** · MVP · done · billing · FC 2.4-07 — Insurer remittance: one payment allocated across many invoices of one payer, matched by invoice number. AC: remittance screen – one payment over a payer's invoices, short payments left / written off / moved to the patient, match from remittance advice (M5).
 - **K2-PAY-004** · MVP · done · billing · FC 2.4-11 — Payment provider interface (`CLINIC_PAYMENTS_PROVIDER`): manual default; `stripe_test` via REST, refuses non-test keys and live answers. AC: tests with stubbed API.
-- **K2-PAY-005** · Later · partial · billing · FC 2.4-11 — Payment links (single payment, nothing clinical) recorded once by provider reference. AC: test mode done; live needs a dedicated Stripe account (one per product, `CLAUDE.md`), likely Connect (Q-K4).
-- **K2-PAY-006** · Later · missing · billing · FC 2.4-12, 2.4-13 — Card terminals, saved cards, automatic fees, deposits.
+- **K2-PAY-005** · Later · partial · billing · FC 2.4-11 — Payment links (single payment, nothing clinical) recorded once by provider reference. AC: test mode done incl. the invoice's Copy payment link and Check for payment (M5); live needs a dedicated Stripe account (one per product, `CLAUDE.md`), likely Connect (Q-K4).
+- **K2-PAY-006** · Later · partial · billing · FC 2.4-12, 2.4-13 — Card terminals, saved cards, automatic fees, deposits.
 
 ### 3.14 REP – reporting
 
@@ -664,9 +664,9 @@ Generated from the requirement lines above (§3, §5). "FC" = feature-comparison
 
 | Priority | done | back end done (screen pending) | partial | partial-wt | missing | total |
 |---|---:|---:|---:|---:|---:|---:|
-| MVP | 62 | 24 | 37 | 23 | 30 | 176 |
-| Later | 0 | 0 | 1 | 1 | 27 | 29 |
-| **All** | 62 | 24 | 38 | 24 | 57 | 205 |
+| MVP | 65 | 24 | 35 | 23 | 29 | 176 |
+| Later | 0 | 0 | 3 | 1 | 25 | 29 |
+| **All** | 65 | 24 | 38 | 24 | 54 | 205 |
 
 | Area | done | back end done (screen pending) | partial | partial-wt | missing |
 |---|---:|---:|---:|---:|---:|
@@ -680,9 +680,9 @@ Generated from the requirement lines above (§3, §5). "FC" = feature-comparison
 | FORM | 2 | 0 | 3 | 0 | 2 |
 | PORTAL | 1 | 0 | 5 | 0 | 1 |
 | COMMS | 3 | 0 | 3 | 3 | 3 |
-| BILL | 10 | 0 | 2 | 0 | 4 |
+| BILL | 12 | 0 | 2 | 0 | 2 |
 | AUTHS | 2 | 0 | 2 | 1 | 1 |
-| PAY | 3 | 0 | 2 | 0 | 1 |
+| PAY | 4 | 0 | 2 | 0 | 0 |
 | REP | 0 | 0 | 0 | 6 | 1 |
 | IMP | 0 | 0 | 0 | 5 | 5 |
 | CF | 1 | 0 | 0 | 2 | 3 |
@@ -801,7 +801,7 @@ Generated from the requirement lines above (§3, §5). "FC" = feature-comparison
 | K2-COMMS-010 | MVP | partial | feat/cs-comms | 2.5-08, 2.3-05 | Message log per patient (record tab) and an outbox screen (`/app/clinic/messages`) |
 | K2-COMMS-011 | MVP | partial | feat/cs-comms | 2.5-06 | One-off message from a record or an appointment |
 | K2-COMMS-012 | Later | missing | feat/cs-comms | 2.5-09, 2.5-10, 2.5-11, 2.5-12, 2.5-13 | Bulk messages, recalls, automations, multi-step journeys, feedback surveys |
-| K2-BILL-001 | MVP | partial | feat/cs-billing | 2.4-01, 2.1-15 | Invoice from attended appointments (and DNA/late-cancellation charges), priced from the … |
+| K2-BILL-001 | MVP | done | feat/cs-billing | 2.4-01, 2.1-15 | Invoice from attended appointments (and DNA/late-cancellation charges), priced from the … |
 | K2-BILL-002 | MVP | done | feat/cs-billing | 2.4-03 | Bill-to self-pay, insurer on account, medico-legal company/solicitor on account, … |
 | K2-BILL-003 | MVP | done | feat/cs-billing | 2.4-04 | Insurance excess/shortfall split between patient and payer on the same visits |
 | K2-BILL-004 | MVP | done | feat/cs-billing | 2.4-05 | Price per payer (price lists per service and payer) |
@@ -810,12 +810,12 @@ Generated from the requirement lines above (§3, §5). "FC" = feature-comparison
 | K2-BILL-007 | MVP | done | feat/cs-billing | 2.4-01 | Invoice states draft → issued → part paid/paid, cancel (draft) and void via credit note; … |
 | K2-BILL-008 | MVP | done | feat/cs-billing | 2.4-06 | Credit notes with proportional VAT; release the appointments; give authorisation usage … |
 | K2-BILL-009 | MVP | done | feat/cs-billing | 2.4-08 | Statements per patient and per payer account, as PDF |
-| K2-BILL-010 | MVP | partial | feat/cs-billing | 2.4-09, 2.6-05 | Debtors and aged debt (by payer and patient, age bands) |
+| K2-BILL-010 | MVP | done | feat/cs-billing | 2.4-09, 2.6-05 | Debtors and aged debt (by payer and patient, age bands) |
 | K2-BILL-011 | MVP | done | feat/cs-billing | 2.4-14 | Insurer claims export (CSV, logged) with codes and pre-authorisation number; the … |
 | K2-BILL-012 | MVP | done | feat/cs-billing | 2.4-19 | Accounts CSV exports with a formula-injection guard |
-| K2-BILL-013 | MVP | missing | feat/cs-billing | 2.4-01 | Billing screens: invoice list, draft from appointments, issue, credit, payments, … |
+| K2-BILL-013 | MVP | partial | feat/cs-billing | 2.4-01 | Billing screens: invoice list, draft from appointments, issue, credit, payments, … |
 | K2-BILL-014 | Later | missing | feat/cs-billing | 2.4-14 | Healthcode e-billing (registration is per practice system; 2–6 months) |
-| K2-BILL-015 | Later | missing | feat/cs-billing | 2.4-06, 2.4-10 | Discounts, write-offs and debt chasing |
+| K2-BILL-015 | Later | partial | feat/cs-billing | 2.4-06, 2.4-10 | Discounts, write-offs and debt chasing |
 | K2-BILL-016 | Later | missing | feat/cs-billing | 2.4-19, 2.4-20 | Ledger codes, period lock, accounting-software sync |
 | K2-AUTHS-001 | MVP | done | feat/clinic-system | 2.2-08 | Authorisation per case: insurer/MLC code, sessions and/or value, valid from/to, encrypted … |
 | K2-AUTHS-002 | MVP | done | feat/clinic-system | 2.2-08 | Usage recorded atomically, never over the limit or below zero; diary (attended) and … |
@@ -825,10 +825,10 @@ Generated from the requirement lines above (§3, §5). "FC" = feature-comparison
 | K2-AUTHS-006 | Later | missing | feat/cs-comms | – | Extension request letter to the payer from a template |
 | K2-PAY-001 | MVP | done | feat/cs-billing | 2.4-07 | Record payments by hand (cash, card on an outside terminal, bank transfer, other) and … |
 | K2-PAY-002 | MVP | done | feat/cs-billing | 2.4-06 | Refunds, reversals and removal of a mistaken payment, audited |
-| K2-PAY-003 | MVP | partial | feat/cs-billing | 2.4-07 | Insurer remittance: one payment allocated across many invoices of one payer, matched by … |
+| K2-PAY-003 | MVP | done | feat/cs-billing | 2.4-07 | Insurer remittance: one payment allocated across many invoices of one payer, matched by … |
 | K2-PAY-004 | MVP | done | feat/cs-billing | 2.4-11 | Payment provider interface (`CLINIC_PAYMENTS_PROVIDER`): manual default; `stripe_test` … |
 | K2-PAY-005 | Later | partial | feat/cs-billing | 2.4-11 | Payment links (single payment, nothing clinical) recorded once by provider reference |
-| K2-PAY-006 | Later | missing | feat/cs-billing | 2.4-12, 2.4-13 | Card terminals, saved cards, automatic fees, deposits |
+| K2-PAY-006 | Later | partial | feat/cs-billing | 2.4-12, 2.4-13 | Card terminals, saved cards, automatic fees, deposits |
 | K2-REP-001 | MVP | partial-wt | feat/cs-reporting | 2.6-01 | Dashboard: today's appointments, utilisation, DNA rate, revenue, outstanding, expiring … |
 | K2-REP-002 | MVP | partial-wt | feat/cs-reporting | 2.6-02 | Utilisation by practitioner, site and room for a period |
 | K2-REP-003 | MVP | partial-wt | feat/cs-reporting | 2.6-03 | DNA and late-cancellation rates by practitioner and site |
