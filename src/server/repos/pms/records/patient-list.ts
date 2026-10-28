@@ -10,6 +10,7 @@ import { phoneDigits, searchKey } from "../../../../modules/pms/core/text";
 import type { PatientStatus, PatientSummary, PayerType } from "../../../../modules/pms/core/types";
 import { getPatientSummaries } from "../patients";
 import { assertTenantId, num, type RepoContext } from "../context";
+import { patientSiteFilter } from "../access";
 
 export interface PatientPageQuery {
   q?: string;
@@ -26,6 +27,8 @@ export interface PatientPageQuery {
   /** Default 25, at most 500. */
   limit?: number;
   offset?: number;
+  /** A member's site scope (K2-SITE-004; null/undefined = every site): patientSiteFilter in ../access.ts. */
+  siteIds?: ReadonlySet<string> | null;
 }
 
 export interface OpenCaseSummary {
@@ -43,6 +46,7 @@ type PatientQuery = ReturnType<typeof base>;
 
 function filtered(ctx: RepoContext, tenantId: string, q: PatientPageQuery): PatientQuery {
   let query = base(ctx, tenantId);
+  if (q.siteIds) query = query.where(patientSiteFilter(tenantId, q.siteIds));
   const status = q.status ?? "active";
   if (status !== "any") query = query.where("pms_patients.status", "=", status);
   const text = (q.q ?? "").trim().slice(0, 120);

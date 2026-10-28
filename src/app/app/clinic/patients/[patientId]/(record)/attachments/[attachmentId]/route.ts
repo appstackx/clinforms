@@ -1,7 +1,7 @@
 /**
  * GET /app/clinic/patients/[patientId]/attachments/[attachmentId] – download an attached file (decrypted, checked
  * against its fingerprint). clinical.view (clinicRoute, and again in the records service); a withdrawn file only
- * with patients.export. Always as a download, never shown in the page (sandboxed, nosniff); the download is
+ * with reports.export. Always as a download, never shown in the page (sandboxed, nosniff); the download is
  * recorded in the patient's history.
  */
 import { asciiFileName } from "@/modules/pms/records/attachments";

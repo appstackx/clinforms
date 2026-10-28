@@ -1,6 +1,6 @@
 /**
  * POST /app/clinic/patients/[patientId]/attachments/upload – attach a file to the patient's record (multipart:
- * file, description, noteId, caseId). Same-origin only and clinical.edit (clinicRoute); the body is read with a hard
+ * file, description, noteId, caseId). Same-origin only and clinical.write (clinicRoute); the body is read with a hard
  * limit whatever Content-Length says; the records service checks the permission again, the patient, note and case,
  * the size, and the type from the file's own bytes; stored encrypted (src/server/pms/records/attachments-service.ts).
  * Answers JSON { ok, id, type, sizeBytes } or { error: { code, message } }.
@@ -19,7 +19,7 @@ function fail(status: number, code: string, message: string): Response {
   return Response.json({ error: { code, message } }, { status });
 }
 
-export const POST = clinicRoute<{ patientId: string }>({ permission: "clinical.edit" }, async (req, actor, params) => {
+export const POST = clinicRoute<{ patientId: string }>({ permission: "clinical.write" }, async (req, actor, params) => {
   if (Number(req.headers.get("content-length") ?? "0") > BODY_LIMIT) return fail(413, "TOO_LARGE", "The file is larger than 4 MB.");
   const body = await readLimitedBody(req, BODY_LIMIT);
   if (!body) return fail(413, "TOO_LARGE", "The file is larger than 4 MB.");

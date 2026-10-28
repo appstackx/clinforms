@@ -41,7 +41,7 @@ const SLOTS: readonly Slot[] = [
   { key: "outcomes", label: "Outcomes", module: "records", segment: "outcomes", permission: "clinical.view", standIn: false },
   { key: "attachments", label: "Attachments", module: "records", segment: "attachments", permission: "clinical.view", standIn: false },
   { key: "invoices", label: "Invoices", module: "billing", segment: "invoices", permission: "billing.view", standIn: true },
-  { key: "messages", label: "Messages", module: "comms", segment: "messages", permission: "messages.view", standIn: true },
+  { key: "messages", label: "Messages", module: "comms", segment: "messages", permission: "messages.send", standIn: true },
   { key: "forms", label: "Forms", module: "portal", segment: "forms", permission: "patients.view", standIn: true },
   { key: "history", label: "History", module: "records", segment: "history", permission: "patients.view", standIn: false },
 ];

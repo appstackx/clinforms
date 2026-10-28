@@ -338,7 +338,7 @@ function UserMenu({ user, accountHref, clinForms, onShortcuts }: UserMenuProps) 
         <PmsAvatar name={user.name} size={32} />
         <span className="hidden flex-col items-start leading-4 lg:flex">
           <span className="font-semibold">{user.name}</span>
-          <span className="text-xs text-muted-foreground">{user.roleLabel}</span>
+          <span className="text-xs text-[#475569]">{user.roleLabel}</span>
         </span>
         <span className="sr-only lg:hidden">
           {user.name}, {user.roleLabel}

@@ -27,7 +27,7 @@ export default async function AttachmentsPage({ params, searchParams }: { params
   const [files, notes] = await Promise.all([getPatientAttachments(ctx, actor.tenantId, patient.id, { includeWithdrawn: true }), listNotesForPatient(ctx, actor.tenantId, patient.id)]);
   const shown = files.filter((f) => showWithdrawn || f.status === "active");
   const noteLabel = Object.fromEntries(notes.map((n) => [n.id, `${formatUkDate(n.seenOn)} – ${NOTE_TYPE_LABELS[n.noteType]}`]));
-  const canWrite = actor.can("clinical.edit") && files.length < MAX_ATTACHMENTS_PER_PATIENT;
+  const canWrite = actor.can("clinical.write") && files.length < MAX_ATTACHMENTS_PER_PATIENT;
   const withdrawnCount = files.length - files.filter((f) => f.status === "active").length;
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_20rem]">
@@ -65,7 +65,7 @@ export default async function AttachmentsPage({ params, searchParams }: { params
                   </div>
                   {f.status === "withdrawn" ? <Pill>Withdrawn</Pill> : f.type === "jpeg" || f.type === "png" ? <ImagePreview href={patientPath(patient.id, `attachments/${f.id}`)} name={f.fileName} /> : null}
                 </div>
-                {f.status === "active" && actor.can("clinical.edit") ? (
+                {f.status === "active" && actor.can("clinical.write") ? (
                   <details className="mt-2">
                     <summary className="cursor-pointer rounded text-xs font-medium text-[#334155] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">Withdraw this file</summary>
                     <div className="mt-2 max-w-sm">

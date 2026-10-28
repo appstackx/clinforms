@@ -3,7 +3,7 @@
  *
  *   patients.view   – the list: search, filters (status, open case's practitioner and payer, no future
  *                     appointment, seen today), the next appointment and the open case of each row
- *   patients.export – the CSV export of the filtered list (owners and administrators); recorded in the clinic's audit
+ *   reports.export – the CSV export of the filtered list (owners and administrators); recorded in the clinic's audit
  *                     log (counts and filter names only)
  *
  * Nothing here is decrypted: names, dates of birth and phone numbers are the shared record's plain columns; a row
@@ -13,7 +13,8 @@
  * TODO(billing): the design's "Balance" column and "Owes money" filter need the billing module (feat/cs-billing):
  *   add them here from billing's per-patient balance read when it is merged. "Payer" is answered from the open
  *   case's payer type (shared record) today; billing may refine it to the account actually invoiced.
- * TODO(site scope): the list is not limited by site (handover §12 open 2 – the shared site-scope read).
+ * Site scope (K2-SITE-004): the list and its export show only patients visible at the member's sites (actor.siteIds,
+ * src/server/pms/access.ts patientSiteFilter).
  */
 import { formatUkDate, ukToday } from "../../../modules/pms/core/text";
 import type { PatientStatus, PayerType } from "../../../modules/pms/core/types";
@@ -74,6 +75,7 @@ async function rowsFor(actor: RecordsActor, filters: PatientListFilters, limit: 
     lastSeenOn: filters.seenToday ? today : null,
     now: now.toISOString(),
     sort: filters.sort,
+    siteIds: actor.siteIds ?? null,
     limit,
     offset,
   });
@@ -135,7 +137,7 @@ export const PATIENT_CSV_HEADER = ["Patient number", "Title", "First name", "Las
 
 /** The filtered list as CSV (at most MAX_EXPORT_ROWS rows), audited. */
 export async function patientCsvFor(actor: RecordsActor, filters: PatientListFilters): Promise<Result<{ csv: string; count: number; truncated: boolean }>> {
-  const denied = guard(actor, "patients.export");
+  const denied = guard(actor, "reports.export");
   if (denied) return denied;
   return attempt("patient_csv", async () => {
     const lines = [csvLine(PATIENT_CSV_HEADER)];

@@ -192,11 +192,18 @@ invl crn pay acct stmt`; comms `msg mtpl ltr`; portal `bkr ptl ifm ifr`; reporti
   (`src/server/pms/http.ts`: actor, same-origin for writes, JSON errors, `no-store`).
 - Repositories get `actor.repo()` (database + cipher), `actor.tenantId` and `actor.actor` (audit). Never take a
   tenant id or a user id from the request.
-- **Permissions** (`src/modules/pms/core/permissions.ts`, fixed list): `clinic.view`, `patients.view|edit|export`,
-  `clinical.view|edit|sign`, `diary.view|book|manage`, `billing.view|edit|manage`, `messages.view|send|manage`,
-  `booking.manage`, `reports.view|export`, `directory.edit`, `settings.manage`, `import.run`. Owner/administrator:
-  all. Clinician: patients, clinical notes, diary, messages, billing read-only. **Staff (reception): no clinical
-  notes**; patients, diary, billing, messages.
+- **Permissions** (`src/modules/pms/core/permissions.ts`; changed 28/10/2026 with Khuram's approval – roles design
+  round 2): 26 permissions in 7 groups (Diary `diary.view|book|override|rota`; Patients
+  `patients.view|edit|referral|merge`; Clinical `clinical.view|write|amend`; Billing `billing.view|edit|pay|refund|void`;
+  Messages `messages.send|templates|letters`; Reports `reports.own|all|export`; Settings
+  `settings.setup|members|import|owner`) with a default per role, plus `clinic.view` for every active member. A clinic
+  can change a role's defaults and give one member exceptions (Set-up → Roles and permissions / Staff access,
+  migration 0103); `actor.can()` answers the EFFECTIVE permission. Locks always win: the owner has everything, only
+  the owner changes the owner, **reception (staff) never gets a clinical permission or clinical letters**. The first
+  build's ids (`patients.export`, `clinical.edit|sign`, `diary.manage`, `billing.manage`, `messages.view|manage`,
+  `booking.manage`, `reports.view`, `directory.edit`, `settings.manage`, `import.run`) still work as aliases
+  (`LEGACY_ALIASES`); new code uses the grid's ids. Site scope: `actor.siteIds` (works at ∪ can see; null = every
+  site) from `src/server/pms/access.ts` – apply it to every list and record read.
 - **Navigation:** add entries to `src/modules/pms/nav/<m>.ts` (`{ id: "<m>.<x>", module, label, href under
   /app/clinic, order in your band, permission, group: "main" | "manage" }`). "manage" entries show in the shell's
   "Set-up" row. **Record tabs:** `src/modules/pms/record-tabs/<m>.ts` (`segment` = your folder under

@@ -68,6 +68,11 @@ export interface NoteScreenProps {
   draftOf: string | null;
   signedLine: string | null;
   signerLabel: string;
+  /**
+   * The member has no registration number on their practitioner profile, so may not sign or amend (Khuram,
+   * 28/10/2026; the server refuses too). `href` = their Member access page when they may open it.
+   */
+  registrationMissing: { href: string | null } | null;
   amendments: AmendmentView[];
   outcomesToday: { label: string; value: string }[];
   outcomesHref: string;
@@ -277,6 +282,20 @@ export function NoteScreen(props: NoteScreenProps) {
         </div>
       ) : null}
 
+      {props.registrationMissing && (props.signable || props.amendable) ? (
+        <div id="registration-needed">
+          <PmsNotice tone="warning" title="Add your registration number to sign notes">
+            You can write and save drafts, but signing and amending need the registration number on your practitioner profile (Set-up → Staff access → your name).{" "}
+            {props.registrationMissing.href ? (
+              <Link href={props.registrationMissing.href} className="font-medium text-primary-strong underline underline-offset-2">
+                Open your member access
+              </Link>
+            ) : (
+              "Ask the clinic owner or an administrator to add it."
+            )}
+          </PmsNotice>
+        </div>
+      ) : null}
       {props.draftOf ? <PmsNotice tone="info" title={`Draft by ${props.draftOf}`}>Only the note&apos;s author can change or sign a draft.</PmsNotice> : null}
 
       {editable ? (
@@ -315,7 +334,7 @@ export function NoteScreen(props: NoteScreenProps) {
             {props.signedLine} This note is locked – changes are added as amendments.
           </span>
           {props.amendable && !amending ? (
-            <PmsButton variant="secondary" onClick={() => setAmending(true)}>
+            <PmsButton variant="secondary" onClick={() => setAmending(true)} disabled={Boolean(props.registrationMissing)} aria-describedby={props.registrationMissing ? "registration-needed" : undefined}>
               Add amendment
             </PmsButton>
           ) : null}
@@ -410,7 +429,7 @@ export function NoteScreen(props: NoteScreenProps) {
             Save draft
           </PmsButton>
           {props.signable ? (
-            <PmsButton onClick={() => setConfirmSign(true)} className="h-11 md:h-9">
+            <PmsButton onClick={() => setConfirmSign(true)} className="h-11 md:h-9" disabled={Boolean(props.registrationMissing)} aria-describedby={props.registrationMissing ? "registration-needed" : undefined}>
               <Lock aria-hidden />
               Sign and lock
             </PmsButton>

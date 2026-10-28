@@ -5,7 +5,7 @@
  *   patients.edit  – change the pronouns
  *   clinical.view  – read the clinical flags ("Clinical: on anticoagulants") – NEVER reception (staff): the service
  *                    refuses before reading anything, and the screens leave the flags out entirely
- *   clinical.edit  – add a flag, end one that no longer applies (never deleted)
+ *   clinical.write  – add a flag, end one that no longer applies (never deleted)
  *
  * TODO(cs-access): when configurable permissions land (feat/cs-access), clinical flags may get their own permission
  * (e.g. "see clinical flags"); today they follow the clinical-notes permissions.
@@ -50,7 +50,7 @@ export async function clinicalFlagsFor(actor: RecordsActor, patientId: string, o
 }
 
 export async function addClinicalFlagFor(actor: RecordsActor, patientId: string, text: string): Promise<Result<ClinicalFlag>> {
-  const denied = guard(actor, "clinical.edit");
+  const denied = guard(actor, "clinical.write");
   if (denied) return denied;
   const parsed = ClinicalFlagInputSchema.safeParse({ text });
   if (!parsed.success) return fail("invalid", "Write the flag.", { fieldErrors: fieldErrors(parsed.error) });
@@ -62,7 +62,7 @@ export async function addClinicalFlagFor(actor: RecordsActor, patientId: string,
 }
 
 export async function endClinicalFlagFor(actor: RecordsActor, patientId: string, flagId: string, expectedRev: number): Promise<Result<{ rev: number }>> {
-  const denied = guard(actor, "clinical.edit");
+  const denied = guard(actor, "clinical.write");
   if (denied) return denied;
   return attempt("end_clinical_flag", async () => {
     const patient = await patientInClinic(actor, patientId);

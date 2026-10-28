@@ -1,7 +1,7 @@
 /**
  * The note-template editor's back end and the clinic's note settings. Rules: ./access.ts.
  *
- *   settings.manage – list every template (incl. retired), create, copy, change (each change is a new revision;
+ *   settings.setup – list every template (incl. retired), create, copy, change (each change is a new revision;
  *                     notes keep the snapshot – and version – of the template they were started from), retire and
  *                     bring back; change the unsigned-notes threshold
  *   clinical.view   – read the note settings (the unsigned-notes list uses them)
@@ -56,13 +56,13 @@ export interface TemplateEditorInput {
 }
 
 export async function listTemplatesFor(actor: RecordsActor, options: { includeRetired?: boolean } = {}): Promise<Result<NoteTemplate[]>> {
-  const denied = guard(actor, "settings.manage");
+  const denied = guard(actor, "settings.setup");
   if (denied) return denied;
   return attempt("list_templates", async () => ok(await listNoteTemplates(actor.repo(), actor.tenantId, { includeInactive: options.includeRetired !== false })));
 }
 
 export async function getTemplateFor(actor: RecordsActor, templateId: string): Promise<Result<NoteTemplate>> {
-  const denied = guard(actor, "settings.manage");
+  const denied = guard(actor, "settings.setup");
   if (denied) return denied;
   return attempt("get_template", async () => {
     const t = typeof templateId === "string" && templateId ? await getNoteTemplate(actor.repo(), actor.tenantId, templateId) : null;
@@ -71,7 +71,7 @@ export async function getTemplateFor(actor: RecordsActor, templateId: string): P
 }
 
 export async function createTemplateFor(actor: RecordsActor, input: TemplateEditorInput): Promise<Result<NoteTemplate>> {
-  const denied = guard(actor, "settings.manage");
+  const denied = guard(actor, "settings.setup");
   if (denied) return denied;
   const full = { name: input.name, noteType: input.noteType, sections: withSectionKeys(input.sections ?? []), bodyChart: input.bodyChart ?? false, active: true, sortOrder: input.sortOrder ?? 100 };
   const parsed = NoteTemplateInputSchema.safeParse(full);
@@ -80,7 +80,7 @@ export async function createTemplateFor(actor: RecordsActor, input: TemplateEdit
 }
 
 export async function copyTemplateFor(actor: RecordsActor, fromTemplateId: string, name: string): Promise<Result<NoteTemplate>> {
-  const denied = guard(actor, "settings.manage");
+  const denied = guard(actor, "settings.setup");
   if (denied) return denied;
   const trimmed = String(name ?? "").trim();
   if (!trimmed || trimmed.length > 80) return fail("invalid", "Give the copy a name (at most 80 characters).", { fieldErrors: { name: "Give the copy a name." } });
@@ -91,7 +91,7 @@ export async function copyTemplateFor(actor: RecordsActor, fromTemplateId: strin
 }
 
 export async function updateTemplateFor(actor: RecordsActor, templateId: string, expectedRev: number, patch: Partial<TemplateEditorInput>): Promise<Result<{ rev: number }>> {
-  const denied = guard(actor, "settings.manage");
+  const denied = guard(actor, "settings.setup");
   if (denied) return denied;
   if (isBuiltinTemplateId(String(templateId ?? ""))) return fail("invalid", "Built-in templates cannot be changed. Make a copy to change it.");
   const full = { ...patch, sections: patch.sections ? withSectionKeys(patch.sections) : undefined };
@@ -105,7 +105,7 @@ export async function updateTemplateFor(actor: RecordsActor, templateId: string,
 
 /** Retires a clinic template (no new notes from it) or brings it back. */
 export async function setTemplateRetiredFor(actor: RecordsActor, templateId: string, expectedRev: number, retired: boolean): Promise<Result<{ rev: number }>> {
-  const denied = guard(actor, "settings.manage");
+  const denied = guard(actor, "settings.setup");
   if (denied) return denied;
   if (isBuiltinTemplateId(String(templateId ?? ""))) return fail("invalid", "Built-in templates cannot be retired.");
   return attempt("retire_template", async () => {
@@ -115,12 +115,12 @@ export async function setTemplateRetiredFor(actor: RecordsActor, templateId: str
 }
 
 export async function recordsSettingsFor(actor: RecordsActor): Promise<Result<RecordsSettings>> {
-  if (!actor.can("clinical.view") && !actor.can("settings.manage")) return guard(actor, "settings.manage")!;
+  if (!actor.can("clinical.view") && !actor.can("settings.setup")) return guard(actor, "settings.setup")!;
   return attempt("records_settings", async () => ok(await getRecordsSettings(actor.repo(), actor.tenantId)));
 }
 
 export async function saveRecordsSettingsFor(actor: RecordsActor, expectedRev: number, input: RecordsSettingsInput): Promise<Result<{ rev: number }>> {
-  const denied = guard(actor, "settings.manage");
+  const denied = guard(actor, "settings.setup");
   if (denied) return denied;
   const parsed = RecordsSettingsInputSchema.safeParse(input);
   if (!parsed.success) return fail("invalid", "Some details need checking.", { fieldErrors: fieldErrors(parsed.error) });

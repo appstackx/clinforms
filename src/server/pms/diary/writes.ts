@@ -64,7 +64,11 @@ import {
 import { clashMessages, diaryAction, fromPmsSave, fromSaveResult, invalid, warningMessages } from "./actions-support";
 import { inScope, type DiaryCaller } from "./caller";
 
-/** The permission each diary write needs (the action of the same name asks for exactly this one). */
+/**
+ * The permission each diary write needs (the action of the same name asks for exactly this one). Roles design round 2:
+ * rotas and the waiting list are "diary.rota" (owner, admin, reception by default); booking from a waiting-list
+ * offer is a booking ("diary.book").
+ */
 export const DIARY_ACTION_PERMISSIONS = {
   bookAppointmentAction: "diary.book",
   rebookAppointmentAction: "diary.book",
@@ -75,14 +79,14 @@ export const DIARY_ACTION_PERMISSIONS = {
   updateAppointmentDetailsAction: "diary.book",
   cancelSeriesAction: "diary.book",
   createBlockAction: "diary.book",
-  createRotaEntryAction: "diary.manage",
-  updateRotaEntryAction: "diary.manage",
-  endRotaEntryAction: "diary.manage",
-  addToWaitingListAction: "diary.book",
-  updateWaitingListEntryAction: "diary.book",
-  setWaitingListStatusAction: "diary.book",
-  offerWaitingListSlotAction: "diary.book",
-  answerWaitingListOfferAction: "diary.book",
+  createRotaEntryAction: "diary.rota",
+  updateRotaEntryAction: "diary.rota",
+  endRotaEntryAction: "diary.rota",
+  addToWaitingListAction: "diary.rota",
+  updateWaitingListEntryAction: "diary.rota",
+  setWaitingListStatusAction: "diary.rota",
+  offerWaitingListSlotAction: "diary.rota",
+  answerWaitingListOfferAction: "diary.rota",
   bookWaitingListOfferAction: "diary.book",
 } as const satisfies Record<string, PmsPermission>;
 

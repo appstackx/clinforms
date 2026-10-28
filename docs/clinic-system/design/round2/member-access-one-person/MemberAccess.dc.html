@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<title>Member access</title>
+<script src="./vendor/react.js"></script>
+<script src="./vendor/react-dom.js"></script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+*{box-sizing:border-box}
+a{color:#0B7970}a:hover{color:#095E57}
+:focus-visible{outline:2px solid #0E958A;outline-offset:2px}
+</style>
+</helmet>
+<div style="min-height: 100vh; background: #F8FAFC; color: #0F172A; font-family: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 14px; line-height: 20px; display: flex; flex-direction: column">
+<header style="background: #FFFFFF; border-bottom: 1px solid #E2E8F0; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 10px 16px; min-height: 56px">
+<div style="display: flex; align-items: center; gap: 10px">
+<span aria-hidden="true" style="width: 28px; height: 28px; border-radius: 8px; background: #0B7970; color: #FFFFFF; display: inline-flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg></span>
+<nav aria-label="Product areas" style="display: flex; background: #F1F5F9; border-radius: 10px; padding: 3px; gap: 2px">
+<a href="AppShell.dc.html" aria-current="page" style="height: 30px; padding: 0 12px; border-radius: 8px; background: #FFFFFF; box-shadow: 0 1px 2px rgba(15,23,42,.08); font-weight: 600; color: #0F172A; text-decoration: none; display: inline-flex; align-items: center">{{product}}</a>
+<a href="#clinforms" style="height: 30px; padding: 0 12px; border-radius: 8px; font-weight: 500; color: #475569; text-decoration: none; display: inline-flex; align-items: center">ClinForms</a>
+</nav>
+</div>
+<button type="button" style="margin-left: auto; height: 40px; padding: 0 8px 0 4px; border: 0; border-radius: 8px; background: transparent; font: inherit; display: inline-flex; align-items: center; gap: 8px; color: #0F172A">
+<span aria-hidden="true" style="width: 32px; height: 32px; border-radius: 999px; background: #EDE9FE; color: #5B21B6; display: inline-flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px">HW</span>
+<span style="display: flex; flex-direction: column; align-items: flex-start; line-height: 16px"><span style="font-weight: 600">Helen Ward</span><span style="font-size: 12px; color: #64748B">Owner</span></span>
+</button>
+</header>
+
+<main style="flex: 1; padding: 20px 24px 40px; display: flex; flex-direction: column; gap: 16px; max-width: 1280px; width: 100%; margin: 0 auto">
+<nav aria-label="Breadcrumb" style="font-size: 13px; color: #64748B; display: flex; gap: 6px; flex-wrap: wrap"><a href="Setup.dc.html">Set-up</a><span aria-hidden="true">/</span><a href="Setup.dc.html">Staff access</a><span aria-hidden="true">/</span><span>{{m.name}}</span></nav>
+
+<section aria-label="Member" style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 16px 20px; display: flex; flex-wrap: wrap; gap: 16px; align-items: center">
+<span aria-hidden="true" style="width: 52px; height: 52px; border-radius: 999px; background: {{m.avBg}}; color: {{m.avFg}}; font-size: 18px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; flex: none">{{m.init}}</span>
+<div style="flex: 1; min-width: 220px; display: flex; flex-direction: column; gap: 2px">
+<div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap"><h1 style="margin: 0; font-size: 22px; line-height: 30px; font-weight: 600">{{m.name}}</h1><span style="display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px 0 6px; border-radius: 999px; font-size: 12px; font-weight: 500; background: #DCFCE7; color: #166534"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"></path></svg>Active</span></div>
+<span style="color: #475569">{{m.email}} · last active today 04:31 · 2-step sign-in on</span>
+</div>
+<label for="who" style="font-size: 13px; color: #475569">Example member</label>
+<select id="who" value="{{who}}" onChange="{{setWho}}" style="height: 36px; padding: 0 10px; border: 1px solid #CBD5E1; border-radius: 8px; font: inherit; background: #FFFFFF"><option value="jess">Jess Taylor</option><option value="priya">Priya Shah</option></select>
+<button type="button" style="height: 36px; padding: 0 14px; border-radius: 8px; border: 1px solid #E2E8F0; background: #FFFFFF; color: #BA1C1C; font: inherit; font-weight: 500">Deactivate</button>
+</section>
+
+<div style="display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start">
+<div style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 16px">
+
+<section aria-labelledby="role-h" style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 16px 20px; display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; align-items: center; gap: 8px"><h2 id="role-h" style="margin: 0; font-size: 16px; font-weight: 600; flex: 1">Role</h2><a href="Roles.dc.html" style="font-size: 13px; font-weight: 500">See what each role can do</a></div>
+<fieldset style="border: 0; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); gap: 8px">
+<legend style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Role</legend>
+<sc-for list="{{roles}}" as="r" hint-placeholder-count="4">
+<label style="display: flex; gap: 10px; align-items: flex-start; padding: 12px; border-radius: 10px; border: 1px solid {{r.bd}}; background: {{r.bg}}; cursor: {{r.cursor}}; min-height: 72px">
+<input type="radio" name="role" checked="{{r.on}}" onChange="{{r.pick}}" disabled="{{r.off}}" style="width: 18px; height: 18px; margin: 1px 0 0; accent-color: #0B7970; flex: none">
+<span style="display: flex; flex-direction: column; gap: 2px"><strong>{{r.name}}</strong><span style="font-size: 12px; color: #475569; line-height: 16px">{{r.desc}}</span></span>
+</label>
+</sc-for>
+</fieldset>
+</section>
+
+<section aria-labelledby="ex-h" style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 16px 20px; display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap"><div style="flex: 1; min-width: 220px; display: flex; flex-direction: column"><h2 id="ex-h" style="margin: 0; font-size: 16px; font-weight: 600">Exceptions to the {{roleName}} role</h2><span style="font-size: 13px; color: #475569">Only for this person. Everything else follows the role.</span></div>
+<label for="add-ex" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Add an exception</label>
+<select id="add-ex" value="" onChange="{{addEx}}" style="height: 36px; padding: 0 10px; border: 1px solid #CBD5E1; border-radius: 8px; font: inherit; background: #FFFFFF; max-width: 100%"><option value="">+ Add an exception…</option><sc-for list="{{candidates}}" as="c" hint-placeholder-count="6"><option value="{{c.key}}">{{c.text}}</option></sc-for></select>
+</div>
+<sc-if value="{{noEx}}" hint-placeholder-val="{{false}}"><p style="margin: 0; padding: 14px; border: 1px dashed #CBD5E1; border-radius: 10px; color: #475569; text-align: center">No exceptions – {{m.first}} has exactly the {{roleName}} permissions.</p></sc-if>
+<ul style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px">
+<sc-for list="{{exceptions}}" as="e" hint-placeholder-count="2">
+<li style="display: flex; gap: 10px; align-items: center; padding: 10px 12px; border-radius: 10px; border: 1px solid {{e.bd}}; background: {{e.bg}}; flex-wrap: wrap">
+<span style="display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px 0 6px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; background: #FFFFFF; color: {{e.fg}}; border: 1px solid {{e.bd}}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{e.icon}}"></path></svg>{{e.kind}}</span>
+<span style="flex: 1; min-width: 200px; display: flex; flex-direction: column"><strong style="font-weight: 600">{{e.label}}</strong><span style="font-size: 12px; color: #475569">{{e.meta}}</span></span>
+<button type="button" onClick="{{e.remove}}" style="height: 32px; padding: 0 10px; border-radius: 8px; border: 1px solid #E2E8F0; background: #FFFFFF; font: inherit; font-size: 13px; font-weight: 500; cursor: pointer">Back to role default</button>
+</li>
+</sc-for>
+</ul>
+<p style="margin: 0; font-size: 12px; color: #475569; display: flex; gap: 6px; align-items: center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 11h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2zM7 11V7a5 5 0 0 1 10 0v4"></path></svg>Locked permissions (like clinical notes for reception) can't be added as exceptions.</p>
+</section>
+
+<section aria-labelledby="site-h" style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; overflow: hidden">
+<div style="padding: 16px 20px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; border-bottom: 1px solid #E2E8F0">
+<div style="flex: 1; min-width: 220px; display: flex; flex-direction: column"><h2 id="site-h" style="margin: 0; font-size: 16px; font-weight: 600">Sites</h2><span style="font-size: 13px; color: #475569">"Works at" puts them on that site's rota or front desk. "Can see" decides which diaries and patients they can open.</span></div>
+<label style="display: flex; gap: 10px; align-items: center; cursor: pointer"><button type="button" role="switch" aria-checked="{{allStr}}" aria-label="Can see all sites" onClick="{{toggleAll}}" style="width: 40px; height: 22px; border-radius: 999px; border: 0; padding: 2px; background: {{allBg}}; display: flex; justify-content: {{allJ}}; cursor: pointer"><span style="width: 18px; height: 18px; border-radius: 999px; background: #FFFFFF"></span></button>Can see all sites</label>
+</div>
+<div style="overflow-x: auto">
+<table style="width: 100%; border-collapse: collapse; min-width: 480px">
+<thead><tr style="background: #F8FAFC; font-size: 12px; color: #475569; text-align: left"><th scope="col" style="padding: 8px 20px">Site</th><th scope="col" style="padding: 8px 12px; text-align: center; width: 120px">Works at</th><th scope="col" style="padding: 8px 20px; text-align: center; width: 120px">Can see</th></tr></thead>
+<tbody>
+<sc-for list="{{sites}}" as="s" hint-placeholder-count="11">
+<tr style="border-top: 1px solid #F1F5F9"><th scope="row" style="padding: 6px 20px; text-align: left; font-weight: 500">{{s.name}}</th>
+<td style="padding: 2px 12px; text-align: center"><label style="display: inline-flex; min-width: 44px; min-height: 40px; align-items: center; justify-content: center; cursor: pointer"><input type="checkbox" checked="{{s.works}}" onChange="{{s.toggleWorks}}" aria-label="{{s.worksLbl}}" style="width: 18px; height: 18px; margin: 0; accent-color: #0B7970"></label></td>
+<td style="padding: 2px 20px; text-align: center"><label style="display: inline-flex; min-width: 44px; min-height: 40px; align-items: center; justify-content: center; cursor: pointer"><input type="checkbox" checked="{{s.sees}}" disabled="{{s.seeLocked}}" onChange="{{s.toggleSees}}" aria-label="{{s.seesLbl}}" style="width: 18px; height: 18px; margin: 0; accent-color: #0B7970"></label></td></tr>
+</sc-for>
+</tbody>
+</table>
+</div>
+<p style="margin: 0; padding: 10px 20px 14px; font-size: 12px; color: #475569">A site they work at is always visible to them.</p>
+</section>
+
+<section aria-labelledby="sign-h" style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 16px 20px; display: flex; flex-direction: column; gap: 12px">
+<h2 id="sign-h" style="margin: 0; font-size: 16px; font-weight: 600">Signing details</h2>
+<sc-if value="{{isClin}}" hint-placeholder-val="{{false}}">
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 12px">
+<div style="display: flex; flex-direction: column; gap: 4px"><label for="sg-t" style="font-weight: 500">Professional title</label><input id="sg-t" type="text" value="Physiotherapist" style="height: 36px; padding: 0 10px; border: 1px solid #CBD5E1; border-radius: 8px; font: inherit"></div>
+<div style="display: flex; flex-direction: column; gap: 4px"><label for="sg-b" style="font-weight: 500">Registration body</label><select id="sg-b" style="height: 36px; padding: 0 10px; border: 1px solid #CBD5E1; border-radius: 8px; font: inherit; background: #FFFFFF"><option>HCPC</option></select></div>
+<div style="display: flex; flex-direction: column; gap: 4px"><label for="sg-n" style="font-weight: 500">Registration number</label><input id="sg-n" type="text" value="{{m.reg}}" style="height: 36px; padding: 0 10px; border: 1px solid #CBD5E1; border-radius: 8px; font: inherit"></div>
+<div style="display: flex; flex-direction: column; gap: 4px"><label for="sg-e" style="font-weight: 500">Registration checked</label><input id="sg-e" type="text" value="01/09/2026 by Helen Ward" style="height: 36px; padding: 0 10px; border: 1px solid #CBD5E1; border-radius: 8px; font: inherit"></div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border: 1px solid #E2E8F0; border-radius: 10px; background: #F8FAFC"><span style="font-size: 12px; color: #475569">How signed notes and letters show it</span><span style="font-weight: 600">Signed by {{m.name}}, Physiotherapist · HCPC {{m.reg}} · 27/10/2026 11:42</span></div>
+</sc-if>
+<sc-if value="{{notClin}}" hint-placeholder-val="{{true}}">
+<p style="margin: 0; color: #475569">Only needed for clinicians. Switch the role to Clinician to add a registration number – without one, {{m.first}} can't sign notes.</p>
+</sc-if>
+</section>
+</div>
+
+<aside aria-labelledby="sum-h" style="flex: 1 1 340px; min-width: 0; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 16px 20px; display: flex; flex-direction: column; gap: 14px; position: sticky; top: 16px">
+<h2 id="sum-h" style="margin: 0; font-size: 16px; font-weight: 600">What {{m.first}} can do</h2>
+<p style="margin: 0; color: #334155">{{summaryLead}}</p>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<strong style="font-size: 13px; color: #166534; display: flex; gap: 6px; align-items: center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"></path></svg>Can</strong>
+<ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px"><sc-for list="{{can}}" as="c" hint-placeholder-count="6"><li>{{c.text}}<sc-if value="{{c.ex}}" hint-placeholder-val="{{false}}"><span style="margin-left: 6px; font-size: 11px; font-weight: 600; color: #1842B4; background: #E8EEFB; border-radius: 4px; padding: 0 5px">exception</span></sc-if></li></sc-for></ul>
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<strong style="font-size: 13px; color: #991B1B; display: flex; gap: 6px; align-items: center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"></path></svg>Cannot</strong>
+<ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px"><sc-for list="{{cannot}}" as="c" hint-placeholder-count="5"><li>{{c.text}}<sc-if value="{{c.ex}}" hint-placeholder-val="{{false}}"><span style="margin-left: 6px; font-size: 11px; font-weight: 600; color: #1842B4; background: #E8EEFB; border-radius: 4px; padding: 0 5px">exception</span></sc-if></li></sc-for></ul>
+</div>
+<div style="border-top: 1px solid #E2E8F0; padding-top: 12px; display: flex; flex-direction: column; gap: 8px">
+<sc-if value="{{dirty}}" hint-placeholder-val="{{false}}"><span role="status" style="font-size: 13px; color: #864E0E">Unsaved changes</span></sc-if>
+<sc-if value="{{savedNote}}" hint-placeholder-val="{{false}}"><span role="status" style="font-size: 13px; color: #166534">Saved 05:04 by Helen Ward. {{m.first}} will see the changes next time a page loads.</span></sc-if>
+<button type="button" onClick="{{save}}" style="height: 40px; border-radius: 8px; border: 0; background: #0B7970; color: #FFFFFF; font: inherit; font-weight: 600; cursor: pointer">Save access</button>
+<span style="font-size: 12px; color: #475569">Last changed 14/10/2026 by Helen Ward: added "Override clashes".</span>
+</div>
+</aside>
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1500}}'>
+class Component extends DCLogic {
+  perms() {
+    // key, label (verb phrase), defaults per role {owner, admin, clinician, reception}, lockedFor
+    return [
+      ['diary.book', 'book, move and cancel appointments', { owner: 1, admin: 1, clinician: 1, reception: 1 }],
+      ['diary.override', 'override diary clashes', { owner: 1, admin: 1, clinician: 0, reception: 0 }],
+      ['pat.edit', 'create and edit patients', { owner: 1, admin: 1, clinician: 1, reception: 1 }],
+      ['pat.referral', 'see referral reasons and case notes', { owner: 1, admin: 1, clinician: 1, reception: 1 }],
+      ['clin.view', 'see clinical notes and outcomes', { owner: 1, admin: 1, clinician: 1, reception: 0 }, 'reception'],
+      ['clin.write', 'write, sign and amend clinical notes', { owner: 1, admin: 0, clinician: 1, reception: 0 }, 'reception'],
+      ['bill.edit', 'create and edit invoices', { owner: 1, admin: 1, clinician: 0, reception: 1 }],
+      ['bill.pay', 'take payments', { owner: 1, admin: 1, clinician: 0, reception: 1 }],
+      ['bill.refund', 'give refunds and credit notes', { owner: 1, admin: 1, clinician: 0, reception: 1 }],
+      ['bill.void', 'void invoices', { owner: 1, admin: 1, clinician: 0, reception: 0 }],
+      ['rep.own', 'see reports for their own caseload', { owner: 1, admin: 1, clinician: 1, reception: 0 }],
+      ['rep.all', 'view all reports', { owner: 1, admin: 1, clinician: 0, reception: 0 }],
+      ['rep.export', 'export data', { owner: 1, admin: 0, clinician: 0, reception: 0 }],
+      ['set.edit', 'change set-up', { owner: 1, admin: 1, clinician: 0, reception: 0 }]
+    ].map(p => ({ key: p[0], label: p[1], def: p[2], lockedFor: p[3] || '' }));
+  }
+  people() {
+    return {
+      jess: { name: 'Jess Taylor', first: 'Jess', init: 'JT', avBg: '#FEF3C7', avFg: '#864E0E', email: 'jess.taylor@example.com', role: 'reception', reg: '', ex: { 'diary.override': true, 'bill.void': false, 'bill.refund': false }, works: ['Harbour Road', 'Kingsmead'], sees: ['Harbour Road', 'Kingsmead', 'Elm Park'], all: false },
+      priya: { name: 'Priya Shah', first: 'Priya', init: 'PS', avBg: '#CCFBF1', avFg: '#0B5F58', email: 'priya.shah@example.com', role: 'clinician', reg: 'PH-DEMO-01', ex: { 'rep.export': true }, works: ['Harbour Road', 'Kingsmead'], sees: ['Harbour Road', 'Kingsmead'], all: false }
+    };
+  }
+  load(who) { const p = this.people()[who]; return { who, role: p.role, ex: Object.assign({}, p.ex), works: p.works.slice(), sees: p.sees.slice(), all: p.all, dirty: false, saved: false }; }
+  constructor(p) { super(p); this.state = this.load('jess'); }
+  renderVals() {
+    const st = this.state;
+    const P = this.people()[st.who];
+    const perms = this.perms();
+    const RD = { owner: ['Owner', 'Everything, including ownership.'], admin: ['Admin', 'Runs the clinics. No clinical writing by default.'], clinician: ['Clinician', 'Diary, patients, clinical notes. Billing read-only.'], reception: ['Reception', 'Diary, patient details, billing, messages. No clinical notes.'] };
+    const roles = Object.keys(RD).map(k => { const on = st.role === k; const off = k === 'owner'; return { name: RD[k][0] + (off ? ' (transfer only)' : ''), desc: RD[k][1], on, off, cursor: off ? 'not-allowed' : 'pointer', bg: on ? '#F0FDFA' : (off ? '#F8FAFC' : '#FFFFFF'), bd: on ? '#0E958A' : '#E2E8F0', pick: () => this.setState({ role: k, ex: {}, dirty: true, saved: false }) }; });
+    // effective permissions
+    const eff = perms.map(p => {
+      const base = !!p.def[st.role]; const locked = p.lockedFor === st.role;
+      const has = Object.prototype.hasOwnProperty.call(st.ex, p.key) && !locked;
+      const val = has ? st.ex[p.key] : base;
+      return Object.assign({}, p, { base, val, isEx: has && st.ex[p.key] !== base, locked });
+    });
+    const exceptions = eff.filter(e => e.isEx).map(e => ({
+      kind: e.val ? 'Added' : 'Removed', label: e.label.charAt(0).toUpperCase() + e.label.slice(1),
+      meta: (e.val ? 'Not part of the ' : 'Normally part of the ') + RD[st.role][0] + ' role',
+      bg: e.val ? '#F0FDF4' : '#FEF2F2', bd: e.val ? '#A7E8BE' : '#FECACA', fg: e.val ? '#166534' : '#991B1B',
+      icon: e.val ? 'M12 5v14M5 12h14' : 'M5 12h14',
+      remove: () => { const x = Object.assign({}, st.ex); delete x[e.key]; this.setState({ ex: x, dirty: true, saved: false }); }
+    }));
+    const candidates = eff.filter(e => !e.isEx && !e.locked).map(e => ({ key: e.key, text: (e.base ? 'Remove: ' : 'Add: ') + e.label }));
+    const SITES = ['Harbour Road', 'Kingsmead', 'Elm Park', 'Castle Street', 'Millbrook', 'Station Yard', 'Westfield', 'Abbey Lane', 'Brookside', 'Market Square', 'Highfield'];
+    const sites = SITES.map(name => {
+      const works = st.works.indexOf(name) >= 0; const sees = st.all || works || st.sees.indexOf(name) >= 0;
+      return { name, works, sees, seeLocked: st.all || works, worksLbl: 'Works at ' + name, seesLbl: 'Can see ' + name,
+        toggleWorks: () => { const w = works ? st.works.filter(x => x !== name) : st.works.concat([name]); this.setState({ works: w, dirty: true, saved: false }); },
+        toggleSees: () => { const s = st.sees.indexOf(name) >= 0 ? st.sees.filter(x => x !== name) : st.sees.concat([name]); this.setState({ sees: s, dirty: true, saved: false }); } };
+    });
+    const seeCount = sites.filter(s => s.sees).length;
+    const can = eff.filter(e => e.val).map(e => ({ text: e.label.charAt(0).toUpperCase() + e.label.slice(1), ex: e.isEx }));
+    const cannot = eff.filter(e => !e.val).map(e => ({ text: e.label.charAt(0).toUpperCase() + e.label.slice(1) + (e.locked ? ' – never, for reception' : ''), ex: e.isEx }));
+    if (st.role === 'clinician' && !P.reg) cannot.unshift({ text: 'Sign notes until a registration number is added', ex: false });
+    const lead = P.first + ' is ' + (st.role === 'admin' ? 'an ' : 'a ') + RD[st.role][0].toLowerCase() + ' who works at ' + (st.works.length ? st.works.join(' and ') : 'no sites yet') + ' and can see ' + (st.all ? 'all 11 sites' : seeCount + ' of 11 sites') + '. ' + (exceptions.length ? exceptions.length + (exceptions.length === 1 ? ' exception' : ' exceptions') + ' to the role.' : 'No exceptions to the role.');
+    const addEx = (e) => { const k = e.target.value; if (!k) return; const p = eff.find(x => x.key === k); const x = Object.assign({}, st.ex); x[k] = !p.base; this.setState({ ex: x, dirty: true, saved: false }); };
+    return {
+      product: 'Clinic system',
+      m: { name: P.name, first: P.first, init: P.init, avBg: P.avBg, avFg: P.avFg, email: P.email, reg: P.reg || 'PH-DEMO-07' },
+      who: st.who, setWho: (e) => this.setState(this.load(e.target.value)),
+      roles, roleName: RD[st.role][0], exceptions, noEx: exceptions.length === 0, candidates, addEx,
+      sites, allStr: st.all ? 'true' : 'false', allBg: st.all ? '#0B7970' : '#CBD5E1', allJ: st.all ? 'flex-end' : 'flex-start',
+      toggleAll: () => this.setState({ all: !st.all, dirty: true, saved: false }),
+      isClin: st.role === 'clinician', notClin: st.role !== 'clinician',
+      summaryLead: lead, can, cannot,
+      dirty: st.dirty, savedNote: st.saved, save: () => this.setState({ dirty: false, saved: true })
+    };
+  }
+}
+</script>
+</body>
+</html>

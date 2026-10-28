@@ -23,7 +23,7 @@ export default async function OutcomesPage({ params }: { params: { patientId: st
   const [outcomes, cases] = await Promise.all([listOutcomesForPatient(ctx, actor.tenantId, patient.id, { includeErrors: true }), listCasesForPatient(ctx, actor.tenantId, patient.id)]);
   const recorded = outcomes.filter((o) => o.status === "recorded");
   const measures = OUTCOME_MEASURES.filter((m) => outcomes.some((o) => o.measure === m));
-  const canWrite = actor.can("clinical.edit");
+  const canWrite = actor.can("clinical.write");
   const openCase = cases.find((c) => c.status === "open");
   return (
     <div className="space-y-6">

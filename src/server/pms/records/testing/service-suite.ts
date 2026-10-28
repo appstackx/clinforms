@@ -28,9 +28,9 @@ import { createReferrer } from "../../../repos/pms/referrers";
 import { setPmsDemoFlag } from "../../../repos/pms/settings";
 import type { QueryLog } from "../../../repos/pms/testing/guarded-db";
 import { unscopedStatements } from "../../../repos/pms/testing/guarded-db";
-import { FORBIDDEN_MESSAGE, ERROR_MESSAGE, testActor, type RecordsActor, type Result } from "../access";
+import { FORBIDDEN_MESSAGE, ERROR_MESSAGE, REGISTRATION_NEEDED_MESSAGE, testActor, type RecordsActor, type Result } from "../access";
 import { downloadFileFor, listFilesFor, uploadFileFor, withdrawFileFor } from "../attachments-service";
-import { addAuthorisationFor, getCaseDetails, listCasesFor, openCaseFor, updateCaseFor } from "../cases-service";
+import { addAuthorisationFor, caseReferralsFor, getCaseDetails, listCasesFor, openCaseFor, updateCaseFor } from "../cases-service";
 import { subjectAccessExportFor } from "../export-service";
 import { patientHistoryFor } from "../history-service";
 import { amendNoteFor, changeNoteTemplateFor, discardNoteFor, getNoteFor, lastNoteForCopyFor, listNotesFor, saveNoteFor, signNoteFor, startNoteFor, templatesForNewNote, unsignedNotesFor } from "../notes-service";
@@ -175,7 +175,16 @@ export function defineRecordsServiceSuite(label: string, factory: () => Promise<
       const locked = await saveNoteFor(sarah, ids.megan, draft.id, { expectedRev: 3, sections: { objective: "changed" } });
       assert.equal(!locked.ok && locked.code, "invalid");
       assert.match(!locked.ok ? locked.error : "", /signed and locked/);
-      value(await amendNoteFor(tom, ids.megan, draft.id, { kind: "addendum", text: "Patient phoned: headaches eased." }));
+      // Roles design round 2: clinicians amend only their own signed notes; the owner may amend anyone's.
+      const tomAmend = await amendNoteFor(tom, ids.megan, draft.id, { kind: "addendum", text: "Tom's addendum" });
+      assert.equal(!tomAmend.ok && tomAmend.code, "forbidden", "another clinician's note");
+      assert.equal(value(await getNoteFor(tom, ids.megan, draft.id)).amendable, false);
+      // Khuram, 28/10/2026: amending (like signing) needs a registration number on the member's practitioner profile.
+      const ownerNoReg = await amendNoteFor(owner, ids.megan, draft.id, { kind: "addendum", text: "Patient phoned: headaches eased." });
+      assert.deepEqual(ownerNoReg, { ok: false, code: "registration", error: REGISTRATION_NEEDED_MESSAGE });
+      assert.equal(value(await getNoteFor(owner, ids.megan, draft.id)).note.amendmentCount, 0, "nothing was added");
+      await createPractitioner(ctx, A, { displayName: "Dell Baines (fictional)", registrationNumber: "PH-DEMO-09", userId: owner.userId }, owner.actor);
+      value(await amendNoteFor(owner, ids.megan, draft.id, { kind: "addendum", text: "Patient phoned: headaches eased." }));
       const badAmend = await amendNoteFor(sarah, ids.megan, draft.id, { kind: "correction", text: "x" });
       assert.deepEqual(!badAmend.ok && Object.keys(badAmend.fieldErrors ?? {}).sort(), ["reason", "sectionKey"]);
       value(await amendNoteFor(sarah, ids.megan, draft.id, { kind: "correction", sectionKey: "objective", text: "Reduced rotation to the LEFT", reason: "Side recorded wrongly" }));
@@ -190,6 +199,14 @@ export function defineRecordsServiceSuite(label: string, factory: () => Promise<
       // Drafts for the unsigned list: one old (overdue), one recent.
       ids.oldDraft = value(await startNoteFor(sarah, ids.megan, { templateId: "builtin-follow-up-soap", seenOn: "2026-10-15", caseId: ids.case })).id;
       ids.tomDraft = value(await startNoteFor(tom, ids.daniel, { templateId: "builtin-follow-up-soap", seenOn: "2026-10-24" })).id;
+      // Signing without a registration number (Tom has no practitioner profile): the draft is saved, never signed.
+      const tomSign = await saveNoteFor(tom, ids.daniel, ids.tomDraft, { expectedRev: 1, sections: { subjective: "Back stiff in the mornings (fictional)" }, sign: true });
+      assert.deepEqual([!tomSign.ok && tomSign.code, !tomSign.ok && tomSign.rev], ["registration", 2]);
+      assert.equal(!tomSign.ok && tomSign.error, `Your changes are saved, but the note is not signed: ${REGISTRATION_NEEDED_MESSAGE}`);
+      assert.match(REGISTRATION_NEEDED_MESSAGE, /^Add your registration number to sign notes\./);
+      assert.deepEqual(await signNoteFor(tom, ids.daniel, ids.tomDraft, 2), { ok: false, code: "registration", error: REGISTRATION_NEEDED_MESSAGE });
+      const tomView = value(await getNoteFor(tom, ids.daniel, ids.tomDraft));
+      assert.deepEqual([tomView.note.status, tomView.note.rev, tomView.note.sections.subjective], ["draft", 2, "Back stiff in the mornings (fictional)"]);
       const tossed = value(await startNoteFor(sarah, ids.daniel, { templateId: "builtin-discharge", seenOn: "2026-10-24" }));
       assert.equal(value(await discardNoteFor(sarah, ids.daniel, tossed.id, 1)).rev, 2);
       assert.deepEqual(value(await listNotesFor(sarah, ids.megan)).map((n) => n.id).sort(), [ids.note, ids.oldDraft].sort());
@@ -348,6 +365,24 @@ export function defineRecordsServiceSuite(label: string, factory: () => Promise<
       const full = value(await patientHistoryFor(sarah, ids.megan));
       assert.ok(full.some((h) => h.action === "pms.note.amend" && (h.detail as { kind?: string } | null)?.kind === "correction"));
       assert.equal(value(await getCaseDetails(sarah, ids.megan, ids.case)).notes?.length, 2);
+    });
+
+    it("referral reason and case notes: reception sees them by default (patients.referral); switched off, never", async () => {
+      // Khuram, 28/10/2026: "See referral reason and case notes" is on for reception by default; the owner can switch it off.
+      const reason = "Whiplash after a rear-end collision on 28/09";
+      assert.equal(value(await getCaseDetails(staff, ids.megan, ids.case)).case.referralReason, reason);
+      assert.deepEqual(value(await caseReferralsFor(staff, ids.megan)).find((r) => r.caseId === ids.case)?.referralReason, reason);
+      // Off for the role (Roles and permissions) or for one member (Member access): masked, refused, not writable.
+      const offForRole = testActor(ctx, A, "staff", { userId: "user_reception_03", name: "Priya Shah" }, { roleOverrides: { "patients.referral": false } });
+      const offForMember = testActor(ctx, A, "staff", { userId: "user_reception_04", name: "Jess Taylor" }, { exceptions: { "patients.referral": false } });
+      for (const rec of [offForRole, offForMember]) {
+        const c = value(await getCaseDetails(rec, ids.megan, ids.case)).case;
+        assert.deepEqual([c.referralReason, c.notes], [null, null]);
+        assert.deepEqual(await caseReferralsFor(rec, ids.megan), { ok: false, code: "forbidden", error: FORBIDDEN_MESSAGE });
+        assert.equal((await updateCaseFor(rec, ids.megan, ids.case, c.rev, { referralReason: "overwritten" })).ok, false);
+        assert.ok(!JSON.stringify(value(await listCasesFor(rec, ids.megan))).includes(reason));
+      }
+      assert.equal(value(await getCaseDetails(sarah, ids.megan, ids.case)).case.referralReason, reason, "unchanged");
     });
 
     it("pronouns, clinical flags (never reception), the patient list and its CSV, template change, copy from the last note", async () => {

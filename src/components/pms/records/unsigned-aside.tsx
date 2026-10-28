@@ -60,7 +60,7 @@ export function UnsignedAside({ items, days, currentId, today, className }: { it
           ))}
         </ul>
       ) : (
-        <p className="text-sm text-muted-foreground">None – every note is signed.</p>
+        <p className="text-sm text-[#475569]">None – every note is signed.</p>
       )}
     </aside>
   );

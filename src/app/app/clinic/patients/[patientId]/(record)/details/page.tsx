@@ -45,7 +45,8 @@ export default async function PatientDetailsPage({ params }: { params: { patient
   );
   const openCases = cases.filter((c) => c.status === "open");
   const canEdit = actor.can("patients.edit") && !anonymised;
-  const canManage = actor.can("settings.manage");
+  const canHold = actor.can("settings.setup");
+  const canAnonymise = actor.can("patients.merge");
   const marketing = [patient.marketingEmail ? "email" : null, patient.marketingSms ? "text" : null].filter(Boolean).join(" and ");
 
   return (
@@ -61,7 +62,7 @@ export default async function PatientDetailsPage({ params }: { params: { patient
             <ClinicalFlagsEditor
               patientId={patient.id}
               flags={flags.value.map((f) => ({ id: f.id, rev: f.rev, text: f.text ?? "", since: formatUkDate(f.createdAt.slice(0, 10)) }))}
-              canEdit={actor.can("clinical.edit") && !anonymised}
+              canEdit={actor.can("clinical.write") && !anonymised}
               addAction={addClinicalFlag}
               endAction={endClinicalFlag}
             />
@@ -159,21 +160,25 @@ export default async function PatientDetailsPage({ params }: { params: { patient
                 <input type="hidden" name="patientId" value={patient.id} />
                 {patient.status === "active" ? (
                   <div className="flex flex-wrap gap-2">
-                    <Submit variant="secondary" name="status" value="archived" pendingText="Archiving…" confirmText="Archive this record? It is kept and can be restored.">
-                      Archive record
-                    </Submit>
+                    {actor.can("patients.merge") ? (
+                      <Submit variant="secondary" name="status" value="archived" pendingText="Archiving…" confirmText="Archive this record? It is kept and can be restored.">
+                        Archive record
+                      </Submit>
+                    ) : null}
                     <Submit variant="secondary" name="status" value="deceased" pendingText="Saving…" confirmText="Record that this patient has died?">
                       Record death
                     </Submit>
                   </div>
-                ) : (
+                ) : patient.status !== "archived" || actor.can("patients.merge") ? (
                   <Submit variant="secondary" name="status" value="active" pendingText="Restoring…">
                     Make active again
                   </Submit>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Only someone who may archive records can restore it.</p>
                 )}
               </ActionForm>
             ) : null}
-            {canManage ? (
+            {canHold ? (
               <ActionForm action={changeLegalHold}>
                 <input type="hidden" name="patientId" value={patient.id} />
                 <input type="hidden" name="hold" value={patient.legalHold ? "off" : "on"} />
@@ -184,9 +189,9 @@ export default async function PatientDetailsPage({ params }: { params: { patient
             ) : null}
           </div>
         </Panel>
-        {actor.can("patients.export") || canManage ? (
+        {actor.can("reports.export") || canAnonymise ? (
           <Panel title="Data rights">
-            {actor.can("patients.export") ? (
+            {actor.can("reports.export") ? (
               <>
                 <p className="text-sm text-[#334155]">A copy of everything held about the patient, for a subject access request.</p>
                 <ul className="mt-2 space-y-1 text-sm">
@@ -204,7 +209,7 @@ export default async function PatientDetailsPage({ params }: { params: { patient
                 <p className="mt-2 text-xs text-muted-foreground">Each download is recorded in the patient&apos;s history.</p>
               </>
             ) : null}
-            {canManage && !anonymised ? (
+            {canAnonymise && !anonymised ? (
               <p className="mt-3 text-sm">
                 <TextLinkTo href={patientPath(patient.id, "anonymise")}>Anonymise this record…</TextLinkTo>
               </p>

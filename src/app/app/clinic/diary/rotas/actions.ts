@@ -24,19 +24,19 @@ function done(result: DiaryActionResult): DiaryActionResult {
 }
 
 export async function createRotaEntryAction(input: CreateRotaEntryRequest): Promise<DiaryActionResult> {
-  const actor = await clinicActionActor({ permission: "diary.manage" });
+  const actor = await clinicActionActor({ permission: "diary.rota" });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
   return done(await createRotaEntryFor(await diaryCallerOf(actor), input));
 }
 
 export async function updateRotaEntryAction(input: UpdateRotaEntryRequest): Promise<DiaryActionResult> {
-  const actor = await clinicActionActor({ permission: "diary.manage" });
+  const actor = await clinicActionActor({ permission: "diary.rota" });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
   return done(await updateRotaEntryFor(await diaryCallerOf(actor), input));
 }
 
 export async function endRotaEntryAction(input: EndRotaEntryRequest): Promise<DiaryActionResult> {
-  const actor = await clinicActionActor({ permission: "diary.manage" });
+  const actor = await clinicActionActor({ permission: "diary.rota" });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
   return done(await endRotaEntryFor(await diaryCallerOf(actor), input));
 }

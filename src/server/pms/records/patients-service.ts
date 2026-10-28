@@ -3,8 +3,10 @@
  * possible-duplicates check), edit, status, legal hold, anonymisation. Rules: ./access.ts.
  *
  *   patients.view   – search, details, possible duplicates
- *   patients.edit   – register, edit, archive / restore / record a death
- *   settings.manage – legal hold, anonymise (owner / admin)
+ *   patients.edit   – register, edit, record a death
+ *   patients.merge  – archive a record, restore an archived one
+ *   settings.setup  – legal hold (owner / admin)
+ *   patients.merge  – anonymise (owner / admin by default; "Merge or archive patients")
  */
 import { fieldErrors, patientInputSchema, patientPatchSchema, type PatientInput, type PatientPatch } from "../../../modules/pms/core/schemas";
 import { ukToday } from "../../../modules/pms/core/text";
@@ -14,7 +16,7 @@ import { listCasesForPatient } from "../../repos/pms/cases";
 import { createPatient, searchPatients, setPatientLegalHold, setPatientStatus, updatePatient } from "../../repos/pms/patients";
 import { anonymiseEligibility, anonymisePatient, getAnonymisation, type AnonymiseResult } from "../../repos/pms/records/anonymise";
 import { findPossibleDuplicates, type PossibleDuplicate } from "../../repos/pms/records/duplicates";
-import { attempt, fail, guard, notFound, ok, patientInClinic, saveFailure, type RecordsActor, type Result } from "./access";
+import { attempt, fail, forbidden, guard, notFound, ok, patientInClinic, saveFailure, type RecordsActor, type Result } from "./access";
 
 const today = () => ukToday();
 
@@ -29,7 +31,7 @@ export interface PatientSearch {
 export async function searchPatientsFor(actor: RecordsActor, search: PatientSearch = {}): Promise<Result<PatientSummary[]>> {
   const denied = guard(actor, "patients.view");
   if (denied) return denied;
-  return attempt("search_patients", async () => ok(await searchPatients(actor.repo(), actor.tenantId, { q: search.q, status: search.status, limit: search.limit, offset: search.offset })));
+  return attempt("search_patients", async () => ok(await searchPatients(actor.repo(), actor.tenantId, { q: search.q, status: search.status, limit: search.limit, offset: search.offset, siteIds: actor.siteIds ?? null })));
 }
 
 export interface PatientDetails {
@@ -103,21 +105,26 @@ export async function updatePatientFor(actor: RecordsActor, patientId: string, e
   });
 }
 
-/** Archive, restore or record a death (nothing is deleted). */
+/**
+ * Archive, restore or record a death (nothing is deleted). Archiving a record or restoring an archived one needs
+ * "Merge or archive patients" (patients.merge – owner and admin by default, roles design round 2); recording a
+ * death needs patients.edit.
+ */
 export async function setPatientStatusFor(actor: RecordsActor, patientId: string, status: PatientStatus): Promise<Result<{ changed: boolean }>> {
-  const denied = guard(actor, "patients.edit");
+  const denied = guard(actor, "patients.edit") ?? (status === "archived" ? guard(actor, "patients.merge") : null);
   if (denied) return denied;
   if (status !== "active" && status !== "archived" && status !== "deceased") return fail("invalid", "Choose a status.");
   return attempt("patient_status", async () => {
     const patient = await editable(actor, patientId);
     if ("ok" in patient) return patient;
+    if (patient.status === "archived" && !actor.can("patients.merge")) return forbidden();
     return ok({ changed: await setPatientStatus(actor.repo(), actor.tenantId, patient.id, status, actor.actor) });
   });
 }
 
 /** Puts the record on hold (kept as it is whatever the record-keeping rules say) or takes the hold off. */
 export async function setLegalHoldFor(actor: RecordsActor, patientId: string, hold: boolean): Promise<Result<{ changed: boolean }>> {
-  const denied = guard(actor, "settings.manage");
+  const denied = guard(actor, "settings.setup");
   if (denied) return denied;
   return attempt("patient_hold", async () => {
     const patient = await patientInClinic(actor, patientId);
@@ -135,7 +142,7 @@ export interface AnonymiseState {
 
 /** Whether the record may be anonymised today, and why not. */
 export async function anonymiseEligibilityFor(actor: RecordsActor, patientId: string): Promise<Result<AnonymiseState>> {
-  const denied = guard(actor, "settings.manage");
+  const denied = guard(actor, "patients.merge");
   if (denied) return denied;
   return attempt("anonymise_check", async () => {
     const patient = await patientInClinic(actor, patientId);
@@ -148,7 +155,7 @@ export async function anonymiseEligibilityFor(actor: RecordsActor, patientId: st
 
 /** Anonymises the record after the record-keeping period (confirmed by typing the patient's number). */
 export async function anonymisePatientFor(actor: RecordsActor, patientId: string, confirm: { confirmNumber: number; reviewed: boolean }): Promise<Result<AnonymiseResult>> {
-  const denied = guard(actor, "settings.manage");
+  const denied = guard(actor, "patients.merge");
   if (denied) return denied;
   if (!Number.isInteger(confirm.confirmNumber)) return fail("invalid", "Type the patient's number to confirm.", { fieldErrors: { confirmNumber: "Type the number shown above." } });
   return attempt("anonymise", async () => {

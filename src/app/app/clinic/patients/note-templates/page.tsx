@@ -9,10 +9,10 @@ export const metadata: Metadata = { title: "Note templates" };
 
 /**
  * /app/clinic/patients/note-templates – the clinic's note templates and the unsigned-notes threshold (Set-up;
- * settings.manage: owners and administrators). Built-in templates are read-only (copy one to change it).
+ * settings.setup: owners and administrators). Built-in templates are read-only (copy one to change it).
  */
 export default async function NoteTemplatesPage() {
-  const actor = await requireClinicActor({ permission: "settings.manage" });
+  const actor = await requireClinicActor({ permission: "settings.setup" });
   const [templates, settings] = await Promise.all([listTemplatesFor(actor), recordsSettingsFor(actor)]);
   return (
     <div className="mx-auto flex w-full max-w-[960px] flex-col gap-5">

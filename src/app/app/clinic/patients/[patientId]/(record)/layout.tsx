@@ -64,7 +64,7 @@ export default async function PatientRecordLayout({ children, params }: { childr
               : null,
   }));
   const openCase = h.cases.find((c) => c.status === "open") ?? null;
-  const canNote = actor.can("clinical.edit") && !h.anonymised && p.status === "active";
+  const canNote = actor.can("clinical.write") && !h.anonymised && p.status === "active";
   const canBook = actor.can("diary.book") && p.status === "active" && !h.anonymised;
   const canMessage = actor.can("messages.send");
   const canPay = actor.can("billing.edit");
@@ -78,10 +78,10 @@ export default async function PatientRecordLayout({ children, params }: { childr
   const menu: MenuItem[] = [
     { label: "Patient details", href: patientPath(p.id, "details") },
     ...(actor.can("patients.edit") && !h.anonymised ? [{ label: "Edit details", href: patientPath(p.id, "edit") }] : []),
-    ...(actor.can("clinical.edit") && !h.anonymised ? [{ label: "Clinical flags", href: patientPath(p.id, "details#clinical-flags") }] : []),
+    ...(actor.can("clinical.write") && !h.anonymised ? [{ label: "Clinical flags", href: patientPath(p.id, "details#clinical-flags") }] : []),
     ...(canMessage ? [{ label: "Send message", href: patientPath(p.id, "tab/messages"), phoneOnly: true }] : []),
     ...(canPay ? [{ label: "Take payment", href: patientPath(p.id, "tab/invoices"), phoneOnly: true }] : []),
-    ...(actor.can("patients.export")
+    ...(actor.can("reports.export")
       ? [
           { label: "Subject access copy (PDF)", href: patientPath(p.id, "export?format=pdf"), download: true },
           { label: "Subject access data (JSON)", href: patientPath(p.id, "export?format=json"), download: true },

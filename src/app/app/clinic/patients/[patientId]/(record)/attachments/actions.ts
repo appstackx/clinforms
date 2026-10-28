@@ -9,7 +9,7 @@ import { text } from "@/server/pms/records/forms";
 import { patientPath } from "@/server/pms/records/record";
 
 export async function withdrawFile(_prev: RecordsActionState, form: FormData): Promise<RecordsActionState> {
-  const actor = await clinicActionActor({ permission: "clinical.edit" });
+  const actor = await clinicActionActor({ permission: "clinical.write" });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
   const patientId = text(form, "patientId");
   const result = await withdrawFileFor(actor, patientId, text(form, "attachmentId"), text(form, "reason"));

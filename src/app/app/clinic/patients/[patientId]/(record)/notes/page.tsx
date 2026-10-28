@@ -27,7 +27,7 @@ export default async function PatientNotesPage({ params, searchParams }: { param
   const list = notes && notes.ok ? notes.value : (h.notes ?? []);
   const openCase = h.cases.find((c) => c.status === "open") ?? null;
   const today = h.next && h.next.startsOn === h.today ? h.next : null;
-  const canWrite = actor.can("clinical.edit") && !h.anonymised && p.status === "active";
+  const canWrite = actor.can("clinical.write") && !h.anonymised && p.status === "active";
   return (
     <Card
       title="Clinical notes"

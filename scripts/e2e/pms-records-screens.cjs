@@ -4,8 +4,12 @@
  *
  *   npm run pms:seed-demo -- --fresh --app-url http://localhost:3195 > seed.out   # owner invitation in seed.out
  *   npx next dev -p 3195   (or build + start)
- *   INVITE_FILE=seed.out BASE=http://localhost:3195 E2E_OUT=<dir> \
+ *   INVITE_FILE=seed.out BASE=http://localhost:3195 E2E_OUT=<dir> SQLITE_PATH=<the server's scratch SQLite> \
  *     NODE_PATH=/Users/khuram/Projects/Appstackx/pigeon-web/node_modules node scripts/e2e/pms-records-screens.cjs
+ *
+ * SQLITE_PATH (default CLINFORMS_SQLITE_PATH): the one direct write – linking the invited clinician to a seeded
+ * practitioner (PH-DEMO-03) so she has a registration number to sign with; there is no screen for that yet. The
+ * scratch database only (refused unless the path is under a temporary or scratch folder).
  *
  * Roles: the owner (from the seed's invitation) invites a clinician and a receptionist (staff) on the Members page
  * (email off: the link is shown) – each makes an account with two-step verification. Nothing secret is printed
@@ -13,7 +17,9 @@
  *
  * Checks: list (search, filters, CSV export, states, New patient with the possible-duplicate step), record header and
  * tabs per role (reception: no clinical tab, no clinical flag, no New note; a note's URL is refused), clinical flag,
- * note editor (autosave, red flags, body chart marker, sign and lock, amendment), unsigned notes, outcomes,
+ * note editor (autosave, red flags, body chart marker, layout: navigation and body chart top-aligned and sticky; sign
+ * and lock refused without a registration number, then signed; amendment), unsigned notes, outcomes, the referral
+ * reason for reception (on by default, hidden when the owner switches "See referral reason and case notes" off),
  * subject-access export (owner), 375 px without sideways scrolling, keyboard, axe (serious/critical = fail).
  * Screenshots (1440 and 375 per role): E2E_OUT (default .e2e-out/pms-records).
  */
@@ -25,6 +31,23 @@ const { chromium } = require("playwright");
 const BASE = process.env.BASE || "http://localhost:3195";
 const OUT = process.env.E2E_OUT || path.resolve(__dirname, "../../.e2e-out/pms-records");
 const AXE = require.resolve("axe-core/axe.min.js");
+const SQLITE = process.env.SQLITE_PATH || process.env.CLINFORMS_SQLITE_PATH || "";
+
+/** Links the member with `email` to the seeded practitioner `registration` (scratch SQLite only – see above). */
+function linkPractitioner(email, registration) {
+  if (!SQLITE || !/^\/(private\/)?(tmp|var\/folders)\//.test(SQLITE)) throw new Error("SQLITE_PATH must be a scratch database under /tmp");
+  const { DatabaseSync } = require("node:sqlite");
+  const db = new DatabaseSync(SQLITE);
+  try {
+    const user = db.prepare('SELECT id FROM "user" WHERE email = ?').get(email);
+    if (!user) throw new Error("no such member");
+    const r = db.prepare("UPDATE pms_practitioners SET user_id = ? WHERE registration_number = ? AND user_id IS NULL").run(user.id, registration);
+    if (r.changes !== 1) throw new Error(`practitioner ${registration} not linked (${r.changes})`);
+  } finally {
+    db.close();
+  }
+}
+
 const INVITE = (fs.readFileSync(process.env.INVITE_FILE, "utf8").match(/https?:\/\/\S+\/accept-invite\?token=[A-Za-z0-9._%-]+/) || [])[0];
 if (!INVITE) throw new Error("No invitation link in INVITE_FILE");
 
@@ -147,12 +170,36 @@ async function noSideways(page, label) {
     page.on("pageerror", (e) => problems.push(`${label} pageerror: ${String(e).slice(0, 200)}`));
     page.on("console", (m) => m.type() === "error" && !/404|Not Found|Failed to fetch RSC payload|Download the React DevTools/.test(m.text()) && problems.push(`${label} console: ${m.text().slice(0, 200)}`));
   }
-  const shot = (page, name, fullPage = true) => page.screenshot({ path: path.join(OUT, `${name}.png`), fullPage });
+  // Full-page shots: the shell's navigation, the note editor's body chart and its footer are sticky, so a full-page
+  // capture of a scrolled page shows them part-way down. The shot is taken from the top with the window as tall as the
+  // page (sticky parts where a reader scrolling the page sees them) and the pointer parked (no hover colours).
+  const shot = async (page, name, fullPage = true) => {
+    if (!fullPage) return page.screenshot({ path: path.join(OUT, `${name}.png`) });
+    const size = page.viewportSize();
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.mouse.move(size.width - 4, size.height - 4);
+    const height = await page.evaluate(() => Math.ceil(document.documentElement.scrollHeight));
+    await page.setViewportSize({ width: size.width, height: Math.max(size.height, height) });
+    await page.waitForTimeout(150);
+    await page.screenshot({ path: path.join(OUT, `${name}.png`) });
+    await page.setViewportSize(size);
+  };
+  /** The shell's navigation starts at the top of its column (just under the header) when the page is at the top. */
+  const navTopAligned = async (page, label) => {
+    const gap = await page.evaluate(() => {
+      window.scrollTo(0, 0);
+      const nav = document.querySelector("nav[aria-label='Clinic system']");
+      const header = document.querySelector("header");
+      return nav && header ? Math.round(nav.getBoundingClientRect().top - header.getBoundingClientRect().bottom) : null;
+    });
+    assert(gap !== null && gap >= 0 && gap <= 24, `${label}: navigation ${gap}px under the header`);
+  };
   const state = {};
 
   await step("owner, clinician and reception make their accounts (two-step verification)", async () => {
     await onboard(owner, INVITE, "Helen Ward (fictional)");
-    const clinLink = await invite(owner, `priya.shah.${Date.now()}@example.com`, "clinician");
+    state.clinEmail = `priya.shah.${Date.now()}@example.com`;
+    const clinLink = await invite(owner, state.clinEmail, "clinician");
     const recLink = await invite(owner, `jess.taylor.${Date.now()}@example.com`, "staff");
     await onboard(clin, clinLink, "Priya Shah");
     await onboard(rec, recLink, "Jess Taylor");
@@ -267,6 +314,23 @@ async function noSideways(page, label) {
     await clin.waitForSelector("text=/Draft saved \\d{2}:\\d{2}/", { timeout: 20000 });
     await shot(clin, "note-editor-draft-1440");
     await axe(clin, "note editor (draft)");
+    // Layout: navigation top-aligned; the body chart beside Subjective (top-aligned right column), sticky when scrolled.
+    await navTopAligned(clin, "note editor");
+    const top = await clin.evaluate(() => {
+      window.scrollTo(0, 0);
+      const subjective = document.querySelector("#section-subjective").closest("section, div.rounded-2xl").getBoundingClientRect();
+      const chart = document.querySelector("aside[aria-label='Body chart and outcome measures']").getBoundingClientRect();
+      return { subjective: Math.round(subjective.top), chart: Math.round(chart.top), chartLeft: Math.round(chart.left), subjectiveRight: Math.round(subjective.right) };
+    });
+    assert(Math.abs(top.chart - top.subjective) <= 2 && top.chartLeft > top.subjectiveRight, `body chart beside Subjective: ${JSON.stringify(top)}`);
+    const stuck = await clin.evaluate(() => {
+      window.scrollTo(0, 700);
+      const chart = document.querySelector("aside[aria-label='Body chart and outcome measures']").getBoundingClientRect();
+      const nav = document.querySelector("nav[aria-label='Clinic system']").getBoundingClientRect();
+      return { chart: Math.round(chart.top), nav: Math.round(nav.top), y: Math.round(window.scrollY) };
+    });
+    assert(stuck.y > 0 && stuck.chart >= 0 && stuck.chart <= 24 && stuck.nav >= 0 && stuck.nav <= 24, `sticky when scrolled: ${JSON.stringify(stuck)}`);
+    await clin.screenshot({ path: path.join(OUT, "note-editor-scrolled-1440.png") });
     // The sticky footer never hides the last section at the end of the page.
     await clin.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
     const covered = await clin.evaluate(() => {
@@ -289,8 +353,17 @@ async function noSideways(page, label) {
     await shot(owner, "unsigned-owner-all-1440");
   });
 
+  await step("signing needs a registration number: told before the click, Sign and lock disabled; then linked, it signs", async () => {
+    await clin.goto(`${BASE}${state.note}`);
+    await clin.waitForSelector("#registration-needed >> text=Add your registration number to sign notes");
+    assert(await clin.locator("button:has-text('Sign and lock')").isDisabled(), "Sign and lock is disabled without a registration number");
+    await shot(clin, "note-editor-no-registration-1440");
+    linkPractitioner(state.clinEmail, "PH-DEMO-03");
+  });
+
   await step("sign and lock, then amend: locked banner, amendment below the original", async () => {
     await clin.goto(`${BASE}${state.note}`);
+    assert((await clin.locator("#registration-needed").count()) === 0, "no registration notice once linked");
     await clin.click("button:has-text('Sign and lock')");
     await clin.waitForSelector("[role=alertdialog] >> text=Sign this note?");
     await shot(clin, "note-sign-dialog-1440", false);
@@ -333,6 +406,47 @@ async function noSideways(page, label) {
     await rec.goto(`${BASE}/app/clinic/patients`);
     await shot(rec, "list-reception-1440");
     await axe(rec, "record (reception)");
+    for (const [page, label] of [[rec, "patient list"], [clin, "patient list (clinician)"]]) await navTopAligned(page, label);
+  });
+
+  await step("reception sees the referral reason by default (Overview and Cases); hidden when the owner switches it off", async () => {
+    // The owner writes a referral reason on the patient's open case (Case → Edit the case).
+    const REASON = "Referred by the GP for shoulder pain after a fall at home (fictional).";
+    await owner.goto(`${BASE}${state.patient}`);
+    const caseHref = (await owner.locator("a:has-text('Complete referrer form')").getAttribute("href")).replace(/#.*$/, "");
+    await owner.goto(`${BASE}${caseHref}`);
+    await owner.click("summary:has-text('Edit the case')");
+    await owner.fill("textarea[name=referralReason]", REASON);
+    await owner.click("button:has-text('Save case')");
+    await owner.waitForSelector(`main >> text=${REASON}`, { timeout: 30000 });
+        await rec.goto(`${BASE}${state.patient}`);
+    await rec.waitForSelector(`[data-testid=overview-referral-reason] >> text=${REASON}`);
+    await navTopAligned(rec, "record overview (reception)");
+    await rec.goto(`${BASE}${state.patient}/cases`);
+    await rec.waitForSelector(`[data-testid=case-referral-reason] >> text=${REASON}`);
+    await navTopAligned(rec, "cases tab (reception)");
+    await shot(rec, "cases-reception-referral-1440");
+    // The owner switches "See referral reason and case notes" off for Reception (Roles and permissions).
+    const toggle = async (on) => {
+      await owner.goto(`${BASE}/app/clinic/access/roles`);
+      const cell = owner.locator("tbody tr", { has: owner.locator('th[scope=row] >> text="See referral reason and case notes"') }).locator("td").nth(3).locator("input[type=checkbox]");
+      if (on) await cell.check();
+      else await cell.uncheck();
+      await owner.click("button:has-text('Review and save (1)')");
+      await owner.click("[role=alertdialog] >> button:has-text('Save changes')");
+      await owner.waitForSelector("text=/1 change saved at/");
+    };
+    await toggle(false);
+    await rec.goto(`${BASE}${state.patient}`);
+    await rec.waitForSelector("main >> text=Open case");
+    assert((await rec.locator("[data-testid=overview-referral-reason]").count()) === 0, "overview: no referral reason");
+    await rec.goto(`${BASE}${state.patient}/cases`);
+    assert((await rec.locator("[data-testid=case-referral-reason]").count()) === 0, "cases: no referral reason");
+    assert(!(await rec.locator("main").innerText()).includes(REASON), "the text is not on the page");
+    await shot(rec, "cases-reception-no-referral-1440");
+    await toggle(true);
+    await rec.goto(`${BASE}${state.patient}/cases`);
+    await rec.waitForSelector(`[data-testid=case-referral-reason] >> text=${REASON}`);
   });
 
   await step("owner: subject-access copy (PDF and JSON) downloads; reception and clinician are refused", async () => {

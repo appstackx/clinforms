@@ -24,7 +24,7 @@ export const metadata: Metadata = { title: "Patient record", robots: { index: fa
  */
 export default async function StandInTab({ params }: { params: { patientId: string; tab: string } }) {
   const actor = await requireClinicActor({ permission: "patients.view" });
-  // Each stand-in has its slot's permission (diary.view, billing.view, messages.view, patients.view).
+  // Each stand-in has its slot's permission (diary.view, billing.view, messages.send, patients.view).
   const permission = STAND_IN_KEYS.includes(params.tab) ? standInPermission(params.tab) : null;
   if (!permission || !actor.can(permission)) notFound();
   const registered = { appointments: "diary", invoices: "billing", messages: "comms", forms: "portal" }[params.tab];

@@ -19,7 +19,7 @@ export const metadata: Metadata = { title: "Patient record", robots: { index: fa
 const linkClass = "text-sm font-medium text-primary-strong hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary rounded";
 
 /**
- * The record's Overview tab (design round 2): open case with its authorised sessions and "Complete referrer form",
+ * The record's Overview tab (design round 2): open case with its referral reason (patients.referral), authorised sessions and "Complete referrer form",
  * upcoming appointments, latest notes (clinicians, owners, administrators only), account and forms.
  *
  * TODO(billing): the Account card (patient and insurer balance, saved card) – billing module.
@@ -50,6 +50,13 @@ export default async function PatientOverviewPage({ params }: { params: { patien
                   {["Opened " + formatUkDate(open.openedOn), payer?.name ?? (open.payerType !== "self_pay" ? PAYER_TYPE_LABELS[open.payerType] : "Self-pay"), auth ? `Auth ${auth.code}` : null].filter(Boolean).join(" · ")}
                 </span>
               </div>
+              {details && details.ok && details.value.case.referralReason ? (
+                // Masked by the service without "See referral reason and case notes" (patients.referral).
+                <p className="text-sm" data-testid="overview-referral-reason">
+                  <span className="font-medium">Reason for referral: </span>
+                  <span className="whitespace-pre-line text-[#334155]">{details.value.case.referralReason}</span>
+                </p>
+              ) : null}
               {auth && auth.sessionsAuthorised !== null ? (
                 <div className="flex flex-col gap-1.5">
                   <div className="flex items-center justify-between gap-2 text-sm">

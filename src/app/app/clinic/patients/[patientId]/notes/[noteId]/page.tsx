@@ -1,3 +1,4 @@
+import { mayAmendNote } from "@/modules/pms/core/permissions";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -145,6 +146,7 @@ export default async function NotePage({ params }: { params: { patientId: string
           draftOf={note.status === "draft" && !result.value.mine ? (note.authorName ?? "another member") : null}
           signedLine={note.signedAt && signer ? `Signed by ${signer} on ${dateOf(note.signedAt)} at ${timeOf(note.signedAt)}.` : null}
           signerLabel={me.registration ? `${me.name} (${me.registration})` : me.name}
+          registrationMissing={me.registration?.trim() ? null : { href: actor.can("settings.members") ? `/app/clinic/access/${encodeURIComponent(actor.userId)}` : null }}
           amendments={amendments}
           outcomesToday={outcomesToday}
           outcomesHref={patientPath(p.id, "outcomes")}

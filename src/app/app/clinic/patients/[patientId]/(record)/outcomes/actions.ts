@@ -13,7 +13,7 @@ import { markOutcomeInErrorFor, recordOutcomeFor } from "@/server/pms/records/ou
 import { patientPath } from "@/server/pms/records/record";
 
 export async function recordMeasure(_prev: RecordsActionState, form: FormData): Promise<RecordsActionState> {
-  const actor = await clinicActionActor({ permission: "clinical.edit" });
+  const actor = await clinicActionActor({ permission: "clinical.write" });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
   const patientId = text(form, "patientId");
   const measure = OutcomeMeasureIdSchema.safeParse(text(form, "measure"));
@@ -30,7 +30,7 @@ export async function recordMeasure(_prev: RecordsActionState, form: FormData): 
 }
 
 export async function markMeasureInError(_prev: RecordsActionState, form: FormData): Promise<RecordsActionState> {
-  const actor = await clinicActionActor({ permission: "clinical.edit" });
+  const actor = await clinicActionActor({ permission: "clinical.write" });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
   const patientId = text(form, "patientId");
   const result = await markOutcomeInErrorFor(actor, patientId, text(form, "outcomeId"), text(form, "reason"));

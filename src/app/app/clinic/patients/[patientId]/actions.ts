@@ -45,7 +45,7 @@ export async function changePatientStatus(_prev: RecordsActionState, form: FormD
 }
 
 export async function changeLegalHold(_prev: RecordsActionState, form: FormData): Promise<RecordsActionState> {
-  const actor = await clinicActionActor({ permission: "settings.manage" });
+  const actor = await clinicActionActor({ permission: "settings.setup" });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
   const patientId = text(form, "patientId");
   const hold = text(form, "hold") === "on";
@@ -55,7 +55,7 @@ export async function changeLegalHold(_prev: RecordsActionState, form: FormData)
 }
 
 export async function anonymiseRecord(_prev: RecordsActionState, form: FormData): Promise<RecordsActionState> {
-  const actor = await clinicActionActor({ permission: "settings.manage" });
+  const actor = await clinicActionActor({ permission: "patients.merge" });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
   const patientId = text(form, "patientId");
   const typed = text(form, "confirmNumber").trim();
@@ -83,7 +83,7 @@ export async function savePronouns(_prev: RecordsActionState, form: FormData): P
 
 /** Adds a clinical flag (clinicians, owners, administrators – never reception). */
 export async function addClinicalFlag(_prev: RecordsActionState, form: FormData): Promise<RecordsActionState> {
-  const actor = await clinicActionActor({ permission: "clinical.edit" });
+  const actor = await clinicActionActor({ permission: "clinical.write" });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
   const patientId = text(form, "patientId");
   const result = await addClinicalFlagFor(actor, patientId, text(form, "text"));
@@ -92,7 +92,7 @@ export async function addClinicalFlag(_prev: RecordsActionState, form: FormData)
 }
 
 export async function endClinicalFlag(_prev: RecordsActionState, form: FormData): Promise<RecordsActionState> {
-  const actor = await clinicActionActor({ permission: "clinical.edit" });
+  const actor = await clinicActionActor({ permission: "clinical.write" });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
   const patientId = text(form, "patientId");
   const result = await endClinicalFlagFor(actor, patientId, text(form, "flagId"), intField(form, "expectedRev"));
@@ -106,7 +106,7 @@ export async function endClinicalFlag(_prev: RecordsActionState, form: FormData)
  * the form names one. Opens the note editor.
  */
 export async function newNote(_prev: RecordsActionState, form: FormData): Promise<RecordsActionState> {
-  const actor = await clinicActionActor({ permission: "clinical.edit" });
+  const actor = await clinicActionActor({ permission: "clinical.write" });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
   const patientId = text(form, "patientId");
   const caseId = optional(form, "caseId");

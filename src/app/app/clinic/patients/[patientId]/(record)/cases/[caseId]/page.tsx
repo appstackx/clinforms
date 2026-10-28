@@ -86,19 +86,19 @@ export default async function CasePage({ params }: { params: { patientId: string
             { label: "Date of injury", value: formatUkDate(c.injuryOn) },
           ]}
         />
-        {c.referralReason ? (
+        {c.referralReason && actor.can("patients.referral") ? (
           <div className="mt-4">
             <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Reason for referral</h3>
             <p className="mt-0.5 whitespace-pre-line text-sm text-foreground">{c.referralReason}</p>
           </div>
         ) : null}
-        {c.notes ? (
+        {c.notes && actor.can("patients.referral") ? (
           <div className="mt-4">
             <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Case notes</h3>
             <p className="mt-0.5 whitespace-pre-line text-sm text-foreground">{c.notes}</p>
           </div>
         ) : null}
-        {canEdit ? (
+        {canEdit && actor.can("patients.referral") ? (
           <details className="mt-5 rounded-xl border border-border p-3 open:bg-[#F8FAFC]/50">
             <summary className="cursor-pointer rounded text-sm font-semibold text-primary-strong focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">Edit the case</summary>
             <div className="mt-4">

@@ -16,7 +16,7 @@ export const metadata: Metadata = { title: "Anonymise record", robots: { index: 
  * confirmed by typing the patient's number. Who the patient was and every free text go; dates and scores stay.
  */
 export default async function AnonymisePage({ params }: { params: { patientId: string } }) {
-  const actor = await requireClinicActor({ permission: "settings.manage" });
+  const actor = await requireClinicActor({ permission: "patients.merge" });
   const patient = await patientOr404(actor, params.patientId);
   const state = await anonymiseEligibilityFor(actor, patient.id);
   return (

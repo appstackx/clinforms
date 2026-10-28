@@ -31,31 +31,31 @@ function done(result: DiaryActionResult): DiaryActionResult {
 }
 
 export async function addToWaitingListAction(input: AddToWaitingListRequest): Promise<DiaryActionResult> {
-  const actor = await clinicActionActor({ permission: "diary.book" });
+  const actor = await clinicActionActor({ permission: "diary.rota" });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
   return done(await addToWaitingListFor(await diaryCallerOf(actor), input));
 }
 
 export async function updateWaitingListEntryAction(input: UpdateWaitingListEntryRequest): Promise<DiaryActionResult> {
-  const actor = await clinicActionActor({ permission: "diary.book" });
+  const actor = await clinicActionActor({ permission: "diary.rota" });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
   return done(await updateWaitingListEntryFor(await diaryCallerOf(actor), input));
 }
 
 export async function setWaitingListStatusAction(input: WaitingListStatusRequest): Promise<DiaryActionResult> {
-  const actor = await clinicActionActor({ permission: "diary.book" });
+  const actor = await clinicActionActor({ permission: "diary.rota" });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
   return done(await setWaitingListStatusFor(await diaryCallerOf(actor), input));
 }
 
 export async function offerWaitingListSlotAction(input: OfferWaitingListSlotRequest): Promise<DiaryActionResult> {
-  const actor = await clinicActionActor({ permission: "diary.book" });
+  const actor = await clinicActionActor({ permission: "diary.rota" });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
   return done(await offerWaitingListSlotFor(await diaryCallerOf(actor), input));
 }
 
 export async function answerWaitingListOfferAction(input: AnswerWaitingListOfferRequest): Promise<DiaryActionResult> {
-  const actor = await clinicActionActor({ permission: "diary.book" });
+  const actor = await clinicActionActor({ permission: "diary.rota" });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
   return done(await answerWaitingListOfferFor(await diaryCallerOf(actor), input));
 }

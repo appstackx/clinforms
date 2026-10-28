@@ -17,11 +17,11 @@ export const metadata: Metadata = { title: "Unsigned notes" };
 /**
  * /app/clinic/patients/unsigned-notes – unsigned notes (K2-NOTE-008, design round 2): a clinician's own drafts, oldest
  * consultation first, the overdue ones marked ("Over 24 h" – the clinic's record-keeping setting). Owners and
- * administrators (settings.manage) can switch to every author's, with a count per clinician. clinical.view.
+ * administrators (settings.setup) can switch to every author's, with a count per clinician. clinical.view.
  */
 export default async function UnsignedNotesPage({ searchParams }: { searchParams: { scope?: string } }) {
   const actor = await requireClinicActor({ permission: "clinical.view" });
-  const canAll = actor.can("settings.manage");
+  const canAll = actor.can("settings.setup");
   const scope = canAll && searchParams.scope === "all" ? "all" : "mine";
   const result = await unsignedNotesFor(actor, { scope });
   const today = ukToday();

@@ -3,9 +3,12 @@
  * screens: list, upload (type from the file's own bytes, size limits, encrypted in pieces), download (verified,
  * always as a download, recorded in the history), withdraw (hidden, kept). Rules: ./access.ts.
  *
- *   clinical.view   – list, download active files
- *   clinical.edit   – upload, withdraw
- *   patients.export – also download a withdrawn file (subject access: the patient's copy of everything kept)
+ *   clinical.view  – list, download active files
+ *   clinical.write – upload, withdraw
+ *   reports.export – also download a withdrawn file (subject access: the patient's copy of everything kept)
+ *
+ * Attachments stay clinical (Khuram, 28/10/2026): reception never sees them, even a referral letter – the referral
+ * REASON on the case is what "See referral reason and case notes" (patients.referral) shows them.
  */
 import { MAX_ATTACHMENT_BYTES, MAX_DESCRIPTION_CHARS } from "../../../modules/pms/records/attachments";
 import type { AttachmentDetails, AttachmentMeta } from "../../../modules/pms/records/types";
@@ -34,7 +37,7 @@ export interface UploadFileInput {
 }
 
 export async function uploadFileFor(actor: RecordsActor, patientId: string, input: UploadFileInput): Promise<Result<AttachmentMeta>> {
-  const denied = guard(actor, "clinical.edit");
+  const denied = guard(actor, "clinical.write");
   if (denied) return denied;
   if (!(input.bytes instanceof Uint8Array) || input.bytes.byteLength === 0) return fail("invalid", "Choose a file to attach.");
   if (input.bytes.byteLength > MAX_ATTACHMENT_BYTES) return fail("invalid", "The file is larger than 4 MB.");
@@ -69,7 +72,7 @@ export async function downloadFileFor(actor: RecordsActor, patientId: string, at
     if (!patient || !attachmentId) return notFound();
     const meta = await getAttachment(actor.repo(), actor.tenantId, attachmentId);
     if (!meta || meta.patientId !== patient.id) return notFound();
-    if (meta.status === "withdrawn" && !actor.can("patients.export")) return notFound();
+    if (meta.status === "withdrawn" && !actor.can("reports.export")) return notFound();
     let file;
     try {
       file = await getAttachmentFile(actor.repo(), actor.tenantId, meta.id);
@@ -84,7 +87,7 @@ export async function downloadFileFor(actor: RecordsActor, patientId: string, at
 }
 
 export async function withdrawFileFor(actor: RecordsActor, patientId: string, attachmentId: string, reason: string): Promise<Result<{ changed: boolean }>> {
-  const denied = guard(actor, "clinical.edit");
+  const denied = guard(actor, "clinical.write");
   if (denied) return denied;
   const text = String(reason ?? "").trim();
   if (!text) return fail("invalid", "Give the reason.", { fieldErrors: { reason: "Give the reason." } });
