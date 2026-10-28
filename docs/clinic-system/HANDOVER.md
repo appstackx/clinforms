@@ -728,3 +728,49 @@ anyway" in quiet hours not built.
 ### 15.8 Next
 **M7 Online booking + portal + intake** (portal branch): diary adapter for the portal's bookings, portal outbox → comms
 (`sendDocumentMessage` / templates incl. `portal_link`), public pages, Prototype B e2e.
+
+## 16. M7 online booking + portal + intake + patient questionnaires (28/10/2026) – IN PROGRESS (midpoint)
+
+**Midpoint state (pushed; `main` untouched):** `feat/cs-portal` **`6f3320f`** = `feat/clinic-system` `d1f350b` merged in
+(`dffa6f6`, no conflicts) + `572ac44` (comms: offer texts respect quiet hours) + `6f3320f` (portal back end). Worktree
+`/Users/khuram/Projects/Appstackx/clinforms-wt/cs-portal` (npm ci done incl. workers/data-gateway; `.env.local` copied
+from cs-comms). test:pms green except nothing; portal suite 17/17 on SQLite, PGlite, D1 stand-in, local workerd D1.
+**Not yet done at midpoint:** screens (public route group, portal, staff set-up / intake builder / record Forms tab /
+Overview card / outcome send), seed `seed-portal.ts`, e2e `pms-prototype-b.cjs` + `pms-portal-screens.cjs`, designs
+commit, full chain, merges. If you pick this up: continue from `6f3320f` on `feat/cs-portal`.
+
+### 16.1 Decisions (Khuram, 28/10/2026) – recorded here
+- **M6 follow-ups:** (5) waiting-list offer texts MUST respect quiet hours – DONE in `572ac44` (held as `queued` with
+  `hold_until`, migration 0142, released by the message run; email offers never held; a slot before quiet hours end
+  goes by email or is refused as too late; suite test). DNA follow-up on by default (as built); "stop emails" stops
+  reminder emails only (as built – note: it also stops offer emails and staff-written emails, since only booking
+  notices, invoices, receipts, statements, letters and the portal sign-in count as transactional); C/NO replies go to a
+  person, no auto-cancel (as built); a move before the confirmation went sends the confirmation for the new time (as
+  built); in-place edits of never-applied 0140/0141 were OK.
+- **(1) Scheduled message run:** a free **Cloudflare cron** (Workers Cron Trigger, e.g. `*/15 * * * *`) that calls
+  `POST /api/clinic-messages/cron` on the app with the `CRON_SECRET` bearer header. Plan only: a tiny Worker
+  (`scheduled()` → `fetch(APP_ORIGIN + "/api/clinic-messages/cron", { headers: { authorization: "Bearer " + CRON_SECRET } })`)
+  with `CRON_SECRET` as a Worker secret; no vercel.json entry. **Nothing deployed to Cloudflare or Vercel** – do it only
+  with Khuram's go at go-live. Until then "Send due messages now" on Messages.
+- **Online booking distance** ("0.8 miles") shown ONLY after the patient taps "Use my location" or enters a postcode,
+  computed in the browser from the sites' map positions (new `pms_booking_sites.lat_e6/lng_e6`); nothing about the
+  patient is sent or stored. Without it the sites are listed by name with the next available time.
+
+### 16.2 Review findings on the October draft (fixed in `6f3320f`)
+1. **Two appointment stores** – online bookings were portal rows with their own clash trigger. Now every online booking
+   is a diary appointment (`pms_appointments.source = online`) booked by the diary's own `bookAppointment` through the
+   diary's adapter for the portal's port (`src/server/pms/diary/portal-adapter.ts`); `pms_online_bookings` keeps only
+   reference, channel, patient match and the manage-link hash, written in the SAME batch (new `BookOptions.alsoWrite`).
+2. **Two opening-hours sources** – `pms_booking_hours` dropped; slots are the diary's `findFreeSlots` (rota windows
+   marked "online", minus appointments and blocked time incl. closures) within notice / horizon. New
+   `pms_booking_sites` (on/off per site + map position).
+3. **Own outbox** – `pms_portal_messages` dropped; sign-in links through comms (`portal_link` template via
+   `sendDocumentMessage`); confirmation / cancelled / late-cancelled / moved notices are the diary hook's appointment
+   messages; the portal runs the due messages straight after a patient's write so the confirmation is in the outbox.
+4. **Audit after the write** (settings, account status, sign-out, shares, intake update / submit / cancel / review /
+   apply) – now one batch with a conditional audit row (`portalAuditWhen`, `src/server/repos/pms/portal/shared.ts`).
+5. **Late cancellation refused** – now allowed and recorded as the diary's `late_cancelled` with the fee flag (design:
+   "Cancel and accept the fee"); a MOVE inside the notice is refused ("call the clinic").
+6. Sign-in by **email only** (design) with the same answer for everyone; links 15 min (patient asked) / 72 h (staff
+   sent with a form), single use, hash only.
+7. Migrations 0150–0152 **edited in place** (never applied anywhere – same reasoning as 0140/0141).
