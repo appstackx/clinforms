@@ -14,8 +14,8 @@ import "server-only";
 import { z } from "zod";
 import { PMS_ID_PATTERN } from "../../../modules/pms/core/ids";
 import type { PmsPermission } from "../../../modules/pms/core/permissions";
-import { PmsIdSchema } from "../../../modules/pms/core/schemas";
-import { isIsoDate } from "../../../modules/pms/core/text";
+import { PAYER_TYPES, PmsIdSchema, type PatientInput } from "../../../modules/pms/core/schemas";
+import { formatUkDate, isIsoDate } from "../../../modules/pms/core/text";
 import { DIARY_COPY, STATUS_LABELS } from "../../../modules/pms/diary/copy";
 import { CANCEL_REASONS, isLateCancellation } from "../../../modules/pms/diary/rules";
 import {
@@ -36,7 +36,7 @@ import {
   WaitingListPatchSchema,
   WaitingListStatusSchema,
 } from "../../../modules/pms/diary/schemas";
-import { formatHhmm, londonParts } from "../../../modules/pms/diary/time";
+import { addDays, formatHhmm, londonParts, parseHhmm, weekdayName } from "../../../modules/pms/diary/time";
 import type { BookResult, DiaryActionResult } from "../../../modules/pms/diary/types";
 import { nowIso } from "../../repos/context";
 import {
@@ -51,7 +51,7 @@ import {
   setAppointmentStatus,
   updateAppointmentDetails,
 } from "../../repos/pms/diary/appointments";
-import { createAvailability, endAvailability, getAvailability, updateAvailability } from "../../repos/pms/diary/availability";
+import { createAvailability, endAvailability, getAvailability, listAvailability, updateAvailability } from "../../repos/pms/diary/availability";
 import {
   addToWaitingList,
   answerWaitingListOffer,
@@ -61,6 +61,13 @@ import {
   setWaitingListStatus,
   updateWaitingListEntry,
 } from "../../repos/pms/diary/waiting-list";
+import { setDaySheetDob } from "../../repos/pms/diary/settings";
+import { DUPLICATE_REASON_LABELS } from "../../../modules/pms/records/duplicates";
+import type { RecordsActor } from "../records/access";
+import { registerPatientFor } from "../records/patients-service";
+import { openCaseFor } from "../records/cases-service";
+import { startNoteFor, templatesForNewNote } from "../records/notes-service";
+import { patientDisplayName } from "./view";
 import { clashMessages, diaryAction, fromPmsSave, fromSaveResult, invalid, warningMessages } from "./actions-support";
 import { inScope, type DiaryCaller } from "./caller";
 
@@ -84,6 +91,11 @@ export const DIARY_ACTION_PERMISSIONS = {
   offerWaitingListSlotAction: "diary.book",
   answerWaitingListOfferAction: "diary.book",
   bookWaitingListOfferAction: "diary.book",
+  setDaySheetDobAction: "settings.manage",
+  registerBookingPatientAction: "patients.edit",
+  openBookingCaseAction: "patients.edit",
+  startTreatmentAction: "clinical.edit",
+  saveWeeklyRotaAction: "diary.manage",
 } as const satisfies Record<string, PmsPermission>;
 
 export type DiaryActionName = keyof typeof DIARY_ACTION_PERMISSIONS;
@@ -140,6 +152,7 @@ function bookAnswer(r: BookResult, occurrences: number): DiaryActionResult {
 
 const BookingFlagsSchema = z.object({
   skipClashes: z.boolean().optional(),
+  skipDates: z.array(z.string().refine(isIsoDate, "A date as YYYY-MM-DD")).max(52).optional(),
   allowPatientOverlap: z.boolean().optional(),
   waitingListId: z.preprocess((v) => (v === "" || v === null ? undefined : v), PmsIdSchema.optional()),
 });
@@ -151,8 +164,8 @@ const BookingFlagsSchema = z.object({
 /** Books an appointment or a recurring series (optionally settling a waiting-list entry). */
 export async function bookAppointmentFor(caller: DiaryCaller, input: unknown): Promise<DiaryActionResult> {
   if (!allowed(caller, "bookAppointmentAction")) return NOT_ALLOWED;
-  const { skipClashes, allowPatientOverlap, waitingListId, ...booking } = obj(input);
-  const flags = BookingFlagsSchema.safeParse({ skipClashes, allowPatientOverlap, waitingListId });
+  const { skipClashes, skipDates, allowPatientOverlap, waitingListId, ...booking } = obj(input);
+  const flags = BookingFlagsSchema.safeParse({ skipClashes, skipDates, allowPatientOverlap, waitingListId });
   if (!flags.success) return invalid(flags.error);
   const parsed = BookAppointmentSchema.safeParse(booking);
   if (!parsed.success) return invalid(parsed.error);
@@ -160,6 +173,7 @@ export async function bookAppointmentFor(caller: DiaryCaller, input: unknown): P
   return diaryAction("book", async () => {
     const r = await bookAppointment(caller.ctx, caller.tenantId, parsed.data, caller.actor, {
       skipClashes: flags.data.skipClashes === true,
+      skipDates: flags.data.skipDates,
       allowPatientOverlap: flags.data.allowPatientOverlap === true,
       waitingListId: flags.data.waitingListId,
     });
@@ -497,7 +511,7 @@ export async function bookWaitingListOfferFor(caller: DiaryCaller, input: unknow
  * ----------------------------------------------------------------------------------------------*/
 
 type Id = { id: string };
-export type BookAppointmentRequest = import("../../../modules/pms/diary/schemas").BookAppointmentInput & { skipClashes?: boolean; allowPatientOverlap?: boolean; waitingListId?: string | null };
+export type BookAppointmentRequest = import("../../../modules/pms/diary/schemas").BookAppointmentInput & { skipClashes?: boolean; skipDates?: string[]; allowPatientOverlap?: boolean; waitingListId?: string | null };
 export type RebookAppointmentRequest = Id & import("../../../modules/pms/diary/schemas").RebookAppointmentInput & { allowPatientOverlap?: boolean };
 export type MoveAppointmentRequest = Id & import("../../../modules/pms/diary/schemas").MoveAppointmentInput & { allowPatientOverlap?: boolean };
 export type ResizeAppointmentRequest = Id & import("../../../modules/pms/diary/schemas").ResizeAppointmentInput;
@@ -515,3 +529,219 @@ export type WaitingListStatusRequest = Id & import("../../../modules/pms/diary/s
 export type OfferWaitingListSlotRequest = Id & import("../../../modules/pms/diary/schemas").WaitingListOfferInput;
 export type AnswerWaitingListOfferRequest = { offerId: string } & import("../../../modules/pms/diary/schemas").WaitingListOfferAnswer;
 export type BookWaitingListOfferRequest = { offerId: string } & z.input<typeof BookOfferSchema>;
+
+/* ------------------------------------------------------------------------------------------------
+ * Diary settings (settings.manage – owners and administrators)
+ * ----------------------------------------------------------------------------------------------*/
+
+const DaySheetDobSchema = z.object({ on: z.boolean() });
+
+/** "Show date of birth on the printed day sheet" (default off). */
+export async function setDaySheetDobFor(caller: DiaryCaller, input: unknown): Promise<DiaryActionResult> {
+  if (!allowed(caller, "setDaySheetDobAction")) return NOT_ALLOWED;
+  const parsed = DaySheetDobSchema.safeParse(obj(input));
+  if (!parsed.success) return invalid(parsed.error);
+  return diaryAction("diary_settings", async () => {
+    const saved = await setDaySheetDob(caller.ctx, caller.tenantId, parsed.data.on, caller.actor);
+    return { ok: true, message: saved.showDobOnDaySheet ? "Dates of birth will be printed on the day sheet." : "Dates of birth will not be printed on the day sheet.", warnings: [], rev: saved.rev };
+  });
+}
+export type SetDaySheetDobRequest = z.input<typeof DaySheetDobSchema>;
+
+/* ------------------------------------------------------------------------------------------------
+ * From the booking dialog and the appointment drawer: a new patient (records' duplicate check), a case, a
+ * clinical note for an arrived patient ("Start treatment"); the weekly rota editor
+ * ----------------------------------------------------------------------------------------------*/
+
+/** The records services take the member as a RecordsActor; the diary's caller carries the same facts. */
+function recordsActorOf(caller: DiaryCaller): RecordsActor {
+  return {
+    tenantId: caller.tenantId,
+    userId: caller.actor.userId ?? "",
+    name: caller.member?.name ?? "",
+    email: caller.member?.email ?? "",
+    can: caller.can,
+    actor: caller.actor,
+    repo: () => caller.ctx,
+  };
+}
+
+const BookingPatientSchema = z.object({
+  firstName: z.string().trim().min(1, "Enter the first name").max(80),
+  lastName: z.string().trim().min(1, "Enter the last name").max(80),
+  /** YYYY-MM-DD (the dialog converts DD/MM/YYYY). */
+  dateOfBirth: z.union([z.string().refine(isIsoDate, "Enter the date of birth as DD/MM/YYYY"), z.literal("")]).optional(),
+  phoneMobile: z.string().trim().max(40).optional(),
+  email: z.string().trim().max(200).optional(),
+  reminders: z.boolean().optional(),
+  /** "This is a different person" after the possible-duplicates answer. */
+  confirmNotDuplicate: z.boolean().optional(),
+});
+export type RegisterBookingPatientRequest = z.input<typeof BookingPatientSchema>;
+
+/**
+ * Registers a new patient from the booking dialog through the records service – which answers possible duplicates
+ * (same last name and date of birth, email or phone) instead of creating a second record, unless the member ticked
+ * "This is a different person". patients.edit (records checks it again).
+ */
+export async function registerBookingPatientFor(caller: DiaryCaller, input: unknown): Promise<DiaryActionResult> {
+  if (!allowed(caller, "registerBookingPatientAction")) return NOT_ALLOWED;
+  const parsed = BookingPatientSchema.safeParse(obj(input));
+  if (!parsed.success) return invalid(parsed.error);
+  const d = parsed.data;
+  return diaryAction("register_patient", async () => {
+    const r = await registerPatientFor(
+      recordsActorOf(caller),
+      {
+        firstName: d.firstName,
+        lastName: d.lastName,
+        dateOfBirth: d.dateOfBirth || null,
+        phoneMobile: d.phoneMobile || null,
+        email: d.email || null,
+        reminderSms: d.reminders !== false,
+        reminderEmail: d.reminders !== false,
+      } as PatientInput,
+      { confirmNotDuplicate: d.confirmNotDuplicate === true },
+    );
+    if (!r.ok) return { ok: false, error: r.error, fieldErrors: r.fieldErrors };
+    if (r.value.kind === "possible_duplicates") {
+      return {
+        ok: false,
+        error: "This patient may already be registered. Choose them under “Find existing”, or tick “This is a different person”.",
+        clashes: r.value.duplicates.map((x) => `${patientDisplayName(x.patient)} (No. ${x.patient.patientNumber}${x.patient.dateOfBirth ? `, born ${formatUkDate(x.patient.dateOfBirth)}` : ""}) – ${x.reasons.map((reason) => DUPLICATE_REASON_LABELS[reason].toLowerCase()).join(", ")}`),
+        duplicates: r.value.duplicates.map((x) => ({ id: x.patient.id, name: patientDisplayName(x.patient), number: x.patient.patientNumber })),
+      };
+    }
+    const p = r.value.patient;
+    return { ok: true, message: `${patientDisplayName(p)} registered (No. ${p.patientNumber}).`, warnings: [], itemId: p.id };
+  });
+}
+
+const BookingCaseSchema = z.object({
+  patientId: PmsIdSchema,
+  title: z.string().trim().min(1).max(120),
+  openedOn: z.string().refine(isIsoDate, "A date as YYYY-MM-DD"),
+  payerType: z.enum(PAYER_TYPES),
+  payerReferrerId: z.preprocess((v) => (v === "" ? null : v), z.union([PmsIdSchema, z.null()]).optional()),
+  practitionerId: z.preprocess((v) => (v === "" ? null : v), z.union([PmsIdSchema, z.null()]).optional()),
+  siteId: z.preprocess((v) => (v === "" ? null : v), z.union([PmsIdSchema, z.null()]).optional()),
+});
+export type OpenBookingCaseRequest = z.input<typeof BookingCaseSchema>;
+
+/** Opens a case for the booking ("New case" with its payer) through the records service. patients.edit. */
+export async function openBookingCaseFor(caller: DiaryCaller, input: unknown): Promise<DiaryActionResult> {
+  if (!allowed(caller, "openBookingCaseAction")) return NOT_ALLOWED;
+  const parsed = BookingCaseSchema.safeParse(obj(input));
+  if (!parsed.success) return invalid(parsed.error);
+  const { patientId, ...rest } = parsed.data;
+  if (rest.siteId && !inScope(caller, rest.siteId)) return NOT_YOUR_SITE;
+  return diaryAction("open_case", async () => {
+    const r = await openCaseFor(recordsActorOf(caller), patientId, rest);
+    if (!r.ok) return { ok: false, error: r.error, fieldErrors: r.fieldErrors };
+    return { ok: true, message: "Case opened.", warnings: [], itemId: r.value.id };
+  });
+}
+
+const StartTreatmentSchema = z.object({ id: PmsIdSchema });
+
+/**
+ * "Start treatment" for an arrived patient: starts the clinician's clinical note for this appointment (the clinic's
+ * first note template, linked to the appointment and its case) and answers the note's id – the drawer opens it.
+ * clinical.edit (the records service checks it again). The diary has no "in treatment" status of its own.
+ */
+export async function startTreatmentFor(caller: DiaryCaller, input: unknown): Promise<DiaryActionResult> {
+  if (!allowed(caller, "startTreatmentAction")) return NOT_ALLOWED;
+  const parsed = StartTreatmentSchema.safeParse(obj(input));
+  if (!parsed.success) return { ok: false, error: DIARY_COPY.notFound, conflict: true };
+  return diaryAction("start_treatment", async () => {
+    const item = await scopedItem(caller, parsed.data.id);
+    if (!item || item.kind !== "appointment" || !item.patientId) return GONE;
+    if (item.status !== "arrived") return { ok: false, error: "Mark the patient as arrived first." };
+    const actor = recordsActorOf(caller);
+    const templates = await templatesForNewNote(actor);
+    if (!templates.ok) return { ok: false, error: templates.error };
+    const template = templates.value[0];
+    if (!template) return { ok: false, error: "The clinic has no note templates yet. Add one in the clinic's set-up first." };
+    const note = await startNoteFor(actor, item.patientId, { templateId: template.id, seenOn: item.startsOn, caseId: item.caseId, appointmentId: item.id });
+    if (!note.ok) return { ok: false, error: note.error };
+    return { ok: true, message: "Treatment started – the note is open.", warnings: [], itemId: note.value.id };
+  });
+}
+
+const RotaDaySchema = z.object({
+  weekday: z.number().int().min(1).max(7),
+  working: z.boolean(),
+  siteId: z.preprocess((v) => (v === "" ? null : v), z.union([PmsIdSchema, z.null()]).optional()),
+  roomId: z.preprocess((v) => (v === "" ? null : v), z.union([PmsIdSchema, z.null()]).optional()),
+  start: z.string().optional(),
+  end: z.string().optional(),
+  breakStart: z.string().optional(),
+  breakEnd: z.string().optional(),
+});
+const WeeklyRotaSchema = z.object({
+  practitionerId: PmsIdSchema,
+  from: z.string().refine(isIsoDate, "Enter the first day as DD/MM/YYYY"),
+  days: z.array(RotaDaySchema).max(7),
+});
+export type SaveWeeklyRotaRequest = z.input<typeof WeeklyRotaSchema>;
+
+/** A day's working pattern as rota segments (a break splits the day in two). Null = not valid (message). */
+function segmentsOf(day: z.infer<typeof RotaDaySchema>): { segments: { start: number; end: number }[] } | { error: string } {
+  if (!day.working) return { segments: [] };
+  const start = parseHhmm(day.start ?? "");
+  const end = day.end?.trim() === "24:00" ? 1440 : parseHhmm(day.end ?? "");
+  if (start === null || end === null || end <= start) return { error: `${weekdayName(day.weekday)}: the end must be after the start (HH:MM).` };
+  const bs = day.breakStart?.trim() ? parseHhmm(day.breakStart) : null;
+  const be = day.breakEnd?.trim() ? parseHhmm(day.breakEnd) : null;
+  if ((bs === null) !== (be === null)) return { error: `${weekdayName(day.weekday)}: give the break a start and an end, or leave both empty.` };
+  if (bs !== null && be !== null) {
+    if (!(start < bs && bs < be && be < end)) return { error: `${weekdayName(day.weekday)}: the break must sit inside the working hours.` };
+    return { segments: [{ start, end: bs }, { start: be, end }] };
+  }
+  return { segments: [{ start, end }] };
+}
+
+/**
+ * Saves a practitioner's weekly pattern from a date (the rota editor's "Save rota"): for every weekday whose
+ * pattern changed, the entries in force end the day before and new entries (one per segment around the break)
+ * start on that date – earlier weeks and their bookings stay as they were. Days left unchanged are not touched.
+ * Not one atomic write: each step is its own audited change, and a failure stops with what was saved so far.
+ */
+export async function saveWeeklyRotaFor(caller: DiaryCaller, input: unknown): Promise<DiaryActionResult> {
+  if (!allowed(caller, "saveWeeklyRotaAction")) return NOT_ALLOWED;
+  const parsed = WeeklyRotaSchema.safeParse(obj(input));
+  if (!parsed.success) return invalid(parsed.error);
+  const { practitionerId, from, days } = parsed.data;
+  for (const day of days) if (day.working && day.siteId && !inScope(caller, day.siteId)) return NOT_YOUR_SITE;
+  const plans: { day: z.infer<typeof RotaDaySchema>; segments: { start: number; end: number }[] }[] = [];
+  for (const day of days) {
+    const r = segmentsOf(day);
+    if ("error" in r) return { ok: false, error: r.error };
+    if (day.working && !day.siteId) return { ok: false, error: `${weekdayName(day.weekday)}: choose the site.` };
+    plans.push({ day, segments: r.segments });
+  }
+  return diaryAction("rota_week", async () => {
+    const current = (await listAvailability(caller.ctx, caller.tenantId, { practitionerId, today: from })).filter((r) => inScope(caller, r.siteId));
+    let changedDays = 0;
+    for (const { day, segments } of plans) {
+      const mine = current.filter((r) => r.weekday === day.weekday);
+      const now = mine.map((r) => `${r.siteId}|${r.roomId ?? ""}|${r.startMinute}|${r.endMinute}|${r.everyWeeks}`).sort();
+      const wanted = segments.map((s) => `${day.siteId}|${day.roomId ?? ""}|${s.start}|${s.end}|1`).sort();
+      if (now.join(";") === wanted.join(";")) continue;
+      changedDays += 1;
+      for (const r of mine) {
+        const ended = await endAvailability(caller.ctx, caller.tenantId, r.id, r.rev, addDays(from, -1), caller.actor);
+        if (!ended.ok) return { ok: false, error: DIARY_COPY.changedElsewhere, conflict: true };
+      }
+      for (const s of segments) {
+        await createAvailability(
+          caller.ctx,
+          caller.tenantId,
+          { practitionerId, siteId: day.siteId as string, roomId: day.roomId ?? null, weekday: day.weekday, startTime: formatHhmm(s.start), endTime: s.end === 1440 ? "24:00" : formatHhmm(s.end), everyWeeks: 1, validFrom: from },
+          caller.actor,
+        );
+      }
+    }
+    return { ok: true, message: changedDays === 0 ? "Nothing changed." : `Rota saved from ${formatUkDate(from)} (${changedDays} ${changedDays === 1 ? "day" : "days"} changed).`, warnings: [] };
+  });
+}

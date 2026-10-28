@@ -13,11 +13,23 @@ import { DIARY_COPY } from "../../../modules/pms/diary/copy";
 import type { DiaryRead } from "../../../modules/pms/diary/types";
 import type { AppointmentDetailsView } from "../../../modules/pms/diary/view";
 import { nowIso } from "../../repos/context";
-import { listAuthorisations, listCasesForPatient } from "../../repos/pms/cases";
+import { getCase, listAuthorisations, listCasesForPatient } from "../../repos/pms/cases";
+import { priceFor } from "../../repos/pms/price-lists";
 import { getAppointment } from "../../repos/pms/diary/appointments";
 import { getPractitioner, getRoom, getService, getSite } from "../../repos/pms/directory";
 import { getPatient } from "../../repos/pms/patients";
 import { inScope, type DiaryCaller } from "./caller";
+import { payerLabel, referrerNames } from "./payers";
+import { isInitialCategory } from "./view";
+
+/** Who booked an appointment, in words: a member's name, the patient (online) or the data import. */
+async function bookedByOf(caller: DiaryCaller, source: string, createdBy: string | null): Promise<string | null> {
+  if (source === "online") return "the patient online";
+  if (source === "import") return "data import";
+  if (!createdBy) return null;
+  const user = await caller.ctx.db.selectFrom("user").select("name").where("id", "=", createdBy).executeTakeFirst();
+  return user?.name ?? null;
+}
 
 export async function loadAppointmentDetails(caller: DiaryCaller, id: string): Promise<DiaryRead<AppointmentDetailsView>> {
   if (!caller.can("diary.view")) return { ok: false, status: 403, error: DIARY_COPY.notAllowed };
@@ -47,6 +59,12 @@ export async function loadAppointmentDetails(caller: DiaryCaller, id: string): P
       : null,
   ]);
   const kase = a.caseId ? (cases.find((c) => c.id === a.caseId) ?? null) : null;
+  const fullCase = kase ? await getCase(ctx, tenantId, kase.id) : null;
+  const [names, price, bookedBy] = await Promise.all([
+    kase?.payerReferrerId ? referrerNames(ctx, tenantId, [kase.payerReferrerId]) : Promise.resolve(new Map<string, string>()),
+    a.serviceId ? priceFor(ctx, tenantId, a.serviceId, fullCase?.priceListId ?? null) : Promise.resolve(null),
+    bookedByOf(caller, a.source, a.createdBy),
+  ]);
   const auth = a.authorisationId ? (auths.find((x) => x.id === a.authorisationId) ?? null) : null;
   const view: AppointmentDetailsView = {
     id: a.id,
@@ -97,6 +115,13 @@ export async function loadAppointmentDetails(caller: DiaryCaller, id: string): P
     nextStatuses: Array.from(nextStatuses(a.kind, a.status)),
     canMove: canMove(a.status),
     lateIfCancelledNow: isLateCancellation(a.startsAt, nowIso(ctx)),
+    initial: isInitialCategory(service?.category),
+    pricePence: price?.pricePence ?? service?.defaultPricePence ?? null,
+    payerLabel: kase ? payerLabel(kase, names, fullCase?.excessPence ?? null) : null,
+    alertText: patient?.alerts ?? null,
+    bookedBy,
+    bookedAt: a.createdAt,
+    confirmationRequested: a.confirmationRequested,
   };
   return { ok: true, data: view };
 }

@@ -22,6 +22,8 @@ import { getWaitingListEntry, listWaitingList, listWaitingListOffers } from "../
 import { getSite, listPractitioners, listRooms, listServices, listSites } from "../../repos/pms/directory";
 import { getPatientSummaries, searchPatients } from "../../repos/pms/patients";
 import { inScope, scopeList, type DiaryCaller } from "./caller";
+import { payerLabelsForCases } from "./payers";
+import { getDiarySettings } from "../../repos/pms/diary/settings";
 import { patientDisplayName } from "./view";
 
 const FORBIDDEN = { ok: false as const, status: 403 as const, error: DIARY_COPY.notAllowed };
@@ -49,7 +51,8 @@ async function names(caller: DiaryCaller) {
 
 /**
  * One site's day on paper, one group per practitioner (optionally just one): times, rooms, patient names and
- * numbers, appointment types, statuses, blocked time. Never notes, dates of birth or contact details.
+ * numbers, appointment types, statuses, blocked time. Never notes or contact details; dates of birth only when the
+ * clinic switched the diary setting "Show date of birth on the printed day sheet" on (default off).
  */
 export async function loadDaySheet(caller: DiaryCaller, q: { siteId: string; date: string; practitionerId?: string | null; includeCancelled?: boolean }): Promise<DiaryRead<DaySheet>> {
   if (!caller.can("diary.view")) return FORBIDDEN;
@@ -65,7 +68,9 @@ export async function loadDaySheet(caller: DiaryCaller, q: { siteId: string; dat
     names(caller),
   ]);
   const showNames = caller.can("patients.view");
+  const showDob = showNames && (await getDiarySettings(ctx, tenantId)).showDobOnDaySheet;
   const patients = showNames ? await getPatientSummaries(ctx, tenantId, diary.items.map((i) => i.patientId).filter((id): id is string => id !== null)) : new Map<string, never>();
+  const payers = showNames ? await payerLabelsForCases(ctx, tenantId, diary.items.map((i) => i.caseId).filter((id): id is string => id !== null)) : new Map<string, string>();
   const groups = new Map<string, DaySheetGroup>();
   const groupFor = (practitionerId: string | null): DaySheetGroup => {
     const key = practitionerId ?? "";
@@ -87,6 +92,9 @@ export async function loadDaySheet(caller: DiaryCaller, q: { siteId: string; dat
     const p = i.patientId ? patients.get(i.patientId) : undefined;
     groupFor(i.practitionerId).rows.push({
       id: i.id,
+      hasAlerts: p?.hasAlerts ?? false,
+      dateOfBirth: showDob && p?.dateOfBirth ? formatUkDate(p.dateOfBirth) : null,
+      payerLabel: i.caseId ? (payers.get(i.caseId) ?? null) : null,
       kind: i.kind,
       startTime: formatLondonTime(i.startsAt),
       endTime: formatLondonTime(i.endsAt),
@@ -111,6 +119,7 @@ export async function loadDaySheet(caller: DiaryCaller, q: { siteId: string; dat
       printedAt: `${formatUkDate(londonDate(now))} ${formatLondonTime(now)}`,
       groups: ordered,
       includesCancelled: q.includeCancelled === true,
+      showsDateOfBirth: showDob,
       truncated: diary.truncated,
     },
   };
@@ -357,6 +366,10 @@ export interface DiaryPatientHit {
   number: number;
   dateOfBirth: string | null;
   postcode: string | null;
+  /** Mobile number (what reception checks on the phone). */
+  phone: string | null;
+  /** "DD/MM/YYYY" of the last attended appointment, or null. */
+  lastSeen: string | null;
   hasAlerts: boolean;
   next: { id: string; date: string; time: string; siteId: string; practitionerId: string | null } | null;
 }
@@ -379,6 +392,8 @@ export async function searchDiaryPatients(caller: DiaryCaller, query: unknown): 
         number: p.patientNumber,
         dateOfBirth: p.dateOfBirth ? formatUkDate(p.dateOfBirth) : null,
         postcode: p.postcode,
+        phone: p.phoneMobile,
+        lastSeen: p.lastSeenOn ? formatUkDate(p.lastSeenOn) : null,
         hasAlerts: p.hasAlerts,
         next: a ? { id: a.id, date: a.startsOn, time: formatLondonTime(a.startsAt), siteId: a.siteId, practitionerId: a.practitionerId } : null,
       };

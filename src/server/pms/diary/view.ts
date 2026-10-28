@@ -8,7 +8,7 @@
  */
 import "server-only";
 import { DIARY_COPY } from "../../../modules/pms/diary/copy";
-import { freeSlots, gridHours, localSpan, type BusySpan, type RotaWindow } from "../../../modules/pms/diary/rules";
+import { freeSlots, gridHours, localSpan, occupiesDiary, type BusySpan, type RotaWindow } from "../../../modules/pms/diary/rules";
 import { formatDayShort, formatHhmm, formatLondonTime, londonRange, weekDates } from "../../../modules/pms/diary/time";
 import type { DiaryItem, DiaryRead } from "../../../modules/pms/diary/types";
 import type { DiaryCard, DiaryColumn, DiaryFreeSlot, DiaryParams, DiaryViewData } from "../../../modules/pms/diary/view";
@@ -32,6 +32,13 @@ export interface DiaryViewOptions {
 }
 
 const windowView = (w: RotaWindow) => ({ startMinute: w.startMinute, endMinute: w.endMinute, siteId: w.siteId });
+
+/** A first appointment: "+" before the type in the diary. */
+export function isInitialCategory(category: string | null | undefined): boolean {
+  return category === "initial" || category === "assessment";
+}
+
+const distinct = (values: (string | null | undefined)[]): string[] => Array.from(new Set(values.filter((v): v is string => typeof v === "string" && v.length > 0)));
 
 export async function loadDiaryView(caller: DiaryCaller, params: DiaryParams, today: string, options: DiaryViewOptions = {}): Promise<DiaryRead<DiaryViewData>> {
   if (!caller.can("diary.view")) return { ok: false, status: 403, error: DIARY_COPY.notAllowed };
@@ -57,8 +64,9 @@ export async function loadDiaryView(caller: DiaryCaller, params: DiaryParams, to
   const practitionerName = new Map(practitioners.map((p) => [p.id, p.displayName]));
   const roomName = new Map(rooms.map((r) => [r.id, r.name]));
   const serviceName = new Map(services.map((s) => [s.id, s.name]));
+  const serviceCategory = new Map(services.map((s) => [s.id, s.category as string]));
 
-  let columns: Omit<DiaryColumn, "freeSlots">[] = [];
+  let columns: Omit<DiaryColumn, "freeSlots" | "bookedPercent">[] = [];
   let items: DiaryItem[] = [];
   let windows: RotaWindow[] = [];
   let truncated = false;
@@ -91,6 +99,7 @@ export async function loadDiaryView(caller: DiaryCaller, params: DiaryParams, to
               practitionerId: p.id,
               roomId: null,
               windows: mine.map(windowView),
+              detail: distinct(mine.map((x) => (x.roomId ? roomName.get(x.roomId) : null))).join(", ") || null,
             };
           });
       } else {
@@ -103,9 +112,10 @@ export async function loadDiaryView(caller: DiaryCaller, params: DiaryParams, to
           practitionerId: null,
           roomId: r.id,
           windows: windows.filter((x) => x.roomId === r.id).map(windowView),
+          detail: distinct(windows.filter((x) => x.roomId === r.id).map((x) => practitionerName.get(x.practitionerId))).join(", ") || null,
         }));
         if (items.some((i) => i.roomId === null && i.kind === "appointment")) {
-          columns.push({ key: "r:none", date: params.date, label: "No room", sublabel: null, siteId: site.id, practitionerId: null, roomId: null, windows: [] });
+          columns.push({ key: "r:none", date: params.date, label: "No room", sublabel: null, siteId: site.id, practitionerId: null, roomId: null, windows: [], detail: null });
         }
       }
     } else if (params.by === "practitioner") {
@@ -129,6 +139,7 @@ export async function loadDiaryView(caller: DiaryCaller, params: DiaryParams, to
           practitionerId: chosen.id,
           roomId: null,
           windows: windows.filter((x) => x.date === date).map(windowView),
+          detail: distinct(windows.filter((x) => x.date === date).map((x) => (x.roomId ? roomName.get(x.roomId) : null))).join(", ") || null,
         }));
       }
     } else {
@@ -151,6 +162,7 @@ export async function loadDiaryView(caller: DiaryCaller, params: DiaryParams, to
           practitionerId: null,
           roomId: chosen.id,
           windows: windows.filter((x) => x.date === date).map(windowView),
+          detail: distinct(windows.filter((x) => x.date === date).map((x) => practitionerName.get(x.practitionerId))).join(", ") || null,
         }));
       }
     }
@@ -183,7 +195,7 @@ export async function loadDiaryView(caller: DiaryCaller, params: DiaryParams, to
       slotsByColumn.set(key, list);
     }
   }
-  const fullColumns: DiaryColumn[] = columns.map((c) => ({ ...c, freeSlots: slotsByColumn.get(c.key) ?? [] }));
+  const fullColumns: DiaryColumn[] = columns.map((c) => ({ ...c, freeSlots: slotsByColumn.get(c.key) ?? [], bookedPercent: null }));
 
   const showNames = caller.can("patients.view");
   const patientIds = items.map((i) => i.patientId).filter((id): id is string => id !== null);
@@ -225,8 +237,27 @@ export async function loadDiaryView(caller: DiaryCaller, params: DiaryParams, to
         hasNotes: i.hasNotes,
         feeDue: i.feeDue,
         source: i.source,
+        initial: isInitialCategory(i.serviceId ? serviceCategory.get(i.serviceId) : null),
       };
     });
+  // "% booked" per column: minutes of appointments that keep their slot against the working time of the column.
+  const bookedMinutes = (c: DiaryColumn) =>
+    cards.filter((x) => x.columnKey === c.key && x.kind === "appointment" && occupiesDiary(x.status)).reduce((sum, x) => sum + Math.max(0, (Date.parse(x.endsAt) - Date.parse(x.startsAt)) / 60_000), 0);
+  const workMinutes = (c: DiaryColumn) => c.windows.reduce((sum, w) => sum + Math.max(0, w.endMinute - w.startMinute), 0);
+  for (const c of fullColumns) {
+    const work = workMinutes(c);
+    c.bookedPercent = work > 0 ? Math.min(100, Math.round((bookedMinutes(c) / work) * 100)) : null;
+  }
+  let summary: DiaryViewData["summary"] = null;
+  if (params.view === "week") {
+    const work = fullColumns.reduce((sum, c) => sum + workMinutes(c), 0);
+    const booked = fullColumns.reduce((sum, c) => sum + bookedMinutes(c), 0);
+    summary = {
+      appointments: cards.filter((x) => x.kind === "appointment" && occupiesDiary(x.status)).length,
+      bookedPercent: work > 0 ? Math.min(100, Math.round((booked / work) * 100)) : null,
+      dna: cards.filter((x) => x.kind === "appointment" && x.status === "dna").length,
+    };
+  }
   const hours = gridHours(
     fullColumns.flatMap((c) => c.windows),
     cards.map((c) => localSpan(c, c.startsOn)),
@@ -261,6 +292,8 @@ export async function loadDiaryView(caller: DiaryCaller, params: DiaryParams, to
       slotMinutes,
       waitingCount: await countWaitingList(ctx, tenantId, { siteIds: scoped }),
       bookingPreset,
+      summary,
+      myPractitionerId: options.practitionerId ?? null,
     },
   };
 }

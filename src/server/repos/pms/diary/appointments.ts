@@ -119,6 +119,7 @@ function toAppointment(ctx: RepoContext, r: AppointmentRow): Appointment {
     importRef: r.import_ref,
     createdBy: r.created_by,
     createdAt: r.created_at,
+    confirmationRequested: isOn(r.confirmation_requested),
   };
 }
 
@@ -173,6 +174,11 @@ export interface BookOptions {
   offerId?: string;
   /** The appointment this booking replaces (rebookAppointment) – recorded in the audit row. */
   rebookOf?: string;
+  /**
+   * Dates of a recurring booking reception unticked ("untick to skip"): left out before the clash check and counted
+   * as skipped. The first date (the booking itself) cannot be skipped.
+   */
+  skipDates?: readonly string[];
 }
 
 const OPEN_WAITING = ["waiting", "offered"];
@@ -199,7 +205,9 @@ export async function bookAppointment(ctx: RepoContext, tenantId: string, input:
   const duration = d.durationMinutes ?? service.durationMinutes;
   if (duration > MAX_APPOINTMENT_MINUTES) throw new RepoInputError(`Appointment: at most ${MAX_APPOINTMENT_MINUTES} minutes.`);
 
-  const dates = d.repeat ? recurringDates(d.date, d.repeat.intervalWeeks, d.repeat.occurrences) : [d.date];
+  const unticked = new Set((options.skipDates ?? []).filter((x) => x !== d.date));
+  const allDates = d.repeat ? recurringDates(d.date, d.repeat.intervalWeeks, d.repeat.occurrences) : [d.date];
+  const dates = allDates.filter((x) => !unticked.has(x));
   const spans = dates.map((date) => {
     const startsAt = localStart(date, d.startTime);
     return { date, startsAt, endsAt: addMinutesIso(startsAt, duration) };
@@ -255,6 +263,7 @@ export async function bookAppointment(ctx: RepoContext, tenantId: string, input:
       status_at: null,
       status_by: null,
       import_ref: null,
+      confirmation_requested: d.sendConfirmation ? 1 : 0,
       created_by: actor.userId,
       created_at: at,
       updated_at: at,
@@ -318,7 +327,10 @@ export async function bookAppointment(ctx: RepoContext, tenantId: string, input:
     targetId: rows[0].id,
     detail: {
       count: rows.length,
-      ...(seriesId ? { seriesId, skipped: spans.length - rows.length } : {}),
+      ...(seriesId ? { seriesId, skipped: spans.length - rows.length + unticked.size } : {}),
+      // Reception booked over the patient's other appointment on purpose ("Book anyway") – logged here.
+      ...(options.allowPatientOverlap ? { patientOverlapAllowed: true } : {}),
+      ...(d.sendConfirmation ? { confirmation: "requested" } : {}),
       source: d.source ?? "staff",
       ...(waitingListId ? { waitingListId } : {}),
       ...(options.offerId ? { offerId: options.offerId } : {}),
@@ -346,7 +358,7 @@ export async function bookAppointment(ctx: RepoContext, tenantId: string, input:
     if (authorisation.sessionsUsed + pending > authorisation.sessionsAuthorised) warnings.push("authorisation_short");
   }
   const items = await listByIds(ctx, tenantId, rows.map((r) => r.id));
-  return { ok: true, items, seriesId, skippedDates: spans.filter((s) => !free.includes(s)).map((s) => s.date), warnings };
+  return { ok: true, items, seriesId, skippedDates: allDates.filter((date) => unticked.has(date) || !free.some((s) => s.date === date)), warnings };
 }
 
 /* ------------------------------------------------------------------------------------------------

@@ -65,6 +65,8 @@ export const BookAppointmentSchema = z
     notes: optionalText(2000),
     repeat: z.union([RepeatSchema, z.null()]).optional(),
     source: z.enum(APPOINTMENT_SOURCES).optional(),
+    /** "Send confirmation text and email": stored on the appointment; the messages module sends it. */
+    sendConfirmation: z.boolean().optional(),
   })
   .refine((v) => !v.authorisationId || Boolean(v.caseId), { message: "Choose the case the authorisation belongs to", path: ["caseId"] });
 export type BookAppointmentInput = z.input<typeof BookAppointmentSchema>;

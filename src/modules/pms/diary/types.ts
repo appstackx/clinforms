@@ -61,6 +61,8 @@ export interface Appointment extends DiaryItem {
   importRef: string | null;
   createdBy: string | null;
   createdAt: string;
+  /** Reception asked for a booking confirmation (the messages module sends it). */
+  confirmationRequested: boolean;
 }
 
 export interface AppointmentSeries {
@@ -170,6 +172,8 @@ export type DiaryActionResult =
       patientOnly?: boolean;
       /** The screen was stale: refresh it. */
       conflict?: boolean;
+      /** Registering a patient: records that may be the same person. */
+      duplicates?: { id: string; name: string; number: number }[];
     };
 
 /** What the diary's reads answer: the data, or why not (403 = not allowed, 404 = not there or not in scope). */

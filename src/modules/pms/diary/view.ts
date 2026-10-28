@@ -100,6 +100,13 @@ export interface DiaryColumn {
   /** Working windows in this column (local minutes) – the grid shades the hours outside them. */
   windows: { startMinute: number; endMinute: number; siteId: string }[];
   /**
+   * Second line of the column header: the room the practitioner works in that day (practitioner columns), or the
+   * practitioners in the room (room columns). Null when none.
+   */
+  detail: string | null;
+  /** Share of the working time taken by appointments that keep their slot (0–100); null without a rota. */
+  bookedPercent: number | null;
+  /**
    * Free slots of `slotMinutes` inside the windows (nothing of the practitioner – at any site – or of the room in
    * the way, none in the past). Empty in a column without a rota.
    */
@@ -145,6 +152,8 @@ export interface DiaryCard {
   hasNotes: boolean;
   feeDue: boolean;
   source: AppointmentSource;
+  /** A first appointment (the appointment type's category is "initial" or "assessment"): "+" before the type. */
+  initial: boolean;
 }
 
 export interface DiaryBookingPreset {
@@ -176,6 +185,10 @@ export interface DiaryViewData {
   slotMinutes: number;
   waitingCount: number;
   bookingPreset: DiaryBookingPreset | null;
+  /** Week view: what the week holds (appointments that keep their slot, share of working time booked, DNAs). */
+  summary: { appointments: number; bookedPercent: number | null; dna: number } | null;
+  /** The signed-in member's practitioner row, when they have one ("My diary"). */
+  myPractitionerId: string | null;
 }
 
 /** The appointment dialog's data (GET …/diary/api/appointments/[id]): notes decrypted, the patient identified. */
@@ -221,14 +234,64 @@ export interface AppointmentDetailsView {
   canMove: boolean;
   /** Cancelling now would be a late cancellation (the fee is ticked by default). */
   lateIfCancelledNow: boolean;
+  /** A first appointment (the type's category is "initial" or "assessment"). */
+  initial: boolean;
+  /** The appointment type's price (pence) from the case's price list, else the type's own price. */
+  pricePence: number | null;
+  /** "Self-pay", or the payer account ("Bluewell Health (fictional) – excess £20.00"); null without a case. */
+  payerLabel: string | null;
+  /** The text of the patient's medical alerts (decrypted; roles that may see patients only). */
+  alertText: string | null;
+  /** Who booked it: a member's name, "the patient online" or "data import"; null when unknown. */
+  bookedBy: string | null;
+  bookedAt: string | null;
+  /** Reception asked for a booking confirmation (sent by the messages module, when it is switched on). */
+  confirmationRequested: boolean;
 }
 
 /* ------------------------------------------------------------------------------------------------
- * The printable day sheet (paper fallback): names, times, rooms – never notes, dates of birth or contacts
+ * The booking dialog's live check (before booking): is the time free, which dates of a series are free
+ * ----------------------------------------------------------------------------------------------*/
+
+export interface BookingCheckOccurrence {
+  date: string;
+  /** "Tue 03/11/2026" */
+  dateLabel: string;
+  status: "free" | "clash" | "unavailable" | "gap";
+  /** "Free", "Clashes with Grace Kim 11:00", "Priya Shah – annual leave", "Outside working hours". */
+  note: string;
+  /** Only the patient's own other appointment is in the way (two practitioners can see them together). */
+  patientOnly: boolean;
+  /** Outside the practitioner's rota (bookable, with a warning). */
+  outsideHours: boolean;
+}
+
+export interface BookingCheck {
+  startTime: string;
+  endTime: string;
+  durationMinutes: number;
+  /** The first date (the booking itself). */
+  first: BookingCheckOccurrence;
+  /** "Priya Shah already has Emily Turner, 11:00–11:45, in Room 1." */
+  clashText: string | null;
+  /** The next free slot of this length with this practitioner, from the time asked for. */
+  nextFree: { date: string; time: string; label: string } | null;
+  occurrences: BookingCheckOccurrence[];
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * The printable day sheet (paper fallback): names, times, rooms – never notes or contact details; dates of birth only
+ * when the clinic switched "Show date of birth on the printed day sheet" on (diary settings, default off)
  * ----------------------------------------------------------------------------------------------*/
 
 export interface DaySheetRow {
   id: string;
+  /** The patient's record carries medical alerts (the text is never printed). */
+  hasAlerts: boolean;
+  /** "DD/MM/YYYY" – only when the clinic's diary setting prints dates of birth (default off); else null. */
+  dateOfBirth: string | null;
+  /** "Self-pay" or the payer account's name; null without a case. */
+  payerLabel: string | null;
   kind: DiaryItemKind;
   startTime: string;
   endTime: string;
@@ -261,6 +324,8 @@ export interface DaySheet {
   groups: DaySheetGroup[];
   /** Cancelled appointments are left out unless asked for. */
   includesCancelled: boolean;
+  /** The clinic prints dates of birth on the day sheet (diary setting, default off). */
+  showsDateOfBirth: boolean;
   truncated: boolean;
 }
 

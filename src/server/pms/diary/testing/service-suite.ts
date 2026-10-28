@@ -67,7 +67,9 @@ import {
   updateAppointmentDetailsFor,
   updateRotaEntryFor,
   updateWaitingListEntryFor,
+  setDaySheetDobFor,
 } from "../writes";
+import { checkBookingFor } from "../booking-check";
 
 export interface DiaryServiceSuiteDb {
   db: Kysely<Database>;
@@ -1030,6 +1032,55 @@ export function defineDiaryServiceSuite(
       assert.ok(
         one.ok && one.data.groups.every((g) => g.practitionerId === a.sarah),
       );
+    });
+
+    it("day sheet: dates of birth only when the clinic's diary setting is on (default off, owners/administrators switch it)", async () => {
+      const off = await loadDaySheet(staff(), { siteId: a.siteA, date: MON });
+      assert.ok(off.ok);
+      assert.equal(off.data.showsDateOfBirth, false, "default off");
+      assert.ok(off.data.groups.every((g) => g.rows.every((r) => r.dateOfBirth === null)));
+      assert.equal(JSON.stringify(off.data).includes("14/03/1991"), false);
+      // Reception (no settings.manage) cannot switch it on.
+      refused(await setDaySheetDobFor(staff(), { on: true }), /permission/);
+      ok(await setDaySheetDobFor(caller(A, "owner", null, "user_owner_01"), { on: true }));
+      const on = await loadDaySheet(staff(), { siteId: a.siteA, date: MON });
+      assert.ok(on.ok && on.data.showsDateOfBirth);
+      assert.ok(
+        on.data.groups.some((g) => g.rows.some((r) => r.patientName === "Megan Hart" && r.dateOfBirth === "14/03/1991")),
+        "Megan's date of birth printed",
+      );
+      // Another clinic is not affected.
+      const other = await loadDaySheet(caller(B, "staff"), { siteId: b.siteA, date: MON });
+      assert.ok(other.ok && !other.data.showsDateOfBirth);
+      assert.equal((await listAudit(ctx, A, { action: "pms.diary_settings.update" })).length, 1, "audited");
+      ok(await setDaySheetDobFor(caller(A, "admin", null, "user_admin_01"), { on: false }));
+      const offAgain = await loadDaySheet(staff(), { siteId: a.siteA, date: MON });
+      assert.ok(offAgain.ok && !offAgain.data.showsDateOfBirth && offAgain.data.groups.every((g) => g.rows.every((r) => r.dateOfBirth === null)));
+    });
+
+    it("booking check: free, a clash named with the patient's proper name and the next free slot, a series with a skipped date", async () => {
+      clock = NOW;
+      const free = await checkBookingFor(staff(), booking(a, { patientId: a.daniel, startTime: "11:30", date: "2026-11-16" }));
+      assert.ok(free.ok && free.data.first.status === "free" && free.data.clashText === null);
+      assert.match(free.ok ? free.data.first.dateLabel : "", /^Mon 16\/11\/2026$/);
+      const meeting = await checkBookingFor(staff(), booking(a, { patientId: a.daniel, startTime: "11:30" }));
+      assert.ok(meeting.ok && meeting.data.first.status === "unavailable" && /Sarah Reid is not available/.test(meeting.data.clashText ?? "") && meeting.data.nextFree !== null);
+      // 10:00 holds Megan's appointment with Sarah (booked earlier in this suite) – Daniel at 10:00 clashes.
+      const taken = await checkBookingFor(staff(), booking(a, { patientId: a.daniel, startTime: "10:00" }));
+      assert.ok(taken.ok);
+      if (taken.data.first.status === "clash") {
+        assert.match(taken.data.clashText ?? "", /Sarah Reid already has Megan Hart/);
+        assert.match(taken.data.first.note, /Megan Hart/, "proper names, not lower case");
+      }
+      const series = await checkBookingFor(staff(), { ...booking(a, { patientId: a.daniel, startTime: "11:30", date: "2026-11-16" }), repeat: { intervalWeeks: 1, occurrences: 3 } });
+      assert.ok(series.ok && series.data.occurrences.length === 3);
+      const booked = await bookAppointmentFor(staff(), { ...booking(a, { patientId: a.daniel, startTime: "11:30", date: "2026-11-16" }), repeat: { intervalWeeks: 1, occurrences: 3 }, skipDates: ["2026-11-23"], sendConfirmation: true });
+      ok(booked);
+      assert.equal(booked.itemIds?.length, 2);
+      assert.deepEqual(booked.skippedDates, ["2026-11-23"]);
+      const det = await loadAppointmentDetails(staff(), booked.itemId as string);
+      assert.ok(det.ok && det.data.confirmationRequested && det.data.payerLabel === null);
+      assert.equal(det.ok && det.data.bookedBy, null, "booked by: no such user in this test database");
     });
 
     it("the patient's Appointments tab: upcoming soonest first, past newest first, counts, paging", async () => {
