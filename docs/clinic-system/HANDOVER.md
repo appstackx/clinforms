@@ -564,3 +564,27 @@ is one amount per case taken visit by visit (design shows £20 on every visit �
 ### 14.7 Next
 **M6 Messages** (comms branch): diary hook, outbox, letters, patient-facing messages, Messages tab – and then the
 billing emails (receipts, statements, payment links).
+
+
+## 15. M6 messages (28/10/2026) – IN PROGRESS (midpoint: back end done on `feat/cs-comms`)
+
+**Heads:** `feat/cs-comms` `0bc49da` (pushed) = `feat/clinic-system` `0acf07c` merged in (`8f8148a`, no conflicts) + 3 commits.
+`feat/clinic-system` unchanged so far (`0acf07c`). `main` untouched.
+
+| Commit | What |
+|---|---|
+| `aff353b` | Back end reviewed and finished: audit in the same batch everywhere (`commsAuditWhen`, `src/server/repos/pms/comms/shared.ts`); site scope on every list/read; service layer `src/server/pms/comms/{views,writes,billing-mail}.ts` (permission first: `messages.send` / `messages.templates` / `messages.letters`); consent per kind (STOP = no texts; stop-emails link = no reminder emails, confirmations still go; one confirmation text after STOP); new kinds late_cancelled / dna / offer / payment_link / invoice / receipt / statement / letter / portal_link; held-for-quiet-hours flag; Retry (attempts); letter signature line; documents linked to messages; design-round-3 wording. 0140/0141 edited IN PLACE (never on the K2 line or a server DB). D1 stack test `workers/data-gateway/test/pms-comms-stack.test.ts` (stand-in + local workerd D1, 28/28) |
+| `51677c3` | Diary → messages (`src/server/pms/diary/message-sync.ts`, called from `src/server/pms/diary/writes.ts` after every successful book / rebook / move / resize / status / cancel / details / series cancel / offer booking / start treatment; "Offer slot by text" sends the offer) |
+| `0bc49da` | `scripts/pms/seed-comms.ts` (from `seed-demo.ts` after billing) |
+
+**Route placement (decision, implemented):** the comms module's three sessionless endpoints stay together under
+`src/app/api/clinic-messages/{cron,sms,unsubscribe}/route.ts` – thin wrappers over `src/server/pms/comms/*`, owned by
+comms (contract §3 to be amended at the end of M6). Not under `/app/clinic` (needs a session), not in portal's public
+route group, not in ClinForms' `/api/cron`. **No `vercel.json` cron entry:** production is on Vercel Hobby (one run a
+day; a `*/15` schedule would fail the deploy) – scheduling is a decision for Khuram (Pro, or a Cloudflare cron that
+calls the route with `CRON_SECRET`).
+
+Checks at the midpoint: typecheck, lint green; test:pms 472/472; test:db 872/0/3; comms D1 stack 28/28.
+**Still to do (if picking this up):** screens (Messages: outbox / replies / templates / letters / send; message settings;
+letter editor + A4 print; patient-facing messages page; record Messages tab; record "Send message"; nav badge),
+billing email buttons, e2e `scripts/e2e/pms-messages-screens.cjs`, full chain, merge into `feat/clinic-system`, §15 end.
