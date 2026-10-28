@@ -6,9 +6,15 @@
  * a room out of use) and a few waiting-list entries. Fictional only: it uses the seeded directory and patients
  * (scripts/pms/seed-lib.ts) and refuses a clinic that is not flagged as a demonstration clinic.
  *
- * Idempotent: the rota and the waiting list are added once; a week is added once (its appointments carry the
- * import reference "demo-diary-<date>-…", and a week already there is left as it is). Running it in a later week
- * adds that week. Bulk loads: batches of 40 + one audit row each; the clash triggers still apply.
+ * History (for the reports' six-week charts): on the first run (with the rota) the weeks before this one are added
+ * too – `historyWeeks` (default 6) ordinary past weeks plus two earlier weeks in which most of the clinic's patients
+ * had their first visit, so the six weeks show a few new patients a week among returning ones. Every past visit is
+ * completed, missed or cancelled (fees flagged), each week has a team meeting and someone's day of leave, closure
+ * days are skipped; the patients kept new for this week have no history. Import references "demo-hist-<monday>-…".
+ *
+ * Idempotent: the rota, the history and the waiting list are added once; a week is added once (its appointments
+ * carry the import reference "demo-diary-<date>-…", and a week already there is left as it is). Running it in a
+ * later week adds that week. Bulk loads: batches of 40 + one audit row each; the clash triggers still apply.
  *
  * Wiring (orchestrator, scripts/pms/seed-demo.ts – after seedDemoClinic):
  *   await seedDiary({ db, cipher: getDataCipher() }, slug, { log: (line) => console.log(`  ${line}`) });
@@ -32,6 +38,8 @@ export interface SeedDiaryOptions {
   now?: Date;
   /** Deterministic choices (default 2026). */
   seed?: number;
+  /** Past weeks added on the first run for the reports (default 6; 0 = none). Two earlier "first visit" weeks come with them. */
+  historyWeeks?: number;
   log?: (line: string) => void;
 }
 
@@ -43,9 +51,16 @@ export interface SeedDiarySummary {
   waitingList: number;
   /** True when the week was there already (nothing added for it). */
   weekExisted: boolean;
+  /** Past weeks added (0 when there already or not asked for) and their appointments and blocked times. */
+  historyWeeks: number;
+  historyAppointments: number;
+  historyBlocks: number;
 }
 
 const ROTA_REF = "demo-diary-rota";
+const HISTORY_REF = "demo-hist";
+/** Weeks before the history in which most patients had their first visit (so the history's weeks show returning patients). */
+const FIRST_VISIT_WEEKS = 2;
 
 /** Small deterministic generator (mulberry32). */
 function random(seed: number): () => number {
@@ -78,6 +93,8 @@ export async function seedDiary(ctx: RepoContext, tenantId: string, options: See
   const monday = mondayOf(today);
   const rand = random(options.seed ?? 2026);
   const pick = <T>(list: readonly T[]): T => list[Math.floor(rand() * list.length)];
+  const historyWeeks = Math.max(0, Math.min(26, Math.floor(options.historyWeeks ?? 6)));
+  const weeksBack = historyWeeks > 0 ? historyWeeks + FIRST_VISIT_WEEKS : 0;
 
   const sites = (await listSites(ctx, tenantId)).slice(0, 2);
   if (sites.length < 2) throw new RepoInputError("The demo diary needs the demo clinic's sites (run the clinic seed first).");
@@ -118,7 +135,8 @@ export async function seedDiary(ctx: RepoContext, tenantId: string, options: See
         weekday: day,
         startTime: `${String(Math.floor(w.start / 60)).padStart(2, "0")}:00`,
         endTime: `${String(Math.floor(w.end / 60)).padStart(2, "0")}:00`,
-        validFrom: monday,
+        // From the start of the history (so its weeks have rota time), else this week.
+        validFrom: addDays(monday, -7 * weeksBack),
         onlineBookable: wi % 2 === 0,
         importRef: `${ROTA_REF}-${wi + 1}-${day}`,
       })),
@@ -131,19 +149,23 @@ export async function seedDiary(ctx: RepoContext, tenantId: string, options: See
   const haveWeek = await ctx.db.selectFrom("pms_appointments").select("id").where("tenant_id", "=", tenantId).where("import_ref", "like", `${weekRef}-%`).limit(1).executeTakeFirst();
   let appointments = 0;
   let blocks = 0;
+  const caseOf = new Map<string, string | null>();
+  const openCase = async (patientId: string) => {
+    if (!caseOf.has(patientId)) caseOf.set(patientId, (await listCasesForPatient(ctx, tenantId, patientId)).find((c) => c.status === "open")?.id ?? null);
+    return caseOf.get(patientId) ?? null;
+  };
+  const allPatients = async () => {
+    const list = [...(await searchPatients(ctx, tenantId, { limit: 100 })), ...(await searchPatients(ctx, tenantId, { limit: 100, offset: 100 }))];
+    if (list.length < 10) throw new RepoInputError("The demo diary needs the demo clinic's patients (run the clinic seed first).");
+    return list;
+  };
   if (!haveWeek) {
-    const patients = [...(await searchPatients(ctx, tenantId, { limit: 100 })), ...(await searchPatients(ctx, tenantId, { limit: 100, offset: 100 }))];
-    if (patients.length < 10) throw new RepoInputError("The demo diary needs the demo clinic's patients (run the clinic seed first).");
+    const patients = await allPatients();
     // Shuffle so the week is not alphabetical.
     for (let i = patients.length - 1; i > 0; i--) {
       const j = Math.floor(rand() * (i + 1));
       [patients[i], patients[j]] = [patients[j], patients[i]];
     }
-    const caseOf = new Map<string, string | null>();
-    const openCase = async (patientId: string) => {
-      if (!caseOf.has(patientId)) caseOf.set(patientId, (await listCasesForPatient(ctx, tenantId, patientId)).find((c) => c.status === "open")?.id ?? null);
-      return caseOf.get(patientId) ?? null;
-    };
 
     const items: BulkDiaryItem[] = [];
     const busyPatient = new Map<string, { s: number; e: number }[]>();
@@ -241,6 +263,138 @@ export async function seedDiary(ctx: RepoContext, tenantId: string, options: See
     log(`Diary: the week of ${monday} is there already – nothing added.`);
   }
 
+
+  // History (first run only – with the rota): the weeks before this one.
+  let historyAppointments = 0;
+  let historyBlocks = 0;
+  let historyAdded = 0;
+  const haveHistory = await ctx.db.selectFrom("pms_appointments").select("id").where("tenant_id", "=", tenantId).where("import_ref", "like", `${HISTORY_REF}-%`).limit(1).executeTakeFirst();
+  if (!haveRota && !haveHistory && weeksBack > 0) {
+    const hr = random((options.seed ?? 2026) + 7);
+    const everyone = await allPatients();
+    for (let i = everyone.length - 1; i > 0; i--) {
+      const j = Math.floor(hr() * (i + 1));
+      [everyone[i], everyone[j]] = [everyone[j], everyone[i]];
+    }
+    // This week's first-time patients: the first six patients of an initial assessment this week have no history.
+    const thisWeek = await ctx.db
+      .selectFrom("pms_appointments")
+      .select(["patient_id", "service_id"])
+      .where("tenant_id", "=", tenantId)
+      .where("kind", "=", "appointment")
+      .where("import_ref", "like", `${weekRef}-%`)
+      .orderBy("starts_at")
+      .orderBy("id")
+      .execute();
+    const newThisWeek = new Set<string>();
+    for (const a of thisWeek) if (a.patient_id && a.service_id === initial.id && newThisWeek.size < 6) newThisWeek.add(a.patient_id);
+    const queue = everyone.filter((p) => !newThisWeek.has(p.id)).map((p) => p.id);
+    // A few new patients in each of the recent weeks (4–7); the first-visit weeks take everyone else.
+    const recentQuota = Array.from({ length: historyWeeks }, (_, k) => 4 + ((k * 3) % 4));
+    const firstVisitTotal = Math.max(0, queue.length - recentQuota.reduce((a, b) => a + b, 0));
+    const closures = await ctx.db.selectFrom("pms_site_closures").select(["site_id", "starts_on", "ends_on"]).where("tenant_id", "=", tenantId).execute();
+    const closed = (siteId: string, date: string) => closures.some((c) => (c.site_id === null || c.site_id === siteId) && c.starts_on <= date && date <= c.ends_on);
+    const introduced: string[] = [];
+    const items: BulkDiaryItem[] = [];
+    let carry = 0;
+    for (let k = 0; k < weeksBack; k++) {
+      const wMonday = addDays(monday, -7 * (weeksBack - k));
+      const ref = `${HISTORY_REF}-${wMonday}`;
+      const firstVisits = Math.floor((firstVisitTotal * (k + 1)) / FIRST_VISIT_WEEKS) - Math.floor((firstVisitTotal * k) / FIRST_VISIT_WEEKS);
+      let newLeft = carry + (k < FIRST_VISIT_WEEKS ? firstVisits : recentQuota[k - FIRST_VISIT_WEEKS]);
+      const seenThisWeek = new Set<string>();
+      const newcomers: string[] = [];
+      // Blocked time: a team meeting on Wednesday 13:00–14:00 and one practitioner's day of leave (in turn).
+      const blocked: { practitionerId: string; date: string; start: number; end: number }[] = [];
+      for (const w of workers.filter((x) => x.days.includes(3))) blocked.push({ practitionerId: w.practitionerId, date: addDays(wMonday, 2), start: 13 * 60, end: 14 * 60 });
+      const away = workers[k % workers.length];
+      const awayDay = away.days[k % away.days.length];
+      blocked.push({ practitionerId: away.practitionerId, date: addDays(wMonday, awayDay - 1), start: 0, end: 1440 });
+      blocked.forEach((b, i) => {
+        const w = workers.find((x) => x.practitionerId === b.practitionerId) as Worker;
+        if (closed(w.siteId, b.date)) return;
+        items.push({
+          kind: "block",
+          siteId: w.siteId,
+          practitionerId: b.practitionerId,
+          startsAt: londonToUtcOrThrow(b.date, b.start),
+          endsAt: londonToUtcOrThrow(b.end === 1440 ? addDays(b.date, 1) : b.date, b.end === 1440 ? 0 : b.end),
+          status: "booked",
+          blockKind: b.end - b.start >= 1440 ? "leave" : "meeting",
+          title: b.end - b.start >= 1440 ? "Annual leave" : "Team meeting",
+          source: "import",
+          importRef: `${ref}-blk-${i + 1}`,
+        });
+        historyBlocks++;
+      });
+      for (let d = 0; d < 5; d++) {
+        const date = addDays(wMonday, d);
+        for (let wi = 0; wi < workers.length; wi++) {
+          const w = workers[wi];
+          if (!w.days.includes(isoWeekday(date)) || closed(w.siteId, date)) continue;
+          let minute = w.start;
+          while (minute < w.end) {
+            const fresh = newLeft > 0 && queue.length > 0 && (minute === w.start || hr() < (k < FIRST_VISIT_WEEKS ? 0.75 : 0.3) || introduced.length === 0);
+            const service = fresh ? initial : mix[Math.floor(hr() * mix.length)];
+            const end = minute + service.durationMinutes;
+            const lunch = minute < 13 * 60 && end > 12 * 60 + 30;
+            const isBlocked = blocked.some((b) => b.practitionerId === w.practitionerId && b.date === date && minute < b.end && end > b.start);
+            if (end > w.end || lunch || isBlocked || hr() < 0.25) {
+              minute = lunch ? 13 * 60 + 30 : minute + 15;
+              continue;
+            }
+            let patientId: string | null = null;
+            if (fresh) {
+              patientId = queue.shift() as string;
+              newLeft--;
+              newcomers.push(patientId);
+            } else {
+              for (let tries = 0; tries < 8 && introduced.length > 0; tries++) {
+                const candidate = introduced[Math.floor(hr() * introduced.length)];
+                if (!seenThisWeek.has(candidate)) {
+                  patientId = candidate;
+                  break;
+                }
+              }
+            }
+            if (!patientId) {
+              minute += 15;
+              continue;
+            }
+            seenThisWeek.add(patientId);
+            const r = hr();
+            // A first visit is always completed (that is what makes a new patient); follow-ups vary.
+            const status: BulkDiaryItem["status"] = fresh ? "attended" : r < 0.82 ? "attended" : r < 0.88 ? "dna" : r < 0.93 ? "late_cancelled" : "cancelled";
+            const startsAt = londonToUtcOrThrow(date, minute);
+            items.push({
+              kind: "appointment",
+              siteId: w.siteId,
+              practitionerId: w.practitionerId,
+              roomId: w.roomId,
+              patientId,
+              caseId: await openCase(patientId),
+              serviceId: service.id,
+              startsAt,
+              endsAt: addMinutesIso(startsAt, service.durationMinutes),
+              status,
+              source: hr() < 0.15 ? "online" : "staff",
+              feeDue: status === "dna" || status === "late_cancelled",
+              cancelReason: status === "cancelled" || status === "late_cancelled" ? (["patient", "patient", "illness", "weather", "clinic"] as const)[Math.floor(hr() * 5)] : null,
+              importRef: `${ref}-${wi + 1}-${date}-${String(minute).padStart(4, "0")}`,
+            });
+            historyAppointments++;
+            minute = end;
+          }
+        }
+      }
+      carry = Math.max(0, newLeft);
+      introduced.push(...newcomers);
+      historyAdded++;
+    }
+    await bulkCreateDiaryItems(ctx, tenantId, items, SEED_ACTOR, { source: "demo-seed", history: true });
+    log(`Diary: ${historyAdded} past weeks (${historyWeeks} recent, ${FIRST_VISIT_WEEKS} of first visits) – ${historyAppointments} appointments, ${historyBlocks} blocked times; ${newThisWeek.size} patients new this week.`);
+  }
+
   // Waiting list (once – with the rota).
   let waitingList = 0;
   if (!haveRota) {
@@ -260,5 +414,5 @@ export async function seedDiary(ctx: RepoContext, tenantId: string, options: See
     }
     log(`Diary: ${waitingList} patients on the waiting list.`);
   }
-  return { week: monday, rotaEntries, appointments, blocks, waitingList, weekExisted: Boolean(haveWeek) };
+  return { week: monday, rotaEntries, appointments, blocks, waitingList, weekExisted: Boolean(haveWeek), historyWeeks: historyAdded, historyAppointments, historyBlocks };
 }

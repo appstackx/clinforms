@@ -32,7 +32,7 @@ const APP = `${BASE}/app/clinic`;
 const SETUP = `${APP}/setup`;
 const REPORTS = `${APP}/reports`;
 const CLINIC = "riverside-demo";
-const REPORT_IDS = ["attendance", "utilisation", "caseload", "revenue", "debtors", "authorisations"];
+const REPORT_IDS = ["attendance", "utilisation", "patients", "caseload", "revenue", "debtors", "authorisations"];
 
 // The clinic system's TEST clock (src/modules/pms/core/clock.ts – never in a production build).
 const CLOCK_OFFSET = process.env.PMS_TEST_CLOCK === "1" && process.env.PMS_TEST_NOW && process.env.PMS_TEST_NOW_SET_AT ? Date.parse(process.env.PMS_TEST_NOW) - Number(process.env.PMS_TEST_NOW_SET_AT) : 0;
@@ -470,7 +470,7 @@ async function eventually(check, what) {
       await owner.goto(REPORTS);
       await owner.waitForURL(/\/reports\/attendance/);
       const nav = (await owner.locator("nav[aria-label='Reports'] a").allInnerTexts()).map((l) => l.trim());
-      assert(JSON.stringify(nav) === JSON.stringify(["Attendance and DNA", "Utilisation", "Caseload", "Revenue", "Debtors", "Authorisations"]), `reports nav: ${nav.join(", ")}`);
+      assert(JSON.stringify(nav) === JSON.stringify(["Attendance and DNA", "Utilisation", "New and returning patients", "Caseload", "Revenue", "Debtors", "Authorisations"]), `reports nav: ${nav.join(", ")}`);
       for (const id of REPORT_IDS) {
         await owner.goto(`${REPORTS}/${id}?site=all`);
         await owner.waitForSelector(`[data-testid=report-${id}]`);
@@ -504,7 +504,7 @@ async function eventually(check, what) {
       await clinician.goto(REPORTS);
       await clinician.waitForURL(/\/reports\/attendance/);
       const nav = (await clinician.locator("nav[aria-label='Reports'] a").allInnerTexts()).map((l) => l.trim());
-      assert(JSON.stringify(nav) === JSON.stringify(["Attendance and DNA", "Utilisation", "Caseload"]), `clinician reports: ${nav.join(", ")}`);
+      assert(JSON.stringify(nav) === JSON.stringify(["Attendance and DNA", "Utilisation", "New and returning patients", "Caseload"]), `clinician reports: ${nav.join(", ")}`);
       await clinician.goto(`${REPORTS}/caseload?site=all`);
       await clinician.waitForSelector("[data-testid=report-caseload]");
       const text = await clinician.locator("[data-testid=report-caseload]").innerText();
