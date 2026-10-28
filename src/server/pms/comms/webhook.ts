@@ -20,6 +20,7 @@ import { isPackageOn } from "../../repos/pms/entitlements";
 import { SYSTEM_ACTOR, type DispatchDeps } from "./dispatch";
 import { recordInboundSms } from "./replies";
 import { TEST_PROVIDER_ID } from "./providers/test";
+import { pmsNowMs } from "../../../modules/pms/core/clock";
 
 export const WEBHOOK_SECRET_MIN_LENGTH = 32;
 export const TIMESTAMP_HEADER = "x-clinic-timestamp";
@@ -60,7 +61,7 @@ export async function handleSmsWebhook(req: Request, deps: WebhookDeps): Promise
   if (length > MAX_BODY) return json(413, { ok: false, error: "Too large." });
   const raw = await req.text();
   if (raw.length > MAX_BODY) return json(413, { ok: false, error: "Too large." });
-  const now = deps.nowMs ? deps.nowMs() : Date.now();
+  const now = deps.nowMs ? deps.nowMs() : pmsNowMs();
   if (!webhookSignatureValid(deps.secret, req.headers.get(TIMESTAMP_HEADER), req.headers.get(SIGNATURE_HEADER), raw, now)) {
     return json(401, { ok: false, error: "Signature not valid." });
   }

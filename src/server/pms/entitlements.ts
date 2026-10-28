@@ -14,6 +14,7 @@ import { getDb } from "../db";
 import { logAuthEvent } from "../email/log";
 import { requireAppContext, type AppContext } from "../auth/session";
 import { listEntitlements } from "../repos/pms/entitlements";
+import { pmsNow } from "../../modules/pms/core/clock";
 
 export interface ClinicPackages {
   reports: boolean;
@@ -24,7 +25,7 @@ export interface ClinicPackages {
 export async function clinicPackages(tenantId: string): Promise<ClinicPackages> {
   try {
     const rows = await listEntitlements({ db: getDb() }, tenantId);
-    const now = new Date();
+    const now = pmsNow();
     const row = (pkg: PackageId) => rows.find((e) => e.package === pkg) ?? null;
     return { reports: packageIsOn("reports", row("reports"), now), clinic: packageIsOn("clinic", row("clinic"), now) };
   } catch (err) {

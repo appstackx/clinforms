@@ -18,6 +18,7 @@ import {
 import type { Entitlement, PmsActor } from "../../../modules/pms/core/types";
 import { assertIso, jsonOrNull, optionalText, parseJson } from "../context";
 import { RepoInputError, assertTenantId, nowIso, pmsAuditQuery, writeWithAudit, type DbContext } from "./context";
+import { pmsNow } from "../../../modules/pms/core/clock";
 
 type Row = {
   tenant_id: string;
@@ -68,7 +69,7 @@ export async function getEntitlement(ctx: DbContext, tenantId: string, pkg: Pack
 /** Whether the package is on for the clinic now (no row = the package's default). */
 export async function isPackageOn(ctx: DbContext, tenantId: string, pkg: PackageId): Promise<boolean> {
   const row = await getEntitlement(ctx, tenantId, pkg);
-  return packageIsOn(pkg, row, ctx.now ? ctx.now() : new Date());
+  return packageIsOn(pkg, row, ctx.now ? ctx.now() : pmsNow());
 }
 
 /** Every clinic's packages (platform page only – the one cross-clinic read here). */
@@ -116,7 +117,7 @@ export async function setEntitlement(ctx: DbContext, tenantId: string, pkg: Pack
       if (!USAGE_METRIC_PATTERN.test(k) || !Number.isInteger(v) || v < 0) throw new RepoInputError("Limits are whole numbers by metric name.");
     }
   }
-  const now = ctx.now ? ctx.now() : new Date();
+  const now = ctx.now ? ctx.now() : pmsNow();
   const before = await getEntitlement(ctx, tenantId, pkg);
   const wasOn = packageIsOn(pkg, before, now);
   const at = nowIso(ctx);
@@ -159,7 +160,7 @@ export async function incrementUsage(ctx: DbContext, tenantId: string, metric: s
   if (!USAGE_METRIC_PATTERN.test(metric)) throw new RepoInputError("Usage metrics are lower_snake_case.");
   if (!Number.isInteger(amount) || amount < 1 || amount > 1_000_000) throw new RepoInputError("amount must be a positive whole number.");
   const at = nowIso(ctx);
-  const period = usagePeriod(ctx.now ? ctx.now() : new Date());
+  const period = usagePeriod(ctx.now ? ctx.now() : pmsNow());
   const row = await ctx.db
     .insertInto("clinic_usage_counters")
     .values({ tenant_id: tenantId, period, metric, count: amount, updated_at: at })

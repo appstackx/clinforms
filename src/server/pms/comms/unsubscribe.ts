@@ -17,6 +17,7 @@ import { getClinicProfile } from "../../repos/clinic-profile";
 import { logAuthEvent } from "../../email/log";
 import { SYSTEM_ACTOR } from "./dispatch";
 import { verifyStopToken, type StopLink } from "./links";
+import { pmsNowMs } from "../../../modules/pms/core/clock";
 
 export interface UnsubscribeDeps {
   secret: string | null;
@@ -69,7 +70,7 @@ const INVALID = () => page(400, "Link not valid", "<h1>This link is not valid</h
 export async function handleUnsubscribe(req: Request, deps: UnsubscribeDeps): Promise<Response> {
   const url = new URL(req.url);
   const token = url.searchParams.get("t");
-  const now = deps.nowMs ? deps.nowMs() : Date.now();
+  const now = deps.nowMs ? deps.nowMs() : pmsNowMs();
   const link = verifyStopToken(token, deps.secret, now);
   if (!link) return INVALID();
   const name = escapeHtml(await clinicName(deps, link.tenantId));

@@ -18,6 +18,7 @@ import type { PmsAppointmentsTable } from "../../db/pms-schema/diary";
 import { assertId, assertTenantId, type RepoContext } from "../../repos/context";
 import { waiveAppointmentFee } from "../../repos/pms/diary/appointments";
 import type { BillableVisitSource, ClinicVisitQuery, VisitQuery } from "../billing/visit-source";
+import { pmsNow } from "../../../modules/pms/core/clock";
 
 const COLUMNS = ["id", "patient_id", "case_id", "service_id", "practitioner_id", "site_id", "authorisation_id", "starts_at", "starts_on", "status", "fee_due", "fee_pence"] as const;
 type Row = Pick<Selectable<PmsAppointmentsTable>, (typeof COLUMNS)[number]>;
@@ -51,7 +52,7 @@ function chargeable(ctx: RepoContext, tenantId: string) {
 }
 
 function today(ctx: RepoContext): string {
-  return ukToday(ctx.now ? ctx.now() : new Date());
+  return ukToday(ctx.now ? ctx.now() : pmsNow());
 }
 
 export const DIARY_VISIT_SOURCE: BillableVisitSource = {

@@ -13,6 +13,7 @@ import type { RepoContext } from "../../repos/pms/context";
 import { listEntitlementsByTenant } from "../../repos/pms/entitlements";
 import { runAllDueMessages, type DispatchDeps, type RunSummary } from "./dispatch";
 import { CommsConfigError } from "./providers";
+import { pmsNow, pmsNowMs } from "../../../modules/pms/core/clock";
 
 export interface CommsCronDeps {
   secret: string | undefined;
@@ -31,7 +32,7 @@ function json(status: number, body: unknown): Response {
 /** Clinics whose clinic system is on (the one cross-clinic read of the run). */
 export async function clinicsWithClinicSystem(ctx: RepoContext): Promise<string[]> {
   const byTenant = await listEntitlementsByTenant(ctx);
-  const now = ctx.now ? ctx.now() : new Date();
+  const now = ctx.now ? ctx.now() : pmsNow();
   return Array.from(byTenant.entries())
     .filter(([, rows]) => packageIsOn("clinic", rows.find((r) => r.package === "clinic") ?? null, now))
     .map(([tenantId]) => tenantId)
@@ -55,16 +56,16 @@ export async function handleCommsCron(req: Request, deps: CommsCronDeps): Promis
     log("cron.clinic_messages.refused", { reason: err instanceof CommsConfigError ? "provider_not_configured" : "error" });
     return json(503, { ok: false, error: "The message service is not configured." });
   }
-  const started = Date.now();
+  const started = pmsNowMs();
   const budget = deps.budgetMs ?? 45_000;
   const totals: Omit<RunSummary, "reasons"> & { clinics: number; failedClinics: number } = { clinics: 0, failedClinics: 0, claimed: 0, released: 0, sent: 0, outbox: 0, failed: 0, skipped: 0 };
   try {
     const ctx = deps.ctx();
     for (const tenantId of await clinicsWithClinicSystem(ctx)) {
-      if (Date.now() - started > budget) break;
+      if (pmsNowMs() - started > budget) break;
       totals.clinics++;
       try {
-        const r = await runAllDueMessages(ctx, tenantId, dispatch, { budgetMs: Math.max(1000, budget - (Date.now() - started)) });
+        const r = await runAllDueMessages(ctx, tenantId, dispatch, { budgetMs: Math.max(1000, budget - (pmsNowMs() - started)) });
         totals.claimed += r.claimed;
         totals.released += r.released;
         totals.sent += r.sent;
@@ -80,6 +81,6 @@ export async function handleCommsCron(req: Request, deps: CommsCronDeps): Promis
     log("cron.clinic_messages.failed", { error: err instanceof Error ? err.name : "unknown" });
     return json(500, { ok: false, error: "Message run failed." });
   }
-  log("cron.clinic_messages.done", { ...totals, ms: Date.now() - started });
+  log("cron.clinic_messages.done", { ...totals, ms: pmsNowMs() - started });
   return json(200, { ok: true, ...totals });
 }
