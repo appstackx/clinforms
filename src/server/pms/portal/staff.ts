@@ -11,9 +11,10 @@ import { MEASURES, OUTCOME_MEASURES } from "../../../modules/pms/records/outcome
 import { recordUpdates, visibleAnswers, type RecordField, type VisibleAnswer } from "../../../modules/pms/portal/forms";
 import { OUTCOME_FORM_TITLES, outcomeFormProblem, outcomeQuestionnaire } from "../../../modules/pms/portal/outcome-forms";
 import { PORTAL_TIMINGS } from "../../../modules/pms/portal/policy";
-import { clinicPublicPaths } from "../../../modules/pms/portal/paths";
+import { clinicPublicPaths, STAFF_PORTAL_PATHS } from "../../../modules/pms/portal/paths";
 import type { BookingSettingsInput, BookingSiteInput, IntakeTemplateInput, IntakeTemplatePatch } from "../../../modules/pms/portal/schemas";
 import { starterForm } from "../../../modules/pms/portal/starters";
+import { formatWhen } from "../../../modules/pms/portal/time";
 import type { BookingSettings, BookingSite, IntakeResponse, IntakeResponseSummary, IntakeTemplate, OnlineBooking } from "../../../modules/pms/portal/types";
 import type { Practitioner, Service, Site } from "../../../modules/pms/core/types";
 import { RepoInputError } from "../../repos/context";
@@ -36,11 +37,13 @@ import {
   updateIntakeTemplate,
 } from "../../repos/pms/portal/intake";
 import { ensurePortalAccount, getPortalAccountForPatient, setPortalAccountStatus } from "../../repos/pms/portal/accounts";
+import { handoffsForResponses, handoffUsable, type IntakeHandoff } from "../../repos/pms/portal/handoffs";
 import { getOutcome, listOutcomesForPatient } from "../../repos/pms/records/outcomes";
 import { writeWithAudit } from "../../repos/pms/context";
 import { listByIds } from "../../repos/pms/diary/appointments";
 import type { ClinicActor } from "../actor";
 import { commsLinkOrigin } from "../comms/links";
+import { clinicCompletionOf, clinicCompletionWords } from "./clinic-device";
 import { applyToRecord } from "./intake-service";
 import { sendSignInLink } from "./portal-auth";
 import { pmsNow } from "../../../modules/pms/core/clock";
@@ -237,19 +240,30 @@ export interface PatientFormsView {
   canSend: boolean;
   canSendOutcome: boolean;
   measures: { id: OutcomeMeasureId; label: string; problem: string | null }[];
+  /** Copies handed to the patient on a clinic device: response id → the hand-off's state and staff page. */
+  handoffs: Record<string, { id: string; state: "on_device" | "to_verify" | "verified" | "not_verified" | "expired"; href: string }>;
+}
+
+function handoffState(h: IntakeHandoff, nowMs: number): PatientFormsView["handoffs"][string]["state"] {
+  if (h.status === "verified") return "verified";
+  if (h.status === "completed") return "to_verify";
+  if (h.status === "ended") return h.completedAt ? "not_verified" : "expired";
+  return handoffUsable(h, nowMs) ? "on_device" : "expired";
 }
 
 /** The patient is checked by the caller (patientOr404 – clinic, sites). */
 export async function patientFormsFor(actor: ClinicActor, patientId: string): Promise<StaffResult<PatientFormsView>> {
   if (!can(actor, "patients.view")) return { ok: false, error: FORBIDDEN };
   const ctx = actor.repo();
-  const [responses, templates, account, settings, patient] = await Promise.all([
+  const [responses, templates, account, settings, patient, handoffs] = await Promise.all([
     listResponsesForPatient(ctx, actor.tenantId, patientId),
     listIntakeTemplates(ctx, actor.tenantId, { status: "active" }),
     getPortalAccountForPatient(ctx, actor.tenantId, patientId),
     getBookingSettings(ctx, actor.tenantId),
     getPatient(ctx, actor.tenantId, patientId),
+    handoffsForResponses(ctx, actor.tenantId, patientId),
   ]);
+  const nowMs = (ctx.now ? ctx.now() : pmsNow()).getTime();
   const canSendOutcome = can(actor, "clinical.write");
   const psfs = canSendOutcome ? await psfsActivities(actor, patientId) : [];
   return {
@@ -263,6 +277,7 @@ export async function patientFormsFor(actor: ClinicActor, patientId: string): Pr
       canSend: can(actor, "patients.edit"),
       canSendOutcome,
       measures: OUTCOME_MEASURES.map((m) => ({ id: m, label: `${MEASURES[m].short} – ${OUTCOME_FORM_TITLES[m]}`, problem: outcomeFormProblem(m, { psfsActivities: psfs }) })),
+      handoffs: Object.fromEntries(Array.from(handoffs.values()).map((h) => [h.responseId, { id: h.id, state: handoffState(h, nowMs), href: STAFF_PORTAL_PATHS.handoff(h.id) }])),
     },
   };
 }
@@ -277,6 +292,8 @@ export interface ResponseView {
   /** Details that could be copied to the record (staff choose). */
   updates: { field: RecordField; label: string; value: string }[];
   canApply: boolean;
+  /** Completed in the clinic on a clinic device: the words for "From" and the hand-off's staff page. */
+  inClinic: { words: string; state: "completed" | "verified" | "ended"; href: string } | null;
 }
 
 export async function patientResponseFor(actor: ClinicActor, patientId: string, responseId: string): Promise<StaffResult<ResponseView>> {
@@ -294,6 +311,7 @@ export async function patientResponseFor(actor: ClinicActor, patientId: string, 
     : [];
   // Reception reads the signature and consent ticks, never the health answers (the decrypted text is dropped).
   const safe: IntakeResponse = canSeeHealth ? r : { ...r, answers: null };
+  const completion = r.status === "submitted" ? await clinicCompletionOf(actor.repo(), actor.tenantId, r.id) : null;
   return {
     ok: true,
     value: {
@@ -304,6 +322,7 @@ export async function patientResponseFor(actor: ClinicActor, patientId: string, 
       sealIntact: responseSealIntact(r),
       updates,
       canApply: can(actor, "patients.edit") && r.status === "submitted" && !r.appliedAt,
+      inClinic: completion ? { words: clinicCompletionWords(completion, formatWhen), state: completion.status, href: STAFF_PORTAL_PATHS.handoff(completion.handoffId) } : null,
     },
   };
 }
@@ -321,7 +340,8 @@ async function psfsActivities(actor: ClinicActor, patientId: string): Promise<{ 
     .map(([key, name]) => ({ key, name }));
 }
 
-async function emailPortalLink(actor: ClinicActor, patientId: string, next: string): Promise<StaffResult> {
+/** Emails the patient a one-time portal sign-in link (72 hours) that opens `next` – through comms (outbox / test mode). */
+export async function emailPortalLink(actor: ClinicActor, patientId: string, next: string): Promise<StaffResult> {
   const ctx = actor.repo();
   const settings = await getBookingSettings(ctx, actor.tenantId);
   if (!settings.portal) return { ok: false, error: "The patient portal is switched off. Switch it on in Set-up → Online booking first." };

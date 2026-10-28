@@ -15,7 +15,7 @@ import type { PmsActor } from "../../../../modules/pms/core/types";
 import { runBatch } from "../../../db/batch";
 import type { PmsPortalAccountsTable, PmsPortalSessionsTable } from "../../../db/pms-schema/portal";
 import { RepoInputError, assertId, assertTenantId, nowIso, pmsAuditQuery, pmsId, translateDbError, writeWithAudit, type DbContext } from "../context";
-import { changeWithAudit, portalAuditWhen } from "./shared";
+import { changeWithAudit, newPortalWriteId, portalAuditWhen, portalAuditWhenWritten } from "./shared";
 
 const HASH = /^[0-9a-f]{64}$/;
 
@@ -198,15 +198,18 @@ export async function revokePortalSession(ctx: DbContext, tenantId: string, id: 
   const at = nowIso(ctx);
   const row = await ctx.db.selectFrom("pms_portal_sessions").select("account_id").where("tenant_id", "=", tenantId).where("id", "=", id).executeTakeFirst();
   if (!row) return false;
+  const writeId = newPortalWriteId(ctx);
   const changed =
     (await changeWithAudit(ctx, [
-      ctx.db.updateTable("pms_portal_sessions").set({ revoked_at: at }).where("tenant_id", "=", tenantId).where("id", "=", id).where("revoked_at", "is", null),
-      portalAuditWhen(
+      ctx.db.updateTable("pms_portal_sessions").set({ revoked_at: at, write_id: writeId }).where("tenant_id", "=", tenantId).where("id", "=", id).where("revoked_at", "is", null),
+      portalAuditWhenWritten(
         ctx,
         tenantId,
         { userId: null, sessionId: id },
         { action: "pms.portal_session.end", targetType: "pms_portal_account", targetId: row.account_id, detail: { via: "patient" } },
-        ctx.db.selectFrom("pms_portal_sessions").select("id").where("tenant_id", "=", tenantId).where("id", "=", id).where("revoked_at", "=", at),
+        "pms_portal_sessions",
+        id,
+        writeId,
       ),
     ])) > 0;
   return changed;

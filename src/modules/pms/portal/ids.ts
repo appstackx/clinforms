@@ -18,6 +18,8 @@ export const PORTAL_ID_PREFIXES = {
   response: "ifr",
   /** A document the clinic explicitly shared with the patient in the portal. */
   share: "psh",
+  /** A form handed to the patient on a clinic device (completed in the clinic, verified by staff). */
+  handoff: "ihd",
 } as const;
 
 export type PortalIdKind = keyof typeof PORTAL_ID_PREFIXES;

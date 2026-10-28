@@ -22,6 +22,9 @@ export function clinicPublicPaths(tenantId: string) {
     portalDocument: (shareId: string) => `${root}/portal/documents/${encodeURIComponent(shareId)}`,
     manage: (token: string) => `${root}/booking/${encodeURIComponent(token)}`,
     manageForm: (token: string, responseId: string) => `${root}/booking/${encodeURIComponent(token)}/forms/${encodeURIComponent(responseId)}`,
+    /** A clinic device showing one form handed to the patient (its cookie is limited to this path). */
+    device: `${root}/device`,
+    portalDocumentFile: (shareId: string) => `${root}/portal/documents/${encodeURIComponent(shareId)}/file`,
   };
 }
 
@@ -33,6 +36,10 @@ export const STAFF_PORTAL_PATHS = {
   intakeForm: (id: string) => `${CLINIC_BASE_PATH}/intake/${encodeURIComponent(id)}`,
   patientForms: (patientId: string) => `${CLINIC_BASE_PATH}/patients/${encodeURIComponent(patientId)}/forms`,
   patientResponse: (patientId: string, responseId: string) => `${CLINIC_BASE_PATH}/patients/${encodeURIComponent(patientId)}/forms/${encodeURIComponent(responseId)}`,
+  /** The sealed copy as a PDF. */
+  patientResponsePdf: (patientId: string, responseId: string) => `${CLINIC_BASE_PATH}/patients/${encodeURIComponent(patientId)}/forms/${encodeURIComponent(responseId)}/pdf`,
+  /** A form handed to the patient on a clinic device: staff verify (or end) it here. */
+  handoff: (handoffId: string) => `${CLINIC_BASE_PATH}/intake/device/${encodeURIComponent(handoffId)}`,
 } as const;
 
 /** The secret part of a link: 43 base64url characters (32 random bytes). */

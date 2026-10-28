@@ -111,9 +111,13 @@ export interface FormFillerProps {
   submit: (form: FormData) => Promise<Answer>;
   doneHref: string;
   doneLabel: string;
+  /** After a successful send, replace this page with `doneHref` (a clinic device: its locked "hand back" screen). */
+  replaceOnDone?: boolean;
+  /** Staff preview ("Preview as patient"): exactly the patient's form, but nothing can be sent. */
+  preview?: boolean;
 }
 
-export function FormFiller({ title, form, requiresSignature, signatureStatement, submit, doneHref, doneLabel }: FormFillerProps) {
+export function FormFiller({ title, form, requiresSignature, signatureStatement, submit, doneHref, doneLabel, replaceOnDone, preview }: FormFillerProps) {
   const parts = React.useMemo(() => {
     const p = partsOf(form);
     if (requiresSignature) p.push({ title: "Consent and signature", help: null, fields: [] });
@@ -135,13 +139,17 @@ export function FormFiller({ title, form, requiresSignature, signatureStatement,
   }, [part, done]);
 
   const send = async () => {
-    if (!formRef.current) return;
+    if (!formRef.current || preview) return;
     setPending(true);
     setError(null);
     const data = new FormData(formRef.current);
     const r = await submit(data);
     setPending(false);
     if (r.ok) {
+      if (replaceOnDone) {
+        window.location.replace(doneHref);
+        return;
+      }
       setDone({ at: new Date().toLocaleString("en-GB", { timeZone: "Europe/London", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).replace(",", " at"), name: typed.trim() });
       return;
     }
@@ -182,6 +190,11 @@ export function FormFiller({ title, form, requiresSignature, signatureStatement,
         else setPart(part + 1);
       }}
     >
+      {preview ? (
+        <p role="note" className="mb-3 rounded-[10px] border border-[#BFDBFE] bg-[#EFF6FF] p-3 text-[14px] text-[#1E3A8A]">
+          Preview – this is what the patient sees. Nothing you enter here is saved or sent.
+        </p>
+      ) : null}
       <p className="text-[13px] text-[#475569]">{title}</p>
       <p className="mt-1 text-[13px] text-[#334155]">
         Part {part + 1} of {parts.length} · {current.title}
@@ -239,7 +252,7 @@ export function FormFiller({ title, form, requiresSignature, signatureStatement,
             Back
           </PmsButton>
         ) : null}
-        <PmsButton type="submit" size="lg" className="flex-1" disabled={last && requiresSignature && !(typed.trim().length > 3 && agree)} loading={pending} loadingText="Sending…">
+        <PmsButton type="submit" size="lg" className="flex-1" disabled={(last && preview) || (last && requiresSignature && !(typed.trim().length > 3 && agree))} loading={pending} loadingText="Sending…">
           {last ? (requiresSignature ? "Sign and send" : "Send") : "Continue"}
         </PmsButton>
       </div>

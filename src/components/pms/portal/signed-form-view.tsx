@@ -9,7 +9,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import * as React from "react";
-import { Lock, ShieldCheck } from "lucide-react";
+import { Download, Lock, ShieldCheck, Tablet } from "lucide-react";
 import { Checkbox, PmsButton, PmsNotice, useToast } from "@/components/pms/ui";
 import { STAFF_PORTAL_PATHS } from "@/modules/pms/portal/paths";
 import type { AnswerValue, FieldType } from "@/modules/pms/portal/forms";
@@ -32,6 +32,9 @@ export interface SignedFormViewProps {
   appliedAt: string | null;
   updates: { field: string; label: string; value: string }[];
   canApply: boolean;
+  /** Completed in the clinic on a clinic device (verified by staff, or waiting for it). */
+  inClinic: { words: string; state: "completed" | "verified" | "ended"; href: string } | null;
+  pdfHref: string;
   review: () => Promise<Answer>;
   apply: (fields: string[]) => Promise<Answer>;
 }
@@ -65,13 +68,24 @@ export function SignedFormView(p: SignedFormViewProps) {
   const shown = p.answers.filter((a) => !a.hidden);
   return (
     <div className="flex flex-col gap-4">
-      <nav aria-label="Breadcrumb" className="text-sm text-[#475569]">
-        <Link href={STAFF_PORTAL_PATHS.patientForms(p.patientId)} className="text-primary-strong underline underline-offset-2">
-          Forms
-        </Link>
-        <span aria-hidden> / </span>
-        <span>{p.name}</span>
-      </nav>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <nav aria-label="Breadcrumb" className="text-sm text-[#475569]">
+          <Link href={STAFF_PORTAL_PATHS.patientForms(p.patientId)} className="text-primary-strong underline underline-offset-2">
+            Forms
+          </Link>
+          <span aria-hidden> / </span>
+          <span>{p.name}</span>
+        </nav>
+        {p.status === "submitted" ? (
+          <a
+            href={p.pdfHref}
+            className="inline-flex h-9 items-center gap-1.5 rounded-[8px] border border-border bg-white px-3 text-sm font-medium text-foreground hover:bg-[#F8FAFC] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          >
+            <Download className="h-4 w-4" aria-hidden="true" />
+            Download PDF
+          </a>
+        ) : null}
+      </div>
       {error ? (
         <p role="alert" className="rounded-[8px] border border-[#FECACA] bg-[#FEF2F2] p-3 text-sm text-destructive-strong">
           {error}
@@ -133,6 +147,22 @@ export function SignedFormView(p: SignedFormViewProps) {
             ) : (
               <p className="mt-2 text-sm text-[#475569]">This form has no signature{p.submittedAt ? ` – completed ${p.submittedAt}` : ""}.</p>
             )}
+            {p.inClinic ? (
+              <p className={`mt-3 flex items-start gap-2 rounded-[8px] p-2 text-sm ${p.inClinic.state === "verified" ? "bg-[#F0FDF4] text-[#166534]" : "bg-[#FFFBEB] text-[#864E0E]"}`}>
+                <Tablet className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                <span>
+                  {p.inClinic.words}.
+                  {p.inClinic.state === "completed" ? (
+                    <>
+                      {" "}
+                      <Link href={p.inClinic.href} className="font-medium underline underline-offset-2">
+                        Verify now
+                      </Link>
+                    </>
+                  ) : null}
+                </span>
+              </p>
+            ) : null}
           </section>
           <section aria-labelledby="chk-h" className="rounded-2xl border border-border bg-white p-4">
             <h2 id="chk-h" className="text-base font-semibold text-foreground">

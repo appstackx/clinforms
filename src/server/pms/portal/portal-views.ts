@@ -12,7 +12,9 @@ import type { IntakeResponse, IntakeResponseSummary, OnlineBooking, PortalShareS
 import type { RepoContext } from "../../repos/context";
 import { findByManageToken, onlineBookingsForAppointments } from "../../repos/pms/portal/bookings";
 import { getIntakeResponse, listResponsesForAppointment, listResponsesForPatient } from "../../repos/pms/portal/intake";
-import { listSharesForPatient } from "../../repos/pms/portal/shares";
+import { getPortalShare, listSharesForPatient, shareFilesForPatient } from "../../repos/pms/portal/shares";
+import { listAttachmentsForPatient } from "../../repos/pms/records/attachments";
+import { ATTACHMENT_TYPES, formatBytes } from "../../../modules/pms/records/attachments";
 import { portalDiary, type PortalAppointment } from "./diary-port";
 import { directoryView, type DirectoryView } from "./directory-view";
 import type { PublicClinic } from "./public-clinic";
@@ -97,12 +99,16 @@ export interface PortalHome {
 
 export async function portalHome(ctx: RepoContext, clinic: PublicClinic, patientId: string, now: Date = pmsNow()): Promise<PortalHome> {
   const paths = clinicPublicPaths(clinic.tenantId);
-  const [appointments, responses, shares, dir] = await Promise.all([
+  const [appointments, responses, shares, dir, shareFiles, files] = await Promise.all([
     portalDiary().patientAppointments(ctx, clinic.tenantId, patientId, { limit: 100 }),
     listResponsesForPatient(ctx, clinic.tenantId, patientId),
     listSharesForPatient(ctx, clinic.tenantId, patientId),
     directoryView(ctx, clinic.tenantId),
+    shareFilesForPatient(ctx, clinic.tenantId, patientId),
+    listAttachmentsForPatient(ctx, clinic.tenantId, patientId),
   ]);
+  // A shared FILE is listed only while it is still on the record (a file withdrawn from the record is never handed out).
+  const activeFiles = new Map(files.map((f) => [f.id, f]));
   const bookings = await onlineBookingsForAppointments(ctx, clinic.tenantId, appointments.map((a) => a.id));
   const cards = appointments.map((a) => card(clinic, a, dir, bookings.get(a.id), now));
   const nowIso = now.toISOString();
@@ -116,7 +122,13 @@ export async function portalHome(ctx: RepoContext, clinic: PublicClinic, patient
     past: cards.filter((c) => c.startsAt < nowIso && c.status !== "arrived").reverse().slice(0, 10),
     formsToDo: responses.filter((r) => r.status === "requested").map(formCard),
     documents: [
-      ...shares.map((s: PortalShareSummary) => ({ id: s.id, title: s.title, detail: `Shared ${formatWhen(s.sharedAt).slice(0, 14)}`, href: paths.portalDocument(s.id) })),
+      ...shares
+        .filter((s: PortalShareSummary) => !shareFiles.has(s.id) || activeFiles.has(shareFiles.get(s.id) as string))
+        .map((s: PortalShareSummary) => {
+          const file = shareFiles.has(s.id) ? activeFiles.get(shareFiles.get(s.id) as string) : undefined;
+          const kind = file ? `${ATTACHMENT_TYPES[file.type]?.label ?? "File"}, ${formatBytes(file.sizeBytes)} · ` : "";
+          return { id: s.id, title: s.title, detail: `${kind}Shared ${formatWhen(s.sharedAt).slice(0, 14)}`, href: paths.portalDocument(s.id) };
+        }),
       ...responses.filter((r) => r.status === "submitted" && r.kind !== "outcome").map((r) => ({ id: r.id, title: `${r.name} (signed copy)`, detail: r.submittedAt ? `Sent ${formatWhen(r.submittedAt).slice(0, 14)}` : "", href: paths.portalForm(r.id) })),
     ],
   };
@@ -159,4 +171,15 @@ export async function patientForm(ctx: RepoContext, clinic: PublicClinic, who: {
   if (!r || r.patientId !== who.patientId || r.status === "cancelled") return null;
   if (who.appointmentId !== undefined && r.appointmentId !== who.appointmentId) return null;
   return r;
+}
+
+/** A shared document of the signed-in patient, with the file it hands out (if any and still on the record) – or null. */
+export async function patientShare(ctx: RepoContext, tenantId: string, patientId: string, shareId: string) {
+  if (typeof shareId !== "string" || !/^psh_[0-9A-HJKMNP-TV-Z]{26}$/.test(shareId)) return null;
+  const share = await getPortalShare(ctx, tenantId, shareId);
+  if (!share || share.patientId !== patientId || share.withdrawnAt) return null;
+  if (!share.attachmentId) return { share, file: null };
+  const file = (await listAttachmentsForPatient(ctx, tenantId, patientId)).find((f) => f.id === share.attachmentId);
+  if (!file) return null;
+  return { share, file: { id: file.id, label: ATTACHMENT_TYPES[file.type]?.label ?? "File", size: formatBytes(file.sizeBytes) } };
 }

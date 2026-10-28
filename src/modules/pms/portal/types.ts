@@ -154,4 +154,6 @@ export interface PortalShareSummary {
 export interface PortalShare extends PortalShareSummary {
   /** Decrypted. */
   body: string;
+  /** The record's attached file this share hands to the patient (null for a written document). */
+  attachmentId: string | null;
 }

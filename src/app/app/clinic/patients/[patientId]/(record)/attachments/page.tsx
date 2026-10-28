@@ -14,6 +14,9 @@ import { getPatientAttachments } from "@/server/repos/pms/records/attachments";
 import { listNotesForPatient } from "@/server/repos/pms/records/notes";
 import { withdrawFile } from "./actions";
 import { ImagePreview } from "@/components/pms/records/image-preview";
+import { ShareWithPatient } from "@/components/pms/portal/share-with-patient";
+import { attachmentSharesFor } from "@/server/pms/portal/staff-shares";
+import { shareAttachmentAction, withdrawShareAction } from "../forms/share-actions";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Attachments" };
@@ -24,7 +27,9 @@ export default async function AttachmentsPage({ params, searchParams }: { params
   const patient = await patientOr404(actor, params.patientId);
   const ctx = actor.repo();
   const showWithdrawn = searchParams.withdrawn === "1";
-  const [files, notes] = await Promise.all([getPatientAttachments(ctx, actor.tenantId, patient.id, { includeWithdrawn: true }), listNotesForPatient(ctx, actor.tenantId, patient.id)]);
+  const [files, notes, sharing] = await Promise.all([getPatientAttachments(ctx, actor.tenantId, patient.id, { includeWithdrawn: true }), listNotesForPatient(ctx, actor.tenantId, patient.id), attachmentSharesFor(actor, patient.id)]);
+  // "Share with the patient" (portal module, PORTAL-004): why it cannot be done now, if so.
+  const shareBlocked = !sharing ? null : !sharing.portal.enabled ? "The patient portal is switched off (Set-up → Online booking)." : sharing.portal.access === "disabled" ? "The patient's portal access is switched off (Forms tab)." : null;
   const shown = files.filter((f) => showWithdrawn || f.status === "active");
   const noteLabel = Object.fromEntries(notes.map((n) => [n.id, `${formatUkDate(n.seenOn)} – ${NOTE_TYPE_LABELS[n.noteType]}`]));
   const canWrite = actor.can("clinical.write") && files.length < MAX_ATTACHMENTS_PER_PATIENT;
@@ -65,6 +70,17 @@ export default async function AttachmentsPage({ params, searchParams }: { params
                   </div>
                   {f.status === "withdrawn" ? <Pill>Withdrawn</Pill> : f.type === "jpeg" || f.type === "png" ? <ImagePreview href={patientPath(patient.id, `attachments/${f.id}`)} name={f.fileName} /> : null}
                 </div>
+                {sharing && (f.status === "active" || (sharing.byAttachment[f.id]?.length ?? 0) > 0) ? (
+                  <ShareWithPatient
+                    fileLabel={f.fileName}
+                    shares={sharing.byAttachment[f.id] ?? []}
+                    canShare={sharing.canShare && f.status === "active"}
+                    blocked={shareBlocked}
+                    canEmail={sharing.portal.hasEmail}
+                    share={shareAttachmentAction.bind(null, patient.id, f.id)}
+                    withdraw={withdrawShareAction.bind(null, patient.id)}
+                  />
+                ) : null}
                 {f.status === "active" && actor.can("clinical.write") ? (
                   <details className="mt-2">
                     <summary className="cursor-pointer rounded text-xs font-medium text-[#334155] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">Withdraw this file</summary>
