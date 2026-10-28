@@ -29,14 +29,18 @@ export function clinicInitials(name: string): string {
   return (words.slice(0, 2).map((w) => w[0].toUpperCase()).join("") || "C").slice(0, 2);
 }
 
-export async function loadPublicClinic(ctx: DbContext, slug: string): Promise<PublicClinic | null> {
+/**
+ * The clinic behind a public address. `options.device`: the clinic's device page (a form handed to a patient in
+ * the clinic) – it needs the package, not online booking or the portal switched on.
+ */
+export async function loadPublicClinic(ctx: DbContext, slug: string, options: { device?: boolean } = {}): Promise<PublicClinic | null> {
   if (typeof slug !== "string" || !TENANT_ID_PATTERN.test(slug)) return null;
   try {
     const org = await ctx.db.selectFrom("organization").select(["name", "metadata"]).where("slug", "=", slug).executeTakeFirst();
     if (!org || (org.metadata && /"offboardedAt"/.test(org.metadata))) return null;
     if (!(await isPackageOn(ctx, slug, "clinic"))) return null;
     const [settings, pms] = await Promise.all([getBookingSettings(ctx, slug), getPmsSettings(ctx, slug)]);
-    if (!settings.onlineBooking && !settings.portal) return null;
+    if (!options.device && !settings.onlineBooking && !settings.portal) return null;
     return { tenantId: slug, name: org.name, settings, isDemo: pms.isDemo };
   } catch (err) {
     logAuthEvent("pms.portal.clinic_unreadable", { error: err instanceof Error ? err.name : "error" });
