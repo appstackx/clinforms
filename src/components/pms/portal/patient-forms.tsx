@@ -144,7 +144,7 @@ export function PatientForms({
                     )
                   ) : null}
                   {view.canSend && r.status === "requested" && r.kind !== "outcome" ? (
-                    <PmsButton size="sm" variant="secondary" loading={busy === `hand-${r.id}`} onClick={() => void handOver(r.id)} aria-label={`Complete ${r.name} in the clinic on this device`}>
+                    <PmsButton size="sm" variant="secondary" loading={busy === `hand-${r.id}`} onClick={() => void handOver(r.id)} aria-label={`Complete in the clinic – ${r.name} (on this device)`}>
                       <Tablet className="h-4 w-4" aria-hidden="true" />
                       Complete in the clinic
                     </PmsButton>
