@@ -16,6 +16,7 @@ import { ukToday } from "../../src/modules/pms/core/text";
 import type { CaseSummary } from "../../src/modules/pms/core/types";
 import type { BodyChart } from "../../src/modules/pms/records/body-chart";
 import type { OutcomeInput } from "../../src/modules/pms/records/outcomes";
+import { RED_FLAG_OPTIONS } from "../../src/modules/pms/records/templates";
 import { RepoInputError, type RepoContext } from "../../src/server/repos/context";
 import { listCasesForPatient } from "../../src/server/repos/pms/cases";
 import { listPractitioners } from "../../src/server/repos/pms/directory";
@@ -71,12 +72,8 @@ function addDays(iso: string, days: number): string {
 function initialSections(area: Area, title: string): Record<string, string> {
   const w = WORDS[area];
   return {
-    presenting_complaint: `${title}. Pain in the ${w.part}, worse with prolonged sitting (fictional).`,
-    history: "Gradual onset as described by the patient; no previous episodes of note (fictional).",
-    past_history: "Nothing relevant (fictional).",
-    medication: "Paracetamol as needed. No known allergies (fictional).",
-    screening: "Red flag questions asked: none reported.",
-    social: "Works full time; wants to get back to the gym (fictional).",
+    subjective: `${title}. Pain in the ${w.part}, worse with prolonged sitting; gradual onset, no previous episodes of note. Paracetamol as needed, no known allergies. Works full time; wants to get back to the gym (fictional).`,
+    red_flags: RED_FLAG_OPTIONS.join("\n"),
     objective: w.objective,
     assessment: `Mechanical ${w.part} pain, irritability moderate.`,
     plan: `${w.treatment} Review in one week.`,

@@ -10,6 +10,7 @@ export const RECORDS_ID_PREFIXES = {
   attachment: "natt",
   outcome: "om",
   anonymisation: "anon",
+  clinicalFlag: "cflg",
 } as const;
 
 /** Built-in note templates have fixed ids (no row in pms_note_templates). */

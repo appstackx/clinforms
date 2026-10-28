@@ -9,6 +9,7 @@
  */
 import type { Authorisation, Case, Patient } from "../../../../modules/pms/core/types";
 import type { AttachmentDetails, ClinicalNote, OutcomeRecord } from "../../../../modules/pms/records/types";
+import type { ClinicalFlag } from "../../../../modules/pms/records/flags";
 import { getAuthorisation, getCase, listAuthorisations, listCasesForPatient } from "../cases";
 import { listPractitioners, listSites } from "../directory";
 import { getPatient } from "../patients";
@@ -17,6 +18,7 @@ import { assertTenantId, type RepoContext } from "../context";
 import { getPatientAttachments } from "./attachments";
 import { getNote, listNotesForPatient } from "./notes";
 import { getOutcome, listOutcomesForPatient } from "./outcomes";
+import { getPatientExtras, listClinicalFlags } from "./patient-extras";
 
 export interface SubjectAccessData {
   patient: Patient;
@@ -25,6 +27,9 @@ export interface SubjectAccessData {
   notes: ClinicalNote[];
   outcomes: OutcomeRecord[];
   attachments: AttachmentDetails[];
+  /** 0125: the patient's pronouns and every clinical flag (active and ended). */
+  pronouns: string | null;
+  clinicalFlags: ClinicalFlag[];
   /** id → display name, for the copy's readers. */
   names: { practitioners: Record<string, string>; referrers: Record<string, string>; sites: Record<string, string> };
 }
@@ -33,7 +38,7 @@ export async function collectSubjectAccess(ctx: RepoContext, tenantId: string, p
   assertTenantId(tenantId);
   const patient = await getPatient(ctx, tenantId, patientId);
   if (!patient) return null;
-  const [caseSummaries, authSummaries, noteSummaries, outcomeSummaries, attachments, practitioners, referrers, sites] = await Promise.all([
+  const [caseSummaries, authSummaries, noteSummaries, outcomeSummaries, attachments, practitioners, referrers, sites, extras, clinicalFlags] = await Promise.all([
     listCasesForPatient(ctx, tenantId, patientId),
     listAuthorisations(ctx, tenantId, { patientId }),
     listNotesForPatient(ctx, tenantId, patientId, { includeDiscarded: true, limit: 500 }),
@@ -42,6 +47,8 @@ export async function collectSubjectAccess(ctx: RepoContext, tenantId: string, p
     listPractitioners(ctx, tenantId, { includeInactive: true }),
     listReferrers(ctx, tenantId, { includeInactive: true, limit: 500 }),
     listSites(ctx, tenantId, { includeInactive: true }),
+    getPatientExtras(ctx, tenantId, patientId),
+    listClinicalFlags(ctx, tenantId, patientId, { includeEnded: true }),
   ]);
   const cases: Case[] = [];
   for (const c of caseSummaries) {
@@ -71,6 +78,8 @@ export async function collectSubjectAccess(ctx: RepoContext, tenantId: string, p
     notes: notes.sort((a, b) => (a.seenOn === b.seenOn ? a.id.localeCompare(b.id) : a.seenOn.localeCompare(b.seenOn))),
     outcomes,
     attachments,
+    pronouns: extras.pronouns,
+    clinicalFlags,
     names: {
       practitioners: byId(practitioners, (p) => (p.registrationNumber ? `${p.displayName} (${p.registrationNumber})` : p.displayName)),
       referrers: byId(referrers, (r) => r.name),

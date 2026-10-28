@@ -15,7 +15,7 @@
  */
 import { z } from "zod";
 import { BodyChartSchema, type BodyChart } from "./body-chart";
-import { MAX_LINE_CHARS, MAX_SECTION_CHARS, SECTION_KEY_PATTERN, type TemplateSnapshot } from "./templates";
+import { MAX_LINE_CHARS, MAX_SECTION_CHARS, SECTION_KEY_PATTERN, checkedOptions, type TemplateSnapshot } from "./templates";
 
 export const NOTE_STATUSES = ["draft", "signed", "discarded"] as const;
 export type NoteStatus = (typeof NOTE_STATUSES)[number];
@@ -95,6 +95,12 @@ export function sectionsForTemplate(template: TemplateSnapshot, sections: Record
   for (const s of template.sections) {
     const text = sections[s.key];
     if (!text) continue;
+    if (s.kind === "checklist") {
+      // Only the template's own tick boxes, one per line, in the template's order.
+      const ticked = checkedOptions(s, text);
+      if (ticked.length) out[s.key] = ticked.join("\n");
+      continue;
+    }
     out[s.key] = s.kind === "line" ? text.replace(/\s+/g, " ").slice(0, MAX_LINE_CHARS) : text;
   }
   return out;

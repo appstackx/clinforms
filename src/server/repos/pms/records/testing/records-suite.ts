@@ -40,6 +40,7 @@ import {
 } from "../notes";
 import { bulkRecordOutcomes, getOutcome, listOutcomesForPatient, markOutcomeInError, recordOutcome } from "../outcomes";
 import { collectSubjectAccess } from "../subject-access";
+import { addClinicalFlag, endClinicalFlag, getPatientExtras, getPronounsFor, listClinicalFlags, savePatientPronouns } from "../patient-extras";
 import { getRecordsSettings, saveRecordsSettings } from "../settings";
 import { copyNoteTemplate, createNoteTemplate, getNoteTemplate, listNoteTemplates, setNoteTemplateActive, updateNoteTemplate } from "../templates";
 
@@ -135,7 +136,7 @@ export function defineRecordsRepoSuite(label: string, factory: () => Promise<Rec
         A,
         draft.id,
         1,
-        { sections: { presenting_complaint: "Neck pain since the collision", objective: "Reduced rotation to the right", smuggled: "not in the template" }, bodyChart: chart },
+        { sections: { subjective: "Neck pain since the collision", objective: "Reduced rotation to the right", smuggled: "not in the template" }, bodyChart: chart },
         SARAH,
       );
       assert.deepEqual(saved.ok ? saved.rev : saved, 2);
@@ -143,7 +144,7 @@ export function defineRecordsRepoSuite(label: string, factory: () => Promise<Rec
       assert.deepEqual(await saveNoteDraft(ctx, A, draft.id, 1, { sections: { objective: "stale" } }, SARAH), { ok: false, reason: "conflict", currentRev: 2 });
       assert.deepEqual(await saveNoteDraft(ctx, B, draft.id, 2, { sections: { objective: "x" } }, OTHER_CLINIC), { ok: false, reason: "not_found" });
       const note = await getNote(ctx, A, draft.id);
-      assert.deepEqual(note?.sections, { presenting_complaint: "Neck pain since the collision", objective: "Reduced rotation to the right" });
+      assert.deepEqual(note?.sections, { subjective: "Neck pain since the collision", objective: "Reduced rotation to the right" });
       assert.deepEqual(note?.bodyChart?.markers[0], { view: "front", x: 48.3, y: 14.1, kind: "pain", intensity: 6, label: "Right side of the neck" });
       assert.equal(await getNote(ctx, B, draft.id), null, "another clinic cannot read it");
       const raw = await ctx.db.selectFrom("pms_clinical_notes").select(["sections_enc", "body_chart_enc"]).where("tenant_id", "=", A).where("id", "=", draft.id).executeTakeFirstOrThrow();
@@ -331,7 +332,7 @@ export function defineRecordsRepoSuite(label: string, factory: () => Promise<Rec
       assert.ok(data);
       assert.equal(data.patient.firstName, "Megan");
       assert.equal(data.cases[0].referralReason, "Whiplash after a rear-end collision");
-      assert.ok(data.notes.some((n) => n.sections.presenting_complaint === "Neck pain since the collision" && n.amendments.length === 2));
+      assert.ok(data.notes.some((n) => n.sections.subjective === "Neck pain since the collision" && n.amendments.length === 2));
       assert.ok(data.outcomes.some((o) => o.answers?.activities?.a2 === "Reading for an hour"));
       assert.equal(data.attachments.length, 2, "withdrawn files are listed too");
       assert.equal(data.names.practitioners[ids.prac], "Sarah Reid (PH-DEMO-01)");
@@ -379,7 +380,7 @@ export function defineRecordsRepoSuite(label: string, factory: () => Promise<Rec
     });
 
     it("note settings: defaults, revision-checked saves, per clinic", async () => {
-      assert.deepEqual(await getRecordsSettings(ctx, A), { unsignedNoteDays: 3, rev: 0, updatedAt: null });
+      assert.deepEqual(await getRecordsSettings(ctx, A), { unsignedNoteDays: 1, rev: 0, updatedAt: null });
       const first = await saveRecordsSettings(ctx, A, 0, { unsignedNoteDays: 5 }, SARAH);
       assert.ok(first.ok && first.rev === 1);
       assert.deepEqual(await saveRecordsSettings(ctx, A, 0, { unsignedNoteDays: 6 }, SARAH), { ok: false, reason: "conflict", currentRev: 1 });
@@ -387,7 +388,7 @@ export function defineRecordsRepoSuite(label: string, factory: () => Promise<Rec
       assert.deepEqual(await saveRecordsSettings(ctx, A, 1, { unsignedNoteDays: 8 }, SARAH), { ok: false, reason: "conflict", currentRev: 2 });
       await rejects(saveRecordsSettings(ctx, A, 2, { unsignedNoteDays: 0 }, SARAH), /At least 1/);
       assert.equal((await getRecordsSettings(ctx, A)).unsignedNoteDays, 7);
-      assert.equal((await getRecordsSettings(ctx, B)).unsignedNoteDays, 3, "another clinic keeps its own");
+      assert.equal((await getRecordsSettings(ctx, B)).unsignedNoteDays, 1, "another clinic keeps its own");
     });
 
     it("templates: copy, change (new version, old notes keep theirs), retire and bring back", async () => {
@@ -424,6 +425,45 @@ export function defineRecordsRepoSuite(label: string, factory: () => Promise<Rec
       assert.equal((await findPossibleDuplicates(ctx, B, { lastName: "O'Neill", dateOfBirth: "1988-05-04" })).length, 1, "the other clinic finds only its own");
     });
 
+    it("pronouns and clinical flags (0125): revisioned, encrypted flags, ended not deleted, per clinic", async () => {
+      tick();
+      assert.deepEqual(await getPatientExtras(ctx, A, ids.megan), { pronouns: null, rev: 0 });
+      const first = await savePatientPronouns(ctx, A, ids.megan, 0, "  she/her ", SARAH);
+      assert.ok(first.ok && first.rev === 1);
+      assert.deepEqual(await savePatientPronouns(ctx, A, ids.megan, 0, "they/them", SARAH), { ok: false, reason: "conflict", currentRev: 1 });
+      tick();
+      assert.ok((await savePatientPronouns(ctx, A, ids.megan, 1, "she/they", SARAH)).ok);
+      assert.deepEqual(await getPatientExtras(ctx, A, ids.megan), { pronouns: "she/they", rev: 2 });
+      assert.deepEqual(Array.from((await getPronounsFor(ctx, A, [ids.megan, ids.daniel])).entries()), [[ids.megan, "she/they"]]);
+      await rejects(savePatientPronouns(ctx, B, ids.megan, 0, "x", OTHER_CLINIC), /does not exist/);
+      assert.deepEqual(await getPatientExtras(ctx, B, ids.megan), { pronouns: null, rev: 0 }, "another clinic reads nothing");
+      await rejects(savePatientPronouns(ctx, A, ids.megan, 2, "x".repeat(41), SARAH), /40/);
+
+      const flag = await addClinicalFlag(ctx, A, ids.megan, { text: "  On   anticoagulants " }, SARAH);
+      assert.deepEqual([flag.text, flag.status, flag.rev], ["On anticoagulants", "active", 1]);
+      const row = await ctx.db.selectFrom("pms_clinical_flags").selectAll().where("tenant_id", "=", A).where("id", "=", flag.id).executeTakeFirstOrThrow();
+      assert.ok(row.flag_enc && !row.flag_enc.includes("anticoagulants"), "encrypted at rest");
+      // A ciphertext moved to another row does not decrypt there.
+      const second = await addClinicalFlag(ctx, A, ids.megan, { text: "Pacemaker fitted" }, SARAH);
+      await ctx.db.updateTable("pms_clinical_flags").set({ flag_enc: row.flag_enc }).where("tenant_id", "=", A).where("id", "=", second.id).execute();
+      await assert.rejects(listClinicalFlags(ctx, A, ids.megan));
+      await ctx.db.updateTable("pms_clinical_flags").set({ flag_enc: null }).where("tenant_id", "=", A).where("id", "=", second.id).execute();
+      await rejects(addClinicalFlag(ctx, B, ids.megan, { text: "x" }, OTHER_CLINIC), /does not exist/);
+      await rejects(addClinicalFlag(ctx, A, ids.megan, { text: "   " }, SARAH), /Write the flag/);
+      assert.deepEqual(await listClinicalFlags(ctx, B, ids.megan), [], "another clinic reads none");
+      assert.deepEqual(await endClinicalFlag(ctx, B, flag.id, 1, OTHER_CLINIC), { ok: false, reason: "not_found" });
+      tick();
+      const ended = await endClinicalFlag(ctx, A, second.id, 1, SARAH);
+      assert.ok(ended.ok && ended.rev === 2);
+      await rejects(endClinicalFlag(ctx, A, second.id, 2, SARAH), /already ended/);
+      assert.deepEqual((await listClinicalFlags(ctx, A, ids.megan)).map((f) => f.text), ["On anticoagulants"]);
+      assert.deepEqual((await listClinicalFlags(ctx, A, ids.megan, { includeEnded: true })).map((f) => f.status), ["active", "ended"], "kept, never deleted");
+      const data = await collectSubjectAccess(ctx, A, ids.megan);
+      assert.deepEqual([data?.pronouns, data?.clinicalFlags.length], ["she/they", 2], "in the subject-access copy");
+      const history = (await listPatientHistory(ctx, A, ids.megan)).map((e) => e.action);
+      for (const code of ["pms.patient_extras.update", "pms.clinical_flag.add", "pms.clinical_flag.end"]) assert.ok(history.includes(code), code);
+    });
+
     it("anonymising: refused before the record-keeping period or on hold; afterwards removes identity and free text", async () => {
       tick();
       const early = await anonymiseEligibility(ctx, A, ids.megan);
@@ -444,6 +484,8 @@ export function defineRecordsRepoSuite(label: string, factory: () => Promise<Rec
       await recordOutcome(ctx, A, { patientId: old.id, measure: "psfs", takenOn: "2016-01-10", answers: { items: { a1: 8, a2: 9, a3: 9 }, activities: { a1: "Golf swing", a2: "Reaching up", a3: "Dressing" } } }, SARAH);
       clock = savedClock;
       const file = await putAttachment(ctx, A, { patientId: old.id, bytes: pdfBytes(5000), fileName: "Alan Whitfield discharge.pdf" }, SARAH);
+      await addClinicalFlag(ctx, A, old.id, { text: "Pacemaker fitted" }, SARAH);
+      await savePatientPronouns(ctx, A, old.id, 0, "he/him", SARAH);
       await setPatientLegalHold(ctx, A, old.id, true, SARAH);
       await rejects(anonymisePatient(ctx, A, old.id, { confirmNumber: old.patientNumber, reviewed: true }, SARAH), /on hold/);
       await setPatientLegalHold(ctx, A, old.id, false, SARAH);
@@ -468,6 +510,8 @@ export function defineRecordsRepoSuite(label: string, factory: () => Promise<Rec
       assert.equal((await getOutcome(ctx, A, outcome.id))?.answers, null);
       assert.equal(await getAttachmentFile(ctx, A, file.id), null, "the file's bytes are gone");
       assert.equal((await getAnonymisation(ctx, A, old.id))?.status, "done");
+      assert.deepEqual((await listClinicalFlags(ctx, A, old.id, { includeEnded: true })).map((f) => [f.text, f.status]), [[null, "ended"]], "the flag's words go");
+      assert.equal((await getPatientExtras(ctx, A, old.id)).pronouns, null);
       await rejects(anonymisePatient(ctx, A, old.id, { confirmNumber: old.patientNumber, reviewed: true }, SARAH), /already been anonymised/);
       await rejects(createNoteDraft(ctx, A, { patientId: old.id, templateId: "builtin-follow-up-soap", seenOn: "2026-10-24" }, SARAH_AUTHOR, SARAH), /anonymised/);
       const dump = JSON.stringify(await ctx.db.selectFrom("pms_patients").selectAll().where("tenant_id", "=", A).where("id", "=", old.id).execute());
@@ -496,11 +540,14 @@ export function defineRecordsRepoSuite(label: string, factory: () => Promise<Rec
         "pms.note_template.retire",
         "pms.note_template.restore",
         "pms.records_settings.update",
+        "pms.patient_extras.update",
+        "pms.clinical_flag.add",
+        "pms.clinical_flag.end",
       ]) {
         assert.ok(codes.has(code), code);
       }
       const text = JSON.stringify(a);
-      for (const secret of ["collision", "rotation", "headaches", "Reading for an hour", "MRI", "Megan Hart MRI", "Golf", "Pacemaker", "Uploaded twice", "Wrong patient's sheet"]) assert.ok(!text.includes(secret), secret);
+      for (const secret of ["collision", "rotation", "headaches", "Reading for an hour", "MRI", "Megan Hart MRI", "Golf", "Pacemaker", "Uploaded twice", "Wrong patient's sheet", "anticoagulants", "she/they"]) assert.ok(!text.includes(secret), secret);
       const b = await listAudit(ctx, B, { limit: 500 });
       assert.ok(b.every((e) => e.userId === OTHER_CLINIC.userId), "the other clinic's trail holds only its own writes");
     });

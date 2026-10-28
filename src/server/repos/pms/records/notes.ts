@@ -303,6 +303,57 @@ export async function saveNoteDraft(ctx: RepoContext, tenantId: string, id: stri
   return { ok: true, rev: expectedRev + 1, updatedAt: at };
 }
 
+/**
+ * Switches a draft to another template (the editor's "Template" choice): the new template's snapshot replaces the
+ * old one, text under section keys both templates share is kept, the rest is dropped (sectionsForTemplate), and the
+ * body chart is kept only when the new template has one. Only the author, only a draft, revision-checked.
+ */
+export async function setDraftTemplate(ctx: RepoContext, tenantId: string, id: string, expectedRev: number, templateId: string, actor: PmsActor): Promise<PmsSaveResult> {
+  assertTenantId(tenantId);
+  assertId(id, "note id");
+  const who = assertActor(actor);
+  assertRev(expectedRev);
+  const row = await ctx.db.selectFrom(N).selectAll().where("tenant_id", "=", tenantId).where("id", "=", id).executeTakeFirst();
+  if (!row) return { ok: false, reason: "not_found" };
+  if (row.status !== "draft") throw new RepoInputError(row.status === "signed" ? "This note is signed and locked. Add an amendment instead." : "This draft was discarded.");
+  if (!who.userId || row.author_user_id !== who.userId) throw new RepoInputError("Only the note's author can change a draft.");
+  if (num(row.rev) !== expectedRev) return { ok: false, reason: "conflict", currentRev: num(row.rev) };
+  const template = await getNoteTemplate(ctx, tenantId, templateId);
+  if (!template || !template.active) throw new RepoInputError("Choose a template that is in use.");
+  const snapshot = toSnapshot(template);
+  const sections = sectionsForTemplate(snapshot, decryptSections(ctx, row));
+  const chart = template.bodyChart ? decryptChart(ctx, row) : null;
+  const at = nowIso(ctx);
+  const sectionsEnc = encryptSections(ctx, tenantId, id, sections);
+  const changed = await updateWithAudit(
+    ctx,
+    tenantId,
+    who,
+    ctx.db
+      .updateTable(N)
+      .set({
+        template_id: template.id,
+        template_name: template.name,
+        note_type: template.noteType,
+        template_json: JSON.stringify({ ...snapshot, version: template.rev }),
+        sections_enc: sectionsEnc,
+        body_chart_enc: encryptChart(ctx, tenantId, id, chart),
+        rev: expectedRev + 1,
+        updated_at: at,
+      })
+      .where("tenant_id", "=", tenantId)
+      .where("id", "=", id)
+      .where("rev", "=", expectedRev)
+      .where("status", "=", "draft")
+      .where("author_user_id", "=", who.userId as string),
+    { action: "pms.note.save", targetType: "pms_note", targetId: id, detail: { rev: expectedRev + 1, templateId: template.id, noteType: template.noteType, sections: Object.keys(sections).length } },
+    sectionsEnc ? changedNote(ctx, tenantId, id, expectedRev + 1, at).where("sections_enc", "=", sectionsEnc) : changedNote(ctx, tenantId, id, expectedRev + 1, at),
+    MESSAGES,
+  );
+  if (!changed) return conflictOrMissing(ctx, tenantId, id);
+  return { ok: true, rev: expectedRev + 1, updatedAt: at };
+}
+
 /** Throws the draft away (kept, hidden by default). Only the author, only a draft. */
 export async function discardNoteDraft(ctx: RepoContext, tenantId: string, id: string, expectedRev: number, actor: PmsActor): Promise<PmsSaveResult> {
   assertTenantId(tenantId);
@@ -680,6 +731,15 @@ export async function lastSignedNoteDate(ctx: RepoContext, tenantId: string, pat
     .where("status", "=", "signed")
     .executeTakeFirst();
   return (row?.last as string | null | undefined) ?? null;
+}
+
+/** The patient's latest signed note (by consultation date) other than `excludeId` – its id only (nothing decrypted). */
+export async function latestSignedNoteId(ctx: RepoContext, tenantId: string, patientId: string, excludeId?: string): Promise<string | null> {
+  assertTenantId(tenantId);
+  let q = ctx.db.selectFrom(N).select("id").where("tenant_id", "=", tenantId).where("patient_id", "=", patientId).where("status", "=", "signed").where("entered_in_error", "=", 0);
+  if (excludeId) q = q.where("id", "!=", excludeId);
+  const row = await q.orderBy("seen_on", "desc").orderBy("id", "desc").limit(1).executeTakeFirst();
+  return row?.id ?? null;
 }
 
 /** Records that a member opened a note (the patient's history shows who read the clinical record). */

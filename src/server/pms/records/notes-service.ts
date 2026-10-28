@@ -24,10 +24,12 @@ import {
   createNoteDraft,
   discardNoteDraft,
   getNote,
+  latestSignedNoteId,
   listNotesForPatient,
   listUnsignedNotes,
   recordNoteView,
   saveNoteDraft,
+  setDraftTemplate,
   signNote,
   type UnsignedCount,
 } from "../../repos/pms/records/notes";
@@ -176,6 +178,46 @@ export async function saveNoteFor(actor: RecordsActor, patientId: string, noteId
   });
   if (!result.ok && saved && input.sign) return { ...result, rev, error: `Your changes are saved, but the note is not signed: ${result.error}` };
   return result;
+}
+
+/** Switches the member's own draft to another template (text under shared section keys is kept). */
+export async function changeNoteTemplateFor(actor: RecordsActor, patientId: string, noteId: string, expectedRev: number, templateId: string): Promise<Result<{ rev: number }>> {
+  const denied = guard(actor, "clinical.edit");
+  if (denied) return denied;
+  if (typeof templateId !== "string" || !templateId) return fail("invalid", "Choose a template.", { fieldErrors: { templateId: "Choose a template." } });
+  return attempt("note_template_change", async () => {
+    const note = await noteOfPatient(actor, patientId, noteId);
+    if (!note) return notFound();
+    const r = await setDraftTemplate(actor.repo(), actor.tenantId, note.id, expectedRev, templateId, actor.actor);
+    return r.ok ? ok({ rev: r.rev }) : saveFailure(r);
+  });
+}
+
+export interface LastNoteCopy {
+  noteId: string;
+  seenOn: string;
+  templateName: string;
+  /** Section key → text (the editor fills the sections the current note shares). */
+  sections: Record<string, string>;
+}
+
+/**
+ * "Copy from last note": the text of the patient's latest signed note other than this one (decrypted – the
+ * opening is recorded in the patient's history, like any note read). null when there is none.
+ */
+export async function lastNoteForCopyFor(actor: RecordsActor, patientId: string, excludeNoteId?: string): Promise<Result<LastNoteCopy | null>> {
+  const denied = guard(actor, "clinical.edit");
+  if (denied) return denied;
+  return attempt("copy_last_note", async () => {
+    const patient = await patientInClinic(actor, patientId);
+    if (!patient) return notFound();
+    const id = await latestSignedNoteId(actor.repo(), actor.tenantId, patient.id, excludeNoteId);
+    if (!id) return ok(null);
+    const note = await getNote(actor.repo(), actor.tenantId, id);
+    if (!note || note.patientId !== patient.id) return ok(null);
+    await recordNoteView(actor.repo(), actor.tenantId, note.id, actor.actor);
+    return ok({ noteId: note.id, seenOn: note.seenOn, templateName: note.templateName, sections: note.sections });
+  });
 }
 
 /** Signs the member's own draft as it was last saved. */

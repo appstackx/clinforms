@@ -33,7 +33,10 @@ import { downloadFileFor, listFilesFor, uploadFileFor, withdrawFileFor } from ".
 import { addAuthorisationFor, getCaseDetails, listCasesFor, openCaseFor, updateCaseFor } from "../cases-service";
 import { subjectAccessExportFor } from "../export-service";
 import { patientHistoryFor } from "../history-service";
-import { amendNoteFor, discardNoteFor, getNoteFor, listNotesFor, saveNoteFor, signNoteFor, startNoteFor, templatesForNewNote, unsignedNotesFor } from "../notes-service";
+import { amendNoteFor, changeNoteTemplateFor, discardNoteFor, getNoteFor, lastNoteForCopyFor, listNotesFor, saveNoteFor, signNoteFor, startNoteFor, templatesForNewNote, unsignedNotesFor } from "../notes-service";
+import { addClinicalFlagFor, clinicalFlagsFor, endClinicalFlagFor, patientExtrasFor, savePronounsFor } from "../flags-service";
+import { patientCsvFor, patientListFor } from "../patient-list-service";
+import { DEFAULT_PATIENT_FILTERS } from "../../../../modules/pms/records/patient-list";
 import { getOutcomeFor, markOutcomeInErrorFor, outcomesFor, recordOutcomeFor } from "../outcomes-service";
 import { anonymiseEligibilityFor, anonymisePatientFor, getPatientDetails, registerPatientFor, searchPatientsFor, setLegalHoldFor, updatePatientFor } from "../patients-service";
 import { copyTemplateFor, createTemplateFor, listTemplatesFor, recordsSettingsFor, saveRecordsSettingsFor, setTemplateRetiredFor, updateTemplateFor } from "../templates-service";
@@ -154,7 +157,7 @@ export function defineRecordsServiceSuite(label: string, factory: () => Promise<
       const saved = value(
         await saveNoteFor(sarah, ids.megan, draft.id, {
           expectedRev: 1,
-          sections: { presenting_complaint: "Neck pain since the collision", objective: "Reduced rotation to the right", plan: "Mobilisations, home exercises" },
+          sections: { subjective: "Neck pain since the collision", objective: "Reduced rotation to the right", plan: "Mobilisations, home exercises" },
           bodyChart: chart,
         }),
       );
@@ -163,7 +166,7 @@ export function defineRecordsServiceSuite(label: string, factory: () => Promise<
       assert.equal(!notMine.ok && notMine.code, "invalid");
       const stale = await saveNoteFor(sarah, ids.megan, draft.id, { expectedRev: 1, sections: {} });
       assert.deepEqual([!stale.ok && stale.code, !stale.ok && stale.rev], ["conflict", 2]);
-      const signed = value(await saveNoteFor(sarah, ids.megan, draft.id, { expectedRev: 2, sections: { presenting_complaint: "Neck pain since the collision", objective: "Reduced rotation to the right", plan: "Mobilisations, home exercises" }, bodyChart: chart, sign: true }));
+      const signed = value(await saveNoteFor(sarah, ids.megan, draft.id, { expectedRev: 2, sections: { subjective: "Neck pain since the collision", objective: "Reduced rotation to the right", plan: "Mobilisations, home exercises" }, bodyChart: chart, sign: true }));
       assert.equal(signed.signed, true);
       const view = value(await getNoteFor(sarah, ids.megan, draft.id));
       assert.equal(view.note.status, "signed");
@@ -229,6 +232,8 @@ export function defineRecordsServiceSuite(label: string, factory: () => Promise<
     });
 
     it("unsigned notes: a clinician sees their own; the owner sees every author's; overdue after N days (per clinic)", async () => {
+      assert.equal(value(await unsignedNotesFor(sarah)).days, 1, "default: overdue after 24 hours (design round 2)");
+      assert.equal(value(await saveRecordsSettingsFor(owner, 0, { unsignedNoteDays: 3 })).rev, 1);
       const mine = value(await unsignedNotesFor(sarah));
       assert.equal(mine.scope, "mine");
       assert.deepEqual(mine.notes.map((n) => n.id).sort(), [ids.danielDraft, ids.oldDraft].sort());
@@ -245,7 +250,7 @@ export function defineRecordsServiceSuite(label: string, factory: () => Promise<
         ["Tom Ellis", 1, 0],
       ]);
       assert.equal(value(await unsignedNotesFor(owner, { scope: "all", overdueOnly: true })).notes.length, 1);
-      assert.equal(value(await saveRecordsSettingsFor(owner, 0, { unsignedNoteDays: 1 })).rev, 1);
+      assert.equal(value(await saveRecordsSettingsFor(owner, 1, { unsignedNoteDays: 1 })).rev, 2);
       assert.equal(value(await recordsSettingsFor(sarah)).unsignedNoteDays, 1);
       const sooner = value(await unsignedNotesFor(sarah));
       assert.equal(sooner.notes.find((n) => n.id === ids.danielDraft)?.overdue, true, "seen 23/10: overdue after 1 day");
@@ -263,7 +268,7 @@ export function defineRecordsServiceSuite(label: string, factory: () => Promise<
       assert.ok(!value(await templatesForNewNote(sarah)).some((x) => x.id === t.id));
       assert.ok(value(await listTemplatesFor(owner)).some((x) => x.id === t.id && !x.active));
       const copy = value(await copyTemplateFor(owner, "builtin-initial-soap", "Initial (clinic)"));
-      assert.equal(copy.sections.length, 10);
+      assert.equal(copy.sections.length, 6);
       const builtin = await updateTemplateFor(owner, "builtin-discharge", 1, { name: "x" });
       assert.equal(!builtin.ok && builtin.code, "invalid");
       for (const who of [sarah, staff]) {
@@ -343,6 +348,68 @@ export function defineRecordsServiceSuite(label: string, factory: () => Promise<
       const full = value(await patientHistoryFor(sarah, ids.megan));
       assert.ok(full.some((h) => h.action === "pms.note.amend" && (h.detail as { kind?: string } | null)?.kind === "correction"));
       assert.equal(value(await getCaseDetails(sarah, ids.megan, ids.case)).notes?.length, 2);
+    });
+
+    it("pronouns, clinical flags (never reception), the patient list and its CSV, template change, copy from the last note", async () => {
+      const refused = { ok: false, code: "forbidden", error: FORBIDDEN_MESSAGE };
+      // Pronouns: part of the demographics – reception records them.
+      assert.equal(value(await savePronounsFor(staff, ids.megan, 0, "she/her")).rev, 1);
+      assert.deepEqual(value(await patientExtrasFor(staff, ids.megan)), { pronouns: "she/her", rev: 1 });
+      assert.equal(!(await savePronounsFor(staff, ids.megan, 0, "they/them")).ok, true, "a stale form is refused");
+      assert.equal((await patientExtrasFor(otherClinician, ids.megan) as { code?: string }).code, "not_found");
+      // Clinical flags: clinicians, owners and administrators only.
+      const flag = value(await addClinicalFlagFor(sarah, ids.megan, "On anticoagulants"));
+      assert.deepEqual(value(await clinicalFlagsFor(owner, ids.megan)).map((f) => f.text), ["On anticoagulants"]);
+      for (const r of [await clinicalFlagsFor(staff, ids.megan), await addClinicalFlagFor(staff, ids.megan, "reception flag"), await endClinicalFlagFor(staff, ids.megan, flag.id, 1)]) assert.deepEqual(r, refused);
+      assert.equal((await endClinicalFlagFor(sarah, ids.daniel, flag.id, 1) as { code?: string }).code, "not_found", "a flag is reached only through its own patient");
+      assert.equal((await addClinicalFlagFor(sarah, ids.megan, "  ") as { code?: string }).code, "invalid");
+      assert.equal(value(await endClinicalFlagFor(sarah, ids.megan, flag.id, 1)).rev, 2);
+      assert.deepEqual(value(await clinicalFlagsFor(sarah, ids.megan)), []);
+      value(await addClinicalFlagFor(sarah, ids.megan, "On anticoagulants"));
+
+      // The patient list: filters answered by the shared record and the diary; nothing decrypted.
+      const all = value(await patientListFor(staff, { ...DEFAULT_PATIENT_FILTERS }));
+      const hart = all.rows.find((r) => r.id === ids.megan);
+      assert.ok(hart && hart.hasAlerts && hart.openCase?.title === "Neck pain after a road traffic accident" && hart.openCase.payerName === "Northwell Health (fictional)");
+      assert.equal(hart?.age, 34);
+      assert.ok(!JSON.stringify(all).includes("Latex") && !JSON.stringify(all).includes("anticoagulants") && !JSON.stringify(all).includes("Whiplash"), "the list never decrypts");
+      const ids2 = (f: Partial<typeof DEFAULT_PATIENT_FILTERS>) => patientListFor(staff, { ...DEFAULT_PATIENT_FILTERS, ...f }).then((r) => value(r).rows.map((x) => x.id));
+      assert.deepEqual(await ids2({ payer: "insurer" }), [ids.megan]);
+      assert.deepEqual(await ids2({ practitionerId: ids.prac }), [ids.megan]);
+      assert.deepEqual(await ids2({ q: "22/11/1991" }), [ids.megan]);
+      assert.deepEqual(await ids2({ q: "hart megan" }), [ids.megan]);
+      assert.equal((await ids2({ noFuture: true })).length, all.total, "no appointments in this suite: nobody has a future one");
+      assert.deepEqual(await ids2({ seenToday: true }), []);
+      const asc = await ids2({});
+      assert.deepEqual(await ids2({ sort: "desc" }), [...asc].reverse());
+      assert.ok(!(await ids2({}).then((x) => x)).includes(ids.otherPatient));
+      assert.ok(!value(await patientListFor(otherClinician, { ...DEFAULT_PATIENT_FILTERS })).rows.some((r) => r.id === ids.megan), "another clinic lists only its own");
+      // CSV: owners and administrators only; audited with counts.
+      assert.deepEqual(await patientCsvFor(staff, DEFAULT_PATIENT_FILTERS), refused);
+      assert.deepEqual(await patientCsvFor(sarah, DEFAULT_PATIENT_FILTERS), refused);
+      const csv = value(await patientCsvFor(owner, { ...DEFAULT_PATIENT_FILTERS, payer: "insurer" }));
+      assert.equal(csv.count, 1);
+      const [header, first] = csv.csv.split("\r\n");
+      assert.ok(header.startsWith("Patient number,Title,First name,Last name") && first.includes("Hart") && first.includes("22/11/1991") && first.includes("Northwell Health (fictional)"));
+      assert.ok(!csv.csv.includes("Latex"));
+      const exported = (await listAudit(ctx, A, { limit: 500 })).find((e) => e.action === "pms.patients.export");
+      assert.deepEqual(exported?.detail, { count: 1, filters: ["payer"] });
+
+      // Template change of a draft keeps the text of the sections both templates share.
+      const d = value(await startNoteFor(sarah, ids.daniel, { templateId: "builtin-follow-up-soap", seenOn: "2026-10-24" }));
+      value(await saveNoteFor(sarah, ids.daniel, d.id, { expectedRev: 1, sections: { subjective: "Better this week", objective: "Full range" } }));
+      assert.equal((await changeNoteTemplateFor(tom, ids.daniel, d.id, 2, "builtin-initial-soap") as { code?: string }).code, "invalid", "only the author");
+      assert.deepEqual(await changeNoteTemplateFor(staff, ids.daniel, d.id, 2, "builtin-initial-soap"), refused);
+      assert.equal(value(await changeNoteTemplateFor(sarah, ids.daniel, d.id, 2, "builtin-initial-soap")).rev, 3);
+      const changed = value(await getNoteFor(sarah, ids.daniel, d.id)).note;
+      assert.deepEqual([changed.templateId, changed.noteType, changed.sections], ["builtin-initial-soap", "initial", { subjective: "Better this week", objective: "Full range" }]);
+      assert.equal((await changeNoteTemplateFor(sarah, ids.daniel, d.id, 2, "builtin-discharge") as { code?: string }).code, "conflict");
+      value(await discardNoteFor(sarah, ids.daniel, d.id, 3));
+      // Copy from the last note: the latest signed note, its opening recorded.
+      const copy = value(await lastNoteForCopyFor(sarah, ids.megan));
+      assert.ok(copy && copy.noteId === ids.note && copy.sections.objective === "Reduced rotation to the right");
+      assert.equal(value(await lastNoteForCopyFor(sarah, ids.megan, ids.note)), null, "none other than this one");
+      assert.deepEqual(await lastNoteForCopyFor(staff, ids.megan), refused);
     });
 
     it("errors are plain: no database message, no patient data", async () => {

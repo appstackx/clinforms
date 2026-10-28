@@ -13,14 +13,16 @@ const GROUP = 90;
 
 async function idsOf(ctx: RepoContext, tenantId: string, patientId: string): Promise<string[]> {
   const db = ctx.db;
-  const [cases, auths, notes, outcomes, files] = await Promise.all([
+  const [cases, auths, notes, outcomes, files, flags] = await Promise.all([
     db.selectFrom("pms_cases").select("id").where("tenant_id", "=", tenantId).where("patient_id", "=", patientId).limit(500).execute(),
     db.selectFrom("pms_authorisations").select("id").where("tenant_id", "=", tenantId).where("patient_id", "=", patientId).limit(500).execute(),
     db.selectFrom("pms_clinical_notes").select("id").where("tenant_id", "=", tenantId).where("patient_id", "=", patientId).limit(500).execute(),
     db.selectFrom("pms_outcome_measures").select("id").where("tenant_id", "=", tenantId).where("patient_id", "=", patientId).limit(500).execute(),
     db.selectFrom("pms_attachments").select("id").where("tenant_id", "=", tenantId).where("patient_id", "=", patientId).limit(500).execute(),
+    db.selectFrom("pms_clinical_flags").select("id").where("tenant_id", "=", tenantId).where("patient_id", "=", patientId).limit(500).execute(),
   ]);
-  return [patientId, ...[cases, auths, notes, outcomes, files].flatMap((rows) => rows.map((r) => r.id))];
+  // The pronouns row's id is the patient's own id (pms_patient_extras), so its rows are found with the patient's.
+  return [patientId, ...[cases, auths, notes, outcomes, files, flags].flatMap((rows) => rows.map((r) => r.id))];
 }
 
 export interface PatientHistoryOptions {

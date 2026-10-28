@@ -21,8 +21,11 @@ export const NOTE_TYPE_LABELS: Readonly<Record<NoteType, string>> = {
   general: "General note",
 };
 
-/** "text" = several lines; "line" = one short line (e.g. "Consent recorded"). */
-export const SECTION_KINDS = ["text", "line"] as const;
+/**
+ * "text" = several lines; "line" = one short line (e.g. "Consent recorded"); "checklist" = tick boxes from the
+ * section's `options` (e.g. the red flags screened) – the note stores the ticked options, one per line.
+ */
+export const SECTION_KINDS = ["text", "line", "checklist"] as const;
 export type SectionKind = (typeof SECTION_KINDS)[number];
 
 export const MAX_TEMPLATE_SECTIONS = 20;
@@ -33,7 +36,15 @@ export const MAX_LINE_CHARS = 300;
 
 export const SECTION_KEY_PATTERN = /^[a-z][a-z0-9_]{0,39}$/;
 
-export const TemplateSectionSchema = z.object({
+/** Most tick boxes in one checklist section, and the longest option. */
+export const MAX_CHECKLIST_OPTIONS = 12;
+export const MAX_CHECKLIST_OPTION_CHARS = 80;
+
+const ChecklistOptionsSchema = z
+  .array(z.string().trim().min(1, "Every tick box needs words").max(MAX_CHECKLIST_OPTION_CHARS, `At most ${MAX_CHECKLIST_OPTION_CHARS} characters`).refine((v) => !/\n/.test(v), "One line per tick box"))
+  .max(MAX_CHECKLIST_OPTIONS, `At most ${MAX_CHECKLIST_OPTIONS} tick boxes`);
+
+const TemplateSectionObject = z.object({
   /** Stable key the note's text is stored under ("subjective"). */
   key: z.string().regex(SECTION_KEY_PATTERN, "Lower-case letters, digits and _ (starting with a letter)"),
   label: z.string().trim().min(1, "Every section needs a heading").max(80, "At most 80 characters"),
@@ -44,8 +55,17 @@ export const TemplateSectionSchema = z.object({
     .transform((v) => (typeof v === "string" ? (v.trim() === "" ? null : v.trim()) : (v ?? null)))
     .refine((v) => v === null || v.length <= 200, "At most 200 characters"),
   kind: z.enum(SECTION_KINDS).default("text"),
+  /** The tick boxes of a "checklist" section (ignored for the other kinds). */
+  options: ChecklistOptionsSchema.optional(),
 });
-export type TemplateSection = z.output<typeof TemplateSectionSchema>;
+
+export const TemplateSectionSchema = TemplateSectionObject.transform((s) => {
+  const { options, ...rest } = s;
+  return s.kind === "checklist" ? { ...rest, options: options ?? [] } : rest;
+}).superRefine((s, ctx) => {
+  if (s.kind === "checklist" && (!("options" in s) || !s.options || s.options.length === 0)) ctx.addIssue({ code: "custom", path: ["options"], message: "A checklist needs at least one tick box" });
+});
+export type TemplateSection = { key: string; label: string; hint: string | null; kind: SectionKind; options?: string[] };
 
 export const TemplateSectionsSchema = z
   .array(TemplateSectionSchema)
@@ -100,6 +120,10 @@ export interface NoteTemplate extends TemplateSnapshot {
 }
 
 const s = (key: string, label: string, hint: string | null = null, kind: SectionKind = "text"): TemplateSection => ({ key, label, hint, kind });
+const checklist = (key: string, label: string, hint: string | null, options: string[]): TemplateSection => ({ key, label, hint, kind: "checklist", options });
+
+/** The red flags screened at an initial assessment (design round 2: ticked = asked and none found). */
+export const RED_FLAG_OPTIONS: readonly string[] = ["Weight loss", "Night pain unrelated to position", "Fever", "Trauma", "Neurological signs"];
 
 /** The built-in templates every clinic has (read-only; copy one to change it). */
 export const BUILTIN_TEMPLATES: readonly NoteTemplate[] = [
@@ -113,16 +137,14 @@ export const BUILTIN_TEMPLATES: readonly NoteTemplate[] = [
     sortOrder: 10,
     rev: 1,
     updatedAt: null,
+    // Design round 2 (docs/clinic-system/design/round2/patients/NoteEditor): S, O, A, P with the red flags screened
+    // under the subjective history. Notes started from the earlier, longer layout keep their own snapshot.
     sections: [
-      s("presenting_complaint", "Presenting complaint", "In the patient's words: what, where, since when."),
-      s("history", "History of the presenting condition", "Onset, mechanism, behaviour over 24 hours, aggravating and easing factors."),
-      s("past_history", "Past medical history", "Relevant conditions, operations, investigations."),
-      s("medication", "Medication", "Current medicines and allergies."),
-      s("screening", "Screening questions", "Serious pathology screening asked and the answers."),
-      s("social", "Social history and goals", "Work, sport, home, what the patient wants to get back to."),
-      s("objective", "Objective examination", "Observation, movement, strength, neurological and special tests."),
-      s("assessment", "Assessment", "Clinical impression and working diagnosis."),
-      s("plan", "Plan and treatment given", "Treatment today, advice, home exercises, review plan."),
+      s("subjective", "Subjective", "History, symptoms, goals"),
+      checklist("red_flags", "Red flags screened", "Tick each one asked about and not present.", [...RED_FLAG_OPTIONS]),
+      s("objective", "Objective", "Observation, range, tests"),
+      s("assessment", "Assessment", "Clinical impression"),
+      s("plan", "Plan", "Treatment given, home exercise, next steps"),
       s("consent", "Consent", "How consent to assessment and treatment was given.", "line"),
     ],
   },
@@ -137,10 +159,10 @@ export const BUILTIN_TEMPLATES: readonly NoteTemplate[] = [
     rev: 1,
     updatedAt: null,
     sections: [
-      s("subjective", "Subjective", "Change since the last session, response to treatment and exercises."),
-      s("objective", "Objective", "Re-assessment findings."),
-      s("assessment", "Assessment", "Progress against the goals."),
-      s("plan", "Plan and treatment given", "Treatment today, changes to the plan, next review."),
+      s("subjective", "Subjective", "Change since the last session, response to treatment and exercises"),
+      s("objective", "Objective", "Re-assessment findings"),
+      s("assessment", "Assessment", "Progress against the goals"),
+      s("plan", "Plan", "Treatment given, changes to the plan, next review"),
     ],
   },
   {
@@ -172,7 +194,7 @@ export function builtinTemplate(id: string): NoteTemplate | null {
 }
 
 export function toSnapshot(t: TemplateSnapshot): TemplateSnapshot {
-  return { id: t.id, name: t.name, noteType: t.noteType, sections: t.sections.map((x) => ({ ...x })), bodyChart: t.bodyChart };
+  return { id: t.id, name: t.name, noteType: t.noteType, sections: t.sections.map((x) => (x.options ? { ...x, options: [...x.options] } : { ...x })), bodyChart: t.bodyChart };
 }
 
 /** A section key made from a heading ("Plan & treatment" → "plan_treatment"), unique among `taken`. */
@@ -205,4 +227,16 @@ export function parseSnapshot(json: string | null | undefined): TemplateSnapshot
   } catch {
     return null;
   }
+}
+
+/** The ticked options of a checklist section's stored text (one per line), in the template's order. */
+export function checkedOptions(section: Pick<TemplateSection, "options">, text: string | null | undefined): string[] {
+  const ticked = new Set((text ?? "").split("\n").map((l) => l.trim()).filter(Boolean));
+  return (section.options ?? []).filter((o) => ticked.has(o));
+}
+
+/** The letter shown beside a section (S, O, A, P for the SOAP headings; else the heading's first letter). */
+export function sectionLetter(section: Pick<TemplateSection, "key" | "label">): string {
+  const soap: Record<string, string> = { subjective: "S", objective: "O", assessment: "A", plan: "P" };
+  return soap[section.key] ?? (section.label.trim().charAt(0).toUpperCase() || "•");
 }

@@ -29,10 +29,12 @@ export interface EditorSection {
   label: string;
   hint?: string | null;
   kind?: SectionKind;
+  /** The tick boxes of a checklist section. */
+  options?: string[] | null;
 }
 
 /** Gives new sections a stable key made from their heading (existing keys never change: notes store text under them). */
-export function withSectionKeys(sections: readonly EditorSection[]): { key: string; label: string; hint: string | null; kind: SectionKind }[] {
+export function withSectionKeys(sections: readonly EditorSection[]): { key: string; label: string; hint: string | null; kind: SectionKind; options?: string[] }[] {
   const taken = sections.map((s) => s.key).filter((k): k is string => typeof k === "string" && k !== "");
   return sections.map((s) => {
     let key = typeof s.key === "string" && s.key !== "" ? s.key : "";
@@ -40,7 +42,8 @@ export function withSectionKeys(sections: readonly EditorSection[]): { key: stri
       key = sectionKeyFor(String(s.label ?? ""), taken);
       taken.push(key);
     }
-    return { key, label: String(s.label ?? ""), hint: s.hint ?? null, kind: s.kind ?? "text" };
+    const kind = s.kind ?? "text";
+    return kind === "checklist" ? { key, label: String(s.label ?? ""), hint: s.hint ?? null, kind, options: Array.isArray(s.options) ? s.options.map(String) : [] } : { key, label: String(s.label ?? ""), hint: s.hint ?? null, kind };
   });
 }
 
