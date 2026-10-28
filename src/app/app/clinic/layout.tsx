@@ -53,7 +53,7 @@ export default async function ClinicSystemLayout({ children }: { children: React
       sites={{ options: mySites.map((s, i) => ({ id: s.id, name: s.name, note: i === 0 ? "Default" : undefined })), value: siteValue, total: sites.length }}
       searchHref={actor.can("patients.view") ? `${CLINIC_BASE_PATH}/patients` : null}
       clinForms={reports ? { href: "/app", label: "ClinForms" } : null}
-      accountHref="/app/settings/security"
+      accountHref="/app/clinic/account"
     >
       {children}
     </ClinicShell>

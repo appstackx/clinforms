@@ -94,6 +94,10 @@ export interface PmsPractitionersTable {
   display_name: string;
   profession: string;
   registration_number: string | null;
+  /** The register the number is on ("HCPC"); null on rows before migration 0104 (read as HCPC). */
+  registration_body: ColumnType<string | null, string | null | undefined, string | null>;
+  /** 1 = may sign clinical notes with this record's registration number (migration 0105). */
+  may_sign: WithDefault<number>;
   email: string | null;
   phone: string | null;
   colour: string | null;

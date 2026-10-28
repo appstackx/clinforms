@@ -61,6 +61,10 @@ export interface Appointment extends DiaryItem {
   importRef: string | null;
   createdBy: string | null;
   createdAt: string;
+  /** Reception asked for a booking confirmation (the messages module sends it). */
+  confirmationRequested: boolean;
+  /** When treatment started ("In treatment"; kept once completed); null when it never did. */
+  treatmentStartedAt: string | null;
 }
 
 export interface AppointmentSeries {
@@ -130,7 +134,7 @@ export interface WaitingListOffer {
   updatedAt: string;
 }
 
-export type DiaryWarning = "outside_hours" | "authorisation_short" | "authorisation_used_up";
+export type DiaryWarning = "outside_hours" | "authorisation_short" | "authorisation_used_up" | "double_booked";
 
 /** Outcome of a booking (one appointment or a recurring series – all or nothing unless skipClashes). */
 export type BookResult =
@@ -157,6 +161,8 @@ export type DiaryActionResult =
       rev?: number;
       /** Dates of a recurring booking that were not free and were skipped. */
       skippedDates?: string[];
+      /** Start treatment: the clinical note opened for the appointment (members who write notes). */
+      noteId?: string;
     }
   | {
       ok: false;
@@ -168,8 +174,15 @@ export type DiaryActionResult =
       canSkipClashes?: boolean;
       /** Only the patient clashes (two practitioners seeing them together can be allowed). */
       patientOnly?: boolean;
+      /**
+       * Every clash may be booked over by a member holding "diary.override" ("Book anyway (double-booking is
+       * logged)"): the practitioner's other appointments and/or the patient's own. Never a room or blocked time.
+       */
+      overridable?: boolean;
       /** The screen was stale: refresh it. */
       conflict?: boolean;
+      /** Registering a patient: records that may be the same person. */
+      duplicates?: { id: string; name: string; number: number }[];
     };
 
 /** What the diary's reads answer: the data, or why not (403 = not allowed, 404 = not there or not in scope). */

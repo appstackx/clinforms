@@ -289,6 +289,22 @@ const wideOnes = (page) =>
       await o.waitForSelector("h2:has-text('Signing details')");
       assert(/How signed notes and letters show it/.test(await o.locator("section[aria-labelledby=sign-h]").innerText()), "signing preview");
       await shot(o, "member-1440-clinician");
+      // Signing details are editable for the owner (settings.members): the HCPC format is checked, then saved.
+      await o.fill("#sign-number", "12345");
+      await o.click("button:has-text('Save signing details')");
+      await o.waitForSelector("text=Enter the HCPC number as PH followed by digits");
+      await o.fill("#sign-number", "ph-demo-08");
+      await o.click("button:has-text('Save signing details')");
+      await o.waitForSelector("text=Signing details saved.");
+      assert((await o.inputValue("#sign-number")) === "PH-DEMO-08", "stored normalised");
+      assert(/HCPC PH-DEMO-08/.test(await o.locator("section[aria-labelledby=sign-h]").innerText()), "the preview shows the number");
+      await shot(o, "member-1440-clinician-signing-saved");
+      // Priya sees her own signing details on My account – read only.
+      await p.goto(`${BASE}/app/clinic/account`);
+      await p.waitForSelector("h2:has-text('My signing details')");
+      assert((await p.locator("[data-testid=signing-number]").innerText()) === "PH-DEMO-08", "her number");
+      assert((await p.locator("#sign-number").count()) === 0, "not editable by the member");
+      await shot(p, "my-account-1440-clinician");
       await o.click("section[aria-label=Member] >> button:has-text('Deactivate')");
       await o.click("[role=alertdialog] >> button:has-text('Deactivate')");
       await o.waitForSelector("text=Deactivated");

@@ -22,13 +22,13 @@ import { loadPdfjs, pdfjsDocumentParams } from "../../../../modules/medreport/fo
 import { listAudit } from "../../../repos/audit";
 import type { RepoContext } from "../../../repos/context";
 import { createCase } from "../../../repos/pms/cases";
-import { createPractitioner } from "../../../repos/pms/directory";
+import { createPractitioner, setPractitionerSigning } from "../../../repos/pms/directory";
 import { createPatient } from "../../../repos/pms/patients";
 import { createReferrer } from "../../../repos/pms/referrers";
 import { setPmsDemoFlag } from "../../../repos/pms/settings";
 import type { QueryLog } from "../../../repos/pms/testing/guarded-db";
 import { unscopedStatements } from "../../../repos/pms/testing/guarded-db";
-import { FORBIDDEN_MESSAGE, ERROR_MESSAGE, REGISTRATION_NEEDED_MESSAGE, testActor, type RecordsActor, type Result } from "../access";
+import { FORBIDDEN_MESSAGE, ERROR_MESSAGE, REGISTRATION_NEEDED_MESSAGE, SIGNING_OFF_MESSAGE, testActor, type RecordsActor, type Result } from "../access";
 import { downloadFileFor, listFilesFor, uploadFileFor, withdrawFileFor } from "../attachments-service";
 import { addAuthorisationFor, caseReferralsFor, getCaseDetails, listCasesFor, openCaseFor, updateCaseFor } from "../cases-service";
 import { subjectAccessExportFor } from "../export-service";
@@ -207,6 +207,23 @@ export function defineRecordsServiceSuite(label: string, factory: () => Promise<
       assert.deepEqual(await signNoteFor(tom, ids.daniel, ids.tomDraft, 2), { ok: false, code: "registration", error: REGISTRATION_NEEDED_MESSAGE });
       const tomView = value(await getNoteFor(tom, ids.daniel, ids.tomDraft));
       assert.deepEqual([tomView.note.status, tomView.note.rev, tomView.note.sections.subjective], ["draft", 2, "Back stiff in the mornings (fictional)"]);
+      // Member access → Signing details (owner/admin): set on Tom's practitioner record – created, since he has none.
+      // Signing switched off refuses with its own message; once on, the sign check passes.
+      const set1 = await setPractitionerSigning(ctx, A, { userId: tom.userId, name: tom.name, email: tom.email }, { registrationBody: "HCPC", registrationNumber: "PH-DEMO-07", maySign: false }, owner.actor);
+      assert.deepEqual([set1.created, set1.practitioner.userId, set1.practitioner.bookable, set1.practitioner.maySign], [true, tom.userId, false, false], "a signing-only record, not a diary column");
+      assert.deepEqual(await signNoteFor(tom, ids.daniel, ids.tomDraft, 2), { ok: false, code: "registration", error: SIGNING_OFF_MESSAGE });
+      assert.equal(value(await getNoteFor(tom, ids.daniel, ids.tomDraft)).note.status, "draft", "nothing signed");
+      const set2 = await setPractitionerSigning(ctx, A, { userId: tom.userId, name: tom.name, email: tom.email }, { registrationBody: "HCPC", registrationNumber: "PH-DEMO-07", maySign: true }, owner.actor);
+      assert.deepEqual([set2.created, set2.fields], [false, ["maySign"]]);
+      // A fresh note of Tom's signs now (Tom's earlier draft stays a draft for the unsigned-notes checks below).
+      const tomNew = value(await startNoteFor(tom, ids.daniel, { templateId: "builtin-follow-up-soap", seenOn: "2026-10-23" }));
+      value(await saveNoteFor(tom, ids.daniel, tomNew.id, { expectedRev: 1, sections: { subjective: "Back easier (fictional)" } }));
+      assert.equal(value(await signNoteFor(tom, ids.daniel, tomNew.id, 2)).rev, 3, "signs once the registration is set");
+      // Back to no signing for the checks below (Tom: no number).
+      await setPractitionerSigning(ctx, A, { userId: tom.userId, name: tom.name, email: tom.email }, { registrationBody: "HCPC", registrationNumber: null, maySign: false }, owner.actor);
+      const signingAudit = (await listAudit(ctx, A, { action: "pms.practitioner.signing_update" })).filter((e) => e.targetId === set1.practitioner.id);
+      assert.equal(signingAudit.length, 3, "every change audited");
+      assert.equal(JSON.stringify(signingAudit).includes("PH-DEMO-07"), false, "the audit names fields, not the number");
       const tossed = value(await startNoteFor(sarah, ids.daniel, { templateId: "builtin-discharge", seenOn: "2026-10-24" }));
       assert.equal(value(await discardNoteFor(sarah, ids.daniel, tossed.id, 1)).rev, 2);
       assert.deepEqual(value(await listNotesFor(sarah, ids.megan)).map((n) => n.id).sort(), [ids.note, ids.oldDraft].sort());

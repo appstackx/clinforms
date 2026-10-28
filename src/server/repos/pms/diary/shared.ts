@@ -4,7 +4,7 @@
  * nearby-items read behind the clash check, and the database's clash refusal (migration 0110's triggers).
  */
 import type { Expression, Selectable } from "kysely";
-import { OCCUPYING_STATUSES, type AppointmentSource, type AppointmentStatus, type BlockKind, type CancelReason, type DiaryItemKind, type DiaryItemLike } from "../../../../modules/pms/diary/rules";
+import { OCCUPYING_STATUSES, statusOfRow, type AppointmentSource, type BlockKind, type CancelReason, type DiaryItemKind, type DiaryItemLike } from "../../../../modules/pms/diary/rules";
 import type { DiaryItem } from "../../../../modules/pms/diary/types";
 import { runBatch, type BatchQuery } from "../../../db/batch";
 import { classifyDbError } from "../../../db/errors";
@@ -45,6 +45,7 @@ export const ITEM_COLUMNS = [
   "fee_pence",
   "auth_session_used",
   "cancel_reason",
+  "treatment_started_at",
   "updated_at",
 ] as const;
 
@@ -65,7 +66,8 @@ export function toItem(r: Pick<AppointmentRow, (typeof ITEM_COLUMNS)[number]>): 
     startsAt: r.starts_at,
     endsAt: r.ends_at,
     startsOn: r.starts_on,
-    status: r.status as AppointmentStatus,
+    // "In treatment" is stored as arrived + treatment_started_at (migration 0117).
+    status: statusOfRow(r.status, r.treatment_started_at),
     blockKind: (r.block_kind as BlockKind | null) ?? null,
     title: r.title,
     hasNotes: Boolean(r.notes_enc),
@@ -164,7 +166,7 @@ export async function occupyingNear(ctx: DbContext, tenantId: string, q: NearbyQ
     const group = q.spans.slice(i, i + 20);
     let query = ctx.db
       .selectFrom(APPOINTMENTS)
-      .select(["id", "kind", "status", "practitioner_id", "room_id", "patient_id", "starts_at", "ends_at"])
+      .select(["id", "kind", "status", "treatment_started_at", "practitioner_id", "room_id", "patient_id", "starts_at", "ends_at"])
       .where("tenant_id", "=", tenantId)
       .where("status", "in", OCCUPYING_STATUSES as unknown as string[])
       .where((eb) => eb.or(resources.map(([column, value]) => eb(column as "practitioner_id", "=", value))))
@@ -181,7 +183,7 @@ export async function occupyingNear(ctx: DbContext, tenantId: string, q: NearbyQ
       out.set(r.id, {
         id: r.id,
         kind: r.kind as DiaryItemKind,
-        status: r.status,
+        status: statusOfRow(r.status, r.treatment_started_at),
         practitionerId: r.practitioner_id,
         roomId: r.room_id,
         patientId: r.patient_id,

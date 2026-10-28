@@ -23,6 +23,7 @@ export const FOUNDATION_AUDIT_LABELS: Readonly<Record<string, string>> = {
   "pms.room.update": "Room updated",
   "pms.practitioner.create": "Practitioner added",
   "pms.practitioner.update": "Practitioner updated",
+  "pms.practitioner.signing_update": "Signing details changed",
   "pms.service.create": "Appointment type added",
   "pms.service.update": "Appointment type updated",
   "pms.price_list.create": "Price list added",

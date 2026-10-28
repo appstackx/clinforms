@@ -70,7 +70,7 @@ export interface PmsAppointmentsTable {
   ends_at: IsoTimestamp;
   /** UK calendar date of the start. */
   starts_on: IsoDate;
-  /** booked | arrived | attended | dna | late_cancelled | cancelled */
+  /** booked | arrived | attended | dna | late_cancelled | cancelled ("in treatment" = arrived + treatment_started_at) */
   status: string;
   block_kind: string | null;
   title: string | null;
@@ -89,6 +89,15 @@ export interface PmsAppointmentsTable {
   import_ref: string | null;
   /** A fresh id set by every change: the audit row is written in the same batch only where it is found (migration 0111). */
   write_id: ColumnType<string | null, string | null | undefined, string | null>;
+  /** 1 = reception asked for a booking confirmation (text and email) – the messages module sends it (migration 0115). */
+  confirmation_requested: WithDefault<number>;
+  /** When treatment started (status "in treatment" while the status column is "arrived") – migration 0117. */
+  treatment_started_at: ColumnType<IsoTimestamp | null, IsoTimestamp | null | undefined, IsoTimestamp | null>;
+  /**
+   * Equal to write_id on the write that double-booked the practitioner on purpose (diary.override): the clash
+   * trigger lets exactly that write through, never a later one (migrations 0118–0119).
+   */
+  overbook_write_id: ColumnType<string | null, string | null | undefined, string | null>;
   created_by: string | null;
   created_at: IsoTimestamp;
   updated_at: IsoTimestamp;
@@ -144,16 +153,28 @@ export interface PmsWaitingListOffersTable {
   updated_at: IsoTimestamp;
 }
 
+/** The diary's settings, one row per clinic (migration 0116); no row = every default. */
+export interface PmsDiarySettingsTable {
+  tenant_id: string;
+  rev: WithDefault<number>;
+  /** 1 = print patients' dates of birth on the day sheet (default 0). */
+  show_dob_on_day_sheet: WithDefault<number>;
+  updated_by: string | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
 export interface DiaryTables {
   pms_appointment_series: PmsAppointmentSeriesTable;
   pms_availability: PmsAvailabilityTable;
   pms_appointments: PmsAppointmentsTable;
   pms_waiting_list: PmsWaitingListTable;
   pms_waiting_list_offers: PmsWaitingListOffersTable;
+  pms_diary_settings: PmsDiarySettingsTable;
 }
 
 /** Foreign-key order (parents first). */
-export const DIARY_TABLES = ["pms_appointment_series", "pms_availability", "pms_appointments", "pms_waiting_list", "pms_waiting_list_offers"] as const satisfies readonly (keyof DiaryTables)[];
+export const DIARY_TABLES = ["pms_appointment_series", "pms_availability", "pms_appointments", "pms_waiting_list", "pms_waiting_list_offers", "pms_diary_settings"] as const satisfies readonly (keyof DiaryTables)[];
 
 export const DIARY_PRIMARY_KEYS: { readonly [T in (typeof DIARY_TABLES)[number]]: readonly (keyof DiaryTables[T] & string)[] } = {
   pms_appointment_series: ["tenant_id", "id"],
@@ -161,6 +182,7 @@ export const DIARY_PRIMARY_KEYS: { readonly [T in (typeof DIARY_TABLES)[number]]
   pms_appointments: ["tenant_id", "id"],
   pms_waiting_list: ["tenant_id", "id"],
   pms_waiting_list_offers: ["tenant_id", "id"],
+  pms_diary_settings: ["tenant_id"],
 };
 
 /** Timestamp columns (TEXT in SQLite, timestamptz in Postgres) – the D1 → Postgres copy compares them as ISO. */

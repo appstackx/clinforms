@@ -8,7 +8,8 @@ export const DIARY_AUDIT_LABELS: Readonly<Record<string, string>> = {
   "pms.appointment.move": "Appointment moved",
   "pms.appointment.update": "Appointment details changed",
   "pms.appointment.arrive": "Patient marked as arrived",
-  "pms.appointment.attend": "Appointment marked as attended",
+  "pms.appointment.start_treatment": "Treatment started",
+  "pms.appointment.attend": "Appointment marked as completed",
   "pms.appointment.dna": "Appointment marked as did not attend",
   "pms.appointment.cancel": "Appointment cancelled",
   "pms.appointment.late_cancel": "Appointment cancelled late",
@@ -30,6 +31,7 @@ export const DIARY_AUDIT_LABELS: Readonly<Record<string, string>> = {
   "pms.waiting_list.offer": "Slot offered from the waiting list",
   "pms.waiting_list.offer_decline": "Offered slot declined",
   "pms.waiting_list.offer_withdraw": "Offered slot withdrawn",
+  "pms.diary_settings.update": "Diary settings changed",
 };
 
 /** Names of the record types its audit rows point at (target_type → label). */
@@ -38,4 +40,5 @@ export const DIARY_AUDIT_TARGETS: Readonly<Record<string, string>> = {
   pms_appointment_series: "Recurring booking",
   pms_availability: "Rota entry",
   pms_waiting_list: "Waiting-list entry",
+  pms_diary_settings: "Diary settings",
 };

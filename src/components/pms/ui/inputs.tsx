@@ -116,7 +116,7 @@ export function Switch({ checked, onCheckedChange, label, hideLabel, disabled, i
       >
         <span className="h-[18px] w-[18px] rounded-full bg-white shadow-[0_1px_2px_rgba(0,0,0,0.2)]" />
       </button>
-      <span id={labelId} className={cn(hideLabel && "sr-only", !checked && "text-muted-foreground")}>
+      <span id={labelId} className={cn(hideLabel && "sr-only", !checked && "text-[#475569]")}>
         {label}
       </span>
     </span>
