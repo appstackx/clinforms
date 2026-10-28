@@ -55,7 +55,7 @@ export const TEMPLATE_WHEN: Readonly<Record<TemplateKind, string>> = {
   receipt: "Billing: email a receipt",
   statement: "Billing: email a statement",
   letter: "Letters: send by email",
-  portal_link: "Patient portal sign-in (coming with the portal)",
+  portal_link: "Patient portal sign-in",
 };
 
 /** What the status means for the person reading the log. */

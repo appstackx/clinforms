@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Card as Panel } from "@/components/pms/records/ui";
 import { ActionForm, Submit, TextField } from "@/components/pms/records/form";
 import { OutcomeChart } from "@/components/pms/records/outcome-chart";
@@ -28,6 +29,14 @@ export default async function OutcomesPage({ params }: { params: { patientId: st
   return (
     <div className="space-y-6">
       <SectionHeader title="Outcome measures" description="Scores are worked out from the patient's answers. A wrong entry is marked as an error – never deleted." />
+      {canWrite ? (
+        <p className="text-sm">
+          <Link href={`/app/clinic/patients/${patient.id}/forms#pf-outcome`} className="font-medium text-primary-strong underline underline-offset-2">
+            Send a questionnaire to the patient&apos;s portal
+          </Link>{" "}
+          <span className="text-[#475569]">– they answer on their phone and the score appears here.</span>
+        </p>
+      ) : null}
       {measures.length === 0 ? <EmptyState title="No outcome measures yet">{canWrite ? "Record the first one below." : null}</EmptyState> : null}
       {measures.map((m) => {
         const def = MEASURES[m];
@@ -79,6 +88,7 @@ export default async function OutcomesPage({ params }: { params: { patientId: st
                       <td className={TD}>{o.status === "entered_in_error" ? <Pill>Entered in error</Pill> : (o.band ?? "")}</td>
                       <td className={`${TD} tabular-nums`}>
                         {o.answered}/{def.items.length}
+                        {o.recordedBy === null && !o.id.startsWith("imp") ? <span className="ml-2 text-xs text-[#475569]">from the patient&apos;s portal</span> : null}
                       </td>
                       {canWrite ? (
                         <td className={TD}>

@@ -41,6 +41,7 @@ import {
   WaitingListStatusSchema,
 } from "../../../modules/pms/diary/schemas";
 import { addDays, formatHhmm, londonParts, parseHhmm, weekdayName } from "../../../modules/pms/diary/time";
+import { formatAppointmentTime } from "../../../modules/pms/comms/schedule";
 import type { BookResult, DiaryActionResult, DiarySaveResult } from "../../../modules/pms/diary/types";
 import { nowIso } from "../../repos/context";
 import {
@@ -516,7 +517,13 @@ export async function offerWaitingListSlotFor(caller: DiaryCaller, input: unknow
           caller.actor,
         )
       : null;
-    const how = sent?.ok ? (sent.status === "outbox" ? " The text is in the outbox." : " The patient has been sent the offer.") : " The patient could not be messaged – call them.";
+    const how = sent?.ok
+      ? "heldUntil" in sent && sent.heldUntil
+        ? ` It is quiet hours: the text is held and goes at ${formatAppointmentTime(sent.heldUntil)}.`
+        : sent.status === "outbox"
+          ? " The text is in the outbox."
+          : " The patient has been sent the offer."
+      : " The patient could not be messaged – call them.";
     return { ok: true, message: `Slot offered.${how} It is not held – book it once the patient says yes.`, warnings: [], itemId: r.offer.id, rev: r.entryRev };
   });
 }

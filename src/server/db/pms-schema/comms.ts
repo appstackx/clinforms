@@ -114,6 +114,8 @@ export interface PmsMessagesTable {
   document_type: string | null;
   document_id: string | null;
   attempts: WithDefault<number>;
+  /** A text held for the quiet hours (a waiting-list offer, status queued): the run releases it then (0142). */
+  hold_until: IsoTimestamp | null;
   created_by: string | null;
   created_at: IsoTimestamp;
   updated_at: IsoTimestamp;
@@ -254,6 +256,7 @@ export const COMMS_TIMESTAMP_COLUMNS: readonly string[] = [
   "claimed_at",
   "finalised_at",
   "voided_at",
+  "hold_until",
 ];
 
 /** Every comms table is per clinic (offboarding exports them decrypted, then deletes them in reverse order). */

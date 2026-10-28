@@ -15,6 +15,7 @@ export const COMMS_AUDIT_LABELS: Readonly<Record<string, string>> = {
   "pms.message.retry": "Failed message sent again",
   "pms.message.send": "Message sent to a patient",
   "pms.message.bulk_send": "Planned messages sent",
+  "pms.message.release": "Text held for the quiet hours released",
   "pms.message.receive": "Reply received from a patient",
   "pms.message.status": "Message delivery updated",
   "pms.message.reply_done": "Patient's reply dealt with",

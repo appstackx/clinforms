@@ -86,6 +86,17 @@ export function isQuietTime(time: string, quietStart: string, quietEnd: string):
   return time >= quietStart || time < quietEnd;
 }
 
+/**
+ * A text that is not planned (a waiting-list offer) written at `nowIso`: null when it may go now, else the UTC instant
+ * the quiet hours end (UK time) – it is held until then.
+ */
+export function quietHoursEndAt(nowIso: string, quietStart: string, quietEnd: string): string | null {
+  if (quietStart === quietEnd) return null;
+  const p = londonParts(nowIso);
+  if (!isQuietTime(p.time, quietStart, quietEnd)) return null;
+  return londonToUtcIso(p.time < quietEnd ? p.date : addDays(p.date, 1), quietEnd);
+}
+
 /** Moves a text's due time out of the quiet hours (see the file comment). */
 export function outOfQuietHours(dueIso: string, startsAtIso: string, quietStart: string, quietEnd: string): string {
   if (quietStart === quietEnd) return dueIso;
