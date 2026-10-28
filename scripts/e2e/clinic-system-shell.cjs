@@ -10,7 +10,8 @@
  *
  * Checks: B's clinic area is exactly ClinForms' (navigation unchanged, /app/clinic is the 404 page, no clinic-system
  * filter on the activity page); A's navigation has the clinic system, /app/clinic shows the demo clinic's figures,
- * works by keyboard (skip link) and at 375 px without sideways scrolling; the platform page switches B's package on
+ * the shell (design v1: product switch, left navigation by role, site switcher, "/" patient search, user menu, "?"
+ * shortcuts) works, works by keyboard (skip link) and at 375 px without sideways scrolling (navigation behind "Menu"); the platform page switches B's package on
  * (B then sees it) and off again; on an app-only brand host the public pages go to sign-in. Nothing secret is
  * printed (random passwords, codes in memory). Screenshots: E2E_OUT (default .e2e-out/clinic-system).
  */
@@ -149,9 +150,35 @@ const navLabels = (page) => page.locator("header nav[aria-label='Clinic'] a").al
       for (const s of ["Clinic system", "Riverside Physiotherapy (fictional)", "Demonstration clinic", "Patients", "200", "Bletchley (fictional)", "Sarah Reid", "Grace Bennett"]) {
         assert(text.includes(s.toLowerCase()), `missing "${s}"`);
       }
-      assert((await a.locator("header nav[aria-label='Clinic system'] a[aria-current='page']").innerText()) === "Overview", "Overview is the current page");
+      // 27/10/2026 (design v1): the clinic system's navigation moved from the header to the left-hand side.
+      assert((await a.locator("nav[aria-label='Clinic system'] a[aria-current='page']").innerText()) === "Overview", "Overview is the current page");
       assert(!/\bTM3\b|CareConnect|\bAI\b/.test(await a.locator("body").innerText()), "no banned names on screen");
       await shot(a, "a-02-clinic-overview");
+    });
+
+    await step("A: the shell (design v1) – product switch, navigation by role, patient search on \"/\", user menu", async () => {
+      await a.goto(`${BASE}/app/clinic`);
+      const products = await a.locator("nav[aria-label='Product areas'] a").allInnerTexts();
+      assert(products[0] === "Clinic system" && /^ClinForms/.test(products[1] || ""), `products: ${products.join(", ")}`);
+      const labels = await a.locator("nav[aria-label='Clinic system'] a").allInnerTexts();
+      assert(JSON.stringify(labels) === JSON.stringify(["Overview", "Patients"]), `clinic nav: ${labels.join(", ")}`);
+      assert((await a.locator("button[aria-haspopup='listbox']").first().innerText()).includes("Bletchley (fictional)"), "site switcher shows the first site");
+      await a.locator("main h1").first().click();
+      await a.keyboard.press("/");
+      assert(await a.evaluate(() => document.activeElement && document.activeElement.getAttribute("aria-label") === "Search patients"), "\"/\" focuses the patient search");
+      await a.keyboard.type("Hart");
+      await a.keyboard.press("Enter");
+      await a.waitForURL(/\/app\/clinic\/patients\?q=Hart/);
+      assert((await a.locator("main").innerText()).includes("Hart, Megan"), "the search finds Megan Hart (listed as \"Hart, Megan\")");
+      await a.click("button[aria-haspopup='menu']");
+      const menu = await a.locator("[role='menu'][aria-label='Account']").innerText();
+      assert(/Role: Owner/.test(menu) && /Sign out/.test(menu) && /Switch to ClinForms/.test(menu), `menu: ${menu.replace(/\s+/g, " ")}`);
+      await a.keyboard.press("Escape");
+      assert((await a.locator("[role='menu']").count()) === 0, "Esc closes the menu");
+      await a.keyboard.press("?");
+      await a.waitForSelector("[role='dialog'] >> text=Keyboard shortcuts");
+      await a.keyboard.press("Escape");
+      await shot(a, "a-02b-clinic-shell");
     });
 
     await step("A: keyboard – the first Tab reaches the skip link and it moves focus to the content", async () => {
@@ -168,6 +195,12 @@ const navLabels = (page) => page.locator("header nav[aria-label='Clinic'] a").al
       await a.goto(`${BASE}/app/clinic`);
       const overflow = await a.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
       assert(overflow <= 0, `scrolls sideways by ${overflow}px`);
+      // The navigation folds behind "Menu" on a phone.
+      assert(!(await a.locator("nav[aria-label='Clinic system']").isVisible()), "navigation folded on a phone");
+      await a.click("button[aria-controls='clinic-nav']");
+      assert(await a.locator("nav[aria-label='Clinic system']").isVisible(), "Menu opens the navigation");
+      await shot(a, "a-03b-clinic-375-menu");
+      await a.click("button[aria-controls='clinic-nav']");
       await shot(a, "a-03-clinic-375");
       await a.setViewportSize({ width: 1280, height: 900 });
     });
