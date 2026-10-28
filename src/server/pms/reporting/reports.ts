@@ -4,7 +4,7 @@
  * viewer may see, practitioner) and the reporting sources; figures come from the pure rules in
  * src/modules/pms/reporting/metrics.ts. Nothing here decrypts clinical text.
  */
-import { DEFAULT_PRESET, monthsOf, periodInstants, resolvePeriod, weeksOf, type ReportPeriod } from "../../../modules/pms/reporting/periods";
+import { DEFAULT_PRESET, monthsOf, periodInstants, resolvePeriod, weekStart, weeksOf, type ReportPeriod } from "../../../modules/pms/reporting/periods";
 import {
   agedDebt,
   attendanceBy,
@@ -29,7 +29,7 @@ import {
   type RevenueRow,
   type UtilisationRow,
 } from "../../../modules/pms/reporting/metrics";
-import { checkAppointmentFacts, checkAvailabilityFacts, checkDebtFacts, checkRevenueFacts, type FactFilter, type KnownIds } from "../../../modules/pms/reporting/fact-checks";
+import { checkAppointmentFacts, checkAvailabilityFacts, checkDebtFacts, checkRevenueFacts, checkVisitFacts, type FactFilter, type KnownIds } from "../../../modules/pms/reporting/fact-checks";
 import type { ReportFilterParams } from "../../../modules/pms/reporting/schemas";
 import { siteFilterFor, sitesInScope, type SiteScope } from "../../../modules/pms/reporting/site-scope";
 import type { PayerType, Practitioner, ReferrerKind, Room, Service, Site } from "../../../modules/pms/core/types";
@@ -193,6 +193,8 @@ export interface UtilisationReport {
   sitesWithoutHours: string[];
   /** By site against the practitioners' rota time there (the dashboard's and the report's site figure). */
   bySiteRota: UtilisationRow[];
+  /** Rota minutes taken off for blocked time (leave, meetings…) of the practitioners shown. */
+  blockedMinutes: number;
 }
 
 export async function loadUtilisation(ctx: RepoContext, req: ReportRequest, dir: ReportDirectory, sources: ReportingSources): Promise<UtilisationReport | Unavailable> {
@@ -233,6 +235,7 @@ export async function loadUtilisation(ctx: RepoContext, req: ReportRequest, dir:
     practitionerTotal: totalUtilisation(byPractitioner),
     sitesWithoutHours: sites.filter((s) => !hours.some((h) => h.siteId === s.id)).map((s) => s.id),
     bySiteRota: rotaBySite,
+    blockedMinutes: avail.facts.filter((a) => shown.some((p) => p.id === a.practitionerId)).reduce((sum, a) => sum + (a.blockedMinutes ?? 0), 0),
   };
 }
 
@@ -304,6 +307,72 @@ export async function loadPatients(ctx: RepoContext, req: ReportRequest, sources
     sourcesByKind: Array.from(kinds.entries())
       .map(([kind, cases]) => ({ kind, cases }))
       .sort((a, b) => b.cases - a.cases),
+  };
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * New and returning patients (diary: attended appointments)
+ * ----------------------------------------------------------------------------------------------*/
+
+export interface VisitRow {
+  key: string | null;
+  /** Attended appointments. */
+  attended: number;
+  /** First attended appointments ever (= new patients). */
+  newPatients: number;
+  /** Attended appointments of patients seen before. */
+  returningVisits: number;
+}
+
+export interface NewReturningReport {
+  available: true;
+  /** Different patients who attended in the period (the filters applied). */
+  patientsSeen: number;
+  /** Patients whose first attended appointment ever was in the period (with the practitioner / at the site asked for). */
+  newPatients: number;
+  /** Seen in the period, first seen before it (or by another practitioner / at another site). */
+  returningPatients: number;
+  total: VisitRow;
+  /** One row per week (Monday) of the period. */
+  byWeek: VisitRow[];
+  byPractitioner: VisitRow[];
+  bySite: VisitRow[];
+}
+
+function visitRows<K extends string | null>(facts: readonly { firstVisit: boolean; appointments: number }[], keyOf: (i: number) => K): Map<K, VisitRow> {
+  const out = new Map<K, VisitRow>();
+  facts.forEach((f, i) => {
+    const key = keyOf(i);
+    const row = out.get(key) ?? { key, attended: 0, newPatients: 0, returningVisits: 0 };
+    row.attended += f.appointments;
+    if (f.firstVisit) row.newPatients += f.appointments;
+    else row.returningVisits += f.appointments;
+    out.set(key, row);
+  });
+  return out;
+}
+
+export async function loadNewReturning(ctx: RepoContext, req: ReportRequest, sources: ReportingSources): Promise<NewReturningReport | Unavailable> {
+  if (!sources.diary) return { available: false };
+  const q = toQuery(req);
+  const [raw, seen] = await Promise.all([sources.diary.visitFacts(ctx, req.tenantId, q), sources.diary.attendedPatients(ctx, req.tenantId, q)]);
+  const checked = checkVisitFacts(raw, factFilter(req));
+  noteDropped("diary.visits", checked.dropped);
+  const facts = checked.facts;
+  const total = visitRows(facts, () => null).get(null) ?? { key: null, attended: 0, newPatients: 0, returningVisits: 0 };
+  const weeks = visitRows(facts, (i) => weekStart(facts[i].date));
+  const patientsSeen = Math.max(0, seen.patients);
+  const newPatients = Math.min(total.newPatients, patientsSeen);
+  const sortRows = (rows: VisitRow[]) => rows.sort((a, b) => b.attended - a.attended || String(a.key).localeCompare(String(b.key)));
+  return {
+    available: true,
+    patientsSeen,
+    newPatients,
+    returningPatients: Math.max(0, patientsSeen - newPatients),
+    total,
+    byWeek: weeksOf(req.period.from, req.period.to).map((w) => weeks.get(w) ?? { key: w, attended: 0, newPatients: 0, returningVisits: 0 }),
+    byPractitioner: sortRows(Array.from(visitRows(facts, (i) => facts[i].practitionerId).values())),
+    bySite: sortRows(Array.from(visitRows(facts, (i) => facts[i].siteId).values())),
   };
 }
 
