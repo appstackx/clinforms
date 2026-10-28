@@ -189,13 +189,23 @@ export function AppointmentDrawer({ id, version, can, onClose, onChanged, onErro
   const actions: React.ReactNode[] = [];
   if (d && can.book && d.kind === "appointment") {
     const s = d.status;
+    // The server leaves out what the time of day does not allow yet (seen only from 60 minutes before the start,
+    // did not attend only after it) – never offer a button the server would refuse.
+    const allowed = (to: AppointmentStatus) => d.nextStatuses.includes(to);
     const complete = (primary: boolean) => action("attended", "Completed", CheckCircle2, () => setStatus("attended", `${name} marked as completed`), { primary });
     if (s === "booked") {
-      actions.push(action("arrived", "Arrived", UserCheck, () => setStatus("arrived", `${name} marked as arrived`), { primary: true, kbd: "A" }));
-      actions.push(action("dna", "Did not attend", UserX, () => setStatus("dna", `${name} marked as DNA`), { kbd: "D" }));
+      if (allowed("arrived")) actions.push(action("arrived", "Arrived", UserCheck, () => setStatus("arrived", `${name} marked as arrived`), { primary: true, kbd: "A" }));
+      if (allowed("dna")) actions.push(action("dna", "Did not attend", UserX, () => setStatus("dna", `${name} marked as DNA`), { kbd: "D" }));
       actions.push(action("cancel", "Cancel…", XCircle, () => setCancelOpen(true), { danger: true }));
       if (d.canMove) actions.push(action("move", "Move", Move, () => onMove(d.id), { kbd: "M" }));
-      actions.push(complete(false));
+      if (allowed("attended")) actions.push(complete(false));
+      if (!allowed("arrived")) {
+        actions.push(
+          <p key="future-note" data-testid="future-status-note" className="text-[13px] leading-5 text-[#475569]">
+            Arrived and Completed open 60 minutes before the start time.
+          </p>,
+        );
+      }
     } else if (s === "arrived") {
       actions.push(action("treat", "Start treatment", Activity, () => void startTreatment(), { primary: true }));
       actions.push(complete(false));
@@ -210,7 +220,7 @@ export function AppointmentDrawer({ id, version, can, onClose, onChanged, onErro
       actions.push(action(back, "Undo completed", CalendarCheck, () => setStatus(back, "Completion removed")));
     } else if (s === "dna") {
       actions.push(action("booked", "Undo DNA", CalendarCheck, () => setStatus("booked", "DNA removed")));
-      actions.push(complete(false));
+      if (allowed("attended")) actions.push(complete(false));
     } else {
       actions.push(action("booked", "Restore booking", CalendarCheck, () => setStatus("booked", "Booking restored")));
     }

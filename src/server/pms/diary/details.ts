@@ -7,7 +7,7 @@
 import "server-only";
 import { PMS_ID_PATTERN } from "../../../modules/pms/core/ids";
 import { formatUkDate } from "../../../modules/pms/core/text";
-import { canMove, isLateCancellation, nextStatuses } from "../../../modules/pms/diary/rules";
+import { canMove, isLateCancellation, nextStatusesAt } from "../../../modules/pms/diary/rules";
 import { formatLondonTime, minutesBetween } from "../../../modules/pms/diary/time";
 import { DIARY_COPY } from "../../../modules/pms/diary/copy";
 import type { DiaryRead } from "../../../modules/pms/diary/types";
@@ -122,7 +122,7 @@ export async function loadAppointmentDetails(caller: DiaryCaller, id: string): P
       .map((x) => ({ id: x.id, caseId: x.caseId, code: x.code, sessionsLeft: x.sessionsAuthorised === null ? null : Math.max(0, x.sessionsAuthorised - x.sessionsUsed) })),
     seriesId: a.seriesId,
     seriesLater: Number(later?.n ?? 0),
-    nextStatuses: Array.from(nextStatuses(a.kind, a.status)),
+    nextStatuses: Array.from(nextStatusesAt(a.kind, a.status, a.startsAt, nowIso(ctx))),
     canMove: canMove(a.status),
     treatmentStarted: a.treatmentStartedAt !== null,
     doubleBookedWith,

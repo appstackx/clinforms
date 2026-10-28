@@ -102,6 +102,20 @@ export function defineDiaryRepoSuite(label: string, factory: () => Promise<Diary
     const tick = (ms = 1000) => {
       clock += ms;
     };
+    /**
+     * setAppointmentStatus on the visit's own time: seen statuses open 60 minutes before the start and "did not
+     * attend" after it (rules.ts statusAllowedAt), so the clock moves to just after the start for the call.
+     */
+    const statusAtVisit: typeof setAppointmentStatus = async (c, tenantId, id, change, actor) => {
+      const row = await suite.db.selectFrom("pms_appointments").select("starts_at").where("tenant_id", "=", tenantId).where("id", "=", id).executeTakeFirst();
+      const saved = clock;
+      if (row && Date.parse(row.starts_at) + 60_000 > clock) clock = Date.parse(row.starts_at) + 60_000;
+      try {
+        return await setAppointmentStatus(c, tenantId, id, change, actor);
+      } finally {
+        clock = saved;
+      }
+    };
     let a: Clinic;
     let b: Clinic;
 
@@ -279,7 +293,8 @@ export function defineDiaryRepoSuite(label: string, factory: () => Promise<Diary
       const r = await bookAppointment(ctx, A, book(a, { startTime: "10:00", caseId: a.meganCase, authorisationId: a.auth }), ACTOR);
       assert.ok(r.ok);
       const id = r.items[0].id;
-      tick();
+      const saved = clock;
+      clock = Date.parse(`${MON}T09:30:00.000Z`); // seen only from 60 minutes before the start (rules.ts)
       const arrived = await setAppointmentStatus(ctx, A, id, { expectedRev: 1, status: "arrived" }, ACTOR);
       assert.ok(arrived.ok && arrived.item.status === "arrived");
       const attended = await setAppointmentStatus(ctx, A, id, { expectedRev: 2, status: "attended" }, ACTOR);
@@ -297,6 +312,22 @@ export function defineDiaryRepoSuite(label: string, factory: () => Promise<Diary
         { sessions: 1, valuePence: 0, reference: id },
       ]);
       assert.equal((await listAudit(ctx, A, { action: "pms.appointment.status_undo" })).length, 1);
+      clock = saved + 1000;
+    });
+
+    it("seen statuses are refused for an appointment that starts more than 60 minutes from now; did not attend before the start", async () => {
+      const r = await bookAppointment(ctx, A, book(a, { date: "2026-11-30", startTime: "15:00" }), ACTOR);
+      assert.ok(r.ok);
+      const id = r.items[0].id;
+      for (const status of ["arrived", "attended", "dna"] as const) {
+        await rejects(setAppointmentStatus(ctx, A, id, { expectedRev: 1, status }, ACTOR), /starts more than 60 minutes|has not started yet/);
+      }
+      assert.equal((await listAudit(ctx, A, { action: "pms.appointment.arrive" })).filter((e) => e.targetId === id).length, 0, "nothing written");
+      const saved = clock;
+      clock = Date.parse("2026-11-30T14:05:00.000Z"); // 55 minutes before: an early arrival is fine
+      assert.ok((await setAppointmentStatus(ctx, A, id, { expectedRev: 1, status: "arrived" }, ACTOR)).ok);
+      await rejects(setAppointmentStatus(ctx, A, id, { expectedRev: 2, status: "dna" }, ACTOR), /has not started yet/);
+      clock = saved + 1000;
     });
 
     it("an authorisation that is used up: attended still works, nothing is counted, a warning says so", async () => {
@@ -308,7 +339,10 @@ export function defineDiaryRepoSuite(label: string, factory: () => Promise<Diary
         ids.push(r.items[0].id);
       }
       const done = [];
+      const saved = clock;
+      clock = Date.parse(`${MON}T18:00:00.000Z`);
       for (const id of ids) done.push(await setAppointmentStatus(ctx, A, id, { expectedRev: 1, status: "attended" }, ACTOR));
+      clock = saved + 1000;
       assert.deepEqual(
         done.map((d) => d.ok && d.warnings),
         [[], [], ["authorisation_used_up"]],
@@ -320,7 +354,10 @@ export function defineDiaryRepoSuite(label: string, factory: () => Promise<Diary
       const r1 = await bookAppointment(ctx, A, book(a, { patientId: a.daniel, practitionerId: a.tom, roomId: a.room1, startTime: "16:00" }), ACTOR);
       const r2 = await bookAppointment(ctx, A, book(a, { patientId: a.daniel, practitionerId: a.tom, roomId: a.room1, startTime: "16:30" }), ACTOR);
       assert.ok(r1.ok && r2.ok);
+      const saved = clock;
+      clock = Date.parse(`${MON}T16:20:00.000Z`); // after the 16:00 start: did not attend can be recorded
       const dna = await setAppointmentStatus(ctx, A, r1.items[0].id, { expectedRev: 1, status: "dna", feeDue: true, feePence: 3000 }, ACTOR);
+      clock = saved + 1000;
       assert.ok(dna.ok && dna.item.feeDue && dna.item.feePence === 3000);
       const late = await setAppointmentStatus(ctx, A, r2.items[0].id, { expectedRev: 1, status: "late_cancelled", cancelReason: "illness", cancelNote: "Unwell, rang at 08:00 (fictional)" }, ACTOR);
       assert.ok(late.ok && late.item.feeDue && late.item.cancelReason === "illness");
@@ -495,9 +532,12 @@ export function defineDiaryRepoSuite(label: string, factory: () => Promise<Diary
       assert.equal(await moves(), 1, "the stale move wrote no audit row");
       const raw = await suite.db.selectFrom("pms_appointments").select(["write_id", "rev"]).where("tenant_id", "=", A).where("id", "=", id).executeTakeFirstOrThrow();
       assert.match(String(raw.write_id), /^w_[0-9A-Z]{26}$/);
-      // Status: the same rule.
+      // Status: the same rule (on the visit's day).
+      const saved = clock;
+      clock = Date.parse("2026-11-16T12:00:00.000Z");
       assert.ok((await setAppointmentStatus(ctx, A, id, { expectedRev: 2, status: "arrived" }, ACTOR)).ok);
       assert.equal((await setAppointmentStatus(ctx, A, id, { expectedRev: 2, status: "dna" }, ACTOR_2)).ok, false);
+      clock = saved + 1000;
       assert.equal((await listAudit(ctx, A, { action: "pms.appointment.dna" })).filter((e) => e.targetId === id).length, 0);
       assert.equal((await listAudit(ctx, A, { action: "pms.appointment.arrive" })).filter((e) => e.targetId === id).length, 1);
     });
@@ -513,7 +553,7 @@ export function defineDiaryRepoSuite(label: string, factory: () => Promise<Diary
       const tooLong = await resizeAppointment(ctx, A, id, { expectedRev: 2, durationMinutes: 60 }, ACTOR);
       assert.equal(!tooLong.ok && tooLong.reason, "clash");
       assert.deepEqual((await listAudit(ctx, A, { action: "pms.appointment.move" })).find((e) => e.targetId === id)?.detail, { fields: ["endsAt"], rev: 2 });
-      assert.ok((await setAppointmentStatus(ctx, A, id, { expectedRev: 2, status: "attended" }, ACTOR)).ok);
+      assert.ok((await statusAtVisit(ctx, A, id, { expectedRev: 2, status: "attended" }, ACTOR)).ok);
       await rejects(resizeAppointment(ctx, A, id, { expectedRev: 3, durationMinutes: 30 }, ACTOR), /cannot be moved/);
     });
 
@@ -522,7 +562,7 @@ export function defineDiaryRepoSuite(label: string, factory: () => Promise<Diary
       assert.ok(r.ok);
       const old = r.items[0].id;
       await rejects(rebookAppointment(ctx, A, old, { date: "2026-11-18", startTime: "09:00" }, ACTOR), /Move a booked appointment/);
-      assert.ok((await setAppointmentStatus(ctx, A, old, { expectedRev: 1, status: "dna", feeDue: true }, ACTOR)).ok);
+      assert.ok((await statusAtVisit(ctx, A, old, { expectedRev: 1, status: "dna", feeDue: true }, ACTOR)).ok);
       const again = await rebookAppointment(ctx, A, old, { date: "2026-11-18", startTime: "10:00" }, ACTOR);
       assert.ok(again.ok);
       const fresh = again.items[0];
@@ -713,9 +753,9 @@ export function defineDiaryRepoSuite(label: string, factory: () => Promise<Diary
       const r = await bookAppointment(ctx, A, book(a, { patientId: a.daniel, practitionerId: a.tom, roomId: null, date: D, startTime: "15:00" }), ACTOR);
       assert.ok(r.ok, JSON.stringify(r));
       const id = r.ok ? r.items[0].id : "";
-      let s = await setAppointmentStatus(ctx, A, id, { expectedRev: 1, status: "arrived" }, ACTOR);
+      let s = await statusAtVisit(ctx, A, id, { expectedRev: 1, status: "arrived" }, ACTOR);
       assert.ok(s.ok);
-      s = await setAppointmentStatus(ctx, A, id, { expectedRev: 2, status: "in_treatment" }, ACTOR);
+      s = await statusAtVisit(ctx, A, id, { expectedRev: 2, status: "in_treatment" }, ACTOR);
       assert.ok(s.ok && s.item.status === "in_treatment");
       const raw = await suite.db.selectFrom("pms_appointments").select(["status", "treatment_started_at"]).where("tenant_id", "=", A).where("id", "=", id).executeTakeFirstOrThrow();
       assert.equal(raw.status, "arrived", "readers of the raw column see arrived (not billable)");
@@ -723,14 +763,14 @@ export function defineDiaryRepoSuite(label: string, factory: () => Promise<Diary
       assert.equal((await countPatientAppointmentsByStatus(ctx, A, a.daniel)).in_treatment, 1);
       assert.equal((await getAppointment(ctx, A, id))?.status, "in_treatment");
       await assert.rejects(moveAppointment(ctx, A, id, { expectedRev: 3, date: D, startTime: "16:00" }, ACTOR), RepoInputError, "treatment under way: not moved");
-      s = await setAppointmentStatus(ctx, A, id, { expectedRev: 3, status: "attended" }, ACTOR);
+      s = await statusAtVisit(ctx, A, id, { expectedRev: 3, status: "attended" }, ACTOR);
       assert.ok(s.ok && s.item.status === "attended");
       const kept = await suite.db.selectFrom("pms_appointments").select(["status", "treatment_started_at"]).where("tenant_id", "=", A).where("id", "=", id).executeTakeFirstOrThrow();
       assert.equal(kept.status, "attended");
       assert.ok(kept.treatment_started_at, "completing keeps when treatment started");
-      s = await setAppointmentStatus(ctx, A, id, { expectedRev: 4, status: "in_treatment" }, ACTOR);
+      s = await statusAtVisit(ctx, A, id, { expectedRev: 4, status: "in_treatment" }, ACTOR);
       assert.ok(s.ok && s.item.status === "in_treatment", "undo completed");
-      s = await setAppointmentStatus(ctx, A, id, { expectedRev: 5, status: "arrived" }, ACTOR);
+      s = await statusAtVisit(ctx, A, id, { expectedRev: 5, status: "arrived" }, ACTOR);
       assert.ok(s.ok && s.item.status === "arrived", "undo start of treatment");
       const cleared = await suite.db.selectFrom("pms_appointments").select(["treatment_started_at"]).where("tenant_id", "=", A).where("id", "=", id).executeTakeFirstOrThrow();
       assert.equal(cleared.treatment_started_at, null);

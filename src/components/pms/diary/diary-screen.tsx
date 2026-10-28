@@ -106,10 +106,15 @@ export function DiaryScreen({ data, cookieSite, can, payers, unsignedNotes }: Di
     }
   }, [cookieSite, data.site, data.sites, href, router]);
 
-  // Booking from the waiting list (?book=<entry>).
+  // Booking from the waiting list (?book=<entry>) or for a patient from their record (?patient=<id>) – once per
+  // preset (a refresh after booking must not open the form again).
+  const presetUsed = React.useRef<string | null>(null);
   React.useEffect(() => {
     const preset = data.bookingPreset;
     if (!preset || !can.book) return;
+    const key = `${preset.waitingListId ?? ""}:${preset.patientId}`;
+    if (presetUsed.current === key) return;
+    presetUsed.current = key;
     setBooking({
       date: p.date < data.today ? data.today : p.date,
       time: "09:00",

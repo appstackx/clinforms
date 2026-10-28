@@ -39,7 +39,7 @@ const lowerFirst = (s: string) => (s ? s.charAt(0).toLowerCase() + s.slice(1) : 
  *
  * Differences from the design: "Take payment" needs billing.edit (reception, owner, administrator – not the
  * clinician as drawn) and opens the Invoices tab until billing is merged; "Send message" opens the Messages tab until
- * comms is merged; "Book" opens the diary (TODO(diary): the booking dialog from feat/cs-diary).
+ * comms is merged; "Book" opens the diary's booking form for this patient.
  */
 export default async function PatientRecordLayout({ children, params }: { children: React.ReactNode; params: { patientId: string } }) {
   const actor = await requireClinicActor({ permission: "patients.view" });
@@ -186,7 +186,7 @@ export default async function PatientRecordLayout({ children, params }: { childr
             </a>
           ) : null}
           {canBook ? (
-            // TODO(diary): open feat/cs-diary's booking dialog for this patient once the diary screens are merged.
+            // The diary opens its booking form for this patient (and their open case): ?patient=<id>.
             <Link href={bookHref} className={cn(action("primary"), "h-11 flex-1 md:h-9 md:flex-none")}>
               <CalendarPlus aria-hidden />
               Book
