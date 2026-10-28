@@ -22,6 +22,7 @@ import { listCasesFor } from "./cases-service";
 import { clinicalFlagsFor, patientExtrasFor } from "./flags-service";
 import { listNotesFor } from "./notes-service";
 import { patientOr404 } from "./record";
+import { pmsNow } from "../../../modules/pms/core/clock";
 
 export interface RecordHeaderData {
   patient: Patient;
@@ -52,7 +53,7 @@ export function headerAppointment(view: PatientAppointmentsView | null, today: s
 export const loadRecordHeader = cache(async (actor: ClinicActor, patientId: string): Promise<RecordHeaderData> => {
   const patient = await patientOr404(actor, patientId);
   const ctx = actor.repo();
-  const today = ukToday(ctx.now ? ctx.now() : new Date());
+  const today = ukToday(ctx.now ? ctx.now() : pmsNow());
   const clinical = actor.can("clinical.view");
   const [anon, extras, flags, appts, cases, notes, files] = await Promise.all([
     getAnonymisation(ctx, actor.tenantId, patient.id),

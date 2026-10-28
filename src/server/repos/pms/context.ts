@@ -14,14 +14,15 @@ import type { BatchQuery } from "../../db/batch";
 import { runBatch } from "../../db/batch";
 import { classifyDbError } from "../../db/errors";
 import { auditInsertQuery, appendAudit, type AuditEntryInput } from "../audit";
-import { RepoInputError, assertId, assertTenantId, nowIso, ulid, type DbContext, type RepoContext } from "../context";
+import { RepoInputError, assertId, assertTenantId, ulid, type DbContext, type RepoContext } from "../context";
 import type { PmsActor } from "../../../modules/pms/core/types";
+import { pmsNow, pmsNowMs } from "../../../modules/pms/core/clock";
 
 export type { PmsActor } from "../../../modules/pms/core/types";
 
 /** A new record id: "<prefix>_<ULID>". */
 export function pmsId(prefix: string, ctx?: DbContext): string {
-  const time = ctx?.now ? ctx.now().getTime() : Date.now();
+  const time = ctx?.now ? ctx.now().getTime() : pmsNowMs();
   return `${prefix}_${ulid(time)}`;
 }
 
@@ -154,7 +155,12 @@ export function patchColumns<P extends Record<string, unknown>>(
   return changed;
 }
 
-export { RepoInputError, assertId, assertTenantId, nowIso };
+export { RepoInputError, assertId, assertTenantId };
+
+/** Now (ISO) for a clinic-system write: the context's clock, else the clinic system's clock (core/clock.ts). */
+export function nowIso(ctx: DbContext): string {
+  return (ctx.now ? ctx.now() : pmsNow()).toISOString();
+}
 export type { DbContext, RepoContext };
 
 /** Runs a zod schema and turns its first problems into a RepoInputError. */

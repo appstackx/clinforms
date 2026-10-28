@@ -8,6 +8,7 @@
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { MessageChannel, MessagePurpose } from "../../../modules/pms/comms/types";
+import { pmsNowMs } from "../../../modules/pms/core/clock";
 
 type Env = Readonly<Record<string, string | undefined>>;
 
@@ -44,14 +45,14 @@ function sign(secret: string, body: string): string {
   return createHmac("sha256", secret).update(`v1.${body}`).digest("base64url");
 }
 
-export function signStopToken(link: Omit<StopLink, "exp">, secret: string, nowMs: number = Date.now()): string {
+export function signStopToken(link: Omit<StopLink, "exp">, secret: string, nowMs: number = pmsNowMs()): string {
   const payload: StopLink = { ...link, exp: Math.floor(nowMs / 1000) + STOP_LINK_DAYS * 86_400 };
   const body = Buffer.from(JSON.stringify({ t: payload.tenantId, p: payload.patientId, c: payload.channel, u: payload.purpose, e: payload.exp }), "utf8").toString("base64url");
   return `v1.${body}.${sign(secret, body)}`;
 }
 
 /** The link's contents, or null when it is malformed, altered or expired. */
-export function verifyStopToken(token: string | null | undefined, secret: string | null, nowMs: number = Date.now()): StopLink | null {
+export function verifyStopToken(token: string | null | undefined, secret: string | null, nowMs: number = pmsNowMs()): StopLink | null {
   if (!token || !secret || token.length > 600) return null;
   const parts = token.split(".");
   if (parts.length !== 3 || parts[0] !== "v1") return null;

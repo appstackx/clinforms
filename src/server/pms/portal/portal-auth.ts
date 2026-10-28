@@ -22,6 +22,7 @@ import { sendPortalLinkEmail } from "./portal-mail";
 import type { PublicClinic } from "./public-clinic";
 import { publicLimits, tooManyMessage, type PublicLimit } from "./rate-limit";
 import { hashSecret, isLinkToken, newSecret, sameHash } from "./tokens";
+import { pmsNow } from "../../../modules/pms/core/clock";
 
 /** The portal's cookie: one per clinic path (/clinics/<clinic id>), httpOnly, never sent elsewhere. */
 export const PORTAL_COOKIE = "clinic_portal";
@@ -112,7 +113,7 @@ export interface PortalViewer {
 }
 
 /** The signed-in patient for a cookie value, or null (expired, idle, signed out, switched off, archived). */
-export async function readPortalSession(ctx: DbContext & Partial<RepoContext>, tenantId: string, cookieValue: string | null | undefined, now: Date = new Date()): Promise<PortalViewer | null> {
+export async function readPortalSession(ctx: DbContext & Partial<RepoContext>, tenantId: string, cookieValue: string | null | undefined, now: Date = pmsNow()): Promise<PortalViewer | null> {
   if (typeof cookieValue !== "string" || cookieValue.length > 200) return null;
   const dot = cookieValue.indexOf(".");
   if (dot <= 0) return null;

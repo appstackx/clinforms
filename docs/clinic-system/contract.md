@@ -210,8 +210,10 @@ invl crn pay acct stmt`; comms `msg mtpl ltr`; portal `bkr ptl ifm ifr`; reporti
   `src/modules/pms/diary/rules.ts`): in treatment is NOT billable until attended. Reports count in treatment as
   arrived (`reportingStatus`). On screen `attended` is "Completed" everywhere.
 - **Navigation:** add entries to `src/modules/pms/nav/<m>.ts` (`{ id: "<m>.<x>", module, label, href under
-  /app/clinic, order in your band, permission, group: "main" | "manage" }`). "manage" entries show in the shell's
-  "Set-up" row. **Record tabs:** `src/modules/pms/record-tabs/<m>.ts` (`segment` = your folder under
+  /app/clinic, order in your band, permission (or a list – any of them), group: "main" | "manage" }`). "manage"
+  entries are set-up pages: the main list shows one "Set-up" entry and a set-up page shows the Set-up section's own list
+  ("← Clinic navigation"), ordered by `SETUP_ORDER` in `src/components/pms/shell/nav-model.ts` (add your id there).
+  Reports have their own section list (reporting). The start page `/app/clinic` is "Today" (reporting, M8). **Record tabs:** `src/modules/pms/record-tabs/<m>.ts` (`segment` = your folder under
   `/app/clinic/patients/[patientId]/`); the records module renders them in the record's layout.
 - Public pages (portal: booking, intake) live outside `/app` in their own route group, have no sign-in cookie
   requirement, must rate-limit (`hitRateLimit`), never reveal whether a patient exists, and carry `noindex`.
@@ -236,6 +238,10 @@ invl crn pay acct stmt`; comms `msg mtpl ltr`; portal `bkr ptl ifm ifr`; reporti
   `stack.test.ts`); the real local D1 run applies every migration with wrangler.
 - Browser: `scripts/e2e/pms-<m>-*.cjs`, LOCAL only, ports 3180–3199, 375 px and keyboard checks, screenshots to
   `.e2e-out/` or the scratchpad. Model: `scripts/e2e/clinic-system-shell.cjs`.
+- **Time:** take "now" from `src/modules/pms/core/clock.ts` (`pmsNow()`, `pmsNowMs()`; repositories get it as
+  `ctx.now` from `actor.repo()`) – never `new Date()` / `Date.now()` in clinic-system server code. Browser checks that
+  need clinic hours run on `next dev` with the TEST clock (`PMS_TEST_CLOCK=1 PMS_TEST_NOW PMS_TEST_NOW_SET_AT`), which
+  a production build ignores.
 - Quick loop: `npm run test:pms` (all `src/modules/pms`, `src/server/{repos/,}pms`, `scripts/pms` tests).
 - **Full chain before handing over:** `npm run typecheck && npm run lint && npm run test:medreport && npm run test:db && npm run test:auth && npm run test:site && npm run test:gateway && npm run build`
   (`test:gateway` needs `(cd workers/data-gateway && npm ci)` once). ClinForms unchanged: `scripts/e2e/forms-regression.cjs`

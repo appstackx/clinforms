@@ -4,6 +4,7 @@ import { InvoiceDetail } from "@/components/pms/billing/invoice-detail";
 import { requireClinicActor } from "@/server/pms/actor";
 import { printInvoiceFor, invoiceDetailFor, printClinicOf } from "@/server/pms/billing/views";
 import { getPmsSettings } from "@/server/repos/pms/settings";
+import { pmsNow } from "../../../../../../modules/pms/core/clock";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Invoice" };
@@ -26,7 +27,7 @@ export default async function InvoicePage({ params }: { params: { invoiceId: str
       clinic={printed?.ok ? printed.value.clinic : await printClinicOf(actor, null)}
       howToPay={printed?.ok ? printed.value.howToPay : []}
       printedBy={actor.name || actor.email}
-      printedAt={new Date().toISOString()}
+      printedAt={pmsNow().toISOString()}
       demo={settings.isDemo}
       can={{ edit: actor.can("billing.edit"), pay: actor.can("billing.pay"), refund: actor.can("billing.refund"), void: actor.can("billing.void") }}
     />

@@ -25,6 +25,7 @@ import { inScope, scopeList, type DiaryCaller } from "./caller";
 import { payerLabelsForCases } from "./payers";
 import { getDiarySettings } from "../../repos/pms/diary/settings";
 import { patientDisplayName } from "./view";
+import { pmsNow } from "../../../modules/pms/core/clock";
 
 const FORBIDDEN = { ok: false as const, status: 403 as const, error: DIARY_COPY.notAllowed };
 const notFound = (error: string = DIARY_COPY.recordGone) => ({ ok: false as const, status: 404 as const, error });
@@ -156,7 +157,7 @@ function patientRow(i: DiaryItem, n: Awaited<ReturnType<typeof names>>): Patient
     source: i.source,
     hasNotes: i.hasNotes,
     canMove: canMove(i.status),
-    nextStatuses: Array.from(nextStatusesAt(i.kind, i.status, i.startsAt, new Date())),
+    nextStatuses: Array.from(nextStatusesAt(i.kind, i.status, i.startsAt, pmsNow())),
   };
 }
 
@@ -198,7 +199,7 @@ export async function loadRotas(caller: DiaryCaller, q: { siteId?: string; pract
   if ((q.siteId && (!PMS_ID_PATTERN.test(q.siteId) || !inScope(caller, q.siteId))) || (q.practitionerId && !PMS_ID_PATTERN.test(q.practitionerId))) return notFound(DIARY_COPY.notAtYourSites);
   const { ctx, tenantId } = caller;
   const [rules, n] = await Promise.all([
-    listAvailability(ctx, tenantId, { siteId: q.siteId, practitionerId: q.practitionerId, includeEnded: q.includeEnded, today: ukToday(ctx.now ? ctx.now() : new Date()) }),
+    listAvailability(ctx, tenantId, { siteId: q.siteId, practitionerId: q.practitionerId, includeEnded: q.includeEnded, today: ukToday(ctx.now ? ctx.now() : pmsNow()) }),
     names(caller),
   ]);
   return {
@@ -241,7 +242,7 @@ async function waitingRows(caller: DiaryCaller, entries: WaitingListSummary[], o
   const n = await names(caller);
   const showNames = caller.can("patients.view");
   const patients = showNames ? await getPatientSummaries(caller.ctx, caller.tenantId, entries.map((e) => e.patientId)) : new Map<string, never>();
-  const today = ukToday(caller.ctx.now ? caller.ctx.now() : new Date());
+  const today = ukToday(caller.ctx.now ? caller.ctx.now() : pmsNow());
   return entries.map((e) => {
     const p = patients.get(e.patientId);
     return {
@@ -314,7 +315,7 @@ export async function loadWaitingListEntry(caller: DiaryCaller, id: string): Pro
   const [row] = await waitingRows(caller, [entry], new Map([[id, offers.filter((o) => o.status === "open").length]]));
   let suggestions: WaitingListEntryView["suggestions"] = [];
   if ((entry.status === "waiting" || entry.status === "offered") && entry.serviceId && caller.can("diary.book")) {
-    const today = ukToday(ctx.now ? ctx.now() : new Date());
+    const today = ukToday(ctx.now ? ctx.now() : pmsNow());
     const from = entry.earliestOn && entry.earliestOn > today ? entry.earliestOn : today;
     const slots = await findFreeSlots(ctx, tenantId, {
       fromDate: from,
@@ -351,7 +352,7 @@ export async function loadFreeSlots(caller: DiaryCaller, q: DiarySlotsQuery): Pr
   for (const id of [q.serviceId, q.siteId, q.practitionerId]) if (id !== undefined && !PMS_ID_PATTERN.test(id)) return notFound();
   if (q.siteId && !inScope(caller, q.siteId)) return notFound(DIARY_COPY.notAtYourSites);
   const { ctx, tenantId } = caller;
-  const today = ukToday(ctx.now ? ctx.now() : new Date());
+  const today = ukToday(ctx.now ? ctx.now() : pmsNow());
   const from = q.fromDate && isIsoDate(q.fromDate) && q.fromDate >= today && q.fromDate <= addDays(today, 366) ? q.fromDate : today;
   const [slots, n] = await Promise.all([
     findFreeSlots(ctx, tenantId, { fromDate: from, days: Math.min(28, Math.max(1, q.days ?? 21)), serviceId: q.serviceId, siteId: q.siteId, siteIds: scopeList(caller), practitionerIds: q.practitionerId ? [q.practitionerId] : undefined, limit: Math.min(50, Math.max(1, q.limit ?? 12)) }),

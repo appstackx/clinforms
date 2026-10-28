@@ -13,6 +13,7 @@ import { getPatient } from "../../repos/pms/patients";
 import { getDataCipher } from "../../crypto";
 import { getDb } from "../../db";
 import { patientVisibleInScope } from "../access";
+import { pmsNow } from "../../../modules/pms/core/clock";
 
 export const PATIENTS_PATH = "/app/clinic/patients";
 
@@ -21,7 +22,7 @@ export function patientPath(patientId: string, segment = ""): string {
 }
 
 /** One read per request for the record's layout and its page (keyed by the clinic and the patient). */
-const loadPatient = cache(async (tenantId: string, patientId: string) => getPatient({ db: getDb(), cipher: getDataCipher() }, tenantId, patientId));
+const loadPatient = cache(async (tenantId: string, patientId: string) => getPatient({ db: getDb(), cipher: getDataCipher(), now: pmsNow }, tenantId, patientId));
 
 /**
  * The patient of a URL in the actor's clinic and sites (K2-SITE-004), or the 404 page (never another clinic's or a
