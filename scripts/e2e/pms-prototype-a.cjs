@@ -203,12 +203,13 @@ const hhmm = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m %
           const c = data.columns[i];
           if (!c.practitionerId) continue;
           // Free slots are listed one appointment length each: two in a row hold a 45-minute initial assessment.
-          const slot = c.freeSlots.find((x) => x.startMinute % 15 === 0 && x.startMinute >= nowMinute + 30 && room45(c, x));
+          // Within the next hour: "Arrived" opens 60 minutes before the start (handover §13.4 item 2).
+          const slot = c.freeSlots.find((x) => x.startMinute % 15 === 0 && x.startMinute >= nowMinute + 5 && x.startMinute <= nowMinute + 50 && room45(c, x));
           if (slot) Object.assign(s, { site, practitionerId: c.practitionerId, practitioner: c.label, columnIndex: i, minute: slot.startMinute });
         }
         if (s.site) break;
       }
-      assert(s.site, `a practitioner with a free 45-minute slot later today (now ${nowMinute}, today ${s.today}, sites ${sites.length}: ${seen.join(" || ")})`);
+      assert(s.site, `a practitioner with a free 45-minute slot in the next hour (now ${nowMinute}, today ${s.today}, sites ${sites.length}: ${seen.join(" || ")})`);
       // The physiotherapist ("Priya" in the design) is the seeded practitioner of that column: her account is made with
       // that name and linked to the record (no screen links a member to a practitioner yet).
       const c = await invite(owner, priyaEmail, "clinician");
