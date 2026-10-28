@@ -87,6 +87,14 @@ export function stepOf(status: BatchStatus): number {
   }
 }
 
+/** An import can be undone for this many days after it finished (design round 2c: "Each import can be undone for 7 days"). */
+export const UNDO_DAYS = 7;
+
+/** The last moment an import finished at `importedAt` can be undone (ISO). */
+export function undoUntil(importedAt: string): string {
+  return new Date(Date.parse(importedAt) + UNDO_DAYS * 86_400_000).toISOString();
+}
+
 export interface BatchCounts {
   total: number;
   ready: number;

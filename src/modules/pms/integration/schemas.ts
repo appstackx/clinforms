@@ -62,6 +62,11 @@ export const FormRequestInputSchema = z
     consentOn: z.union([IsoDateSchema, z.null()]).optional(),
     /** How consent was given ("signed the clinic's consent form"). Encrypted. */
     consentNote: optionalText(1000),
+    /** The ClinForms form chosen from the clinic's library (its id) and its title. */
+    formRef: z.union([z.string().trim().min(1).max(128), z.null()]).optional(),
+    formTitle: optionalText(300),
+    /** Signed notes and outcome scores offered to ClinForms (only for members who may see clinical notes). */
+    clinicalPrefill: z.boolean().optional(),
   })
   .refine((v) => !v.consentRecorded || Boolean(v.consentOn), { message: "Enter the date the patient agreed", path: ["consentOn"] });
 export type FormRequestInput = z.input<typeof FormRequestInputSchema>;
@@ -82,5 +87,7 @@ export const FiledFormInputSchema = z.object({
   signerName: optionalText(160),
   signerRegistration: optionalText(40),
   signedAt: z.union([z.string().max(40), z.null()]).optional(),
+  /** The "Complete referrer form" request it answers (marked filed in the same batch). */
+  formRequestId: z.union([PmsIdSchema, z.null()]).optional(),
 });
 export type FiledFormInput = z.input<typeof FiledFormInputSchema>;

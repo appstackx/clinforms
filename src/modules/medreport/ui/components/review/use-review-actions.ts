@@ -57,7 +57,17 @@ const CONNECTOR_LABELS: Record<string, string> = {
   "tm3-sim": "Simulated TM3",
   tm3: "TM3",
   "file-import": "uploaded export",
+  native: "clinic system",
 };
+
+/**
+ * Connectors a signed report can be filed back to: the simulated TM3 sandbox (public demo) and – 10/2026 – the clinic
+ * system's own record ("native", only ever reached from a case's "Complete referrer form" in a clinic with the clinic
+ * system; its server checks the clinic, the member and the patient again before it files anything).
+ */
+export function canFileBack(connectorId: string): boolean {
+  return connectorId === "tm3-sim" || connectorId === "native";
+}
 
 function problemText(err: unknown, fallback: string): { title: string; detail?: string; code: string } {
   if (err instanceof ApiError) return { title: err.problem.title, detail: err.problem.detail, code: err.code };
@@ -223,7 +233,7 @@ export function useReviewActions(opts: {
     const receipt = current.receipt;
     if (!receipt || current.status !== "signed") return;
     const { connectorId, patientId, episodeId } = current.episodeRef;
-    if (connectorId !== "tm3-sim") {
+    if (!canFileBack(connectorId)) {
       toast({
         tone: "info",
         title: "Not connected for filing",
@@ -277,7 +287,7 @@ export function useReviewActions(opts: {
           type: "activity",
           action: "filed",
           actor,
-          detail: `Saved “${out.fileName}” to the ${CONNECTOR_LABELS[connectorId]} record (document ${res.attachReceipt.externalDocumentId}, SHA-256 ${res.attachReceipt.sha256.slice(0, 12)}…).${browserCopy ? "" : " This browser could not keep a copy for the simulated record."}`,
+          detail: `Saved “${out.fileName}” to the ${CONNECTOR_LABELS[connectorId]} record (document ${res.attachReceipt.externalDocumentId}, SHA-256 ${res.attachReceipt.sha256.slice(0, 12)}…).${browserCopy || connectorId === "native" ? "" : " This browser could not keep a copy for the simulated record."}`,
         });
         return out.fileName;
       };
@@ -301,10 +311,10 @@ export function useReviewActions(opts: {
           }
         }
       }
-      const href = hooks.clinicRecordUrl?.({ connectorId, patientId }) ?? null;
+      const href = hooks.clinicRecordUrl?.({ connectorId, patientId, episodeId }) ?? null;
       toast({
         tone: "success",
-        title: "Filed to the Simulated TM3 record (stored in this browser)",
+        title: connectorId === "native" ? "Filed to the patient's case" : "Filed to the Simulated TM3 record (stored in this browser)",
         detail: `${filedNames.join(" and ")}${pdfNote ? `. ${pdfNote}` : ""}`,
         ...(href ? { action: { label: "Open the patient record", href } } : {}),
       });

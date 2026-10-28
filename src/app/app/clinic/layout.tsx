@@ -55,7 +55,7 @@ export default async function ClinicSystemLayout({ children }: { children: React
       nav={shellNav(PMS_NAV, actor.can, { "comms.messages": { count: replies, label: "replies to answer" } })}
       sites={{ options: mySites.map((s, i) => ({ id: s.id, name: s.name, note: i === 0 ? "Default" : undefined })), value: siteValue, total: sites.length }}
       searchHref={actor.can("patients.view") ? `${CLINIC_BASE_PATH}/patients` : null}
-      clinForms={reports ? { href: "/app", label: "ClinForms" } : null}
+      clinForms={reports ? { href: "/app/studio", label: "ClinForms" } : null}
       accountHref="/app/clinic/account"
     >
       {children}

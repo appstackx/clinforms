@@ -14,11 +14,29 @@
 import { createHash } from "node:crypto";
 import type { Selectable } from "kysely";
 import { INTEGRATION_ID_PREFIXES as P } from "../../../../modules/pms/integration/ids";
-import { FiledFormInputSchema, MAX_FILED_FORM_BYTES, type FiledFormInput } from "../../../../modules/pms/integration/schemas";
+import {
+  FiledFormInputSchema,
+  MAX_FILED_FORM_BYTES,
+  type FiledFormInput,
+} from "../../../../modules/pms/integration/schemas";
 import type { PmsActor } from "../../../../modules/pms/core/types";
 import { runBatch, type BatchQuery } from "../../../db/batch";
 import type { PmsFiledFormsTable } from "../../../db/pms-schema/integration";
-import { RepoInputError, assertId, assertTenantId, decryptField, encryptField, isOn, nowIso, num, parseInput, pmsAuditQuery, pmsId, translateDbError, type RepoContext } from "../context";
+import {
+  RepoInputError,
+  assertId,
+  assertTenantId,
+  decryptField,
+  encryptField,
+  isOn,
+  nowIso,
+  num,
+  parseInput,
+  pmsAuditQuery,
+  pmsId,
+  translateDbError,
+  type RepoContext,
+} from "../context";
 
 const T = "pms_filed_forms";
 const PT = "pms_filed_form_parts";
@@ -46,6 +64,7 @@ export interface FiledFormSummary {
   signerName: string | null;
   signerRegistration: string | null;
   signedAt: string | null;
+  formRequestId: string | null;
   filedBy: string | null;
   filedAt: string;
 }
@@ -73,6 +92,7 @@ function toSummary(r: Row): FiledFormSummary {
     signerName: r.signer_name,
     signerRegistration: r.signer_registration,
     signedAt: r.signed_at,
+    formRequestId: r.form_request_id,
     filedBy: r.filed_by,
     filedAt: r.filed_at,
   };
@@ -82,29 +102,81 @@ function toForm(ctx: RepoContext, r: Row): FiledForm {
   let receipt: Record<string, unknown> = {};
   try {
     const parsed = JSON.parse(r.receipt_json) as unknown;
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) receipt = parsed as Record<string, unknown>;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed))
+      receipt = parsed as Record<string, unknown>;
   } catch {
     receipt = {};
   }
   return {
     ...toSummary(r),
-    fileName: decryptField(ctx, r.tenant_id, T, "file_name_enc", r.id, r.file_name_enc) ?? "form",
+    fileName:
+      decryptField(
+        ctx,
+        r.tenant_id,
+        T,
+        "file_name_enc",
+        r.id,
+        r.file_name_enc,
+      ) ?? "form",
     partCount: num(r.part_count),
     receipt,
   };
 }
 
 function looksLike(mimeType: string, bytes: Uint8Array): boolean {
-  if (mimeType === "application/pdf") return bytes.length > 5 && Buffer.from(bytes.subarray(0, 5)).toString("latin1") === "%PDF-";
-  return bytes.length > 4 && bytes[0] === 0x50 && bytes[1] === 0x4b && bytes[2] === 0x03 && bytes[3] === 0x04;
+  if (mimeType === "application/pdf")
+    return (
+      bytes.length > 5 &&
+      Buffer.from(bytes.subarray(0, 5)).toString("latin1") === "%PDF-"
+    );
+  return (
+    bytes.length > 4 &&
+    bytes[0] === 0x50 &&
+    bytes[1] === 0x4b &&
+    bytes[2] === 0x03 &&
+    bytes[3] === 0x04
+  );
 }
 
-function partValues(ctx: RepoContext, tenantId: string, formId: string, bytes: Uint8Array, at: string) {
-  const parts: { tenant_id: string; id: string; filed_form_id: string; idx: number; data_enc: string; created_at: string }[] = [];
-  for (let idx = 0, offset = 0; offset < bytes.length; idx++, offset += FILED_PART_BYTES) {
+function partValues(
+  ctx: RepoContext,
+  tenantId: string,
+  formId: string,
+  bytes: Uint8Array,
+  at: string,
+) {
+  const parts: {
+    tenant_id: string;
+    id: string;
+    filed_form_id: string;
+    idx: number;
+    data_enc: string;
+    created_at: string;
+  }[] = [];
+  for (
+    let idx = 0, offset = 0;
+    offset < bytes.length;
+    idx++, offset += FILED_PART_BYTES
+  ) {
     const id = pmsId(P.filedFormPart, ctx);
-    const chunk = Buffer.from(bytes.subarray(offset, Math.min(bytes.length, offset + FILED_PART_BYTES))).toString("base64");
-    parts.push({ tenant_id: tenantId, id, filed_form_id: formId, idx, data_enc: encryptField(ctx, tenantId, PT, "data_enc", id, chunk) as string, created_at: at });
+    const chunk = Buffer.from(
+      bytes.subarray(offset, Math.min(bytes.length, offset + FILED_PART_BYTES)),
+    ).toString("base64");
+    parts.push({
+      tenant_id: tenantId,
+      id,
+      filed_form_id: formId,
+      idx,
+      data_enc: encryptField(
+        ctx,
+        tenantId,
+        PT,
+        "data_enc",
+        id,
+        chunk,
+      ) as string,
+      created_at: at,
+    });
   }
   return parts;
 }
@@ -113,15 +185,37 @@ function partValues(ctx: RepoContext, tenantId: string, formId: string, bytes: U
  * Files a completed form to a patient's case. `bytes` must match `input.sha256` and be a real PDF or Word file.
  * Returns the record and whether it was new (false: this approval's file was already filed).
  */
-export async function fileReferrerForm(ctx: RepoContext, tenantId: string, input: FiledFormInput, bytes: Uint8Array, actor: PmsActor): Promise<{ form: FiledForm; created: boolean }> {
+export async function fileReferrerForm(
+  ctx: RepoContext,
+  tenantId: string,
+  input: FiledFormInput,
+  bytes: Uint8Array,
+  actor: PmsActor,
+): Promise<{ form: FiledForm; created: boolean }> {
   assertTenantId(tenantId);
   const d = parseInput(FiledFormInputSchema, input, "Filed form");
-  if (bytes.length === 0 || bytes.length > MAX_FILED_FORM_BYTES) throw new RepoInputError("The file is empty or larger than 10 MB.");
-  if (createHash("sha256").update(bytes).digest("hex") !== d.sha256) throw new RepoInputError("The file does not match its checksum.");
-  if (!looksLike(d.mimeType, bytes)) throw new RepoInputError("The file is not the type it says it is.");
-  const existing = await ctx.db.selectFrom(T).selectAll().where("tenant_id", "=", tenantId).where("report_id", "=", d.reportId).where("sha256", "=", d.sha256).executeTakeFirst();
-  if (existing && (existing.patient_id !== d.patientId || existing.case_id !== d.caseId)) throw new RepoInputError("This approved form is already filed to another record.");
-  if (existing && isOn(existing.complete)) return { form: toForm(ctx, existing), created: false };
+  if (bytes.length === 0 || bytes.length > MAX_FILED_FORM_BYTES)
+    throw new RepoInputError("The file is empty or larger than 10 MB.");
+  if (createHash("sha256").update(bytes).digest("hex") !== d.sha256)
+    throw new RepoInputError("The file does not match its checksum.");
+  if (!looksLike(d.mimeType, bytes))
+    throw new RepoInputError("The file is not the type it says it is.");
+  const existing = await ctx.db
+    .selectFrom(T)
+    .selectAll()
+    .where("tenant_id", "=", tenantId)
+    .where("report_id", "=", d.reportId)
+    .where("sha256", "=", d.sha256)
+    .executeTakeFirst();
+  if (
+    existing &&
+    (existing.patient_id !== d.patientId || existing.case_id !== d.caseId)
+  )
+    throw new RepoInputError(
+      "This approved form is already filed to another record.",
+    );
+  if (existing && isOn(existing.complete))
+    return { form: toForm(ctx, existing), created: false };
   const at = nowIso(ctx);
   const id = existing?.id ?? pmsId(P.filedForm, ctx);
   const parts = partValues(ctx, tenantId, id, bytes, at);
@@ -133,7 +227,15 @@ export async function fileReferrerForm(ctx: RepoContext, tenantId: string, input
         ctx.db
           .insertInto(PT)
           .values(p)
-          .onConflict((oc) => oc.columns(["tenant_id", "filed_form_id", "idx"]).doUpdateSet({ id: p.id, data_enc: p.data_enc, created_at: p.created_at })),
+          .onConflict((oc) =>
+            oc
+              .columns(["tenant_id", "filed_form_id", "idx"])
+              .doUpdateSet({
+                id: p.id,
+                data_enc: p.data_enc,
+                created_at: p.created_at,
+              }),
+          ),
       ),
     );
   }
@@ -144,7 +246,14 @@ export async function fileReferrerForm(ctx: RepoContext, tenantId: string, input
       patient_id: d.patientId,
       case_id: d.caseId,
       title: d.title,
-      file_name_enc: encryptField(ctx, tenantId, T, "file_name_enc", id, d.fileName) as string,
+      file_name_enc: encryptField(
+        ctx,
+        tenantId,
+        T,
+        "file_name_enc",
+        id,
+        d.fileName,
+      ) as string,
       mime_type: d.mimeType,
       size_bytes: bytes.length,
       sha256: d.sha256,
@@ -155,6 +264,7 @@ export async function fileReferrerForm(ctx: RepoContext, tenantId: string, input
       signer_name: d.signerName ?? null,
       signer_registration: d.signerRegistration ?? null,
       signed_at: d.signedAt ?? null,
+      form_request_id: d.formRequestId ?? null,
       filed_by: actor.userId,
       filed_at: at,
       created_at: at,
@@ -162,43 +272,105 @@ export async function fileReferrerForm(ctx: RepoContext, tenantId: string, input
     });
     queries[0] = [meta, ...queries[0]];
   }
+  const requestId = existing?.form_request_id ?? d.formRequestId ?? null;
   const finish: BatchQuery[] = [
-    ctx.db.updateTable(T).set({ complete: 1, part_count: parts.length, updated_at: at }).where("tenant_id", "=", tenantId).where("id", "=", id),
+    ctx.db
+      .updateTable(T)
+      .set({ complete: 1, part_count: parts.length, updated_at: at })
+      .where("tenant_id", "=", tenantId)
+      .where("id", "=", id),
+    // The request it answers is marked filed in the same batch (only a request of this case still open).
+    ...(requestId
+      ? [
+          ctx.db
+            .updateTable("pms_form_requests")
+            .set({ status: "filed", filed_form_id: id, filed_at: at })
+            .where("tenant_id", "=", tenantId)
+            .where("id", "=", requestId)
+            .where("case_id", "=", d.caseId)
+            .where("status", "=", "opened"),
+        ]
+      : []),
     pmsAuditQuery(ctx, tenantId, actor, {
       action: "pms.filed_form.create",
       targetType: "pms_filed_form",
       targetId: id,
-      detail: { caseId: d.caseId, reportId: d.reportId, mimeType: d.mimeType, bytes: bytes.length, parts: parts.length },
+      detail: {
+        caseId: d.caseId,
+        reportId: d.reportId,
+        mimeType: d.mimeType,
+        bytes: bytes.length,
+        parts: parts.length,
+      },
     }),
   ];
   queries[queries.length - 1] = [...queries[queries.length - 1], ...finish];
   try {
     for (const q of queries) await runBatch(ctx.db, q);
   } catch (err) {
-    throw translateDbError(err, { unique: "This approved form is already filed.", foreignKey: "The case does not exist in this clinic (or it is another patient's)." });
+    throw translateDbError(err, {
+      unique: "This approved form is already filed.",
+      foreignKey:
+        "The case does not exist in this clinic (or it is another patient's).",
+    });
   }
-  const row = await ctx.db.selectFrom(T).selectAll().where("tenant_id", "=", tenantId).where("id", "=", id).executeTakeFirstOrThrow();
+  const row = await ctx.db
+    .selectFrom(T)
+    .selectAll()
+    .where("tenant_id", "=", tenantId)
+    .where("id", "=", id)
+    .executeTakeFirstOrThrow();
   return { form: toForm(ctx, row), created: !existing };
 }
 
 /** A patient's (or one case's) filed forms, newest first – complete ones only, nothing decrypted. */
-export async function listFiledForms(ctx: RepoContext, tenantId: string, by: { patientId: string } | { caseId: string }, limit = 200): Promise<FiledFormSummary[]> {
+export async function listFiledForms(
+  ctx: RepoContext,
+  tenantId: string,
+  by: { patientId: string } | { caseId: string },
+  limit = 200,
+): Promise<FiledFormSummary[]> {
   assertTenantId(tenantId);
-  let q = ctx.db.selectFrom(T).selectAll().where("tenant_id", "=", tenantId).where("complete", "=", 1);
-  q = "patientId" in by ? q.where("patient_id", "=", by.patientId) : q.where("case_id", "=", by.caseId);
-  const rows = await q.orderBy("filed_at", "desc").orderBy("id", "desc").limit(Math.min(Math.max(1, limit), 500)).execute();
+  let q = ctx.db
+    .selectFrom(T)
+    .selectAll()
+    .where("tenant_id", "=", tenantId)
+    .where("complete", "=", 1);
+  q =
+    "patientId" in by
+      ? q.where("patient_id", "=", by.patientId)
+      : q.where("case_id", "=", by.caseId);
+  const rows = await q
+    .orderBy("filed_at", "desc")
+    .orderBy("id", "desc")
+    .limit(Math.min(Math.max(1, limit), 500))
+    .execute();
   return rows.map(toSummary);
 }
 
-export async function getFiledForm(ctx: RepoContext, tenantId: string, id: string): Promise<FiledForm | null> {
+export async function getFiledForm(
+  ctx: RepoContext,
+  tenantId: string,
+  id: string,
+): Promise<FiledForm | null> {
   assertTenantId(tenantId);
   assertId(id, "filed form id");
-  const row = await ctx.db.selectFrom(T).selectAll().where("tenant_id", "=", tenantId).where("id", "=", id).where("complete", "=", 1).executeTakeFirst();
+  const row = await ctx.db
+    .selectFrom(T)
+    .selectAll()
+    .where("tenant_id", "=", tenantId)
+    .where("id", "=", id)
+    .where("complete", "=", 1)
+    .executeTakeFirst();
   return row ? toForm(ctx, row) : null;
 }
 
 /** The filed file, reassembled and checked (size and SHA-256), or null when there is no such complete record. */
-export async function readFiledFormFile(ctx: RepoContext, tenantId: string, id: string): Promise<{ form: FiledForm; bytes: Buffer } | null> {
+export async function readFiledFormFile(
+  ctx: RepoContext,
+  tenantId: string,
+  id: string,
+): Promise<{ form: FiledForm; bytes: Buffer } | null> {
   const form = await getFiledForm(ctx, tenantId, id);
   if (!form) return null;
   const parts = await ctx.db
@@ -209,8 +381,22 @@ export async function readFiledFormFile(ctx: RepoContext, tenantId: string, id: 
     .orderBy("idx")
     .limit(form.partCount + 1)
     .execute();
-  if (parts.length !== form.partCount || parts.some((p, i) => num(p.idx) !== i)) throw new FiledFormIntegrityError("The filed form is incomplete.");
-  const bytes = Buffer.concat(parts.map((p) => Buffer.from(decryptField(ctx, tenantId, PT, "data_enc", p.id, p.data_enc) ?? "", "base64")));
-  if (bytes.length !== form.sizeBytes || createHash("sha256").update(bytes).digest("hex") !== form.sha256) throw new FiledFormIntegrityError("The filed form does not match its checksum.");
+  if (parts.length !== form.partCount || parts.some((p, i) => num(p.idx) !== i))
+    throw new FiledFormIntegrityError("The filed form is incomplete.");
+  const bytes = Buffer.concat(
+    parts.map((p) =>
+      Buffer.from(
+        decryptField(ctx, tenantId, PT, "data_enc", p.id, p.data_enc) ?? "",
+        "base64",
+      ),
+    ),
+  );
+  if (
+    bytes.length !== form.sizeBytes ||
+    createHash("sha256").update(bytes).digest("hex") !== form.sha256
+  )
+    throw new FiledFormIntegrityError(
+      "The filed form does not match its checksum.",
+    );
   return { form, bytes };
 }

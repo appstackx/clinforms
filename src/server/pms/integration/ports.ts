@@ -13,8 +13,14 @@
  * Every adapter takes the tenant explicitly and returns that clinic's rows only (the same rules as the repositories).
  */
 import type { PmsActor } from "../../../modules/pms/core/types";
-import type { ImportAppointmentStatus, ImportInvoiceStatus } from "../../../modules/pms/integration/rows";
-import type { AppointmentPlan, InvoicePlan } from "../../../modules/pms/integration/resolve";
+import type {
+  ImportAppointmentStatus,
+  ImportInvoiceStatus,
+} from "../../../modules/pms/integration/rows";
+import type {
+  AppointmentPlan,
+  InvoicePlan,
+} from "../../../modules/pms/integration/resolve";
 import type { RepoContext } from "../../repos/context";
 
 /** A signed (locked) clinical note, decrypted. Unsigned drafts are never given to ClinForms. */
@@ -24,7 +30,8 @@ export interface NativeNote {
   date: string;
   /** "HH:MM" (24 h, Europe/London) */
   time: string | null;
-  type: "initial_assessment" | "follow_up" | "discharge" | "telephone" | "other";
+  type:
+    "initial_assessment" | "follow_up" | "discharge" | "telephone" | "other";
   practitionerId: string | null;
   subjective: string;
   objective: string;
@@ -84,36 +91,119 @@ export interface UndoResult {
 
 export interface ClinicalRecordsPort {
   /** A case's signed notes, oldest first, decrypted. */
-  caseNotes(ctx: RepoContext, tenantId: string, caseId: string): Promise<NativeNote[]>;
+  caseNotes(
+    ctx: RepoContext,
+    tenantId: string,
+    patientId: string,
+    caseId: string,
+  ): Promise<NativeNote[]>;
   /** A case's outcome measures (scores by date). */
-  caseOutcomes(ctx: RepoContext, tenantId: string, caseId: string): Promise<NativeOutcomeSeries[]>;
+  caseOutcomes(
+    ctx: RepoContext,
+    tenantId: string,
+    patientId: string,
+    caseId: string,
+  ): Promise<NativeOutcomeSeries[]>;
   /** Which of these patients / cases have clinical notes (an undo keeps them). */
-  patientsWithRecords?(ctx: RepoContext, tenantId: string, patientIds: readonly string[]): Promise<Set<string>>;
-  casesWithRecords?(ctx: RepoContext, tenantId: string, caseIds: readonly string[]): Promise<Set<string>>;
+  patientsWithRecords?(
+    ctx: RepoContext,
+    tenantId: string,
+    patientIds: readonly string[],
+  ): Promise<Set<string>>;
+  casesWithRecords?(
+    ctx: RepoContext,
+    tenantId: string,
+    caseIds: readonly string[],
+  ): Promise<Set<string>>;
 }
 
-export type ResolvedInvoice = Omit<InvoicePlan, "payer"> & { payerReferrerId: string | null };
+export type ResolvedInvoice = Omit<InvoicePlan, "payer"> & {
+  payerReferrerId: string | null;
+};
 
 export interface DiaryPort {
-  caseAppointments(ctx: RepoContext, tenantId: string, caseId: string): Promise<NativeAppointment[]>;
+  caseAppointments(
+    ctx: RepoContext,
+    tenantId: string,
+    patientId: string,
+    caseId: string,
+  ): Promise<NativeAppointment[]>;
   /** A patient's appointments (letters about a patient without a case). */
-  patientAppointments?(ctx: RepoContext, tenantId: string, patientId: string): Promise<NativeAppointment[]>;
+  patientAppointments?(
+    ctx: RepoContext,
+    tenantId: string,
+    patientId: string,
+  ): Promise<NativeAppointment[]>;
   /** Import references already in the diary. */
-  existingAppointmentRefs?(ctx: RepoContext, tenantId: string, refs: readonly string[]): Promise<Set<string>>;
-  importAppointments?(ctx: RepoContext, tenantId: string, plans: readonly AppointmentPlan[], actor: PmsActor, detail: { batchId: string }): Promise<ImportedRecord[]>;
-  undoImportedAppointments?(ctx: RepoContext, tenantId: string, items: readonly { id: string; rev: number }[], actor: PmsActor): Promise<UndoResult>;
-  patientsWithAppointments?(ctx: RepoContext, tenantId: string, patientIds: readonly string[]): Promise<Set<string>>;
-  casesWithAppointments?(ctx: RepoContext, tenantId: string, caseIds: readonly string[]): Promise<Set<string>>;
+  existingAppointmentRefs?(
+    ctx: RepoContext,
+    tenantId: string,
+    refs: readonly string[],
+  ): Promise<Set<string>>;
+  importAppointments?(
+    ctx: RepoContext,
+    tenantId: string,
+    plans: readonly AppointmentPlan[],
+    actor: PmsActor,
+    detail: { batchId: string },
+  ): Promise<ImportedRecord[]>;
+  undoImportedAppointments?(
+    ctx: RepoContext,
+    tenantId: string,
+    items: readonly { id: string; rev: number }[],
+    actor: PmsActor,
+  ): Promise<UndoResult>;
+  patientsWithAppointments?(
+    ctx: RepoContext,
+    tenantId: string,
+    patientIds: readonly string[],
+  ): Promise<Set<string>>;
+  casesWithAppointments?(
+    ctx: RepoContext,
+    tenantId: string,
+    caseIds: readonly string[],
+  ): Promise<Set<string>>;
 }
 
 export interface BillingPort {
-  caseInvoices(ctx: RepoContext, tenantId: string, caseId: string): Promise<NativeInvoice[]>;
-  patientInvoices?(ctx: RepoContext, tenantId: string, patientId: string): Promise<NativeInvoice[]>;
-  existingInvoiceRefs?(ctx: RepoContext, tenantId: string, refs: readonly string[]): Promise<Set<string>>;
-  importInvoices?(ctx: RepoContext, tenantId: string, invoices: readonly ResolvedInvoice[], actor: PmsActor, detail: { batchId: string }): Promise<ImportedRecord[]>;
-  undoImportedInvoices?(ctx: RepoContext, tenantId: string, items: readonly { id: string; rev: number }[], actor: PmsActor): Promise<UndoResult>;
-  patientsWithInvoices?(ctx: RepoContext, tenantId: string, patientIds: readonly string[]): Promise<Set<string>>;
-  casesWithInvoices?(ctx: RepoContext, tenantId: string, caseIds: readonly string[]): Promise<Set<string>>;
+  caseInvoices(
+    ctx: RepoContext,
+    tenantId: string,
+    caseId: string,
+  ): Promise<NativeInvoice[]>;
+  patientInvoices?(
+    ctx: RepoContext,
+    tenantId: string,
+    patientId: string,
+  ): Promise<NativeInvoice[]>;
+  existingInvoiceRefs?(
+    ctx: RepoContext,
+    tenantId: string,
+    refs: readonly string[],
+  ): Promise<Set<string>>;
+  importInvoices?(
+    ctx: RepoContext,
+    tenantId: string,
+    invoices: readonly ResolvedInvoice[],
+    actor: PmsActor,
+    detail: { batchId: string },
+  ): Promise<ImportedRecord[]>;
+  undoImportedInvoices?(
+    ctx: RepoContext,
+    tenantId: string,
+    items: readonly { id: string; rev: number }[],
+    actor: PmsActor,
+  ): Promise<UndoResult>;
+  patientsWithInvoices?(
+    ctx: RepoContext,
+    tenantId: string,
+    patientIds: readonly string[],
+  ): Promise<Set<string>>;
+  casesWithInvoices?(
+    ctx: RepoContext,
+    tenantId: string,
+    caseIds: readonly string[],
+  ): Promise<Set<string>>;
 }
 
 export interface IntegrationPorts {
@@ -123,15 +213,26 @@ export interface IntegrationPorts {
 }
 
 /** Whether the import of appointments / invoices can run (its module provides the import). */
-export function importTargetAvailable(kind: "patients" | "cases" | "appointments" | "invoices", ports: IntegrationPorts): boolean {
-  if (kind === "appointments") return Boolean(ports.diary?.importAppointments && ports.diary.undoImportedAppointments);
-  if (kind === "invoices") return Boolean(ports.billing?.importInvoices && ports.billing.undoImportedInvoices);
+export function importTargetAvailable(
+  kind: "patients" | "cases" | "appointments" | "invoices",
+  ports: IntegrationPorts,
+): boolean {
+  if (kind === "appointments")
+    return Boolean(
+      ports.diary?.importAppointments && ports.diary.undoImportedAppointments,
+    );
+  if (kind === "invoices")
+    return Boolean(
+      ports.billing?.importInvoices && ports.billing.undoImportedInvoices,
+    );
   return true;
 }
 
 /** Plain words for why an import kind cannot run yet. */
-export function importTargetMissingMessage(kind: "appointments" | "invoices"): string {
+export function importTargetMissingMessage(
+  kind: "appointments" | "invoices",
+): string {
   return kind === "appointments"
-    ? "Appointments are imported into the diary, which is not switched on in this version yet. You can check the file now and import it later."
-    : "Invoices are imported into billing, which is not switched on in this version yet. You can check the file now and import it later.";
+    ? "Appointments cannot be imported into the diary here yet. You can check the file now and import it later."
+    : "Invoices and balances cannot be imported yet: check the file now, and enter opening balances in Billing for the time being.";
 }

@@ -90,6 +90,15 @@ export interface PmsFormRequestsTable {
   consent_recorded: WithDefault<number>;
   consent_on: IsoDate | null;
   consent_note_enc: string | null;
+  /** The ClinForms form chosen (its id in the clinic's library) and its title (plain, for lists). */
+  form_ref: string | null;
+  form_title: string | null;
+  /** 1 when the member may see clinical notes: signed notes and outcome scores were offered to ClinForms. */
+  clinical_prefill: WithDefault<number>;
+  /** "opened" | "filed" */
+  status: WithDefault<string>;
+  filed_form_id: string | null;
+  filed_at: IsoTimestamp | null;
   requested_by: string | null;
   created_at: IsoTimestamp;
 }
@@ -112,6 +121,8 @@ export interface PmsFiledFormsTable {
   signer_name: string | null;
   signer_registration: string | null;
   signed_at: IsoTimestamp | null;
+  /** The "Complete referrer form" request the form was opened from (when known). */
+  form_request_id: string | null;
   filed_by: string | null;
   filed_at: IsoTimestamp;
   created_at: IsoTimestamp;

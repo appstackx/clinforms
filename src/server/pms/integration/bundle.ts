@@ -9,17 +9,39 @@
  */
 import "server-only";
 import { clinicDetailsFromProfile } from "../../../modules/medreport/core/clinic";
-import type { Appointment, Clinician, EpisodeBundle, InstructingPartyType, Note, OutcomeMeasureSeries } from "../../../modules/medreport/core/types";
+import type {
+  Appointment,
+  Clinician,
+  EpisodeBundle,
+  InstructingPartyType,
+  Note,
+  OutcomeMeasureSeries,
+} from "../../../modules/medreport/core/types";
 import { CLINIC_SYSTEM_NAME } from "../../../lib/brand";
-import type { Authorisation, Case, Patient, Practitioner, Referrer, ReferrerKind } from "../../../modules/pms/core/types";
+import type {
+  Authorisation,
+  Case,
+  Patient,
+  Practitioner,
+  Referrer,
+  ReferrerKind,
+} from "../../../modules/pms/core/types";
 import { loadClinicProfile } from "../../auth/medreport-actor";
 import type { RepoContext } from "../../repos/context";
 import { getCase, listAuthorisations } from "../../repos/pms/cases";
 import { getPractitioner, listPractitioners } from "../../repos/pms/directory";
-import { latestFormRequest, type FormRequest } from "../../repos/pms/integration/form-requests";
+import {
+  latestFormRequest,
+  type FormRequest,
+} from "../../repos/pms/integration/form-requests";
 import { getPatient } from "../../repos/pms/patients";
 import { getReferrer } from "../../repos/pms/referrers";
-import type { IntegrationPorts, NativeAppointment, NativeNote, NativeOutcomeSeries } from "./ports";
+import type {
+  IntegrationPorts,
+  NativeAppointment,
+  NativeNote,
+  NativeOutcomeSeries,
+} from "./ports";
 
 export const NATIVE_CONNECTOR_ID = "native" as const;
 
@@ -39,7 +61,15 @@ export interface NativeBundleInput {
   appointments: readonly NativeAppointment[];
   outcomes: readonly NativeOutcomeSeries[];
   request: FormRequest | null;
-  clinic: { displayName: string; addressLines: string[]; postcode?: string; phone?: string; email?: string } | null;
+  /** The member may see the case's referral reason (patients.referral); otherwise it is left out. */
+  referralReason?: boolean;
+  clinic: {
+    displayName: string;
+    addressLines: string[];
+    postcode?: string;
+    phone?: string;
+    email?: string;
+  } | null;
 }
 
 export class NativeBundleError extends Error {
@@ -59,7 +89,10 @@ const PARTY_TYPE: Partial<Record<ReferrerKind, InstructingPartyType>> = {
   case_manager: "case_manager",
 };
 
-const UNITS: Record<NativeOutcomeSeries["instrument"], { unit: string; higherIsWorse: boolean }> = {
+const UNITS: Record<
+  NativeOutcomeSeries["instrument"],
+  { unit: string; higherIsWorse: boolean }
+> = {
   NDI: { unit: "%", higherIsWorse: true },
   ODI: { unit: "%", higherIsWorse: true },
   NPRS: { unit: "/10", higherIsWorse: true },
@@ -75,21 +108,40 @@ const STATUS: Record<NativeAppointment["status"], Appointment["status"]> = {
   booked: "BOOKED",
 };
 
-function oneLine(lines: readonly string[] | null, postcode: string | null): string {
-  return [...(lines ?? []), postcode ?? ""].map((l) => l.trim()).filter(Boolean).join(", ");
+function oneLine(
+  lines: readonly string[] | null,
+  postcode: string | null,
+): string {
+  return [...(lines ?? []), postcode ?? ""]
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .join(", ");
 }
 
 function clinicianOf(p: Practitioner): Clinician {
-  return { name: p.displayName, hcpc: p.registrationNumber ?? NO_REGISTRATION, role: p.profession === "physiotherapist" ? "Physiotherapist" : p.profession.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase()) };
+  return {
+    name: p.displayName,
+    hcpc: p.registrationNumber ?? NO_REGISTRATION,
+    role:
+      p.profession === "physiotherapist"
+        ? "Physiotherapist"
+        : p.profession.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase()),
+  };
 }
 
 /** The incident of a road traffic or workplace case (only when the case records the date of injury). */
-function incidentOf(c: Case, payer: Referrer | null): EpisodeBundle["incident"] {
+function incidentOf(
+  c: Case,
+  payer: Referrer | null,
+): EpisodeBundle["incident"] {
   if (!c.injuryOn) return undefined;
   const title = c.title.toLowerCase();
-  const type = /road traffic|\brta\b|whiplash|car accident|collision/.test(title)
+  const type = /road traffic|\brta\b|whiplash|car accident|collision/.test(
+    title,
+  )
     ? "road_traffic_accident"
-    : /\bwork|workplace|lifting|warehouse/.test(title) || payer?.kind === "employer"
+    : /\bwork|workplace|lifting|warehouse/.test(title) ||
+        payer?.kind === "employer"
       ? "workplace"
       : /\bslip|trip|\bfall\b|fell/.test(title)
         ? "slip_trip_fall"
@@ -101,16 +153,30 @@ function incidentOf(c: Case, payer: Referrer | null): EpisodeBundle["incident"] 
 
 export function buildNativeBundle(input: NativeBundleInput): EpisodeBundle {
   const { patient: p, case: c, payer, referrer } = input;
-  if (!p.dateOfBirth) throw new NativeBundleError("DATE_OF_BIRTH_MISSING", "The patient's date of birth is not recorded. Add it to the patient's record first.");
+  if (!p.dateOfBirth)
+    throw new NativeBundleError(
+      "DATE_OF_BIRTH_MISSING",
+      "The patient's date of birth is not recorded. Add it to the patient's record first.",
+    );
   const byId = new Map(input.practitioners.map((x) => [x.id, x]));
-  const casePractitioner = c.practitionerId ? byId.get(c.practitionerId) : undefined;
+  const casePractitioner = c.practitionerId
+    ? byId.get(c.practitionerId)
+    : undefined;
   const authorOf = (practitionerId: string | null): Clinician => {
     const pr = (practitionerId && byId.get(practitionerId)) || casePractitioner;
-    return pr ? clinicianOf(pr) : { name: "Treating clinician", hcpc: NO_REGISTRATION };
+    return pr
+      ? clinicianOf(pr)
+      : { name: "Treating clinician", hcpc: NO_REGISTRATION };
   };
 
   // Notes: N-001… in date and time order (the ids ClinForms cites).
-  const notes = input.notes.slice().sort((a, b) => (a.date + (a.time ?? "")).localeCompare(b.date + (b.time ?? "")) || a.id.localeCompare(b.id));
+  const notes = input.notes
+    .slice()
+    .sort(
+      (a, b) =>
+        (a.date + (a.time ?? "")).localeCompare(b.date + (b.time ?? "")) ||
+        a.id.localeCompare(b.id),
+    );
   const noteIds = new Map<string, string>();
   const bundleNotes: Note[] = notes.map((n, i) => {
     const id = `N-${String(i + 1).padStart(3, "0")}`;
@@ -127,14 +193,20 @@ export function buildNativeBundle(input: NativeBundleInput): EpisodeBundle {
       assessment: n.assessment,
       plan: n.plan,
       ...(n.freeText ? { freeText: n.freeText } : {}),
-      ...(n.pastMedicalHistory ? { pastMedicalHistory: n.pastMedicalHistory } : {}),
+      ...(n.pastMedicalHistory
+        ? { pastMedicalHistory: n.pastMedicalHistory }
+        : {}),
       ...(n.socialHistory ? { socialHistory: n.socialHistory } : {}),
     };
   });
 
   const appointments: Appointment[] = input.appointments
     .slice()
-    .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time) || a.id.localeCompare(b.id))
+    .sort(
+      (a, b) =>
+        (a.date + a.time).localeCompare(b.date + b.time) ||
+        a.id.localeCompare(b.id),
+    )
     .map((a) => ({
       id: a.id,
       externalId: a.id,
@@ -142,9 +214,21 @@ export function buildNativeBundle(input: NativeBundleInput): EpisodeBundle {
       time: a.time,
       status: STATUS[a.status],
       ...(a.reason ? { reason: a.reason } : {}),
-      ...(a.noteId && noteIds.has(a.noteId) ? { noteId: noteIds.get(a.noteId) } : {}),
-      ...(a.practitionerId || casePractitioner ? { clinician: authorOf(a.practitionerId) } : {}),
-      ...(typeof a.chargePence === "number" ? { charge: { amount: a.chargePence / 100, currency: "GBP" as const, ...(typeof a.paid === "boolean" ? { paid: a.paid } : {}) } } : {}),
+      ...(a.noteId && noteIds.has(a.noteId)
+        ? { noteId: noteIds.get(a.noteId) }
+        : {}),
+      ...(a.practitionerId || casePractitioner
+        ? { clinician: authorOf(a.practitionerId) }
+        : {}),
+      ...(typeof a.chargePence === "number"
+        ? {
+            charge: {
+              amount: a.chargePence / 100,
+              currency: "GBP" as const,
+              ...(typeof a.paid === "boolean" ? { paid: a.paid } : {}),
+            },
+          }
+        : {}),
     }));
 
   const outcomeMeasures: OutcomeMeasureSeries[] = input.outcomes.map((o) => ({
@@ -154,16 +238,37 @@ export function buildNativeBundle(input: NativeBundleInput): EpisodeBundle {
     points: o.points
       .slice()
       .sort((a, b) => a.date.localeCompare(b.date))
-      .map((pt) => ({ date: pt.date, value: pt.value, ...(pt.noteId && noteIds.has(pt.noteId) ? { noteId: noteIds.get(pt.noteId) } : {}) })),
+      .map((pt) => ({
+        date: pt.date,
+        value: pt.value,
+        ...(pt.noteId && noteIds.has(pt.noteId)
+          ? { noteId: noteIds.get(pt.noteId) }
+          : {}),
+      })),
   }));
 
   // Clinicians: the case's practitioner first, then everyone who wrote a note or saw the patient.
-  const clinicianIds = [c.practitionerId, ...notes.map((n) => n.practitionerId), ...input.appointments.map((a) => a.practitionerId)].filter((x): x is string => Boolean(x) && byId.has(x as string));
-  const clinicians = Array.from(new Set(clinicianIds)).map((id) => clinicianOf(byId.get(id) as Practitioner));
+  const clinicianIds = [
+    c.practitionerId,
+    ...notes.map((n) => n.practitionerId),
+    ...input.appointments.map((a) => a.practitionerId),
+  ].filter((x): x is string => Boolean(x) && byId.has(x as string));
+  const clinicians = Array.from(new Set(clinicianIds)).map((id) =>
+    clinicianOf(byId.get(id) as Practitioner),
+  );
 
-  const party = payer ?? (referrer && PARTY_TYPE[referrer.kind] ? referrer : null);
-  const auth = input.authorisations.filter((a) => a.status === "active").sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
-  const referredBy = referrer && (referrer.kind === "gp" || referrer.kind === "consultant" || referrer.kind === "other") ? referrer.name : undefined;
+  const party =
+    payer ?? (referrer && PARTY_TYPE[referrer.kind] ? referrer : null);
+  const auth = input.authorisations
+    .filter((a) => a.status === "active")
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+  const referredBy =
+    referrer &&
+    (referrer.kind === "gp" ||
+      referrer.kind === "consultant" ||
+      referrer.kind === "other")
+      ? referrer.name
+      : undefined;
 
   return {
     tenantId: input.tenantId,
@@ -184,12 +289,26 @@ export function buildNativeBundle(input: NativeBundleInput): EpisodeBundle {
       lastName: p.lastName,
       fullName: `${p.firstName} ${p.lastName}`,
       dob: p.dateOfBirth,
-      sex: p.sex === "female" || p.sex === "male" || p.sex === "other" ? p.sex : "not_recorded",
+      sex:
+        p.sex === "female" || p.sex === "male" || p.sex === "other"
+          ? p.sex
+          : "not_recorded",
       addressSummary: oneLine(p.address, p.postcode),
       ...(p.occupation ? { occupation: p.occupation } : {}),
       ...(p.employer ? { employer: p.employer } : {}),
-      ...(p.phoneMobile || p.phoneHome || p.email ? { contact: { ...(p.phoneMobile || p.phoneHome ? { phone: (p.phoneMobile ?? p.phoneHome) as string } : {}), ...(p.email ? { email: p.email } : {}) } } : {}),
-      ...(p.gpPractice || p.gpName ? { gpPractice: [p.gpName, p.gpPractice].filter(Boolean).join(", ") } : {}),
+      ...(p.phoneMobile || p.phoneHome || p.email
+        ? {
+            contact: {
+              ...(p.phoneMobile || p.phoneHome
+                ? { phone: (p.phoneMobile ?? p.phoneHome) as string }
+                : {}),
+              ...(p.email ? { email: p.email } : {}),
+            },
+          }
+        : {}),
+      ...(p.gpPractice || p.gpName
+        ? { gpPractice: [p.gpName, p.gpPractice].filter(Boolean).join(", ") }
+        : {}),
     },
     referral: {
       type: party ? (PARTY_TYPE[party.kind] ?? "other") : "other",
@@ -198,7 +317,9 @@ export function buildNativeBundle(input: NativeBundleInput): EpisodeBundle {
       contactName: party?.contactName ?? "",
       address: party ? oneLine(party.address, party.postcode) : "",
       referralDate: c.referralReceivedOn ?? c.openedOn,
-      ...(c.referralReason ? { reason: c.referralReason } : {}),
+      ...(c.referralReason && input.referralReason !== false
+        ? { reason: c.referralReason }
+        : {}),
       ...(payer?.kind === "insurer" ? { insurerName: payer.name } : {}),
       ...(c.membershipNumber ? { membershipNumber: c.membershipNumber } : {}),
       ...(auth ? { authorisationNumber: auth.code } : {}),
@@ -209,7 +330,12 @@ export function buildNativeBundle(input: NativeBundleInput): EpisodeBundle {
     notes: bundleNotes,
     appointments,
     outcomeMeasures,
-    consent: input.request?.consentRecorded ? { disclosureConsentRecorded: true, ...(input.request.consentOn ? { date: input.request.consentOn } : {}) } : { disclosureConsentRecorded: false },
+    consent: input.request?.consentRecorded
+      ? {
+          disclosureConsentRecorded: true,
+          ...(input.request.consentOn ? { date: input.request.consentOn } : {}),
+        }
+      : { disclosureConsentRecorded: false },
     episodeStatus: c.status === "open" ? "open" : "discharged",
     ...(input.clinic ? { clinic: clinicDetailsFromProfile(input.clinic) } : {}),
   };
@@ -217,26 +343,69 @@ export function buildNativeBundle(input: NativeBundleInput): EpisodeBundle {
 
 export interface LoadBundleOptions {
   ports: IntegrationPorts;
+  /**
+   * The member may see clinical notes (clinical.view): only then are signed notes and outcome scores read. Without it
+   * the bundle carries the shared record only (registration, referral, payer, authorisation, appointments) and no
+   * clinical free text – reception never gets a clinical prefill.
+   */
+  clinical: boolean;
+  /** The member may see the referral reason (patients.referral). */
+  referral: boolean;
   now?: Date;
   /** The clinic's details for documents (default: its clinic profile). */
   clinic?: (tenantId: string) => Promise<NativeBundleInput["clinic"]>;
 }
 
 /** Reads one case of one patient (both of this clinic) and builds its bundle. Throws NativeBundleError. */
-export async function loadNativeBundle(ctx: RepoContext, tenantId: string, patientId: string, caseId: string, options: LoadBundleOptions): Promise<EpisodeBundle> {
-  const [patient, kase] = await Promise.all([getPatient(ctx, tenantId, patientId), getCase(ctx, tenantId, caseId)]);
-  if (!patient || !kase || kase.patientId !== patient.id) throw new NativeBundleError("NOT_FOUND", "There is no such case for this patient in the clinic system.");
+export async function loadNativeBundle(
+  ctx: RepoContext,
+  tenantId: string,
+  patientId: string,
+  caseId: string,
+  options: LoadBundleOptions,
+): Promise<EpisodeBundle> {
+  const [patient, kase] = await Promise.all([
+    getPatient(ctx, tenantId, patientId),
+    getCase(ctx, tenantId, caseId),
+  ]);
+  if (!patient || !kase || kase.patientId !== patient.id)
+    throw new NativeBundleError(
+      "NOT_FOUND",
+      "There is no such case for this patient in the clinic system.",
+    );
   const { records, diary } = options.ports;
-  const [payer, referrer, authorisations, practitioners, notes, appointments, outcomes, request, clinic] = await Promise.all([
-    kase.payerReferrerId ? getReferrer(ctx, tenantId, kase.payerReferrerId) : Promise.resolve(null),
-    kase.referrerId ? getReferrer(ctx, tenantId, kase.referrerId) : Promise.resolve(null),
+  const [
+    payer,
+    referrer,
+    authorisations,
+    practitioners,
+    notes,
+    appointments,
+    outcomes,
+    request,
+    clinic,
+  ] = await Promise.all([
+    kase.payerReferrerId
+      ? getReferrer(ctx, tenantId, kase.payerReferrerId)
+      : Promise.resolve(null),
+    kase.referrerId
+      ? getReferrer(ctx, tenantId, kase.referrerId)
+      : Promise.resolve(null),
     listAuthorisations(ctx, tenantId, { caseId }),
     listPractitioners(ctx, tenantId, { includeInactive: true }),
-    records ? records.caseNotes(ctx, tenantId, caseId) : Promise.resolve([]),
-    diary ? diary.caseAppointments(ctx, tenantId, caseId) : Promise.resolve([]),
-    records ? records.caseOutcomes(ctx, tenantId, caseId) : Promise.resolve([]),
+    records && options.clinical
+      ? records.caseNotes(ctx, tenantId, patient.id, caseId)
+      : Promise.resolve([]),
+    diary
+      ? diary.caseAppointments(ctx, tenantId, patient.id, caseId)
+      : Promise.resolve([]),
+    records && options.clinical
+      ? records.caseOutcomes(ctx, tenantId, patient.id, caseId)
+      : Promise.resolve([]),
     latestFormRequest(ctx, tenantId, caseId),
-    options.clinic ? options.clinic(tenantId) : loadClinicProfile(ctx.db, tenantId),
+    options.clinic
+      ? options.clinic(tenantId)
+      : loadClinicProfile(ctx.db, tenantId),
   ]);
   return buildNativeBundle({
     tenantId,
@@ -251,12 +420,17 @@ export async function loadNativeBundle(ctx: RepoContext, tenantId: string, patie
     appointments,
     outcomes,
     request,
+    referralReason: options.referral,
     clinic,
   });
 }
 
 /** One practitioner as a ClinForms clinician (the launch's treating clinician), when they have a registration number. */
-export async function practitionerClinician(ctx: RepoContext, tenantId: string, practitionerId: string | null): Promise<Clinician | null> {
+export async function practitionerClinician(
+  ctx: RepoContext,
+  tenantId: string,
+  practitionerId: string | null,
+): Promise<Clinician | null> {
   if (!practitionerId) return null;
   const p = await getPractitioner(ctx, tenantId, practitionerId);
   return p && p.registrationNumber ? clinicianOf(p) : null;

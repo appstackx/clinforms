@@ -6,6 +6,9 @@
 -- Staged import rows hold the uploaded values AES-GCM encrypted (data_enc) and are wiped once a row is
 -- imported, or the batch is cancelled or closed. Issues are codes and field names only, never values.
 -- Filed forms are clinical records: never deleted by the app (only offboarding a whole clinic removes them).
+-- A form request names the ClinForms form chosen (form_ref, form_title – the clinic's own library), whether the
+-- clinical record was offered to ClinForms (clinical_prefill: only for members who may see clinical notes) and,
+-- once the approved form came back, the filed form (status filed).
 -- Idempotent. No BEGIN/COMMIT. Keep semicolons out of comments.
 
 CREATE TABLE IF NOT EXISTS pms_import_batches (
@@ -81,6 +84,12 @@ CREATE TABLE IF NOT EXISTS pms_form_requests (
   consent_recorded INTEGER NOT NULL DEFAULT 0 CHECK (consent_recorded IN (0, 1)),
   consent_on TEXT CHECK (consent_on IS NULL OR consent_on GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
   consent_note_enc TEXT,
+  form_ref TEXT CHECK (form_ref IS NULL OR length(form_ref) BETWEEN 1 AND 128),
+  form_title TEXT CHECK (form_title IS NULL OR length(form_title) BETWEEN 1 AND 300),
+  clinical_prefill INTEGER NOT NULL DEFAULT 0 CHECK (clinical_prefill IN (0, 1)),
+  status TEXT NOT NULL DEFAULT 'opened' CHECK (status IN ('opened', 'filed')),
+  filed_form_id TEXT,
+  filed_at TEXT,
   requested_by TEXT,
   created_at TEXT NOT NULL,
   PRIMARY KEY (tenant_id, id),
@@ -106,6 +115,7 @@ CREATE TABLE IF NOT EXISTS pms_filed_forms (
   signer_name TEXT,
   signer_registration TEXT,
   signed_at TEXT,
+  form_request_id TEXT,
   filed_by TEXT,
   filed_at TEXT NOT NULL,
   created_at TEXT NOT NULL,

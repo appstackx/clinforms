@@ -106,8 +106,11 @@ export interface HostHooks {
   onDocumentFiled?(doc: FiledDocument): Promise<void> | void;
   /** "Reset demo" was pressed; clear any host-side demo state too. */
   onResetDemo?(): Promise<void> | void;
-  /** URL of the clinic-system record to link back to, if the host knows one. */
-  clinicRecordUrl?(ref: { connectorId: ConnectorId; patientId: string }): string | null;
+  /**
+   * URL of the clinic-system record to link back to, if the host knows one. `episodeId` (10/2026, additive): the
+   * case the report was opened from (the clinic system's own record links back to that case).
+   */
+  clinicRecordUrl?(ref: { connectorId: ConnectorId; patientId: string; episodeId?: string }): string | null;
 
   /* Wave 2 (additive, optional): the same screens serve the public demo and a clinic's own Studio. ---- */
 

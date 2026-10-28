@@ -11,7 +11,9 @@
  *   from the clinic's plan on the server too, never from the browser.
  * - track: the consent-gated, allow-listed analytics (src/components/analytics), tagged area "app".
  * - onSignOut: the shared sign-out, then /login loaded in full (fix wave 2: nothing in memory survives).
- * - No onDocumentFiled / onResetDemo / clinicRecordUrl: there is no simulated record or demo state here.
+ * - No onDocumentFiled / onResetDemo: there is no simulated record or demo state here.
+ * - clinicRecordUrl (10/2026): only for a form opened from the clinic system's own record (connector "native"):
+ *   the case it was opened from. Every other report has no clinic record to link to (null, as before).
  */
 import { useMemo, type ReactNode } from "react";
 import { track } from "@/components/analytics";
@@ -30,6 +32,8 @@ export function tenantHooks(clinic: StudioClinic, member: StudioMember, options:
     clinic,
     member,
     accountHref: "/app",
+    clinicRecordUrl: ({ connectorId, patientId, episodeId }) =>
+      connectorId === "native" && episodeId ? `/app/clinic/patients/${encodeURIComponent(patientId)}/cases/${encodeURIComponent(episodeId)}` : null,
     supportEmail: COMPANY.contactEmail,
     track: (event, props) => track(event, { ...props, area: "app" }),
     ...(options.onSignOut ? { onSignOut: options.onSignOut } : {}),

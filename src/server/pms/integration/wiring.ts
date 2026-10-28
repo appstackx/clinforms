@@ -9,11 +9,13 @@
  * Tests swap the ports with setIntegrationPortsForTests().
  */
 import "server-only";
+import { diaryAdapter, recordsAdapter } from "./adapters";
 import type { IntegrationPorts } from "./ports";
 
 const WIRED: IntegrationPorts = {
-  records: null,
-  diary: null,
+  records: recordsAdapter,
+  diary: diaryAdapter,
+  // Invoices: not wired – opening balances are entered in Billing (an invoices file can be checked, not run).
   billing: null,
 };
 
@@ -24,6 +26,8 @@ export function integrationPorts(): IntegrationPorts {
 }
 
 /** TESTS ONLY: use these ports until reset (null). */
-export function setIntegrationPortsForTests(ports: IntegrationPorts | null): void {
+export function setIntegrationPortsForTests(
+  ports: IntegrationPorts | null,
+): void {
   override = ports;
 }
