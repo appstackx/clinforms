@@ -23,7 +23,7 @@ export const BILLING_AUDIT_LABELS: Readonly<Record<string, string>> = {
   "pms.invoice.void": "Invoice voided",
   "pms.invoice.write_off": "Amount written off an invoice",
   "pms.invoice.transfer": "Unpaid part of an invoice moved to the patient",
-  "pms.remittance.record": "Insurer payment allocated",
+  "pms.invoice.csv_export": "Invoice list exported (CSV)",
   "pms.saved_card.add": "Card saved (test mode)",
   "pms.saved_card.remove": "Saved card removed",
 };

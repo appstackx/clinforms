@@ -7,7 +7,10 @@
 import "server-only";
 import { AGE_BUCKETS, agedDebt, ageBucket, type AgeBucket } from "../../../modules/pms/billing/aging";
 import { CREDIT_NOTE_KIND_LABELS, PAYMENT_METHOD_LABELS } from "../../../modules/pms/billing/copy";
+import { penceDecimal, toCsv } from "../../../modules/pms/billing/csv";
 import { buildStatement } from "../../../modules/pms/billing/statements";
+import { INVOICE_STATE_LABELS } from "../../../modules/pms/billing/status";
+import { pmsAudit } from "../../repos/pms/context";
 import { invoiceState, daysBetweenIso, addDaysIso } from "../../../modules/pms/billing/status";
 import type { Invoice, InvoiceSummary, PaymentMethod } from "../../../modules/pms/billing/types";
 import type {
@@ -731,3 +734,47 @@ export async function statementFor(actor: BillingActor, who: StatementFor, from:
 
 /** For the patient list: whether a patient is visible (re-export for pages). */
 export { patientVisibleInScope };
+
+/** The statement form's accounts: payer accounts, then patients with invoices addressed to them (recent first). */
+export async function statementAccountsFor(actor: BillingActor): Promise<Result<{ value: string; label: string }[]>> {
+  if (!actor.can("billing.view")) return forbidden();
+  return attempt("billing.statement_accounts", async () => {
+    const ctx = actor.repo();
+    const t = actor.tenantId;
+    const [payers, recent] = await Promise.all([
+      payerAccountsFor(actor),
+      listInvoicesPage(ctx, t, { billTo: "patient", siteIds: actor.siteIds ?? null, limit: 200 }),
+    ]);
+    const patientIds = Array.from(new Set(recent.rows.filter((r) => r.status === "issued").map((r) => r.patientId)));
+    const names = await patientNames(ctx, t, patientIds);
+    const patients = patientIds
+      .map((id) => ({ value: `patient:${id}`, label: `${names.get(id) ? nameOf(names.get(id)!) : "Patient"} (patient)` }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+    return ok([...patients, ...(payers.ok ? payers.value.map((p) => ({ value: `account:${p.id}`, label: p.name })) : [])]);
+  });
+}
+
+/**
+ * The invoice list as CSV (reports.export, as the patient list's export): the list's filters, at most 5,000 rows,
+ * formula-looking cells defused (csv.ts), audited with the count and the filters' names – never patient data.
+ */
+export async function invoicesCsvFor(actor: BillingActor, filters: { state?: InvoiceListState; q?: string }): Promise<Result<{ csv: string; count: number }>> {
+  if (!actor.can("billing.view") || !actor.can("reports.export")) return forbidden();
+  return attempt("billing.invoices_csv", async () => {
+    const ctx = actor.repo();
+    const t = actor.tenantId;
+    const today = todayOf(ctx);
+    const rows: InvoiceRowView[] = [];
+    for (let offset = 0; offset < 5000; offset += 200) {
+      const page = await listInvoicesPage(ctx, t, { state: filters.state ?? "all", q: filters.q, siteIds: actor.siteIds ?? null, limit: 200, offset });
+      rows.push(...(await rowsFor(ctx, t, page.rows, today)));
+      if (page.rows.length < 200) break;
+    }
+    const csv = toCsv(
+      ["Invoice", "Bill to", "Patient", "Issued", "Due", "Status", "Total", "Balance"],
+      rows.map((r) => [r.number ?? "Draft", r.billToName, r.patientName, r.issuedOn ? formatUkDate(r.issuedOn) : "", r.dueOn ? formatUkDate(r.dueOn) : "", INVOICE_STATE_LABELS[r.state], penceDecimal(r.totalPence), penceDecimal(r.balancePence)]),
+    );
+    await pmsAudit(ctx, t, actor.actor, { action: "pms.invoice.csv_export", targetType: "pms_invoice", targetId: "list", detail: { count: rows.length, filters: Object.keys(filters).filter((k) => Boolean((filters as Record<string, unknown>)[k])) } });
+    return ok({ csv, count: rows.length });
+  });
+}
