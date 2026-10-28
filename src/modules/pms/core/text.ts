@@ -2,6 +2,7 @@
  * Small text rules shared by the forms, the repositories and search: UK postcodes and phone numbers, search
  * keys, dates. Pure (browser-safe).
  */
+import { pmsNow } from "./clock";
 
 /** UK postcode (outward + inward code), any case, one optional space: "MK3 9ZZ", "sw1a1aa", "RV1 2XX". */
 export const UK_POSTCODE_PATTERN = /^(GIR ?0AA|[A-PR-UWYZ][0-9][0-9A-HJKPSTUW]? ?[0-9][ABD-HJLNP-UW-Z]{2}|[A-PR-UWYZ][A-HK-Y][0-9][0-9ABEHMNPRVWXY]? ?[0-9][ABD-HJLNP-UW-Z]{2})$/i;
@@ -62,7 +63,7 @@ export function isIsoDate(value: unknown): value is string {
 }
 
 /** Today's date in the UK ("YYYY-MM-DD", Europe/London). */
-export function ukToday(now: Date = new Date()): string {
+export function ukToday(now: Date = pmsNow()): string {
   const parts = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(now);
   const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
   return `${get("year")}-${get("month")}-${get("day")}`;

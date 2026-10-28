@@ -32,6 +32,9 @@ import {
   type DbContext,
 } from "../context";
 import { auditWhenWritten, loadPractitionerRef, loadRoomRef, loadSiteRef, newWriteId, runChange } from "./shared";
+import { pmsNow } from "../../../../modules/pms/core/clock";
+import { clipToOpening } from "../../../../modules/pms/reporting/opening";
+import { openingInfoFor } from "../reporting/opening-hours";
 
 const T = "pms_availability";
 const MESSAGES = { foreignKey: "That practitioner, site or room does not exist in this clinic.", unique: "A rota entry with this import reference already exists." };
@@ -234,7 +237,7 @@ export async function listAvailability(ctx: DbContext, tenantId: string, options
   }
   if (options.siteId) q = q.where("site_id", "=", options.siteId);
   if (!options.includeEnded) {
-    const today = options.today ?? ukToday(ctx.now ? ctx.now() : new Date());
+    const today = options.today ?? ukToday(ctx.now ? ctx.now() : pmsNow());
     q = q.where((eb) => eb.or([eb("valid_to", "is", null), eb("valid_to", ">=", today)]));
   }
   const rows = await q.orderBy("practitioner_id").orderBy("weekday").orderBy("start_minute").orderBy("id").limit(500).execute();
@@ -242,11 +245,20 @@ export async function listAvailability(ctx: DbContext, tenantId: string, options
 }
 
 /** The working windows on each date (rota entries in force), e.g. for a day or a week of the diary. */
+/**
+ * The rota's working windows on the dates, clipped to the sites' opening hours and closures (Set-up → Sites and
+ * hours – the ONE opening-hours source, src/modules/pms/reporting/opening.ts): free slots, the booking check, online
+ * booking, the diary's shading and utilisation all read this. A site without opening hours is not limited.
+ */
 export async function availabilityWindows(ctx: DbContext, tenantId: string, dates: readonly string[], options: { siteId?: string; practitionerIds?: readonly string[] } = {}): Promise<RotaWindow[]> {
   if (dates.length === 0) return [];
   const sorted = dates.slice().sort();
   const rules = await listAvailability(ctx, tenantId, { siteId: options.siteId, practitionerIds: options.practitionerIds, today: sorted[0] });
-  return sorted.flatMap((date) => windowsOn(date, rules));
+  const windows = sorted.flatMap((date) => windowsOn(date, rules));
+  if (windows.length === 0) return windows;
+  const siteIds = Array.from(new Set(windows.map((w) => w.siteId)));
+  const info = await openingInfoFor(ctx, tenantId, siteIds, sorted[0], sorted[sorted.length - 1]);
+  return clipToOpening(windows, info);
 }
 
 /** Rota entries in bulk (demo seed, import): batches of 40 + one audit row each. No overlap check (single writer). */

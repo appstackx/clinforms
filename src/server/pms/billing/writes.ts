@@ -44,6 +44,7 @@ import { checkInvoicePaymentLinks, createInvoicePaymentLink } from "./payment-li
 import { paymentLinkProvider, PaymentProviderError, type PaymentLinkProvider } from "./payments";
 import { billableVisitSource } from "./visit-source";
 import { priceVisits, referrerNames } from "./views";
+import { pmsNow, pmsNowMs } from "../../../modules/pms/core/clock";
 
 const CONFLICT = "Someone else changed this invoice. Reload the page and try again.";
 
@@ -77,7 +78,7 @@ export async function invoiceVisitsFor(actor: BillingActor, input: InvoiceVisits
     const t = actor.tenantId;
     const source = billableVisitSource();
     if (!source.connected) return fail("invalid", BILLING_COPY.noVisitSource);
-    const today = ukToday(ctx.now ? ctx.now() : new Date());
+    const today = ukToday(ctx.now ? ctx.now() : pmsNow());
     const visits = [];
     const ids = Array.from(new Set(parsed.data.appointmentIds));
     for (let i = 0; i < ids.length; i += 90) {
@@ -278,7 +279,7 @@ export async function refundFor(
         payerKind: inv.billTo === "payer" ? "account" : "patient",
         patientId: inv.billTo === "payer" ? null : inv.patientId,
         payerReferrerId: inv.billTo === "payer" ? inv.payerReferrerId : null,
-        receivedOn: ukToday(ctx.now ? ctx.now() : new Date()),
+        receivedOn: ukToday(ctx.now ? ctx.now() : pmsNow()),
         method: input.method,
         amountPence: amount,
         reference: providerRef ? "Refund to card" : null,
@@ -350,7 +351,7 @@ export async function takePaymentFor(actor: BillingActor, input: TakePaymentInpu
       if (a.amountPence > inv.balancePence) return fail("invalid", `${inv.number ?? "An invoice"} owes only ${formatPence(inv.balancePence)}.`);
     }
     const siteId = siteInScope(actor, d.siteId) ?? (allocations[0] ? (byId.get(allocations[0].invoiceId)?.siteId ?? null) : null);
-    const today = ukToday(ctx.now ? ctx.now() : new Date());
+    const today = ukToday(ctx.now ? ctx.now() : pmsNow());
 
     if (d.method === "payment_link") {
       if (allocations.length === 0) return fail("invalid", "Choose the invoice the link is for.");
@@ -372,7 +373,7 @@ export async function takePaymentFor(actor: BillingActor, input: TakePaymentInpu
       if (!card || card.patientId !== patient.id || card.status !== "active") return fail("invalid", "That saved card is not this patient's.");
       if (!provider.configured) return fail("invalid", provider.unavailableReason ?? "Saved cards are not set up.");
       try {
-        const charge = await provider.chargeSavedCard({ customerRef: card.customerRef, methodRef: card.methodRef, amountPence: d.amountPence, description: "Clinic payment", idempotencyKey: `${t}-${patient.id}-${d.amountPence}-${Date.now()}` });
+        const charge = await provider.chargeSavedCard({ customerRef: card.customerRef, methodRef: card.methodRef, amountPence: d.amountPence, description: "Clinic payment", idempotencyKey: `${t}-${patient.id}-${d.amountPence}-${pmsNowMs()}` });
         providerOpts = { provider: provider.id, providerRef: charge.chargeRef };
       } catch (err) {
         if (err instanceof PaymentProviderError) return fail("invalid", err.message);
@@ -436,7 +437,7 @@ export async function saveTestCardFor(actor: BillingActor, patientId: string, pr
     if (!provider.configured) return fail("invalid", provider.unavailableReason ?? "Saved cards are not set up.");
     let ref;
     try {
-      ref = await provider.saveTestCard({ tenantId: actor.tenantId, patientId: patient.id, idempotencyKey: `${actor.tenantId}-${patient.id}-card-${Date.now()}` });
+      ref = await provider.saveTestCard({ tenantId: actor.tenantId, patientId: patient.id, idempotencyKey: `${actor.tenantId}-${patient.id}-card-${pmsNowMs()}` });
     } catch (err) {
       if (err instanceof PaymentProviderError) return fail("invalid", err.message);
       throw err;
@@ -503,7 +504,7 @@ export async function remittanceFor(actor: BillingActor, input: RemittanceInput)
     const t = actor.tenantId;
     const payerName = (await referrerNames(ctx, t, [d.payerReferrerId])).get(d.payerReferrerId);
     if (!payerName) return notFound();
-    const today = ukToday(ctx.now ? ctx.now() : new Date());
+    const today = ukToday(ctx.now ? ctx.now() : pmsNow());
     if (d.receivedOn > today) return fail("invalid", "The date received cannot be in the future.");
     const invoices = new Map<string, Invoice>();
     for (const r of d.rows) {

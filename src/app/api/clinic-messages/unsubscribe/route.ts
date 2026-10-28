@@ -8,11 +8,12 @@ import { getDataCipher } from "@/server/crypto";
 import { getDb } from "@/server/db";
 import { commsLinkSecret } from "@/server/pms/comms/links";
 import { handleUnsubscribe } from "@/server/pms/comms/unsubscribe";
+import { pmsNow } from "@/modules/pms/core/clock";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const deps = () => ({ secret: commsLinkSecret(), ctx: () => ({ db: getDb(), cipher: getDataCipher() }) });
+const deps = () => ({ secret: commsLinkSecret(), ctx: () => ({ db: getDb(), cipher: getDataCipher(), now: pmsNow }) });
 
 export async function GET(req: Request): Promise<Response> {
   return handleUnsubscribe(req, deps());

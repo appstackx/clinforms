@@ -23,6 +23,7 @@ import type { BatchQuery } from "../../../db/batch";
 import type { PmsIntakeResponsesTable, PmsIntakeTemplatesTable } from "../../../db/pms-schema/portal";
 import { RepoInputError, assertId, assertTenantId, b01, decryptField, encryptField, isOn, nowIso, num, parseInput, pmsAuditQuery, pmsId, writeWithAudit, type DbContext, type RepoContext } from "../context";
 import { changeWithAudit, portalAuditWhen } from "./shared";
+import { pmsNow } from "../../../../modules/pms/core/clock";
 
 const TT = "pms_intake_templates";
 const TR = "pms_intake_responses";
@@ -469,7 +470,7 @@ export async function submitIntakeResponse(
   if (!current) return { ok: false, reason: "not_found" };
   if (current.status !== "requested") return { ok: false, reason: "closed" };
   if (current.rev !== expectedRev) return { ok: false, reason: "conflict" };
-  const today = ukToday(ctx.now ? ctx.now() : new Date());
+  const today = ukToday(ctx.now ? ctx.now() : pmsNow());
   const checked = checkAnswers(current.form, input.answers, today);
   const errors: Record<string, string> = checked.ok ? {} : { ...checked.errors };
   let signatureName: string | null = null;

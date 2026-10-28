@@ -17,6 +17,7 @@ import { getPractitioner, getSite } from "../../repos/pms/directory";
 import { getPatient } from "../../repos/pms/patients";
 import { getReferrer } from "../../repos/pms/referrers";
 import { clinicContact, clinicValues } from "./render";
+import { pmsNow } from "../../../modules/pms/core/clock";
 
 /** The register a profession's registration number belongs to (printed before the number under a signature). */
 export const PROFESSION_REGISTERS: Readonly<Partial<Record<Profession, string>>> = {
@@ -81,7 +82,7 @@ async function appointmentFacts(ctx: RepoContext, tenantId: string, patientId: s
     .where("status", "in", ["attended", "booked"]);
   if (caseId) q = q.where((eb) => eb.or([eb("case_id", "=", caseId), eb("status", "=", "booked")]));
   const rows = await q.orderBy("starts_at").limit(400).execute();
-  const nowMs = (ctx.now ? ctx.now() : new Date()).getTime();
+  const nowMs = (ctx.now ? ctx.now() : pmsNow()).getTime();
   const attended = rows.filter((r) => r.status === "attended").map((r) => formatUkDate(r.starts_on));
   const upcomingRows = rows.filter((r) => r.status === "booked" && Date.parse(r.starts_at) > nowMs).slice(0, 8);
   const names = new Map<string, string>();
@@ -195,7 +196,7 @@ export async function startLetter(ctx: RepoContext, tenantId: string, input: Sta
     recipient = { name: input.recipientName ?? null, address: input.recipientAddress ?? null, postcode: input.recipientPostcode ?? null, email: null };
   }
 
-  const letterOn = input.letterOn ?? ukToday(ctx.now ? ctx.now() : new Date());
+  const letterOn = input.letterOn ?? ukToday(ctx.now ? ctx.now() : pmsNow());
   const values = await letterValues(ctx, tenantId, { patient, theCase, practitioner, site, payer, recipient, letterOn }, fallbackClinicName);
   const subject = renderTemplate(template.subject, values, { missing: "marker" }).text.replace(/\s+/g, " ").trim();
   const body = renderTemplate(template.body, values, { missing: "marker" }).text;

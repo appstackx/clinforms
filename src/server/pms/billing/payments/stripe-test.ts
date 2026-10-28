@@ -12,6 +12,7 @@
  */
 import { ukToday } from "../../../../modules/pms/core/text";
 import { PaymentProviderError, type CardCharge, type CreateLinkInput, type CreatedLink, type PaidSession, type PaymentLinkProvider, type SavedCardRef } from "./provider";
+import { pmsNowMs } from "../../../../modules/pms/core/clock";
 
 const API = "https://api.stripe.com/v1";
 
@@ -95,7 +96,7 @@ export function createStripeTestProvider(secretKey: string, fetchImpl: Fetch = (
       const data = Array.isArray(list.data) ? (list.data as Record<string, unknown>[]) : [];
       return data
         .filter((s) => s.payment_status === "paid" && typeof s.id === "string" && typeof s.amount_total === "number")
-        .map((s) => ({ sessionId: s.id as string, amountPence: s.amount_total as number, paidOn: ukToday(new Date(typeof s.created === "number" ? s.created * 1000 : Date.now())) }));
+        .map((s) => ({ sessionId: s.id as string, amountPence: s.amount_total as number, paidOn: ukToday(new Date(typeof s.created === "number" ? s.created * 1000 : pmsNowMs())) }));
     },
     async deactivate(providerLinkId: string): Promise<void> {
       await call("POST", `/payment_links/${encodeURIComponent(providerLinkId)}`, { active: "false" });

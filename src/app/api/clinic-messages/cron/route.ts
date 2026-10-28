@@ -15,6 +15,7 @@ import { getDb } from "@/server/db";
 import { handleCommsCron } from "@/server/pms/comms/cron";
 import { dispatchDepsFromEnv } from "@/server/pms/comms/dispatch";
 import { appointmentStatuses } from "@/server/pms/diary/message-sync";
+import { pmsNow } from "@/modules/pms/core/clock";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,7 +24,7 @@ export const maxDuration = 60;
 export async function GET(req: Request): Promise<Response> {
   return handleCommsCron(req, {
     secret: process.env.CRON_SECRET,
-    ctx: () => ({ db: getDb(), cipher: getDataCipher() }),
+    ctx: () => ({ db: getDb(), cipher: getDataCipher(), now: pmsNow }),
     dispatch: () => dispatchDepsFromEnv(process.env, appointmentStatuses),
   });
 }

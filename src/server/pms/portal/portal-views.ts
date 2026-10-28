@@ -17,6 +17,7 @@ import { portalDiary, type PortalAppointment } from "./diary-port";
 import { directoryView, type DirectoryView } from "./directory-view";
 import type { PublicClinic } from "./public-clinic";
 import { hashSecret, isLinkToken } from "./tokens";
+import { pmsNow } from "../../../modules/pms/core/clock";
 
 const STATUS_WORDS: Record<string, string> = {
   booked: "Booked",
@@ -94,7 +95,7 @@ export interface PortalHome {
   documents: { id: string; title: string; detail: string; href: string }[];
 }
 
-export async function portalHome(ctx: RepoContext, clinic: PublicClinic, patientId: string, now: Date = new Date()): Promise<PortalHome> {
+export async function portalHome(ctx: RepoContext, clinic: PublicClinic, patientId: string, now: Date = pmsNow()): Promise<PortalHome> {
   const paths = clinicPublicPaths(clinic.tenantId);
   const [appointments, responses, shares, dir] = await Promise.all([
     portalDiary().patientAppointments(ctx, clinic.tenantId, patientId, { limit: 100 }),
@@ -122,7 +123,7 @@ export async function portalHome(ctx: RepoContext, clinic: PublicClinic, patient
 }
 
 /** One of the patient's own appointments as a card, or null. */
-export async function appointmentCard(ctx: RepoContext, clinic: PublicClinic, patientId: string, appointmentId: string, now: Date = new Date()): Promise<AppointmentCard | null> {
+export async function appointmentCard(ctx: RepoContext, clinic: PublicClinic, patientId: string, appointmentId: string, now: Date = pmsNow()): Promise<AppointmentCard | null> {
   if (typeof appointmentId !== "string" || !/^appt_[0-9A-HJKMNP-TV-Z]{26}$/.test(appointmentId)) return null;
   const a = await portalDiary().appointment(ctx, clinic.tenantId, appointmentId);
   if (!a || a.patientId !== patientId) return null;
@@ -138,7 +139,7 @@ export interface ManageContext {
 }
 
 /** The booking a "manage this booking" link opens (valid, unexpired), with its appointment and forms – or null. */
-export async function manageContext(ctx: RepoContext, clinic: PublicClinic, token: string, now: Date = new Date()): Promise<ManageContext | null> {
+export async function manageContext(ctx: RepoContext, clinic: PublicClinic, token: string, now: Date = pmsNow()): Promise<ManageContext | null> {
   if (!isLinkToken(token)) return null;
   const booking = await findByManageToken(ctx, clinic.tenantId, hashSecret(token));
   if (!booking) return null;
