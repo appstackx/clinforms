@@ -88,7 +88,7 @@ function summaryOf(kind: TemplateKind, startsAt: string | null): string {
 function messageState(m: MessageSummary): OutboxState {
   switch (m.status) {
     case "queued":
-      return "sending";
+      return m.holdUntil ? "held" : "sending";
     case "outbox":
       return "outbox";
     case "sent":
@@ -113,7 +113,7 @@ function messageRow(actor: CommsActor, m: MessageSummary, names: Map<string, str
   return {
     id: m.id,
     messageId: m.id,
-    at: m.sentAt ?? m.createdAt,
+    at: m.sentAt ?? m.holdUntil ?? m.createdAt,
     patientId: m.patientId,
     patientName: m.patientId ? (names.get(m.patientId) ?? null) : null,
     address: m.toAddress,
@@ -121,7 +121,7 @@ function messageRow(actor: CommsActor, m: MessageSummary, names: Map<string, str
     kind,
     summary: summaryOf(kind, sch?.startsAt ?? null),
     state,
-    why: state === "failed" ? (ERROR_LABELS[m.errorCode ?? ""] ?? "Not delivered") : state === "outbox" ? "Kept in the outbox – not sent" : m.attempts > 1 && state === "sent" ? `Sent on try ${m.attempts}` : null,
+    why: state === "held" && m.holdUntil ? `Quiet hours – will send ${formatAppointmentTime(m.holdUntil)}` : state === "failed" ? (ERROR_LABELS[m.errorCode ?? ""] ?? "Not delivered") : state === "outbox" ? "Kept in the outbox – not sent" : m.attempts > 1 && state === "sent" ? `Sent on try ${m.attempts}` : null,
     canRetry: state === "failed" && actor.can("messages.send") && canSeeMessage(actor, m),
   };
 }
@@ -159,7 +159,7 @@ export async function messagesHomeFor(actor: CommsActor): Promise<Result<Message
       scheduleCounts(ctx, actor.tenantId, w, scope),
     ]);
     return ok({
-      counts: { planned: sched.planned, sent: today.sent, failed: today.failed, held: sched.held, optedOut: sched.optedOut, outbox: today.outbox },
+      counts: { planned: sched.planned, sent: today.sent, failed: today.failed, held: sched.held + overall.held, optedOut: sched.optedOut, outbox: today.outbox },
       quietStart: settings.quietStart,
       quietEnd: settings.quietEnd,
       toAction: overall.toAction,
