@@ -32,7 +32,7 @@ function suite(label: string, factory: () => GuardedDb | Promise<GuardedDb>) {
       const site = (await createSite(ctx, A, { name: "Bletchley (fictional)", code: "BLE" }, ACTOR)).id;
       const sarah = (await createPractitioner(ctx, A, { displayName: "Sarah Reid", registrationNumber: "PH-DEMO-01", defaultSiteId: site }, ACTOR)).id;
       const fu = (await createService(ctx, A, { name: "Follow-up", durationMinutes: 30 }, ACTOR)).id;
-      const megan = (await createPatient(ctx, A, { firstName: "Megan", lastName: "Hart", mobile: "07700 900123", email: "megan.hart@example.com", importRef: "sim-pat-001" }, ACTOR)).id;
+      const megan = (await createPatient(ctx, A, { firstName: "Megan", lastName: "Hart", phoneMobile: "07700 900123", email: "megan.hart@example.com", importRef: "sim-pat-001" }, ACTOR)).id;
       ids = { site, sarah, fu, megan };
     });
     after(async () => {

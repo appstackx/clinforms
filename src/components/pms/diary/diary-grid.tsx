@@ -210,14 +210,17 @@ export function DiaryGrid(props: DiaryGridProps) {
                             key={`hold:${h.id}`}
                             {...(holdHref ? { href: holdHref } : {})}
                             data-testid="diary-hold"
-                            aria-label={`${h.timeLabel}, ${text} (waiting-list offer – not bookable)`}
                             title={`${h.timeLabel} · ${text}`}
                             className="absolute inset-x-1 z-0 flex items-start gap-1 overflow-hidden rounded-[8px] border-2 border-dashed border-[#7C93E8] bg-[#F5F7FE]/90 px-1.5 py-0.5 text-[11px] font-semibold leading-4 text-[#1E3A8A] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                             style={{ top: minutesToPx(top) + 1, height: minutesToPx(len) - 2 }}
                           >
                             <CalendarClock className="mt-px h-3 w-3 shrink-0" aria-hidden />
+                            {/* The visible words are the accessible name (label in name); screen readers also get the end time and why. */}
                             <span className="min-w-0 truncate">
-                              {h.timeLabel.split("–")[0]} {compact ? "Held" : text}
+                              {h.timeLabel.split("–")[0]}
+                              <span className="sr-only">–{h.timeLabel.split("–")[1]},</span> {compact ? "Held" : text}
+                              {compact ? <span className="sr-only"> {text.replace(/^Held/, "")}</span> : null}
+                              <span className="sr-only"> (waiting-list offer – not bookable)</span>
                             </span>
                           </Tag>
                         );
