@@ -1,5 +1,8 @@
 # K2 clinic system – handover
 
+> **Update 28/10/2026 (IN PROGRESS – read §17 first):** M8 set-up + reports + dashboard running on `feat/cs-reporting`
+> (worktree `clinforms-wt/cs-reporting`). Midpoint recorded in §17; resume from there if this account stops.
+
 > **Update 28/10/2026 (latest – read §16 first):** M7 online booking + patient portal + intake forms + patient outcome
 > questionnaires DONE – online bookings are diary appointments, the portal's emails go through comms, public pages
 > under `/clinics/[clinic]`, staff set-up / builder / Forms tab; merged into `feat/clinic-system` `caa9b4d`. Next: M8
@@ -891,3 +894,50 @@ Screenshots: `/private/tmp/claude-501/-Users-khuram-Projects-Appstackx-bh2-hando
 ### 16.10 Next
 **M8 Set-up + reports + dashboard** (reporting branch, drop its staff-access tables in favour of cs-access; set-up
 sub-pages without design; dashboard per role incl. billing money tiles and `failedMessagesSummaryFor`).
+
+## 17. M8 set-up + reports + dashboard (28/10/2026) – IN PROGRESS
+
+### 17.1 Decisions (Khuram, 28/10/2026 – M7 follow-ups) – recorded here, implemented in M8
+1. **Postcode distance:** bundle the ONS postcode-district centroid list (Open Government Licence v3.0) as a small
+   static file – no external calls; attribution line on the booking page and in docs. Built:
+   `src/modules/pms/portal/data/postcode-districts.json` (2,863 GB districts, mean of live postcodes in the ONS
+   Postcode Directory Aug 2026, 3 decimals, 64 KB; Northern Ireland BT left out – its data needs a separate LPS licence
+   for commercial use) + `postcode-districts.SOURCE.md`; loaded as its own chunk on first use; the patient's postcode
+   never leaves the browser. Attribution under the sites list on `/clinics/[clinic]/book`.
+2. **Keep re-check at Confirm** (no 10-minute hold).
+3. **"What's the problem?"** stays in the health questionnaire.
+4. **Portal links:** staff-sent 72 h, patient-requested 15 min (as built).
+5. **Portal questionnaires** keep plain wording and show the score until the licences (Q-K8) are checked.
+6. **M7 shared-file edits approved** (next.config.mjs `/clinics` noindex + geolocation=(self), `src/lib/site.ts` app
+   area, diary alsoWrite/adapter, records card, comms portal_link).
+7. **Late cancel online allowed** with the fee flag; no move inside the notice (as built).
+8. **Existing-patient match only on email + DOB + surname**, otherwise a new record flagged for merge (as built).
+
+### 17.2 Midpoint (28/10/2026 ~22:30 GMT)
+- `feat/cs-reporting` **`5ebd9c3`** (pushed) = the October draft `dbb7bb0` + `feat/clinic-system` `caa9b4d` merged in
+  (no conflicts). Everything below is **uncommitted in the worktree** at the midpoint (`npm ci` done there incl.
+  workers/data-gateway; `.env.local` copied from cs-portal). If you pick this up: `git -C …/cs-reporting status` –
+  commit what is there in logical groups after `npx tsc --noEmit -p .` and `npm run test:pms` pass.
+- Done so far: migration **0160 edited in place** (never applied anywhere): the draft's `pms_staff_access` /
+  `pms_staff_sites` dropped (site access = access module's `pms_member_sites`, `actor.siteIds`); kept
+  `pms_site_hours`, `pms_site_closures`; added `pms_reporting_settings` (utilisation target %, DNA target in tenths).
+  The draft's staff-access repo/server/actions deleted; `src/modules/pms/reporting/site-scope.ts` + `scope.ts` build
+  the scope from `actor.siteIds`.
+- **Test clock** (`src/modules/pms/core/clock.ts`): `PMS_TEST_CLOCK=1 PMS_TEST_NOW=<ISO> PMS_TEST_NOW_SET_AT=<epoch ms>`
+  shifts the clinic system's clock (runs at real speed; seed, dev server and e2e script share it); honoured only when
+  `NODE_ENV !== "production"` (Next inlines that, so a production build drops the code); `clock.test.ts` proves a
+  production NODE_ENV ignores it. All PMS server code, repos' `now`, seeds and `ukToday()` use it; sign-in/TOTP keep
+  the real clock. The three time-dependent scripts read it (`clockNow()`); run them on `next dev` with the clock at
+  10:30 London today (runner: scratchpad `run-e2e-m8.sh <script> <port> <out> dev`). Comms seed: its history (and the
+  failed text for Retry) no longer depends on the hour. First run at 21:50 GMT: pms-diary-screens 22/24 (the 2 fails
+  were the dev server reloading mid-run while files were edited).
+- Shell: main list ends with **Reports** and one **Set-up** entry; set-up pages of every module form the Set-up
+  section's list ("← Clinic navigation", design round 2c, own icons, `SETUP_ORDER`); reception keeps "Practitioner
+  rotas" in its main list (no Set-up area); nav entries may name several permissions (Reports = own or all);
+  "Overview" → "Dashboard" (the start page is now "Today"). Nav tests + shell/access/diary e2e updated.
+- Dashboard ("Today" per role) built: `src/server/pms/reporting/dashboard.ts`, `src/components/pms/reporting/dashboard.tsx`,
+  `src/app/app/clinic/page.tsx`, `src/server/repos/pms/reporting/dashboard-figures.ts`.
+- Diary payer label per billing mode ("– patient pays £20.00 a visit" for per-visit contribution).
+- Running in parallel (same worktree): Set-up pages + one opening-hours source (diary availability clipped to site
+  hours/closures) + billing settings (0139 bank details) – and Reports (sources, pages, CSV, fact-check suite, D1).
+- Not yet: e2e `pms-setup-reports.cjs`, full chain, merges, designs commit, requirements statuses.
