@@ -160,11 +160,12 @@ const navLabels = (page) => page.locator("header nav[aria-label='Clinic'] a").al
       await a.goto(`${BASE}/app/clinic`);
       const products = await a.locator("nav[aria-label='Product areas'] a").allInnerTexts();
       assert(products[0] === "Clinic system" && /^ClinForms/.test(products[1] || ""), `products: ${products.join(", ")}`);
-      const labels = await a.locator("nav[aria-label='Clinic system'] a").allInnerTexts();
+      // The entry's own words (a badge, e.g. Messages' replies waiting, is left out).
+      const labels = (await a.locator("nav[aria-label='Clinic system'] a").allInnerTexts()).map((l) => l.split("\n")[0].trim());
       // Main list then Set-up: the diary's screens (feat/cs-diary) add Diary and Rotas; records adds Patients, Unsigned notes;
-      // billing (M5) adds Billing
+      // billing (M5) adds Billing; messages (M6) adds Messages (with a badge) and Message settings
       // and Note templates; access adds Staff access and Roles and permissions.
-      assert(JSON.stringify(labels) === JSON.stringify(["Overview", "Diary", "Patients", "Unsigned notes", "Billing", "Staff access", "Roles and permissions", "Rotas", "Note templates"]), `clinic nav: ${labels.join(", ")}`);
+      assert(JSON.stringify(labels) === JSON.stringify(["Overview", "Diary", "Patients", "Unsigned notes", "Billing", "Messages", "Staff access", "Roles and permissions", "Rotas", "Note templates", "Message settings"]), `clinic nav: ${labels.join(", ")}`);
       assert((await a.locator("button[aria-haspopup='listbox']").first().innerText()).includes("Bletchley (fictional)"), "site switcher shows the first site");
       await a.locator("main h1").first().click();
       await a.keyboard.press("/");
