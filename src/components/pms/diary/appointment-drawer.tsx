@@ -25,11 +25,14 @@ import { PmsButton } from "../ui/button";
 import { Checkbox, SelectInput } from "../ui/inputs";
 import { FlagPill, StatusPill } from "../ui/status-pill";
 import { Kbd } from "../ui/keyboard-hint";
+import { TakePaymentDialog } from "../billing/take-payment-dialog";
 import { diaryApi } from "./api";
 import { weekdayDate } from "./grid-model";
 
 export interface DrawerPermissions {
   book: boolean;
+  /** billing.pay: "Take payment" opens billing's take-payment dialog for the patient. */
+  pay?: boolean;
   /** clinical.write: "Start treatment" also opens the clinical note for the appointment. */
   clinical: boolean;
 }
@@ -58,6 +61,7 @@ export function AppointmentDrawer({ id, version, can, onClose, onChanged, onErro
   const [reason, setReason] = React.useState<CancelReason>("patient");
   const [charge, setCharge] = React.useState(true);
   const [seriesOpen, setSeriesOpen] = React.useState(false);
+  const [payOpen, setPayOpen] = React.useState(false);
   const closeRef = React.useRef<HTMLButtonElement>(null);
   const panelRef = React.useRef<HTMLElement>(null);
 
@@ -173,18 +177,14 @@ export function AppointmentDrawer({ id, version, can, onClose, onChanged, onErro
       </Link>
     </PmsButton>
   ) : null;
-  // Billing is not on this branch yet: the button is there, switched off, with the reason.
-  const takePayment = d?.kind === "appointment" ? (
-    <span key="pay" className="block" title="Billing coming" tabIndex={0} aria-describedby="drawer-pay-note">
-      <PmsButton variant="secondary" className="pointer-events-none h-10 w-full justify-center" disabled aria-disabled>
+  // Billing (M5): the take-payment dialog for the patient (billing.pay); left out without the permission.
+  const takePayment =
+    d?.kind === "appointment" && d.patient && can.pay ? (
+      <PmsButton key="pay" variant="secondary" className="h-10 w-full justify-center" onClick={() => setPayOpen(true)} data-testid="drawer-take-payment">
         <CreditCard className="h-4 w-4" aria-hidden />
         Take payment
       </PmsButton>
-      <span id="drawer-pay-note" className="sr-only">
-        Billing coming – payments can be taken once billing is switched on.
-      </span>
-    </span>
-  ) : null;
+    ) : null;
 
   const actions: React.ReactNode[] = [];
   if (d && can.book && d.kind === "appointment") {
@@ -415,6 +415,15 @@ export function AppointmentDrawer({ id, version, can, onClose, onChanged, onErro
         <div className="border-t border-border px-5 py-3 text-xs text-[#475569]">
           {[d.bookedBy ? `Booked by ${d.bookedBy}${d.bookedAt ? ` ${formatUkDate(londonDate(d.bookedAt))}` : ""}` : null, d.confirmationRequested ? "confirmation requested" : null].filter(Boolean).join(" · ")}
         </div>
+      ) : null}
+      {d?.patient && can.pay ? (
+        <TakePaymentDialog
+          open={payOpen}
+          onOpenChange={setPayOpen}
+          patientId={d.patient.id}
+          context={`diary drawer · ${d.patient.name}, ${weekdayDate(londonDate(d.startsAt))} ${d.startTime}`}
+          onDone={() => router.refresh()}
+        />
       ) : null}
     </aside>
   );

@@ -10,9 +10,8 @@
  * says only THAT the patient has a medical alert. The next appointment comes from the diary's merged repository
  * (nextAppointmentsFor), read only.
  *
- * TODO(billing): the design's "Balance" column and "Owes money" filter need the billing module (feat/cs-billing):
- *   add them here from billing's per-patient balance read when it is merged. "Payer" is answered from the open
- *   case's payer type (shared record) today; billing may refine it to the account actually invoiced.
+ * Billing (M5): the "Balance" column (what the patient owes on their own issued invoices – billing.view only) and the
+ *   "Owes money" filter. "Payer" is answered from the open case's payer type (shared record).
  * Site scope (K2-SITE-004): the list and its export show only patients visible at the member's sites (actor.siteIds,
  * src/server/pms/access.ts patientSiteFilter).
  */
@@ -26,6 +25,7 @@ import { nextAppointmentsFor } from "../../repos/pms/diary/appointments";
 import { listReferrers } from "../../repos/pms/referrers";
 import { pmsAudit } from "../../repos/pms/context";
 import { listPatientPage, openCasesFor } from "../../repos/pms/records/patient-list";
+import { patientBalances } from "../../repos/pms/billing/invoices";
 import { attempt, guard, ok, type RecordsActor, type Result } from "./access";
 
 export interface PatientListRow {
@@ -43,6 +43,8 @@ export interface PatientListRow {
   hasAlerts: boolean;
   next: { startsAt: string; startsOn: string; practitionerName: string | null } | null;
   openCase: { id: string; title: string; payerType: PayerType; payerName: string | null; practitionerName: string | null } | null;
+  /** What the patient owes (billing.view only; null without it). */
+  balancePence: number | null;
 }
 
 export interface PatientListView {
@@ -73,6 +75,7 @@ async function rowsFor(actor: RecordsActor, filters: PatientListFilters, limit: 
     payer: filters.payer,
     noFutureAppointment: filters.noFuture,
     lastSeenOn: filters.seenToday ? today : null,
+    owesMoney: filters.owesMoney && actor.can("billing.view"),
     now: now.toISOString(),
     sort: filters.sort,
     siteIds: actor.siteIds ?? null,
@@ -80,11 +83,12 @@ async function rowsFor(actor: RecordsActor, filters: PatientListFilters, limit: 
     offset,
   });
   const ids = page.rows.map((p) => p.id);
-  const [next, cases, practitioners, referrers] = await Promise.all([
+  const [next, cases, practitioners, referrers, balances] = await Promise.all([
     nextAppointmentsFor(ctx, actor.tenantId, ids, now.toISOString()),
     openCasesFor(ctx, actor.tenantId, ids),
     listPractitioners(ctx, actor.tenantId, { includeInactive: true }),
     listReferrers(ctx, actor.tenantId, { includeInactive: true, limit: 500 }),
+    actor.can("billing.view") ? patientBalances(ctx, actor.tenantId, ids) : Promise.resolve(null),
   ]);
   const pracName = new Map(practitioners.map((p) => [p.id, p.displayName]));
   const refName = new Map(referrers.map((r) => [r.id, r.name]));
@@ -108,6 +112,7 @@ async function rowsFor(actor: RecordsActor, filters: PatientListFilters, limit: 
       openCase: c
         ? { id: c.id, title: c.title, payerType: c.payerType, payerName: c.payerReferrerId ? (refName.get(c.payerReferrerId) ?? null) : null, practitionerName: c.practitionerId ? (pracName.get(c.practitionerId) ?? null) : null }
         : null,
+      balancePence: balances ? Math.max(0, balances.get(p.id) ?? 0) : null,
     };
   });
   return { rows, total: page.total, today, practitioners };
@@ -167,7 +172,7 @@ export async function patientCsvFor(actor: RecordsActor, filters: PatientListFil
       count += page.rows.length;
       if (page.rows.length < 500) break;
     }
-    const used = Object.entries({ q: Boolean(filters.q), status: filters.status !== "active", practitioner: Boolean(filters.practitionerId), payer: Boolean(filters.payer), noFuture: filters.noFuture, seenToday: filters.seenToday })
+    const used = Object.entries({ q: Boolean(filters.q), status: filters.status !== "active", practitioner: Boolean(filters.practitionerId), payer: Boolean(filters.payer), noFuture: filters.noFuture, seenToday: filters.seenToday, owesMoney: filters.owesMoney })
       .filter(([, on]) => on)
       .map(([k]) => k);
     await pmsAudit(actor.repo(), actor.tenantId, actor.actor, { action: "pms.patients.export", targetType: "pms_patient_list", targetId: "patients", detail: { count, filters: used } });

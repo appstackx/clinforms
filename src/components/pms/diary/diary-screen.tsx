@@ -46,6 +46,8 @@ export interface DiaryScreenProps {
     patientsEdit: boolean;
     /** clinical.write: Start treatment also opens the note. */
     clinical: boolean;
+    /** billing.pay: the drawer's "Take payment". */
+    pay?: boolean;
   };
   payers: { id: string; name: string; kind: string }[];
   unsignedNotes: { count: number; href: string | null } | null;
@@ -526,7 +528,7 @@ export function DiaryScreen({ data, cookieSite, can, payers, unsignedNotes }: Di
       <AppointmentDrawer
         id={selectedId}
         version={drawerVersion}
-        can={{ book: can.book, clinical: can.clinical }}
+        can={{ book: can.book, clinical: can.clinical, pay: can.pay }}
         onClose={closeDrawer}
         onError={(m) => toast.error(m)}
         onChanged={(message, undo) => {

@@ -6,14 +6,14 @@
  * The data comes from the server page (src/app/app/clinic/patients/page.tsx → patient-list-service); every filter
  * lives in the URL, so a filtered list can be shared, reloaded and exported as it is.
  *
- * Differences from the design: no "Balance" column and no "Owes money" filter until billing is merged
- * (TODO(billing)); the subtitle names no site (the list is not limited by site yet).
+ * Billing (M5): the "Balance" column and the "+ Owes money" filter for members with billing.view.
+ * Differences from the design: the subtitle names no site.
  */
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { AlertTriangle, ChevronDown, ChevronRight, ChevronUp, Download, Plus, Search, SearchX } from "lucide-react";
-import { formatUkDate } from "@/modules/pms/core/text";
+import { formatPence, formatUkDate } from "@/modules/pms/core/text";
 import { PAYER_TYPES } from "@/modules/pms/core/schemas";
 import { PAYER_TYPE_LABELS } from "@/modules/pms/records/copy";
 import { DEFAULT_PATIENT_FILTERS, hasNarrowingFilters, paramsFromFilters, type PatientListFilters } from "@/modules/pms/records/patient-list";
@@ -36,6 +36,8 @@ export interface PatientListRowView {
   hasAlerts: boolean;
   next: { startsAt: string; practitionerName: string | null } | null;
   openCase: { title: string; payerName: string | null } | null;
+  /** What the patient owes (null: no billing.view). */
+  balancePence: number | null;
 }
 
 export interface PatientListProps {
@@ -50,6 +52,8 @@ export interface PatientListProps {
   canCreate: boolean;
   canExport: boolean;
   canSeeUnsigned: boolean;
+  /** billing.view: the Balance column and the "Owes money" filter. */
+  canSeeBalance?: boolean;
   /** The list could not be read (the error state). */
   failed: boolean;
   registerAction: RecordsAction;
@@ -113,7 +117,7 @@ function AddFilter({ label, options, onPick }: { label: string; options: { value
 }
 
 export function PatientList(props: PatientListProps) {
-  const { rows, total, page, pageSize, today, filters, practitioners, myPractitionerId, canCreate, canExport, canSeeUnsigned, failed, registerAction } = props;
+  const { rows, total, page, pageSize, today, filters, practitioners, myPractitionerId, canCreate, canExport, canSeeUnsigned, canSeeBalance = false, failed, registerAction } = props;
   const router = useRouter();
   const pathname = usePathname();
   const [pending, startTransition] = useTransition();
@@ -228,7 +232,13 @@ export function PatientList(props: PatientListProps) {
           <FilterAddButton onClick={() => go({ noFuture: true })}>No future appointment</FilterAddButton>
         )}
         {filters.seenToday ? <FilterChip onRemove={() => go({ seenToday: false })}>Seen today</FilterChip> : null}
-        {/* TODO(billing): "+ Owes money" once billing's per-patient balance is merged. */}
+        {canSeeBalance ? (
+          filters.owesMoney ? (
+            <FilterChip onRemove={() => go({ owesMoney: false })}>Owes money</FilterChip>
+          ) : (
+            <FilterAddButton onClick={() => go({ owesMoney: true })}>Owes money</FilterAddButton>
+          )
+        ) : null}
         {narrowed ? <ClearFilters onClick={() => go({ ...DEFAULT_PATIENT_FILTERS })} /> : null}
       </div>
     </div>
@@ -311,6 +321,11 @@ export function PatientList(props: PatientListProps) {
                 <th scope="col" className="px-4 py-2.5 font-semibold">
                   Open case
                 </th>
+                {canSeeBalance ? (
+                  <th scope="col" className="px-4 py-2.5 text-right font-semibold">
+                    Balance
+                  </th>
+                ) : null}
               </tr>
             </thead>
             <tbody>
@@ -345,6 +360,11 @@ export function PatientList(props: PatientListProps) {
                       {r.openCase ? `${r.openCase.title}${r.openCase.payerName ? ` – ${r.openCase.payerName}` : ""}` : "–"}
                     </span>
                   </td>
+                  {canSeeBalance ? (
+                    <td className={cn("whitespace-nowrap px-4 py-2.5 text-right tabular-nums", (r.balancePence ?? 0) > 0 ? "font-semibold text-destructive-strong" : "text-[#475569]")} data-testid="patient-balance">
+                      {formatPence(r.balancePence ?? 0)}
+                    </td>
+                  ) : null}
                 </tr>
               ))}
             </tbody>

@@ -21,11 +21,13 @@ export interface PatientListFilters {
   noFuture: boolean;
   /** Last seen today (phone chip "Seen today"). */
   seenToday: boolean;
+  /** Owes money on issued invoices addressed to them (billing; members with billing.view). */
+  owesMoney: boolean;
   sort: "asc" | "desc";
   page: number;
 }
 
-export const DEFAULT_PATIENT_FILTERS: PatientListFilters = { q: "", status: "active", practitionerId: null, payer: null, noFuture: false, seenToday: false, sort: "asc", page: 1 };
+export const DEFAULT_PATIENT_FILTERS: PatientListFilters = { q: "", status: "active", practitionerId: null, payer: null, noFuture: false, seenToday: false, owesMoney: false, sort: "asc", page: 1 };
 
 const ID = /^[a-z]{2,6}_[0-9A-HJKMNP-TV-Z]{26}$/;
 
@@ -50,6 +52,7 @@ export function filtersFromParams(params: Params): PatientListFilters {
     payer: payer && (PAYER_TYPES as readonly string[]).includes(payer) ? (payer as PayerType) : null,
     noFuture: get(params, "nofuture") === "1",
     seenToday: get(params, "seen") === "today",
+    owesMoney: get(params, "owes") === "1",
     sort: get(params, "sort") === "desc" ? "desc" : "asc",
     page: Number.isInteger(page) && page > 0 && page < 100_000 ? page : 1,
   };
@@ -64,6 +67,7 @@ export function paramsFromFilters(f: Partial<PatientListFilters>): URLSearchPara
   if (f.payer) p.set("payer", f.payer);
   if (f.noFuture) p.set("nofuture", "1");
   if (f.seenToday) p.set("seen", "today");
+  if (f.owesMoney) p.set("owes", "1");
   if (f.sort === "desc") p.set("sort", "desc");
   if (f.page && f.page > 1) p.set("page", String(f.page));
   return p;
@@ -71,7 +75,7 @@ export function paramsFromFilters(f: Partial<PatientListFilters>): URLSearchPara
 
 /** True when any filter narrows the list beyond the default "active patients". */
 export function hasNarrowingFilters(f: PatientListFilters): boolean {
-  return Boolean(f.q || f.practitionerId || f.payer || f.noFuture || f.seenToday || f.status !== "active");
+  return Boolean(f.q || f.practitionerId || f.payer || f.noFuture || f.seenToday || f.owesMoney || f.status !== "active");
 }
 
 /** One CSV cell: quoted when needed; a leading = + - @ tab or carriage return is defused with an apostrophe. */
