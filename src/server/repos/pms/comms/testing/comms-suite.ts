@@ -26,7 +26,7 @@ import { createReminderRule, listReminderRules, updateReminderRule } from "../ru
 import { claimDueMessages, countDueMessages, listSchedule, listScheduleForAppointment, listUpcomingMessages, scheduleCounts, syncAppointmentMessages } from "../schedule";
 import { getCommsSettings, updateCommsSettings } from "../settings";
 import { copyStandardTemplate, createMessageTemplate, getMessageTemplate, listMessageTemplates, resolveTemplate, updateMessageTemplate } from "../templates";
-import { retryMessage, runDueMessages, sendDocumentMessage, sendPatientMessage, type DispatchDeps } from "../../../../pms/comms/dispatch";
+import { retryMessage, runDueMessages, sendAppointmentNotice, sendDocumentMessage, sendPatientMessage, type DispatchDeps } from "../../../../pms/comms/dispatch";
 import { startLetter } from "../../../../pms/comms/letters";
 import { verifyStopToken } from "../../../../pms/comms/links";
 import { outboxEmail, outboxSms } from "../../../../pms/comms/providers/outbox";
@@ -487,6 +487,64 @@ export function defineCommsRepoSuite(label: string, factory: () => Promise<Comms
       assert.deepEqual(await updateCommsSettings(ctx, A, 0, { quietStart: "21:00" }, STAFF), { ok: false, reason: "conflict", currentRev: (await getCommsSettings(ctx, A)).rev });
     });
 
+    it("M6 follow-up: a waiting-list offer text in the quiet hours is held until they end, then released once", async () => {
+      const holly = await createPatient(ctx, A, { firstName: "Holly", lastName: "Held (fictional)", phoneMobile: "07700 900321", email: "holly.held@example.com" }, STAFF);
+      const tess = await createPatient(ctx, A, { firstName: "Tess", lastName: "Textonly (fictional)", phoneMobile: "07700 900322" }, STAFF);
+      const ella = await createPatient(ctx, A, { firstName: "Ella", lastName: "Emailonly (fictional)", email: "ella.emailonly@example.com" }, STAFF);
+      const offer = (patientId: string, startsAt: string, deps: DispatchDeps) =>
+        sendAppointmentNotice(ctx, A, { patientId, kind: "offer", appointment: { startsAt, endsAt: null, siteId: ids.site, practitionerId: ids.prac, serviceId: ids.fu }, appointmentRef: null }, STAFF, deps);
+      // Tuesday 27/10/2026 21:30 GMT – inside the default quiet hours (20:00–08:00 UK time).
+      at("2026-10-27T21:30:00.000Z");
+      clearTestOutbox();
+      const held = await offer(holly.id, "2026-10-28T10:00:00.000Z", test);
+      assert.ok(held.ok && held.status === "queued" && held.heldUntil === "2026-10-28T08:00:00.000Z", JSON.stringify(held));
+      assert.equal(testOutbox.sms.length, 0, "the provider is not called in the quiet hours");
+      const row = held.ok ? await getMessage(ctx, A, held.messageId) : null;
+      assert.deepEqual([row?.status, row?.channel, row?.holdUntil], ["queued", "sms", "2026-10-28T08:00:00.000Z"]);
+      assert.ok((await messageCounts(ctx, A)).held >= 1);
+      // An email offer is never held.
+      const mail = await offer(ella.id, "2026-10-28T10:00:00.000Z", test);
+      assert.ok(mail.ok && mail.status === "sent" && mail.heldUntil === undefined);
+      assert.equal(testOutbox.email.length, 1);
+      // The quiet hours end after the offered slot: by email instead, else not sent at all.
+      const early = await offer(holly.id, "2026-10-28T07:30:00.000Z", outbox);
+      assert.ok(early.ok && early.status === "outbox");
+      assert.equal(early.ok ? (await getMessage(ctx, A, early.messageId))?.channel : null, "email");
+      const tooLate = await offer(tess.id, "2026-10-28T07:30:00.000Z", outbox);
+      assert.deepEqual(tooLate.ok ? null : tooLate.reason, "too_late");
+      // A second held text, released later through the outbox provider.
+      const held2 = await offer(tess.id, "2026-10-28T12:00:00.000Z", outbox);
+      assert.ok(held2.ok && held2.status === "queued" && held2.heldUntil === "2026-10-28T08:00:00.000Z");
+      // Before the quiet hours end the run leaves them.
+      at("2026-10-28T07:59:00.000Z");
+      assert.equal((await runDueMessages(ctx, A, test)).released, 0);
+      assert.equal(held.ok ? (await getMessage(ctx, A, held.messageId))?.status : null, "queued");
+      // After: released once – Holly's by the test service (sent), Tess's kept in the outbox; a second run sends nothing.
+      at("2026-10-28T08:01:00.000Z");
+      const run = await runDueMessages(ctx, A, test);
+      assert.equal(run.released, 2);
+      assert.equal(testOutbox.sms.length, 2, "each held offer text went exactly once");
+      assert.equal((await runDueMessages(ctx, A, test)).released, 0, "a second run releases nothing");
+      assert.equal(testOutbox.sms.length, 2);
+      const after1 = held.ok ? await getMessage(ctx, A, held.messageId) : null;
+      assert.deepEqual([after1?.status, after1?.holdUntil], ["sent", null]);
+      assert.equal(held2.ok ? (await getMessage(ctx, A, held2.messageId))?.status : null, "sent");
+      // Outside the quiet hours an offer text goes at once.
+      at("2026-10-28T10:00:00.000Z");
+      const day = await offer(holly.id, "2026-10-29T10:00:00.000Z", test);
+      assert.ok(day.ok && day.status === "sent" && day.heldUntil === undefined);
+      assert.equal(testOutbox.sms.length, 3);
+      // With the outbox provider a held text is filed in the outbox when released (never sent).
+      at("2026-10-28T23:00:00.000Z");
+      const night = await offer(tess.id, "2026-10-29T15:00:00.000Z", outbox);
+      assert.ok(night.ok && night.status === "queued");
+      at("2026-10-29T08:00:00.000Z");
+      assert.equal((await runDueMessages(ctx, A, outbox)).released, 1);
+      assert.equal(night.ok ? (await getMessage(ctx, A, night.messageId))?.status : null, "outbox");
+      assert.equal(testOutbox.sms.length, 3);
+      at("2026-10-24T09:05:00.000Z");
+    });
+
     it("every write was audited under its own clinic, with ids and counts only", async () => {
       const a = await listAudit(ctx, A, { limit: 500 });
       const codes = new Set(a.map((e) => e.action));
@@ -511,6 +569,7 @@ export function defineCommsRepoSuite(label: string, factory: () => Promise<Comms
         "pms.letter.void",
         "pms.message.retry",
         "pms.message_schedule.opt_out",
+        "pms.message.release",
       ]) {
         assert.ok(codes.has(code), code);
       }

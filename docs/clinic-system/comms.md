@@ -20,6 +20,12 @@ providers in outbox / test mode only), §11.
 - **Quiet hours** (default 20:00–08:00, UK time, clock changes handled): automatic texts that fall inside wait until
   they end ("Held – quiet hours" on the outbox); emails are not held. A reminder that would land too close to the
   appointment goes just before the quiet hours instead.
+- **Waiting-list offers in the quiet hours** (Khuram, 28/10/2026): an offer TEXT written inside them is kept in
+  `pms_messages` as `queued` with `hold_until` = the end of the quiet hours (migration 0142) and the provider is not
+  called; every message run (cron route, "Send due messages now") releases held texts whose time has come
+  (`releaseHeldMessages` – a conditional claim, so two runs never both send one; audited `pms.message.release`). If
+  the quiet hours end after the offered slot starts, the offer goes by email instead, else it is not sent
+  (`too_late`). Offer emails are never held.
 - **The message run** sends what is due: `GET /api/clinic-messages/cron` with `Authorization: Bearer $CRON_SECRET`
   (refused without the secret), or "Send due messages now" on the outbox (messages.templates). It re-checks consent
   and that the appointment is still booked at the moment of sending, writes each message with its audit row

@@ -193,6 +193,12 @@ export interface BookOptions {
    * as skipped. The first date (the booking itself) cannot be skipped.
    */
   skipDates?: readonly string[];
+  /**
+   * More writes for the SAME atomic batch, given the first new appointment's id – the portal's online-booking
+   * record and the forms sent with the booking (src/server/pms/diary/portal-adapter.ts). A refused clash writes
+   * none of them.
+   */
+  alsoWrite?: (appointmentId: string) => BatchQuery[];
 }
 
 const OPEN_WAITING = ["waiting", "offered"];
@@ -366,6 +372,10 @@ export async function bookAppointment(ctx: RepoContext, tenantId: string, input:
     },
   };
   queries.push(gate ? auditWhenInserted(ctx, tenantId, actor, audit, T, rows[0].id) : pmsAuditQuery(ctx, tenantId, actor, audit));
+  if (options.alsoWrite) {
+    if (gate) throw new RepoInputError("A waiting-list booking cannot carry other writes.");
+    queries.push(...options.alsoWrite(rows[0].id));
+  }
   try {
     const changed = await runChange(ctx, queries);
     if (waitingListId && changed[0] === 0) throw new RepoInputError(WAITING_TAKEN);
