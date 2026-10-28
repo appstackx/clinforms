@@ -15,6 +15,7 @@ import { FIELD_TYPE_LABELS, RECORD_FIELDS, recordFieldFits, type FieldType, type
 import { STAFF_PORTAL_PATHS } from "@/modules/pms/portal/paths";
 import { INTAKE_FORM_KIND_LABELS, SEND_WHEN_LABELS, type IntakeFormKind, type SendWhen } from "@/modules/pms/portal/schemas";
 import type { IntakeTemplate } from "@/modules/pms/portal/types";
+import { IntakePreview } from "./intake-preview";
 
 type Answer = { ok: true; message?: string; rev?: number } | { ok: false; error: string; fieldErrors?: Record<string, string> };
 
@@ -42,7 +43,16 @@ function newId(fields: FormField[], label: string): string {
   return id;
 }
 
-export function IntakeBuilder({ template, save }: { template: IntakeTemplate; save: (id: string, rev: number, patch: unknown) => Promise<Answer> }) {
+export function IntakeBuilder({
+  template,
+  save,
+  clinic,
+}: {
+  template: IntakeTemplate;
+  save: (id: string, rev: number, patch: unknown) => Promise<Answer>;
+  /** The clinic's public header for "Preview as patient". */
+  clinic: { name: string; initials: string; demo: boolean };
+}) {
   const router = useRouter();
   const toast = useToast();
   const [rev, setRev] = React.useState(template.rev);
@@ -273,6 +283,15 @@ export function IntakeBuilder({ template, save }: { template: IntakeTemplate; sa
             </PmsButton>
           </div>
           <p className="text-xs text-[#475569]">Forms already signed keep the version the patient saw.</p>
+          <IntakePreview
+            clinicName={clinic.name}
+            clinicInitials={clinic.initials}
+            demo={clinic.demo}
+            title={name}
+            form={{ fields: fields.map((f) => ({ ...f, help: f.help || null, recordField: f.recordField || null })) }}
+            requiresSignature={requiresSignature}
+            signatureStatement={statement.trim() || null}
+          />
         </aside>
       </div>
     </div>
