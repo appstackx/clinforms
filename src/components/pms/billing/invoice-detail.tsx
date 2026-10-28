@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 import { ConfirmDialog, PmsButton, StatusPill, pmsButtonVariants, useToast } from "@/components/pms/ui";
 import { BILLING_PATH, date, focusRing, money, parsePounds, poundsText } from "./format";
 import { PrintInvoiceSheet } from "./print-sheets";
+import { EmailInvoiceButton, TextPaymentLinkButton } from "@/components/pms/comms/billing-buttons";
 import { TakePaymentDialog } from "./take-payment-dialog";
 
 export interface InvoiceDetailProps {
@@ -108,6 +109,7 @@ export function InvoiceDetail({ invoice: inv, clinic, howToPay, printedBy, print
           </Link>
         )
       ) : null}
+      {issued && !isVoid && can.pay && inv.balancePence > 0 && inv.billTo === "patient" ? <TextPaymentLinkButton invoiceId={inv.id} /> : null}
       {issued && !isVoid && can.pay && inv.balancePence > 0 ? (
         <PmsButton variant="secondary" loading={busy === "link"} onClick={() => void copyLink()} data-testid="copy-payment-link">
           <Link2 aria-hidden />
@@ -334,9 +336,7 @@ export function InvoiceDetail({ invoice: inv, clinic, howToPay, printedBy, print
                 Download
               </Link>
             ) : null}
-            <span className={cn(pmsButtonVariants({ variant: "secondary", size: "sm" }), "cursor-not-allowed opacity-60", !issued && "ml-auto")} title="Email comes with Messages" aria-disabled>
-              Email
-            </span>
+            {issued && !isVoid ? <EmailInvoiceButton invoiceId={inv.id} /> : null}
           </div>
           <div className="overflow-hidden rounded-xl bg-[#E2E8F0] p-4" aria-hidden>
             <div className="h-[560px] w-full overflow-hidden">
