@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS pms_comms_settings (
   confirmations_sms INTEGER NOT NULL DEFAULT 1 CHECK (confirmations_sms IN (0, 1)),
   confirmations_email INTEGER NOT NULL DEFAULT 1 CHECK (confirmations_email IN (0, 1)),
   change_notices INTEGER NOT NULL DEFAULT 1 CHECK (change_notices IN (0, 1)),
+  dna_follow_up INTEGER NOT NULL DEFAULT 1 CHECK (dna_follow_up IN (0, 1)),
   sms_sender TEXT CHECK (sms_sender IS NULL OR length(sms_sender) BETWEEN 3 AND 11),
   reply_phone TEXT,
   reply_email TEXT,
@@ -31,7 +32,7 @@ CREATE TABLE IF NOT EXISTS pms_message_templates (
   tenant_id TEXT NOT NULL,
   id TEXT NOT NULL,
   rev INTEGER NOT NULL CHECK (rev > 0),
-  kind TEXT NOT NULL CHECK (kind IN ('confirmation', 'reminder', 'moved', 'cancelled', 'general', 'marketing')),
+  kind TEXT NOT NULL CHECK (kind IN ('confirmation', 'reminder', 'moved', 'cancelled', 'late_cancelled', 'dna', 'offer', 'general', 'marketing', 'payment_link', 'invoice', 'receipt', 'statement', 'letter', 'portal_link')),
   channel TEXT NOT NULL CHECK (channel IN ('sms', 'email')),
   name TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 120),
   subject TEXT CHECK (subject IS NULL OR length(subject) <= 200),
@@ -76,7 +77,7 @@ CREATE TABLE IF NOT EXISTS pms_messages (
   direction TEXT NOT NULL CHECK (direction IN ('outbound', 'inbound')),
   channel TEXT NOT NULL CHECK (channel IN ('sms', 'email')),
   purpose TEXT NOT NULL CHECK (purpose IN ('service', 'marketing')),
-  kind TEXT NOT NULL CHECK (kind IN ('confirmation', 'reminder', 'moved', 'cancelled', 'general', 'marketing', 'reply')),
+  kind TEXT NOT NULL CHECK (kind IN ('confirmation', 'reminder', 'moved', 'cancelled', 'late_cancelled', 'dna', 'offer', 'general', 'marketing', 'payment_link', 'invoice', 'receipt', 'statement', 'letter', 'portal_link', 'reply')),
   template_id TEXT,
   appointment_id TEXT,
   in_reply_to_id TEXT,
@@ -97,6 +98,9 @@ CREATE TABLE IF NOT EXISTS pms_messages (
   sent_at TEXT,
   delivered_at TEXT,
   failed_at TEXT,
+  document_type TEXT CHECK (document_type IS NULL OR document_type IN ('letter', 'invoice', 'receipt', 'statement')),
+  document_id TEXT,
+  attempts INTEGER NOT NULL DEFAULT 1 CHECK (attempts >= 1),
   created_by TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
@@ -110,6 +114,7 @@ CREATE INDEX IF NOT EXISTS pms_messages_address ON pms_messages (tenant_id, addr
 CREATE INDEX IF NOT EXISTS pms_messages_action ON pms_messages (tenant_id, action_status, id);
 CREATE INDEX IF NOT EXISTS pms_messages_appointment ON pms_messages (tenant_id, appointment_id);
 CREATE INDEX IF NOT EXISTS pms_messages_status ON pms_messages (tenant_id, status, id);
+CREATE INDEX IF NOT EXISTS pms_messages_document ON pms_messages (tenant_id, document_type, document_id);
 CREATE UNIQUE INDEX IF NOT EXISTS pms_messages_provider_id ON pms_messages (tenant_id, provider, provider_message_id);
 
 CREATE TABLE IF NOT EXISTS pms_message_schedule (
@@ -117,7 +122,7 @@ CREATE TABLE IF NOT EXISTS pms_message_schedule (
   id TEXT NOT NULL,
   appointment_id TEXT NOT NULL,
   patient_id TEXT NOT NULL,
-  kind TEXT NOT NULL CHECK (kind IN ('confirmation', 'reminder', 'moved', 'cancelled')),
+  kind TEXT NOT NULL CHECK (kind IN ('confirmation', 'reminder', 'moved', 'cancelled', 'late_cancelled', 'dna')),
   channel TEXT NOT NULL CHECK (channel IN ('sms', 'email')),
   rule_id TEXT,
   dedupe_key TEXT NOT NULL CHECK (length(dedupe_key) <= 200),
@@ -133,6 +138,7 @@ CREATE TABLE IF NOT EXISTS pms_message_schedule (
   claim_token TEXT,
   claimed_at TEXT,
   attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  held INTEGER NOT NULL DEFAULT 0 CHECK (held IN (0, 1)),
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   PRIMARY KEY (tenant_id, id),

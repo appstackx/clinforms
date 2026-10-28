@@ -19,12 +19,15 @@ import type { AppointmentMessageKind, MessageChannel, ScheduleStatus, ScheduledM
 import type { PmsActor } from "../../../../modules/pms/core/types";
 import type { BatchQuery } from "../../../db/batch";
 import type { PmsMessageScheduleTable } from "../../../db/pms-schema/comms";
-import { assertTenantId, nowIso, num, parseInput, pmsAudit, pmsAuditQuery, pmsId, writeWithAudit, type DbContext } from "../context";
+import { assertTenantId, nowIso, num, parseInput, pmsAuditQuery, pmsId, writeWithAudit, type DbContext } from "../context";
+import { inPatientScope } from "./messages";
+import { changeWithAudit, commsAuditWhen } from "./shared";
 import { listReminderRules } from "./rules";
 import { getCommsSettings } from "./settings";
 
 const T = "pms_message_schedule";
 export const STALE_CLAIM_MINUTES = 10;
+const SYSTEM: PmsActor = { userId: null, sessionId: null };
 export const MAX_ATTEMPTS = 5;
 const MESSAGES = { foreignKey: "The patient, site, practitioner or appointment type does not exist in this clinic." };
 
@@ -49,6 +52,7 @@ function toScheduled(r: Row): ScheduledMessage {
     messageId: r.message_id,
     skipReason: (r.skip_reason as SkipReason | null) ?? null,
     attempts: num(r.attempts),
+    held: num(r.held ?? 0) === 1,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -69,7 +73,7 @@ export async function syncAppointmentMessages(
   tenantId: string,
   input: AppointmentForMessages,
   actor: PmsActor,
-  options: { notify?: "none" | "confirmation" | "moved" | "cancelled" } = {},
+  options: { notify?: "none" | "confirmation" | "moved" | "cancelled" | "late_cancelled" | "dna" } = {},
 ): Promise<SyncResult> {
   assertTenantId(tenantId);
   const appt = parseInput(AppointmentForMessagesSchema, input, "Appointment");
@@ -128,6 +132,7 @@ export async function syncAppointmentMessages(
           claim_token: null,
           claimed_at: null,
           attempts: 0,
+          held: p.held ? 1 : 0,
           created_at: at,
           updated_at: at,
         }),
@@ -137,7 +142,7 @@ export async function syncAppointmentMessages(
       queries.push(
         ctx.db
           .updateTable(T)
-          .set({ status: "pending", due_at: p.dueAt, skip_reason: null, patient_id: appt.patientId, ...snapshot, updated_at: at })
+          .set({ status: "pending", due_at: p.dueAt, held: p.held ? 1 : 0, skip_reason: null, patient_id: appt.patientId, ...snapshot, updated_at: at })
           .where("tenant_id", "=", tenantId)
           .where("id", "=", row.id)
           .where("status", "=", "cancelled"),
@@ -155,7 +160,7 @@ export async function syncAppointmentMessages(
         queries.push(
           ctx.db
             .updateTable(T)
-            .set({ due_at: p.dueAt, ...snapshot, updated_at: at })
+            .set({ due_at: p.dueAt, held: p.held ? 1 : 0, ...snapshot, updated_at: at })
             .where("tenant_id", "=", tenantId)
             .where("id", "=", row.id)
             .where("status", "=", "pending"),
@@ -229,15 +234,25 @@ export async function claimDueMessages(ctx: DbContext, tenantId: string, token: 
   assertTenantId(tenantId);
   const at = nowIso(ctx);
   const stale = new Date(Date.parse(at) - STALE_CLAIM_MINUTES * 60_000).toISOString();
-  // A run that died mid-way leaves rows claimed: release them – or, after MAX_ATTEMPTS, give up on them.
-  await ctx.db
-    .updateTable(T)
-    .set({ status: "failed", skip_reason: "provider_error", updated_at: at })
-    .where("tenant_id", "=", tenantId)
-    .where("status", "=", "processing")
-    .where("claimed_at", "<", stale)
-    .where("attempts", ">=", MAX_ATTEMPTS)
-    .execute();
+  // A run that died mid-way leaves rows claimed: release them – or, after MAX_ATTEMPTS, give up on them (that change
+  // is audited in its batch). Claiming and releasing are the run's own bookkeeping (status processing ↔ pending, no
+  // patient-visible change) and are not audited; every claimed row ends in an audited batch (dispatch.ts).
+  await changeWithAudit(ctx, [
+    ctx.db
+      .updateTable(T)
+      .set({ status: "failed", skip_reason: "provider_error", updated_at: at })
+      .where("tenant_id", "=", tenantId)
+      .where("status", "=", "processing")
+      .where("claimed_at", "<", stale)
+      .where("attempts", ">=", MAX_ATTEMPTS),
+    commsAuditWhen(
+      ctx,
+      tenantId,
+      SYSTEM,
+      { action: "pms.message_schedule.give_up", targetType: "pms_message_schedule", targetId: null, detail: { attempts: MAX_ATTEMPTS } },
+      ctx.db.selectFrom(T).select("id").where("tenant_id", "=", tenantId).where("status", "=", "failed").where("updated_at", "=", at),
+    ),
+  ]);
   await ctx.db
     .updateTable(T)
     .set({ status: "pending", claim_token: null, claimed_at: null, updated_at: at })
@@ -275,21 +290,115 @@ export function closeScheduleQuery(ctx: DbContext, tenantId: string, id: string,
   return ctx.db.updateTable(T).set(set).where("tenant_id", "=", tenantId).where("id", "=", id).where("claim_token", "=", token).where("status", "=", "processing");
 }
 
-/** Cancels every planned message of a patient on a channel (after they opted out of it). Returns how many. */
-export async function cancelPendingForPatient(ctx: DbContext, tenantId: string, patientId: string, channel: MessageChannel, reason: SkipReason, actor: PmsActor): Promise<number> {
+/**
+ * Cancels the planned messages of a patient on a channel after they opted out of it (`kinds`: only these – the
+ * stop-emails link stops reminders and follow-ups, not booking confirmations). Change and audit in one batch.
+ */
+export async function cancelPendingForPatient(
+  ctx: DbContext,
+  tenantId: string,
+  patientId: string,
+  channel: MessageChannel,
+  reason: SkipReason,
+  actor: PmsActor,
+  kinds?: readonly AppointmentMessageKind[],
+): Promise<number> {
   assertTenantId(tenantId);
   const at = nowIso(ctx);
-  const r = await ctx.db
+  let update = ctx.db
     .updateTable(T)
     .set({ status: "cancelled", skip_reason: reason, updated_at: at })
     .where("tenant_id", "=", tenantId)
     .where("patient_id", "=", patientId)
     .where("channel", "=", channel)
+    .where("status", "=", "pending");
+  if (kinds) update = update.where("kind", "in", kinds as AppointmentMessageKind[]);
+  return changeWithAudit(ctx, [
+    update,
+    commsAuditWhen(
+      ctx,
+      tenantId,
+      actor,
+      { action: "pms.message_schedule.opt_out", targetType: "pms_patient", targetId: patientId, detail: { channel, reason } },
+      ctx.db.selectFrom(T).select("id").where("tenant_id", "=", tenantId).where("patient_id", "=", patientId).where("status", "=", "cancelled").where("skip_reason", "=", reason).where("updated_at", "=", at),
+    ),
+  ]);
+}
+
+export interface ScheduleListOptions {
+  statuses?: readonly ScheduleStatus[];
+  /** Due at or after / before these instants. */
+  dueFrom?: string;
+  dueUntil?: string;
+  /** Changed at or after this instant (skipped / cancelled today). */
+  updatedSince?: string;
+  patientId?: string;
+  appointmentId?: string;
+  siteIds?: ReadonlySet<string> | null;
+  /** Default 100, at most 500. */
+  limit?: number;
+}
+
+/** Planned messages for the outbox and the record (by due time). */
+export async function listSchedule(ctx: DbContext, tenantId: string, options: ScheduleListOptions = {}): Promise<ScheduledMessage[]> {
+  assertTenantId(tenantId);
+  const limit = Math.min(Math.max(1, Math.floor(options.limit ?? 100)), 500);
+  let q = ctx.db.selectFrom(T).selectAll().where("tenant_id", "=", tenantId);
+  if (options.statuses && options.statuses.length) q = q.where("status", "in", options.statuses as ScheduleStatus[]);
+  if (options.dueFrom) q = q.where("due_at", ">=", options.dueFrom);
+  if (options.dueUntil) q = q.where("due_at", "<", options.dueUntil);
+  if (options.updatedSince) q = q.where("updated_at", ">=", options.updatedSince);
+  if (options.patientId) q = q.where("patient_id", "=", options.patientId);
+  if (options.appointmentId) q = q.where("appointment_id", "=", options.appointmentId);
+  if (options.siteIds) q = q.where(inPatientScope(ctx, tenantId, options.siteIds));
+  return (await q.orderBy("due_at").orderBy("id").limit(limit).execute()).map(toScheduled);
+}
+
+/** The outbox's "Today" line: planned (still to go today), held for quiet hours, skipped and cancelled today. */
+export async function scheduleCounts(
+  ctx: DbContext,
+  tenantId: string,
+  window: { from: string; until: string },
+  siteIds: ReadonlySet<string> | null = null,
+): Promise<{ planned: number; held: number; skipped: number; optedOut: number }> {
+  assertTenantId(tenantId);
+  let pending = ctx.db
+    .selectFrom(T)
+    .select((eb) => ["held", eb.fn.countAll<number>().as("n")])
+    .where("tenant_id", "=", tenantId)
     .where("status", "=", "pending")
-    .executeTakeFirst();
-  const n = Number(r.numUpdatedRows);
-  if (n > 0) {
-    await pmsAudit(ctx, tenantId, actor, { action: "pms.message_schedule.sync", targetType: "pms_patient", targetId: patientId, detail: { cancelled: n, channel, reason } });
+    .where("due_at", ">=", window.from)
+    .where("due_at", "<", window.until);
+  if (siteIds) pending = pending.where(inPatientScope(ctx, tenantId, siteIds));
+  let skipped = ctx.db
+    .selectFrom(T)
+    .select((eb) => ["skip_reason", eb.fn.countAll<number>().as("n")])
+    .where("tenant_id", "=", tenantId)
+    .where("status", "=", "skipped")
+    .where("updated_at", ">=", window.from)
+    .where("updated_at", "<", window.until);
+  if (siteIds) skipped = skipped.where(inPatientScope(ctx, tenantId, siteIds));
+  const [p, k] = await Promise.all([pending.groupBy("held").execute(), skipped.groupBy("skip_reason").execute()]);
+  const out = { planned: 0, held: 0, skipped: 0, optedOut: 0 };
+  for (const r of p) {
+    out.planned += Number(r.n);
+    if (num(r.held) === 1) out.held += Number(r.n);
   }
-  return n;
+  for (const r of k) {
+    out.skipped += Number(r.n);
+    if (r.skip_reason === "opted_out") out.optedOut += Number(r.n);
+  }
+  return out;
+}
+
+/** The planned rows that became these messages (what each message was for: its appointment's start). */
+export async function scheduleByMessageIds(ctx: DbContext, tenantId: string, messageIds: readonly string[]): Promise<Map<string, ScheduledMessage>> {
+  assertTenantId(tenantId);
+  const out = new Map<string, ScheduledMessage>();
+  const unique = Array.from(new Set(messageIds));
+  for (let i = 0; i < unique.length; i += 90) {
+    const rows = await ctx.db.selectFrom(T).selectAll().where("tenant_id", "=", tenantId).where("message_id", "in", unique.slice(i, i + 90)).execute();
+    for (const r of rows) if (r.message_id) out.set(r.message_id, toScheduled(r));
+  }
+  return out;
 }

@@ -75,7 +75,8 @@ describe("merge fields", () => {
     }
     for (const t of STANDARD_LETTER_TEMPLATES) for (const text of [t.subject, t.body]) assert.deepEqual(checkTemplate(text, "letter", null).errors, [], t.key);
     assert.equal(standardMessageTemplate("reminder", "sms")?.key, "sms-reminder");
-    assert.equal(standardMessageTemplate("general", "sms"), null);
+    assert.equal(standardMessageTemplate("general", "sms")?.key, "sms-general");
+    assert.equal(standardMessageTemplate("late_cancelled", "sms")?.key, "sms-late-cancelled");
   });
 
   it("standard reminders by text stay within two segments with typical values", () => {
@@ -149,7 +150,7 @@ describe("UK time and when messages go", () => {
     assert.equal(outOfQuietHours("2026-12-02T12:00:00.000Z", "2026-12-03T12:00:00.000Z", "20:00", "08:00"), "2026-12-02T12:00:00.000Z");
   });
 
-  const settings = { confirmationsSms: true, confirmationsEmail: true, changeNotices: true, quietStart: "20:00", quietEnd: "08:00" };
+  const settings = { confirmationsSms: true, confirmationsEmail: true, changeNotices: true, dnaFollowUp: true, quietStart: "20:00", quietEnd: "08:00" };
   const smsRule = { id: "rrule_1", channel: "sms" as const, timing: "days_before" as const, daysBefore: 1, hoursBefore: null, sendAt: "10:00", serviceIds: null, active: true };
   const emailRule = { id: "rrule_2", channel: "email" as const, timing: "hours_before" as const, daysBefore: null, hoursBefore: 48, sendAt: null, serviceIds: ["svc_classes"], active: true };
 
@@ -185,6 +186,24 @@ describe("UK time and when messages go", () => {
     assert.deepEqual(planAppointmentMessages({ appointment: appt, notify: "cancelled", settings: { ...settings, changeNotices: false }, rules: [smsRule], now }), []);
     assert.deepEqual(planAppointmentMessages({ appointment: { startsAt: "2026-10-24T10:00:00.000Z", active: true }, notify: "confirmation", settings, rules: [smsRule], now }), []);
     assert.deepEqual(planAppointmentMessages({ appointment: { startsAt: "2026-10-27T14:30:00.000Z", active: true }, notify: "moved", settings: { ...settings, confirmationsEmail: false }, rules: [], now }).map((p) => [p.kind, p.channel]), [["moved", "sms"]]);
+    assert.deepEqual(planAppointmentMessages({ appointment: appt, notify: "late_cancelled", settings, rules: [smsRule], now }).map((p) => p.kind), ["late_cancelled", "late_cancelled"]);
+  });
+
+  it("did not attend: the follow-up an hour after the start (or now when marked later), never after a day, quiet hours for texts", () => {
+    const start = "2026-10-27T10:00:00.000Z";
+    const dna = (now: string, extra: Partial<typeof settings> = {}) =>
+      planAppointmentMessages({ appointment: { startsAt: start, active: false }, notify: "dna", settings: { ...settings, ...extra }, rules: [smsRule], now }).map((p) => [p.kind, p.channel, p.dueAt, p.held]);
+    assert.deepEqual(dna("2026-10-27T10:10:00.000Z"), [
+      ["dna", "sms", "2026-10-27T11:00:00.000Z", false],
+      ["dna", "email", "2026-10-27T11:00:00.000Z", false],
+    ]);
+    assert.deepEqual(dna("2026-10-27T15:00:00.000Z").map((x) => x[2]), ["2026-10-27T15:00:00.000Z", "2026-10-27T15:00:00.000Z"]);
+    assert.deepEqual(dna("2026-10-27T15:00:00.000Z", { dnaFollowUp: false }), []);
+    assert.deepEqual(dna("2026-10-28T10:30:00.000Z"), [], "more than a day later: nothing");
+    const evening = dna("2026-10-27T21:00:00.000Z");
+    assert.deepEqual(evening[0], ["dna", "sms", "2026-10-28T08:00:00.000Z", true], "held for the quiet hours");
+    assert.equal(stillWorthSending("dna", start, "2026-10-28T08:00:00.000Z"), true);
+    assert.equal(stillWorthSending("dna", start, "2026-10-28T10:01:00.000Z"), false);
   });
 
   it("at sending time: reminders stop 30 minutes before, everything stops at the start", () => {

@@ -23,10 +23,10 @@ import { getMessagingContacts } from "../contacts";
 import { createLetterTemplate, finaliseLetter, getLetter, listLetters, markLetterSent, updateLetter, voidLetter } from "../letters";
 import { appointmentReplyStates, getMessage, listMessages, markReplyDone, messageCounts, recordDeliveryReceipt } from "../messages";
 import { createReminderRule, listReminderRules, updateReminderRule } from "../rules";
-import { claimDueMessages, countDueMessages, listScheduleForAppointment, listUpcomingMessages, syncAppointmentMessages } from "../schedule";
+import { claimDueMessages, countDueMessages, listSchedule, listScheduleForAppointment, listUpcomingMessages, scheduleCounts, syncAppointmentMessages } from "../schedule";
 import { getCommsSettings, updateCommsSettings } from "../settings";
 import { copyStandardTemplate, createMessageTemplate, getMessageTemplate, listMessageTemplates, resolveTemplate, updateMessageTemplate } from "../templates";
-import { runDueMessages, sendPatientMessage, type DispatchDeps } from "../../../../pms/comms/dispatch";
+import { retryMessage, runDueMessages, sendDocumentMessage, sendPatientMessage, type DispatchDeps } from "../../../../pms/comms/dispatch";
 import { startLetter } from "../../../../pms/comms/letters";
 import { verifyStopToken } from "../../../../pms/comms/links";
 import { outboxEmail, outboxSms } from "../../../../pms/comms/providers/outbox";
@@ -221,13 +221,13 @@ export function defineCommsRepoSuite(label: string, factory: () => Promise<Comms
       assert.ok(sms && sms.status === "outbox" && sms.provider === "outbox" && sms.kind === "confirmation");
       assert.equal(sms?.toAddress, "07700 900123");
       const full = await getMessage(ctx, A, sms!.id);
-      assert.match(full?.body ?? "", /^Hi Meg, your appointment with riverside-a is booked for Sunday 25 October at 15:00 at Bletchley \(fictional\)\. To change it, call 01632 960101\.$/);
+      assert.match(full?.body ?? "", /^RIVERSIDE: you're booked for Sun 25\/10 at 15:00 with Sarah Reid, Bletchley \(fictional\)\. To change it call 01632 960101\. STOP to opt out$/);
       const raw = await ctx.db.selectFrom("pms_messages").select(["body_enc", "subject_enc"]).where("tenant_id", "=", A).where("id", "=", sms!.id).executeTakeFirstOrThrow();
-      assert.ok(!String(raw.body_enc).includes("Meg") && String(raw.body_enc).startsWith("v1."), "encrypted at rest");
+      assert.ok(!String(raw.body_enc).includes("Bletchley") && String(raw.body_enc).startsWith("v1."), "encrypted at rest");
       const email = log.find((m) => m.appointmentId === "appt_megan_3" && m.channel === "email");
       const fullEmail = await getMessage(ctx, A, email!.id);
-      assert.equal(fullEmail?.subject, "Your appointment on Sunday 25 October");
-      const stop = /To stop these emails: (\S+)/.exec(fullEmail?.body ?? "")?.[1];
+      assert.equal(fullEmail?.subject, "Booked: Sun 25/10 at 15:00");
+      const stop = /Stop reminder emails \(booking confirmations will still be sent\): (\S+)/.exec(fullEmail?.body ?? "")?.[1];
       const token = stop ? new URL(stop).searchParams.get("t") : null;
       assert.deepEqual(verifyStopToken(token, LINK_SECRET, clock), { tenantId: A, patientId: ids.megan, channel: "email", purpose: "service", exp: verifyStopToken(token, LINK_SECRET, clock)?.exp });
       // A ciphertext moved to another message does not decrypt.
@@ -308,7 +308,7 @@ export function defineCommsRepoSuite(label: string, factory: () => Promise<Comms
       assert.deepEqual(await changeConsent(ctx, A, { patientId: ids.megan, channel: "sms", purpose: "marketing", value: true, source: "staff", marketingConsentSource: "written" }, STAFF), { changed: false, cancelled: 0 });
       const marketing = await sendPatientMessage(ctx, A, { patientId: ids.megan, channel: "sms", purpose: "marketing", body: "Spring offer: 10% off sports massage at {{clinic.name}}." }, STAFF, test);
       assert.ok(marketing.ok && marketing.status === "sent");
-      assert.match(testOutbox.sms[0].body, /Reply STOP to opt out\.$/, "the stop route is added");
+      assert.match(testOutbox.sms[0].body, /STOP to opt out$/, "the stop route is added");
       await rejects(sendPatientMessage(ctx, A, { patientId: ids.megan, channel: "sms", body: "See you {{appointment.date}}" }, STAFF, outbox), /cannot be used in a general message/);
       assert.equal((await sendPatientMessage(ctx, A, { patientId: ids.megan, channel: "sms", templateId: "standard:sms-reminder", body: "x" }, STAFF, outbox)).ok, false, "only general templates");
       const patient = await getPatient(ctx, A, ids.megan);
@@ -407,6 +407,80 @@ export function defineCommsRepoSuite(label: string, factory: () => Promise<Comms
       );
     });
 
+    it("M6: retry of a failed message, documents to a third party, the STOP confirmation, held texts, site scope", async () => {
+      // Retry: Fay's number fails every time with the test service; each retry counts an attempt, at most 5.
+      clearTestOutbox();
+      const failed = (await listMessages(ctx, A, { patientId: ids.failing, status: "failed" }))[0];
+      assert.ok(failed, "Fay's failed text from the test-provider run");
+      const again = await retryMessage(ctx, A, failed.id, STAFF, test);
+      assert.ok(again.ok && again.status === "failed");
+      assert.equal((await getMessage(ctx, A, failed.id))?.attempts, 2);
+      assert.equal((await retryMessage(ctx, A, failed.id, STAFF, outbox)).ok, true, "requeued again (outbox keeps the answer of the test run)");
+      const sentOk = (await listMessages(ctx, A, { patientId: ids.megan, status: "sent" }))[0];
+      assert.equal((await retryMessage(ctx, A, sentOk.id, STAFF, test)).ok, false, "only failed messages are retried");
+      // A letter's email to the GP (someone else's address, no stop link), linked to the letter.
+      const doc = await sendDocumentMessage(
+        ctx,
+        A,
+        { kind: "letter", channel: "email", patientId: ids.megan, to: { kind: "other", address: "gp.ward@example.com" }, values: { "document.title": "Discharge", "document.body": "Dear Dr Ward,\nAll well.", "recipient.name": "Dr Ward" }, documentType: "letter", documentId: "ltr_test" },
+        STAFF,
+        test,
+      );
+      assert.ok(doc.ok && doc.status === "sent");
+      const mail = testOutbox.email.at(-1);
+      assert.equal(mail?.to, "gp.ward@example.com");
+      assert.equal(mail?.headers["List-Unsubscribe"], undefined, "no stop link on a letter");
+      assert.match(mail?.text ?? "", /Dear Dr Ward,\nAll well\./);
+      assert.equal((await listMessages(ctx, A, { documentType: "letter", documentId: "ltr_test" })).length, 1);
+      assert.equal((await sendDocumentMessage(ctx, A, { kind: "invoice", channel: "email", patientId: ids.megan, to: { kind: "other", address: "not an address" }, values: {}, documentType: "invoice", documentId: null }, STAFF, test)).ok, false);
+      // An invoice email to a patient who stopped reminder emails still goes (it is their own account).
+      await changeConsent(ctx, A, { patientId: ids.daniel, channel: "email", purpose: "service", value: false, source: "email_link" }, STAFF);
+      const inv = await sendDocumentMessage(ctx, A, { kind: "invoice", channel: "email", patientId: ids.daniel, to: { kind: "patient" }, values: { "billing.number": "INV00001", "billing.amount": "£55.00" }, documentType: "invoice", documentId: "inv_test" }, STAFF, test);
+      assert.ok(inv.ok, "transactional email after the stop link");
+      assert.equal((await sendPatientMessage(ctx, A, { patientId: ids.daniel, channel: "email", subject: "Hello", body: "A note" }, STAFF, test)).ok, false, "general emails stop");
+      // STOP: texts off, one last text says so.
+      clearTestOutbox();
+      const stop = await recordInboundSms(ctx, A, { from: "+447700900123", text: "STOP", providerMessageId: "test_stop_m6" }, "test", STAFF, test);
+      assert.equal(stop.intent, "stop");
+      assert.match(testOutbox.sms.at(-1)?.body ?? "", /^RIVERSIDE: you won't get more texts from us\. We'll email reminders instead\.$/);
+      // Held: a text booked in the quiet hours is held (flag) until 08:00.
+      at("2026-10-26T21:30:00.000Z");
+      await syncAppointmentMessages(ctx, A, { id: "appt_daniel_m6", patientId: ids.daniel, startsAt: "2026-10-29T10:00:00.000Z", siteId: ids.site, active: true }, STAFF, { notify: "confirmation" });
+      await changeConsent(ctx, A, { patientId: ids.landline, channel: "sms", purpose: "service", value: true, source: "staff" }, STAFF);
+      const held = (await listScheduleForAppointment(ctx, A, "appt_daniel_m6")).filter((r) => r.channel === "sms");
+      assert.deepEqual(held.map((r) => [r.kind, r.held, r.dueAt]), [
+        ["confirmation", true, "2026-10-27T08:00:00.000Z"],
+        ["reminder", false, "2026-10-28T10:00:00.000Z"],
+      ]);
+      const counts = await scheduleCounts(ctx, A, { from: "2026-10-27T00:00:00.000Z", until: "2026-10-28T00:00:00.000Z" });
+      assert.ok(counts.held >= 1 && counts.planned >= counts.held);
+      // Site scope: a member limited to another site sees none of these messages (no case or appointment there).
+      assert.equal((await listMessages(ctx, A, { siteIds: new Set(["site_elsewhere"]) })).filter((m) => m.patientId === ids.megan).length, 0);
+      assert.ok((await listMessages(ctx, A, { siteIds: new Set([ids.site]) })).some((m) => m.patientId === ids.megan));
+      assert.ok((await listSchedule(ctx, A, { siteIds: new Set([ids.site]), statuses: ["pending"] })).length >= 0);
+      // Daniel used the stop-emails link (above): his booking confirmation email is still planned (transactional).
+      const kinds = (await listScheduleForAppointment(ctx, A, "appt_daniel_m6")).filter((r) => r.channel === "email").map((r) => [r.kind, r.status]);
+      assert.deepEqual(kinds.filter((k) => k[0] === "confirmation"), [["confirmation", "pending"]]);
+      at("2026-10-24T09:05:00.000Z");
+    });
+
+    it("M6: letters are signed with the signer's line; changes and their audit rows are one batch", async () => {
+      const t = await createLetterTemplate(ctx, A, { name: "Short note to the GP", recipientKind: "gp", subject: "{{patient.full_name}}", body: "Dear {{recipient.name}},\n\nSeen {{case.sessions}} times.\n\n{{author.name}}" }, STAFF);
+      const l = await startLetter(ctx, A, { patientId: ids.megan, templateId: t.id, caseId: ids.case, practitionerId: ids.prac }, STAFF);
+      const saved = await updateLetter(ctx, A, l.id, l.rev, { body: "Dear Dr Ward,\n\nAll well.\n\nSarah Reid" }, STAFF);
+      assert.ok(saved.ok);
+      const before = (await listAudit(ctx, A, { limit: 500 })).filter((e) => e.targetId === l.id).length;
+      assert.deepEqual(await finaliseLetter(ctx, A, l.id, saved.ok ? saved.rev : 0, STAFF, "Sarah Reid, Physiotherapist · HCPC PH-DEMO-01"), { ok: true });
+      const signed = await getLetter(ctx, A, l.id);
+      assert.equal(signed?.signatureText, "Sarah Reid, Physiotherapist · HCPC PH-DEMO-01");
+      assert.equal(signed?.status, "final");
+      // A stale finalise changes nothing and writes no audit row.
+      assert.deepEqual(await finaliseLetter(ctx, A, l.id, 1, STAFF, "x"), { ok: false, reason: "locked" });
+      const after = (await listAudit(ctx, A, { limit: 500 })).filter((e) => e.targetId === l.id);
+      assert.equal(after.length, before + 1);
+      assert.deepEqual(await updateCommsSettings(ctx, A, 0, { quietStart: "21:00" }, STAFF), { ok: false, reason: "conflict", currentRev: (await getCommsSettings(ctx, A)).rev });
+    });
+
     it("every write was audited under its own clinic, with ids and counts only", async () => {
       const a = await listAudit(ctx, A, { limit: 500 });
       const codes = new Set(a.map((e) => e.action));
@@ -429,6 +503,8 @@ export function defineCommsRepoSuite(label: string, factory: () => Promise<Comms
         "pms.letter.finalise",
         "pms.letter.sent",
         "pms.letter.void",
+        "pms.message.retry",
+        "pms.message_schedule.opt_out",
       ]) {
         assert.ok(codes.has(code), code);
       }

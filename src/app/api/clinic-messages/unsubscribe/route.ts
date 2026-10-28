@@ -1,7 +1,7 @@
 /**
  * /api/clinic-messages/unsubscribe?t=<signed token> – the stop-emails link in patients' emails: GET shows one
  * button, POST (the button, or a mail app's one-click unsubscribe) switches that kind of email off.
- * Logic and tests: src/server/pms/comms/unsubscribe.ts.
+ * Logic and tests: src/server/pms/comms/unsubscribe.ts. Placement: see ../cron/route.ts.
  */
 import "server-only";
 import { getDataCipher } from "@/server/crypto";

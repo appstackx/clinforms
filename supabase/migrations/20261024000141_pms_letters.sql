@@ -41,6 +41,7 @@ create table if not exists public.pms_letters (
   status text not null default 'draft' check (status in ('draft', 'final', 'void')),
   finalised_at timestamptz,
   finalised_by text,
+  signature_text text check (signature_text is null or length(signature_text) <= 300),
   sent_at timestamptz,
   sent_via text check (sent_via is null or sent_via in ('post', 'email', 'hand')),
   voided_at timestamptz,

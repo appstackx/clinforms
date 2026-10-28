@@ -10,8 +10,9 @@ import { ReminderRuleInputSchema, ReminderRuleMergedSchema, ReminderRulePatchSch
 import type { MessageChannel, ReminderRule, ReminderTiming } from "../../../../modules/pms/comms/types";
 import type { PmsActor, PmsSaveResult } from "../../../../modules/pms/core/types";
 import type { PmsReminderRulesTable } from "../../../db/pms-schema/comms";
-import { RepoInputError, assertTenantId, b01, guarded, isOn, nowIso, num, numOrNull, parseInput, pmsAudit, pmsAuditQuery, pmsId, writeWithAudit, type DbContext } from "../context";
+import { RepoInputError, assertTenantId, b01, isOn, nowIso, num, numOrNull, parseInput, pmsAuditQuery, pmsId, writeWithAudit, type DbContext } from "../context";
 import { getCommsSettings } from "./settings";
+import { changeWithAudit, commsAuditWhen } from "./shared";
 import { isReminderTemplate } from "./templates";
 
 const T = "pms_reminder_rules";
@@ -128,22 +129,30 @@ export async function updateReminderRule(ctx: DbContext, tenantId: string, id: s
   const fields = Object.keys(d).filter((k) => (d as Record<string, unknown>)[k] !== undefined);
   if (fields.length === 0) return { ok: true, rev: expectedRev, updatedAt: current.updatedAt };
   const at = nowIso(ctx);
-  const result = await guarded(
-    () =>
+  const changed = await changeWithAudit(
+    ctx,
+    [
       ctx.db
         .updateTable(T)
         .set({ name: merged.name, ...columns(merged), active: b01(merged.active ?? true), rev: expectedRev + 1, updated_at: at })
         .where("tenant_id", "=", tenantId)
         .where("id", "=", id)
-        .where("rev", "=", expectedRev)
-        .executeTakeFirst(),
+        .where("rev", "=", expectedRev),
+      commsAuditWhen(
+        ctx,
+        tenantId,
+        actor,
+        { action: "pms.reminder_rule.update", targetType: "pms_reminder_rule", targetId: id, detail: { fields, rev: expectedRev + 1 } },
+        ctx.db.selectFrom(T).select("id").where("tenant_id", "=", tenantId).where("id", "=", id).where("rev", "=", expectedRev + 1).where("updated_at", "=", at),
+      ),
+    ],
+    0,
     MESSAGES,
   );
-  if (Number(result.numUpdatedRows) === 0) {
+  if (changed === 0) {
     const now = await getReminderRule(ctx, tenantId, id);
     return now ? { ok: false, reason: "conflict", currentRev: now.rev } : { ok: false, reason: "not_found" };
   }
-  await pmsAudit(ctx, tenantId, actor, { action: "pms.reminder_rule.update", targetType: "pms_reminder_rule", targetId: id, detail: { fields, rev: expectedRev + 1 } });
   return { ok: true, rev: expectedRev + 1, updatedAt: at };
 }
 

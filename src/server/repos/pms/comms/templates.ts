@@ -11,10 +11,11 @@ import { MessageTemplateInputSchema, MessageTemplatePatchSchema, messageTemplate
 import type { MessageChannel, MessageTemplate, TemplateKind } from "../../../../modules/pms/comms/types";
 import type { PmsActor, PmsSaveResult } from "../../../../modules/pms/core/types";
 import type { PmsMessageTemplatesTable } from "../../../db/pms-schema/comms";
-import { runBatch } from "../../../db/batch";
-import { RepoInputError, assertTenantId, b01, guarded, isOn, nowIso, num, parseInput, pmsAudit, pmsAuditQuery, pmsId, translateDbError, writeWithAudit, type DbContext } from "../context";
+import { RepoInputError, assertTenantId, b01, guarded, isOn, nowIso, num, parseInput, pmsAuditQuery, pmsId, writeWithAudit, type DbContext } from "../context";
 
 const T = "pms_message_templates";
+import { changeWithAudit, commsAuditWhen } from "./shared";
+
 const MESSAGES = { unique: "A message template with this name (or import reference) already exists." };
 
 function toTemplate(r: Selectable<PmsMessageTemplatesTable>): MessageTemplate {
@@ -208,18 +209,18 @@ export async function updateMessageTemplate(ctx: DbContext, tenantId: string, id
         ),
       ]
     : [];
-  let changed = false;
-  try {
-    const results = await runBatch(ctx.db, [...clear, update]);
-    changed = Number(results[results.length - 1]?.numAffectedRows ?? 0) > 0;
-  } catch (err) {
-    throw translateDbError(err, MESSAGES);
-  }
+  const audit = commsAuditWhen(
+    ctx,
+    tenantId,
+    actor,
+    { action: "pms.message_template.update", targetType: "pms_message_template", targetId: id, detail: { fields, rev: expectedRev + 1, isDefault } },
+    ctx.db.selectFrom(T).select("id").where("tenant_id", "=", tenantId).where("id", "=", id).where("rev", "=", expectedRev + 1).where("updated_at", "=", at),
+  );
+  const changed = (await changeWithAudit(ctx, [...clear, update, audit], clear.length, MESSAGES)) > 0;
   if (!changed) {
     const now = await getMessageTemplate(ctx, tenantId, id);
     return now ? { ok: false, reason: "conflict", currentRev: now.rev } : { ok: false, reason: "not_found" };
   }
-  await pmsAudit(ctx, tenantId, actor, { action: "pms.message_template.update", targetType: "pms_message_template", targetId: id, detail: { fields, rev: expectedRev + 1, isDefault } });
   return { ok: true, rev: expectedRev + 1, updatedAt: at };
 }
 

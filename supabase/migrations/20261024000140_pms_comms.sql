@@ -11,6 +11,7 @@ create table if not exists public.pms_comms_settings (
   confirmations_sms integer not null default 1 check (confirmations_sms in (0, 1)),
   confirmations_email integer not null default 1 check (confirmations_email in (0, 1)),
   change_notices integer not null default 1 check (change_notices in (0, 1)),
+  dna_follow_up integer not null default 1 check (dna_follow_up in (0, 1)),
   sms_sender text check (sms_sender is null or length(sms_sender) between 3 and 11),
   reply_phone text,
   reply_email text,
@@ -26,7 +27,7 @@ create table if not exists public.pms_message_templates (
   tenant_id text not null,
   id text not null,
   rev integer not null check (rev > 0),
-  kind text not null check (kind in ('confirmation', 'reminder', 'moved', 'cancelled', 'general', 'marketing')),
+  kind text not null check (kind in ('confirmation', 'reminder', 'moved', 'cancelled', 'late_cancelled', 'dna', 'offer', 'general', 'marketing', 'payment_link', 'invoice', 'receipt', 'statement', 'letter', 'portal_link')),
   channel text not null check (channel in ('sms', 'email')),
   name text not null check (length(name) between 1 and 120),
   subject text check (subject is null or length(subject) <= 200),
@@ -71,7 +72,7 @@ create table if not exists public.pms_messages (
   direction text not null check (direction in ('outbound', 'inbound')),
   channel text not null check (channel in ('sms', 'email')),
   purpose text not null check (purpose in ('service', 'marketing')),
-  kind text not null check (kind in ('confirmation', 'reminder', 'moved', 'cancelled', 'general', 'marketing', 'reply')),
+  kind text not null check (kind in ('confirmation', 'reminder', 'moved', 'cancelled', 'late_cancelled', 'dna', 'offer', 'general', 'marketing', 'payment_link', 'invoice', 'receipt', 'statement', 'letter', 'portal_link', 'reply')),
   template_id text,
   appointment_id text,
   in_reply_to_id text,
@@ -92,6 +93,9 @@ create table if not exists public.pms_messages (
   sent_at timestamptz,
   delivered_at timestamptz,
   failed_at timestamptz,
+  document_type text check (document_type is null or document_type in ('letter', 'invoice', 'receipt', 'statement')),
+  document_id text,
+  attempts integer not null default 1 check (attempts >= 1),
   created_by text,
   created_at timestamptz not null,
   updated_at timestamptz not null,
@@ -105,6 +109,7 @@ create index if not exists pms_messages_address on public.pms_messages (tenant_i
 create index if not exists pms_messages_action on public.pms_messages (tenant_id, action_status, id);
 create index if not exists pms_messages_appointment on public.pms_messages (tenant_id, appointment_id);
 create index if not exists pms_messages_status on public.pms_messages (tenant_id, status, id);
+create index if not exists pms_messages_document on public.pms_messages (tenant_id, document_type, document_id);
 create unique index if not exists pms_messages_provider_id on public.pms_messages (tenant_id, provider, provider_message_id);
 
 create table if not exists public.pms_message_schedule (
@@ -112,7 +117,7 @@ create table if not exists public.pms_message_schedule (
   id text not null,
   appointment_id text not null,
   patient_id text not null,
-  kind text not null check (kind in ('confirmation', 'reminder', 'moved', 'cancelled')),
+  kind text not null check (kind in ('confirmation', 'reminder', 'moved', 'cancelled', 'late_cancelled', 'dna')),
   channel text not null check (channel in ('sms', 'email')),
   rule_id text,
   dedupe_key text not null check (length(dedupe_key) <= 200),
@@ -128,6 +133,7 @@ create table if not exists public.pms_message_schedule (
   claim_token text,
   claimed_at timestamptz,
   attempts integer not null default 0 check (attempts >= 0),
+  held integer not null default 0 check (held in (0, 1)),
   created_at timestamptz not null,
   updated_at timestamptz not null,
   primary key (tenant_id, id),

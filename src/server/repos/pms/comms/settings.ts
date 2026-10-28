@@ -7,7 +7,8 @@ import { DEFAULT_COMMS_SETTINGS } from "../../../../modules/pms/comms/defaults";
 import { CommsSettingsInputSchema, type CommsSettingsInput } from "../../../../modules/pms/comms/schemas";
 import type { CommsSettings } from "../../../../modules/pms/comms/types";
 import type { PmsActor, PmsSaveResult } from "../../../../modules/pms/core/types";
-import { RepoInputError, assertTenantId, b01, guarded, isOn, nowIso, num, parseInput, pmsAudit, pmsAuditQuery, writeWithAudit, type DbContext } from "../context";
+import { RepoInputError, assertTenantId, b01, isOn, nowIso, num, parseInput, pmsAuditQuery, writeWithAudit, type DbContext } from "../context";
+import { changeWithAudit, commsAuditWhen } from "./shared";
 
 const T = "pms_comms_settings";
 
@@ -21,6 +22,7 @@ export async function getCommsSettings(ctx: DbContext, tenantId: string): Promis
     confirmationsSms: isOn(r.confirmations_sms),
     confirmationsEmail: isOn(r.confirmations_email),
     changeNotices: isOn(r.change_notices),
+    dnaFollowUp: isOn(r.dna_follow_up),
     smsSender: r.sms_sender,
     replyPhone: r.reply_phone,
     replyEmail: r.reply_email,
@@ -45,6 +47,7 @@ export async function updateCommsSettings(ctx: DbContext, tenantId: string, expe
     confirmations_sms: b01(d.confirmationsSms ?? current.confirmationsSms),
     confirmations_email: b01(d.confirmationsEmail ?? current.confirmationsEmail),
     change_notices: b01(d.changeNotices ?? current.changeNotices),
+    dna_follow_up: b01(d.dnaFollowUp ?? current.dnaFollowUp),
     sms_sender: d.smsSender === undefined ? current.smsSender : d.smsSender,
     reply_phone: d.replyPhone === undefined ? current.replyPhone : d.replyPhone,
     reply_email: d.replyEmail === undefined ? current.replyEmail : d.replyEmail,
@@ -70,18 +73,17 @@ export async function updateCommsSettings(ctx: DbContext, tenantId: string, expe
     }
     return { ok: true, rev: 1, updatedAt: at };
   }
-  const result = await guarded(() =>
+  const changed = await changeWithAudit(ctx, [
     ctx.db
       .updateTable(T)
       .set({ ...next, rev: expectedRev + 1, updated_by: actor.userId, updated_at: at })
       .where("tenant_id", "=", tenantId)
-      .where("rev", "=", expectedRev)
-      .executeTakeFirst(),
-  );
-  if (Number(result.numUpdatedRows) === 0) {
+      .where("rev", "=", expectedRev),
+    commsAuditWhen(ctx, tenantId, actor, audit, ctx.db.selectFrom(T).select("tenant_id").where("tenant_id", "=", tenantId).where("rev", "=", expectedRev + 1).where("updated_at", "=", at)),
+  ]);
+  if (changed === 0) {
     const now = await getCommsSettings(ctx, tenantId);
     return { ok: false, reason: "conflict", currentRev: now.rev };
   }
-  await pmsAudit(ctx, tenantId, actor, audit);
   return { ok: true, rev: expectedRev + 1, updatedAt: at };
 }

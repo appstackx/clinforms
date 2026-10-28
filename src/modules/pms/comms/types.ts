@@ -6,6 +6,7 @@ import type {
   ACTION_STATUSES,
   APPOINTMENT_MESSAGE_KINDS,
   CONSENT_SOURCES,
+  DOCUMENT_TYPES,
   LETTER_RECIPIENT_KINDS,
   LETTER_SENT_VIA,
   LETTER_STATUSES,
@@ -37,6 +38,7 @@ export type SkipReason = (typeof SKIP_REASONS)[number];
 export type LetterStatus = (typeof LETTER_STATUSES)[number];
 export type LetterRecipientKind = (typeof LETTER_RECIPIENT_KINDS)[number];
 export type LetterSentVia = (typeof LETTER_SENT_VIA)[number];
+export type DocumentType = (typeof DOCUMENT_TYPES)[number];
 
 export interface CommsSettings {
   tenantId: string;
@@ -45,6 +47,7 @@ export interface CommsSettings {
   confirmationsSms: boolean;
   confirmationsEmail: boolean;
   changeNotices: boolean;
+  dnaFollowUp: boolean;
   smsSender: string | null;
   replyPhone: string | null;
   replyEmail: string | null;
@@ -109,6 +112,8 @@ export interface ScheduledMessage {
   messageId: string | null;
   skipReason: SkipReason | null;
   attempts: number;
+  /** A text moved out of the quiet hours. */
+  held: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -135,6 +140,9 @@ export interface MessageSummary {
   actionStatus: ActionStatus;
   sentAt: string | null;
   deliveredAt: string | null;
+  documentType: DocumentType | null;
+  documentId: string | null;
+  attempts: number;
   createdBy: string | null;
   createdAt: string;
 }
@@ -195,6 +203,8 @@ export interface LetterSummary {
   status: LetterStatus;
   finalisedAt: string | null;
   finalisedBy: string | null;
+  /** The signer's name, profession and registration, written when the letter is signed. */
+  signatureText: string | null;
   sentAt: string | null;
   sentVia: LetterSentVia | null;
   createdBy: string | null;

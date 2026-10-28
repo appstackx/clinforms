@@ -14,12 +14,17 @@
  */
 import type { MessageChannel, TemplateKind } from "./types";
 
-export type MergeContext = "appointment" | "general" | "marketing" | "letter";
+/**
+ * appointment – confirmations, reminders, notices, waiting-list offers; general / marketing – messages staff write;
+ * billing – payment links, invoices, receipts, statements; document – the email that carries a letter; portal – the
+ * portal's sign-in email; letter – letters.
+ */
+export type MergeContext = "appointment" | "general" | "marketing" | "billing" | "document" | "portal" | "letter";
 
 export interface MergeField {
   key: string;
   label: string;
-  group: "Patient" | "Appointment" | "Site" | "Clinic" | "Replies and links" | "GP" | "Case" | "Author" | "Recipient" | "Letter";
+  group: "Patient" | "Appointment" | "Site" | "Clinic" | "Replies and links" | "Billing" | "GP" | "Case" | "Author" | "Recipient" | "Letter";
   contexts: readonly MergeContext[];
   /** Only for this channel (messages); undefined = any. */
   channel?: MessageChannel;
@@ -27,22 +32,24 @@ export interface MergeField {
   example: string;
 }
 
-const MSG: readonly MergeContext[] = ["appointment", "general", "marketing"];
+const MSG: readonly MergeContext[] = ["appointment", "general", "marketing", "billing"];
 const APPT: readonly MergeContext[] = ["appointment"];
-const SERVICE: readonly MergeContext[] = ["appointment", "general"];
-const ALL: readonly MergeContext[] = ["appointment", "general", "marketing", "letter"];
+const SERVICE: readonly MergeContext[] = ["appointment", "general", "billing"];
+const ALL: readonly MergeContext[] = ["appointment", "general", "marketing", "billing", "document", "portal", "letter"];
 const LETTER: readonly MergeContext[] = ["letter"];
+const BILLING: readonly MergeContext[] = ["billing"];
 
 export const MERGE_FIELDS: readonly MergeField[] = [
-  { key: "patient.first_name", label: "First name (or preferred name)", group: "Patient", contexts: ALL, example: "Megan" },
+  { key: "patient.first_name", label: "First name (or preferred name)", group: "Patient", contexts: ["appointment", "general", "marketing", "billing", "portal", "letter"], example: "Megan" },
   { key: "patient.last_name", label: "Last name", group: "Patient", contexts: [...SERVICE, "letter"], example: "Hart" },
   { key: "patient.title", label: "Title", group: "Patient", contexts: [...SERVICE, "letter"], example: "Ms" },
-  { key: "patient.full_name", label: "Full name", group: "Patient", contexts: LETTER, example: "Ms Megan Hart" },
+  { key: "patient.full_name", label: "Full name", group: "Patient", contexts: ["letter", "document"], example: "Ms Megan Hart" },
   { key: "patient.date_of_birth", label: "Date of birth", group: "Patient", contexts: LETTER, example: "22/11/1991" },
   { key: "patient.number", label: "Patient number", group: "Patient", contexts: LETTER, example: "1" },
   { key: "patient.address", label: "Address", group: "Patient", contexts: LETTER, example: "4 Example Close (fictional)\nBletchley\nMK3 9ZZ" },
 
   { key: "appointment.date", label: "Date (Tuesday 27 October)", group: "Appointment", contexts: APPT, example: "Tuesday 27 October" },
+  { key: "appointment.day", label: "Day and date (Tue 27/10)", group: "Appointment", contexts: APPT, example: "Tue 27/10" },
   { key: "appointment.date_short", label: "Date (27/10/2026)", group: "Appointment", contexts: APPT, example: "27/10/2026" },
   { key: "appointment.time", label: "Start time", group: "Appointment", contexts: APPT, example: "14:30" },
   { key: "appointment.end_time", label: "End time", group: "Appointment", contexts: APPT, example: "15:00" },
@@ -55,13 +62,26 @@ export const MERGE_FIELDS: readonly MergeField[] = [
   { key: "site.phone", label: "Site phone", group: "Site", contexts: APPT, example: "01632 960101" },
 
   { key: "clinic.name", label: "Clinic name", group: "Clinic", contexts: ALL, example: "Riverside Physiotherapy (fictional)" },
+  { key: "clinic.short_name", label: "Clinic short name (the text sender name)", group: "Clinic", contexts: ["appointment", "general", "marketing", "billing"], example: "Riverside" },
   { key: "clinic.phone", label: "Clinic phone", group: "Clinic", contexts: ALL, example: "01632 960100" },
   { key: "clinic.email", label: "Clinic email", group: "Clinic", contexts: ALL, example: "hello@riverside-demo.example.com" },
   { key: "clinic.address", label: "Clinic address", group: "Clinic", contexts: LETTER, example: "2 Station Parade (fictional)\nBletchley\nMK2 9ZZ" },
 
-  { key: "reply.instructions", label: "Reply YES / NO instructions", group: "Replies and links", contexts: APPT, channel: "sms", example: "Reply YES to confirm or NO to cancel." },
-  { key: "optout.sms", label: "Reply STOP instructions", group: "Replies and links", contexts: ["marketing"], channel: "sms", example: "Reply STOP to opt out." },
+  { key: "reply.instructions", label: "Reply instructions (C to cancel)", group: "Replies and links", contexts: APPT, channel: "sms", example: "Reply C to cancel." },
+  { key: "optout.sms", label: "STOP to opt out", group: "Replies and links", contexts: ["appointment", "marketing", "billing"], channel: "sms", example: "STOP to opt out" },
   { key: "unsubscribe.link", label: "Stop-emails link", group: "Replies and links", contexts: MSG, channel: "email", example: "https://clinic.example.com/stop/…" },
+  { key: "portal.link", label: "Sign-in link", group: "Replies and links", contexts: ["portal"], channel: "email", example: "https://clinic.example.com/portal/…" },
+  { key: "portal.expires", label: "When the sign-in link expires", group: "Replies and links", contexts: ["portal"], channel: "email", example: "15 minutes (at 10:57)" },
+
+  { key: "billing.number", label: "Invoice or statement number", group: "Billing", contexts: BILLING, example: "INV00052" },
+  { key: "billing.amount", label: "Amount", group: "Billing", contexts: BILLING, example: "£55.00" },
+  { key: "billing.balance", label: "Amount still to pay", group: "Billing", contexts: BILLING, example: "£120.00" },
+  { key: "billing.due_date", label: "Due date", group: "Billing", contexts: BILLING, example: "27/11/2026" },
+  { key: "billing.link", label: "Payment link", group: "Billing", contexts: BILLING, example: "https://pay.example.com/3Qe1" },
+  { key: "billing.document", label: "The document (invoice, receipt or statement)", group: "Billing", contexts: BILLING, channel: "email", example: "Invoice INV00052 …" },
+
+  { key: "document.title", label: "Letter subject", group: "Letter", contexts: ["document"], example: "Discharge: Ms Megan Hart" },
+  { key: "document.body", label: "The letter", group: "Letter", contexts: ["document"], example: "Dear Dr Ward, …" },
 
   { key: "today", label: "Today's date", group: "Letter", contexts: LETTER, example: "24 October 2026" },
   { key: "gp.name", label: "GP's name", group: "GP", contexts: LETTER, example: "Dr Ellen Ward (fictional)" },
@@ -73,10 +93,15 @@ export const MERGE_FIELDS: readonly MergeField[] = [
   { key: "case.claim_reference", label: "Claim or instruction reference", group: "Case", contexts: LETTER, example: "MMR/2291" },
   { key: "case.membership_number", label: "Membership or policy number", group: "Case", contexts: LETTER, example: "NW-000123" },
   { key: "case.payer", label: "Who pays (insurer, solicitor…)", group: "Case", contexts: LETTER, example: "Harrow & Pike Solicitors (fictional)" },
+  { key: "case.first_visit", label: "First visit", group: "Case", contexts: LETTER, example: "18/03/2026" },
+  { key: "case.last_visit", label: "Latest visit", group: "Case", contexts: LETTER, example: "21/10/2026" },
+  { key: "case.sessions", label: "Sessions attended", group: "Case", contexts: LETTER, example: "6" },
+  { key: "appointments.upcoming", label: "Next appointments (date, time, with)", group: "Letter", contexts: LETTER, example: "Wed 28/10/2026  11:30  Sarah Reid" },
+  { key: "appointments.attended", label: "Appointments attended (dates)", group: "Letter", contexts: LETTER, example: "18/03/2026, 25/03/2026" },
   { key: "author.name", label: "Author's name", group: "Author", contexts: LETTER, example: "Sarah Reid" },
   { key: "author.profession", label: "Author's profession", group: "Author", contexts: LETTER, example: "Physiotherapist" },
   { key: "author.registration", label: "Author's registration number", group: "Author", contexts: LETTER, example: "PH-DEMO-01" },
-  { key: "recipient.name", label: "Recipient's name", group: "Recipient", contexts: LETTER, example: "Dr Ellen Ward (fictional)" },
+  { key: "recipient.name", label: "Recipient's name", group: "Recipient", contexts: ["letter", "document"], example: "Dr Ellen Ward (fictional)" },
   { key: "recipient.address", label: "Recipient's address", group: "Recipient", contexts: LETTER, example: "1 Queensway (fictional)\nBletchley\nMK2 9ZZ" },
 ];
 
@@ -95,6 +120,9 @@ export function fieldsFor(context: MergeContext, channel: MessageChannel | null)
 export function contextForKind(kind: TemplateKind): MergeContext {
   if (kind === "general") return "general";
   if (kind === "marketing") return "marketing";
+  if (kind === "payment_link" || kind === "invoice" || kind === "receipt" || kind === "statement") return "billing";
+  if (kind === "letter") return "document";
+  if (kind === "portal_link") return "portal";
   return "appointment";
 }
 
@@ -139,6 +167,9 @@ const CONTEXT_WORDS: Readonly<Record<MergeContext, string>> = {
   appointment: "an appointment message",
   general: "a general message",
   marketing: "a marketing message",
+  billing: "a billing message",
+  document: "a letter's email",
+  portal: "the sign-in email",
   letter: "a letter",
 };
 

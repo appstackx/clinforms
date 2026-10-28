@@ -5,7 +5,7 @@
  * for the author to write – the letter cannot be finalised until both are gone (../../repos/pms/comms/letters.ts).
  */
 import { renderTemplate } from "../../../modules/pms/comms/merge-fields";
-import { formatLongDate } from "../../../modules/pms/comms/schedule";
+import { formatAppointmentDay, formatAppointmentTime, formatLongDate } from "../../../modules/pms/comms/schedule";
 import type { Letter, LetterRecipientKind } from "../../../modules/pms/comms/types";
 import { formatUkDate, ukToday } from "../../../modules/pms/core/text";
 import type { PmsActor, Profession } from "../../../modules/pms/core/types";
@@ -17,6 +17,21 @@ import { getPractitioner, getSite } from "../../repos/pms/directory";
 import { getPatient } from "../../repos/pms/patients";
 import { getReferrer } from "../../repos/pms/referrers";
 import { clinicContact, clinicValues } from "./render";
+
+/** The register a profession's registration number belongs to (printed before the number under a signature). */
+export const PROFESSION_REGISTERS: Readonly<Partial<Record<Profession, string>>> = {
+  physiotherapist: "HCPC",
+  podiatrist: "HCPC",
+  osteopath: "GOsC",
+  chiropractor: "GCC",
+};
+
+/** "Priya Shah, Physiotherapist · HCPC PH-DEMO-01" (design round 3, letter editor) – or just the name. */
+export function signatureLine(name: string, practitioner: { profession: Profession; registrationNumber: string | null } | null): string {
+  if (!practitioner) return name;
+  const reg = practitioner.registrationNumber ? ` · ${[PROFESSION_REGISTERS[practitioner.profession], practitioner.registrationNumber].filter(Boolean).join(" ")}` : "";
+  return `${name}, ${PROFESSION_LABELS[practitioner.profession]}${reg}`;
+}
 
 export const PROFESSION_LABELS: Readonly<Record<Profession, string>> = {
   physiotherapist: "Physiotherapist",
@@ -51,6 +66,33 @@ const lines = (...parts: (string[] | string | null | undefined)[]) =>
     .filter(Boolean)
     .join("\n") || null;
 
+/**
+ * What letters say about visits, from the diary's appointments of the patient (of the case, when the letter has
+ * one): the completed visits' dates, the first and latest, and the next booked appointments ("Wed 28/10/2026 11:30
+ * with Sarah Reid").
+ */
+async function appointmentFacts(ctx: RepoContext, tenantId: string, patientId: string, caseId: string | null) {
+  let q = ctx.db
+    .selectFrom("pms_appointments")
+    .select(["starts_at", "starts_on", "status", "practitioner_id"])
+    .where("tenant_id", "=", tenantId)
+    .where("patient_id", "=", patientId)
+    .where("kind", "=", "appointment")
+    .where("status", "in", ["attended", "booked"]);
+  if (caseId) q = q.where((eb) => eb.or([eb("case_id", "=", caseId), eb("status", "=", "booked")]));
+  const rows = await q.orderBy("starts_at").limit(400).execute();
+  const nowMs = (ctx.now ? ctx.now() : new Date()).getTime();
+  const attended = rows.filter((r) => r.status === "attended").map((r) => formatUkDate(r.starts_on));
+  const upcomingRows = rows.filter((r) => r.status === "booked" && Date.parse(r.starts_at) > nowMs).slice(0, 8);
+  const names = new Map<string, string>();
+  for (const id of Array.from(new Set(upcomingRows.map((r) => r.practitioner_id).filter((x): x is string => Boolean(x))))) {
+    const p = await getPractitioner(ctx, tenantId, id);
+    if (p) names.set(id, p.displayName);
+  }
+  const upcoming = upcomingRows.map((r) => `${formatAppointmentDay(r.starts_at)}/${r.starts_on.slice(0, 4)}  ${formatAppointmentTime(r.starts_at)}${r.practitioner_id && names.get(r.practitioner_id) ? `  with ${names.get(r.practitioner_id)}` : ""}`);
+  return { attended, firstVisit: attended[0] ?? null, lastVisit: attended[attended.length - 1] ?? null, upcoming };
+}
+
 export async function startLetter(ctx: RepoContext, tenantId: string, input: StartLetterInput, actor: PmsActor, fallbackClinicName?: string): Promise<Letter> {
   const template = await getLetterTemplate(ctx, tenantId, input.templateId);
   if (!template || !template.active) throw new RepoInputError("Choose a letter template.");
@@ -84,6 +126,7 @@ export async function startLetter(ctx: RepoContext, tenantId: string, input: Sta
   const settings = await getCommsSettings(ctx, tenantId);
   const clinic = await clinicContact(ctx, tenantId, settings, fallbackClinicName);
   const letterOn = input.letterOn ?? ukToday(ctx.now ? ctx.now() : new Date());
+  const visits = await appointmentFacts(ctx, tenantId, patient.id, theCase?.id ?? null);
   const values: Record<string, string | null> = {
     ...clinicValues(clinic),
     today: formatLongDate(letterOn),
@@ -103,6 +146,11 @@ export async function startLetter(ctx: RepoContext, tenantId: string, input: Sta
     "case.claim_reference": theCase?.claimReference ?? null,
     "case.membership_number": theCase?.membershipNumber ?? null,
     "case.payer": payer?.name ?? (theCase?.payerType === "self_pay" ? "Self-pay" : null),
+    "case.first_visit": visits.firstVisit,
+    "case.last_visit": visits.lastVisit,
+    "case.sessions": visits.attended.length ? String(visits.attended.length) : null,
+    "appointments.attended": visits.attended.length ? visits.attended.join(", ") : null,
+    "appointments.upcoming": visits.upcoming.length ? visits.upcoming.join("\n") : null,
     "author.name": practitioner?.displayName ?? null,
     "author.profession": practitioner ? PROFESSION_LABELS[practitioner.profession] : null,
     "author.registration": practitioner?.registrationNumber ?? null,

@@ -27,6 +27,7 @@ import {
 import type { Letter, LetterRecipientKind, LetterSentVia, LetterStatus, LetterSummary, LetterTemplate } from "../../../../modules/pms/comms/types";
 import type { PmsActor, PmsSaveResult } from "../../../../modules/pms/core/types";
 import type { PmsLetterTemplatesTable, PmsLettersTable } from "../../../db/pms-schema/comms";
+import { changeWithAudit, commsAuditWhen } from "./shared";
 import {
   RepoInputError,
   assertId,
@@ -34,14 +35,12 @@ import {
   b01,
   decryptField,
   encryptField,
-  guarded,
   isOn,
   jsonLines,
   nowIso,
   num,
   parseInput,
   parseLines,
-  pmsAudit,
   pmsAuditQuery,
   pmsId,
   writeWithAudit,
@@ -138,8 +137,9 @@ export async function updateLetterTemplate(ctx: DbContext, tenantId: string, id:
   if (current.rev !== expectedRev) return { ok: false, reason: "conflict", currentRev: current.rev };
   if (fields.length === 0) return { ok: true, rev: expectedRev, updatedAt: current.updatedAt ?? "" };
   const at = nowIso(ctx);
-  const result = await guarded(
-    () =>
+  const changed = await changeWithAudit(
+    ctx,
+    [
       ctx.db
         .updateTable(TT)
         .set({
@@ -153,15 +153,22 @@ export async function updateLetterTemplate(ctx: DbContext, tenantId: string, id:
         })
         .where("tenant_id", "=", tenantId)
         .where("id", "=", id)
-        .where("rev", "=", expectedRev)
-        .executeTakeFirst(),
+        .where("rev", "=", expectedRev),
+      commsAuditWhen(
+        ctx,
+        tenantId,
+        actor,
+        { action: "pms.letter_template.update", targetType: "pms_letter_template", targetId: id, detail: { fields, rev: expectedRev + 1 } },
+        ctx.db.selectFrom(TT).select("id").where("tenant_id", "=", tenantId).where("id", "=", id).where("rev", "=", expectedRev + 1).where("updated_at", "=", at),
+      ),
+    ],
+    0,
     TEMPLATE_MESSAGES,
   );
-  if (Number(result.numUpdatedRows) === 0) {
+  if (changed === 0) {
     const now = await getLetterTemplate(ctx, tenantId, id);
     return now ? { ok: false, reason: "conflict", currentRev: now.rev } : { ok: false, reason: "not_found" };
   }
-  await pmsAudit(ctx, tenantId, actor, { action: "pms.letter_template.update", targetType: "pms_letter_template", targetId: id, detail: { fields, rev: expectedRev + 1 } });
   return { ok: true, rev: expectedRev + 1, updatedAt: at };
 }
 
@@ -191,6 +198,7 @@ const SUMMARY_COLUMNS = [
   "status",
   "finalised_at",
   "finalised_by",
+  "signature_text",
   "sent_at",
   "sent_via",
   "created_by",
@@ -216,6 +224,7 @@ function toSummary(r: Pick<LetterRow, (typeof SUMMARY_COLUMNS)[number]>): Letter
     status: r.status as LetterStatus,
     finalisedAt: r.finalised_at,
     finalisedBy: r.finalised_by,
+    signatureText: r.signature_text ?? null,
     sentAt: r.sent_at,
     sentVia: (r.sent_via as LetterSentVia | null) ?? null,
     createdBy: r.created_by,
@@ -267,6 +276,7 @@ export async function createLetter(ctx: RepoContext, tenantId: string, input: Le
         status: "draft",
         finalised_at: null,
         finalised_by: null,
+        signature_text: null,
         sent_at: null,
         sent_via: null,
         voided_at: null,
@@ -316,31 +326,42 @@ export async function updateLetter(ctx: RepoContext, tenantId: string, id: strin
   put("body", "body_enc", d.body === undefined ? undefined : encryptField(ctx, tenantId, L, "body_enc", id, d.body));
   if (fields.length === 0) return { ok: true, rev: expectedRev, updatedAt: current.updated_at };
   const at = nowIso(ctx);
-  const result = await guarded(
-    () =>
+  const changed = await changeWithAudit(
+    ctx,
+    [
       ctx.db
         .updateTable(L)
         .set({ ...set, rev: expectedRev + 1, updated_at: at })
         .where("tenant_id", "=", tenantId)
         .where("id", "=", id)
         .where("rev", "=", expectedRev)
-        .where("status", "=", "draft")
-        .executeTakeFirst(),
+        .where("status", "=", "draft"),
+      commsAuditWhen(ctx, tenantId, actor, { action: "pms.letter.update", targetType: "pms_letter", targetId: id, detail: { fields, rev: expectedRev + 1 } }, revMarked(ctx, tenantId, id, expectedRev + 1, at)),
+    ],
+    0,
     LETTER_MESSAGES,
   );
-  if (Number(result.numUpdatedRows) === 0) {
+  if (changed === 0) {
     const now = await ctx.db.selectFrom(L).select(["rev", "status"]).where("tenant_id", "=", tenantId).where("id", "=", id).executeTakeFirst();
     if (!now) return { ok: false, reason: "not_found" };
     return now.status !== "draft" ? { ok: false, reason: "locked" } : { ok: false, reason: "conflict", currentRev: num(now.rev) };
   }
-  await pmsAudit(ctx, tenantId, actor, { action: "pms.letter.update", targetType: "pms_letter", targetId: id, detail: { fields, rev: expectedRev + 1 } });
   return { ok: true, rev: expectedRev + 1, updatedAt: at };
 }
 
 export type LetterStepResult = { ok: true } | { ok: false; reason: "not_found" | "conflict" | "locked" | "unfilled" | "not_final" };
 
-/** Finalises a draft (locks it). Refused while the letter has gaps to fill. */
-export async function finaliseLetter(ctx: RepoContext, tenantId: string, id: string, expectedRev: number, actor: PmsActor): Promise<LetterStepResult> {
+/** The row a change just marked: its new revision and time (the audit row's condition). */
+function revMarked(ctx: DbContext, tenantId: string, id: string, rev: number, at: string) {
+  return ctx.db.selectFrom(L).select("id").where("tenant_id", "=", tenantId).where("id", "=", id).where("rev", "=", rev).where("updated_at", "=", at);
+}
+
+/**
+ * Signs and finalises a draft (locks it): `signature` is the signer's name, profession and registration number as
+ * printed under the letter (design round 3, "Letter editor": "Signature from <name>'s signing details. Added when
+ * she sends."). Refused while the letter has gaps to fill.
+ */
+export async function finaliseLetter(ctx: RepoContext, tenantId: string, id: string, expectedRev: number, actor: PmsActor, signature: string | null = null): Promise<LetterStepResult> {
   assertTenantId(tenantId);
   const letter = await getLetter(ctx, tenantId, id);
   if (!letter) return { ok: false, reason: "not_found" };
@@ -348,16 +369,17 @@ export async function finaliseLetter(ctx: RepoContext, tenantId: string, id: str
   if (letter.rev !== expectedRev) return { ok: false, reason: "conflict" };
   if (hasUnfilledFields(letter.subject) || hasUnfilledFields(letter.body)) return { ok: false, reason: "unfilled" };
   const at = nowIso(ctx);
-  const result = await ctx.db
-    .updateTable(L)
-    .set({ status: "final", finalised_at: at, finalised_by: actor.userId, rev: expectedRev + 1, updated_at: at })
-    .where("tenant_id", "=", tenantId)
-    .where("id", "=", id)
-    .where("rev", "=", expectedRev)
-    .where("status", "=", "draft")
-    .executeTakeFirst();
-  if (Number(result.numUpdatedRows) === 0) return { ok: false, reason: "conflict" };
-  await pmsAudit(ctx, tenantId, actor, { action: "pms.letter.finalise", targetType: "pms_letter", targetId: id, detail: { rev: expectedRev + 1 } });
+  const changed = await changeWithAudit(ctx, [
+    ctx.db
+      .updateTable(L)
+      .set({ status: "final", finalised_at: at, finalised_by: actor.userId, signature_text: signature ? signature.slice(0, 300) : null, rev: expectedRev + 1, updated_at: at })
+      .where("tenant_id", "=", tenantId)
+      .where("id", "=", id)
+      .where("rev", "=", expectedRev)
+      .where("status", "=", "draft"),
+    commsAuditWhen(ctx, tenantId, actor, { action: "pms.letter.finalise", targetType: "pms_letter", targetId: id, detail: { rev: expectedRev + 1, signed: Boolean(signature) } }, revMarked(ctx, tenantId, id, expectedRev + 1, at)),
+  ]);
+  if (changed === 0) return { ok: false, reason: "conflict" };
   return { ok: true };
 }
 
@@ -366,20 +388,27 @@ export async function markLetterSent(ctx: DbContext, tenantId: string, id: strin
   assertTenantId(tenantId);
   const how = parseInput(LetterSentViaSchema, via, "Sent by");
   const at = nowIso(ctx);
-  const result = await ctx.db
-    .updateTable(L)
-    .set((eb) => ({ sent_at: at, sent_via: how, rev: eb("rev", "+", 1), updated_at: at }))
-    .where("tenant_id", "=", tenantId)
-    .where("id", "=", id)
-    .where("status", "=", "final")
-    .where("sent_at", "is", null)
-    .executeTakeFirst();
-  if (Number(result.numUpdatedRows) === 0) {
+  const changed = await changeWithAudit(ctx, [
+    ctx.db
+      .updateTable(L)
+      .set((eb) => ({ sent_at: at, sent_via: how, rev: eb("rev", "+", 1), updated_at: at }))
+      .where("tenant_id", "=", tenantId)
+      .where("id", "=", id)
+      .where("status", "=", "final")
+      .where("sent_at", "is", null),
+    commsAuditWhen(
+      ctx,
+      tenantId,
+      actor,
+      { action: "pms.letter.sent", targetType: "pms_letter", targetId: id, detail: { via: how } },
+      ctx.db.selectFrom(L).select("id").where("tenant_id", "=", tenantId).where("id", "=", id).where("sent_at", "=", at).where("sent_via", "=", how),
+    ),
+  ]);
+  if (changed === 0) {
     const now = await ctx.db.selectFrom(L).select(["status", "sent_at"]).where("tenant_id", "=", tenantId).where("id", "=", id).executeTakeFirst();
     if (!now) return { ok: false, reason: "not_found" };
     return now.status !== "final" ? { ok: false, reason: "not_final" } : { ok: false, reason: "locked" };
   }
-  await pmsAudit(ctx, tenantId, actor, { action: "pms.letter.sent", targetType: "pms_letter", targetId: id, detail: { via: how } });
   return { ok: true };
 }
 
@@ -387,18 +416,25 @@ export async function markLetterSent(ctx: DbContext, tenantId: string, id: strin
 export async function voidLetter(ctx: DbContext, tenantId: string, id: string, actor: PmsActor): Promise<LetterStepResult> {
   assertTenantId(tenantId);
   const at = nowIso(ctx);
-  const result = await ctx.db
-    .updateTable(L)
-    .set((eb) => ({ status: "void", voided_at: at, voided_by: actor.userId, rev: eb("rev", "+", 1), updated_at: at }))
-    .where("tenant_id", "=", tenantId)
-    .where("id", "=", id)
-    .where("status", "in", ["draft", "final"])
-    .executeTakeFirst();
-  if (Number(result.numUpdatedRows) === 0) {
+  const changed = await changeWithAudit(ctx, [
+    ctx.db
+      .updateTable(L)
+      .set((eb) => ({ status: "void", voided_at: at, voided_by: actor.userId, rev: eb("rev", "+", 1), updated_at: at }))
+      .where("tenant_id", "=", tenantId)
+      .where("id", "=", id)
+      .where("status", "in", ["draft", "final"]),
+    commsAuditWhen(
+      ctx,
+      tenantId,
+      actor,
+      { action: "pms.letter.void", targetType: "pms_letter", targetId: id },
+      ctx.db.selectFrom(L).select("id").where("tenant_id", "=", tenantId).where("id", "=", id).where("status", "=", "void").where("voided_at", "=", at),
+    ),
+  ]);
+  if (changed === 0) {
     const now = await ctx.db.selectFrom(L).select("status").where("tenant_id", "=", tenantId).where("id", "=", id).executeTakeFirst();
     return now ? { ok: false, reason: "locked" } : { ok: false, reason: "not_found" };
   }
-  await pmsAudit(ctx, tenantId, actor, { action: "pms.letter.void", targetType: "pms_letter", targetId: id });
   return { ok: true };
 }
 

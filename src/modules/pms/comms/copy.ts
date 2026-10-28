@@ -19,33 +19,61 @@ export const CHANNEL_LABELS: Readonly<Record<MessageChannel, string>> = { sms: "
 
 export const PURPOSE_LABELS: Readonly<Record<MessagePurpose, string>> = { service: "About their care", marketing: "Marketing" };
 
-export const KIND_LABELS: Readonly<Record<MessageKind, string>> = {
-  confirmation: "Booking confirmation",
-  reminder: "Reminder",
-  moved: "Appointment moved",
-  cancelled: "Appointment cancelled",
-  general: "Message",
-  marketing: "Marketing",
-  reply: "Reply",
-};
-
 export const TEMPLATE_KIND_LABELS: Readonly<Record<TemplateKind, string>> = {
   confirmation: "Booking confirmation",
-  reminder: "Reminder",
+  reminder: "Appointment reminder",
   moved: "Appointment moved",
-  cancelled: "Appointment cancelled",
-  general: "General message",
+  cancelled: "Cancelled with notice",
+  late_cancelled: "Late cancellation",
+  dna: "Did not attend",
+  offer: "Waiting list offer",
+  general: "Message",
   marketing: "Marketing",
+  payment_link: "Payment link",
+  invoice: "Invoice",
+  receipt: "Receipt",
+  statement: "Statement",
+  letter: "Letter",
+  portal_link: "Portal sign-in",
+};
+
+export const KIND_LABELS: Readonly<Record<MessageKind, string>> = { ...TEMPLATE_KIND_LABELS, reply: "Reply" };
+
+/** When a template's messages go (the template list's second line). */
+export const TEMPLATE_WHEN: Readonly<Record<TemplateKind, string>> = {
+  confirmation: "When booked (if the booking asks for it)",
+  reminder: "Before the appointment (Message settings)",
+  moved: "When the clinic moves an appointment",
+  cancelled: "When an appointment is cancelled with notice",
+  late_cancelled: "When cancelled under 24 hours before",
+  dna: "1 hour after a missed appointment",
+  offer: "Offer slot by text (waiting list)",
+  general: "Sent by hand",
+  marketing: "Sent by hand – opted-in patients only",
+  payment_link: "Billing: payment link",
+  invoice: "Billing: email an invoice",
+  receipt: "Billing: email a receipt",
+  statement: "Billing: email a statement",
+  letter: "Letters: send by email",
+  portal_link: "Patient portal sign-in (coming with the portal)",
 };
 
 /** What the status means for the person reading the log. */
 export const STATUS_LABELS: Readonly<Record<MessageStatus, string>> = {
-  queued: "Waiting to send",
+  queued: "Sending",
   outbox: "In the outbox – not sent",
   sent: "Sent",
   delivered: "Delivered",
-  failed: "Not delivered",
+  failed: "Failed",
   received: "Received",
+};
+
+/** Why a message failed (the provider's error codes and the test service's). */
+export const ERROR_LABELS: Readonly<Record<string, string>> = {
+  test_undeliverable: "Number not reachable",
+  test_bounced: "Email address bounced",
+  provider_error: "The message service did not accept it",
+  undelivered: "Not delivered",
 };
 
 export const SCHEDULE_STATUS_LABELS: Readonly<Record<ScheduleStatus, string>> = {
@@ -71,7 +99,7 @@ export const SKIP_REASON_LABELS: Readonly<Record<SkipReason, string>> = {
   archived: "The patient's record is archived.",
   no_mobile: "There is no mobile number on the record.",
   no_email: "There is no email address on the record.",
-  opted_out: "The patient asked not to receive these by this route.",
+  opted_out: "Opted out of this kind of message by this route.",
   no_marketing_consent: "The patient has not agreed to marketing by this route.",
   too_late: "It was too close to the appointment to send.",
   appointment_cancelled: "The appointment was cancelled.",

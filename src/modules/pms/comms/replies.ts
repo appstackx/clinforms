@@ -8,8 +8,9 @@
  */
 import type { ReplyIntent } from "./types";
 
-const CONFIRM = new Set(["YES", "Y", "YEP", "YEAH", "YA", "CONFIRM", "CONFIRMED", "C", "OK", "OKAY", "SURE"]);
-const CANCEL = new Set(["NO", "N", "NOPE", "CANCEL", "CANCELLED", "CANCELED"]);
+const CONFIRM = new Set(["YES", "Y", "YEP", "YEAH", "YA", "CONFIRM", "CONFIRMED", "OK", "OKAY", "SURE"]);
+// "C" is the cancel word the reminder text offers ("Reply C to cancel").
+const CANCEL = new Set(["C", "NO", "N", "NOPE", "CANCEL", "CANCELLED", "CANCELED"]);
 const STOP = new Set(["STOP", "STOPALL", "UNSUBSCRIBE", "END", "QUIT", "OPTOUT", "REVOKE"]);
 
 export function interpretReply(text: string): ReplyIntent {

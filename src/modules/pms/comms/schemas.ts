@@ -33,18 +33,31 @@ export const MessageChannelSchema = z.enum(MESSAGE_CHANNELS);
 export const MESSAGE_PURPOSES = ["service", "marketing"] as const;
 export const MessagePurposeSchema = z.enum(MESSAGE_PURPOSES);
 
-/** Appointment messages the system sends by itself. */
-export const APPOINTMENT_MESSAGE_KINDS = ["confirmation", "reminder", "moved", "cancelled"] as const;
+/**
+ * Appointment messages the system sends by itself: the booking confirmation (when the booking asked for one), the
+ * reminders, "moved", "cancelled" (with notice), "late_cancelled" (under 24 hours – a fee may apply) and the "dna"
+ * follow-up (an hour after a missed appointment).
+ */
+export const APPOINTMENT_MESSAGE_KINDS = ["confirmation", "reminder", "moved", "cancelled", "late_cancelled", "dna"] as const;
 export const AppointmentMessageKindSchema = z.enum(APPOINTMENT_MESSAGE_KINDS);
 
-/** What a template is for. "general" = a message staff send by hand; "marketing" = news and offers (opt-in). */
-export const TEMPLATE_KINDS = [...APPOINTMENT_MESSAGE_KINDS, "general", "marketing"] as const;
+/**
+ * What a template is for. "offer" = a free slot offered to someone on the waiting list; "general" = a message staff
+ * send by hand; "marketing" = news and offers (opt-in only); "payment_link", "invoice", "receipt", "statement" =
+ * billing's messages; "letter" = the email that carries a letter; "portal_link" = the patient portal's sign-in email
+ * (the portal sends it – M7).
+ */
+export const TEMPLATE_KINDS = [...APPOINTMENT_MESSAGE_KINDS, "offer", "general", "marketing", "payment_link", "invoice", "receipt", "statement", "letter", "portal_link"] as const;
 export const TemplateKindSchema = z.enum(TEMPLATE_KINDS);
 
 /** Kinds in the message log ("reply" = a text the patient sent back). */
 export const MESSAGE_KINDS = [...TEMPLATE_KINDS, "reply"] as const;
 
 export const MESSAGE_DIRECTIONS = ["outbound", "inbound"] as const;
+
+/** A document a message carries (a letter, an invoice, a receipt, a statement). */
+export const DOCUMENT_TYPES = ["letter", "invoice", "receipt", "statement"] as const;
+export const DocumentTypeSchema = z.enum(DOCUMENT_TYPES);
 
 /**
  * queued    – written, not yet handed to the provider;
@@ -119,6 +132,8 @@ export const CommsSettingsInputSchema = z
     confirmationsEmail: z.boolean().optional(),
     /** Tell the patient when the clinic moves or cancels an appointment. */
     changeNotices: z.boolean().optional(),
+    /** Text or email a patient an hour after a missed appointment. */
+    dnaFollowUp: z.boolean().optional(),
     /** Name shown as the sender of texts (where the network allows it). */
     smsSender: z
       .union([z.string(), z.null()])
@@ -252,8 +267,8 @@ export const AppointmentForMessagesSchema = z.object({
 });
 export type AppointmentForMessages = z.input<typeof AppointmentForMessagesSchema>;
 
-/** What the diary asks for besides reminders: a booking confirmation, a "moved" notice, a cancellation notice. */
-export const APPOINTMENT_NOTIFY = ["none", "confirmation", "moved", "cancelled"] as const;
+/** What the diary asks for besides reminders: a booking confirmation, a "moved" notice, a cancellation notice, the missed-appointment follow-up. */
+export const APPOINTMENT_NOTIFY = ["none", "confirmation", "moved", "cancelled", "late_cancelled", "dna"] as const;
 export const AppointmentNotifySchema = z.enum(APPOINTMENT_NOTIFY);
 
 /* ------------------------------------------------------------------------------------------------
@@ -267,6 +282,8 @@ export const ManualMessageInputSchema = z
     purpose: MessagePurposeSchema.optional(),
     /** A template the text started from (general or marketing). */
     templateId: z.union([PmsIdSchema, z.null()]).optional(),
+    /** The patient's reply this answers (marks it dealt with). */
+    inReplyToId: z.union([PmsIdSchema, z.null()]).optional(),
     subject: optionalText(200),
     body: requiredText(EMAIL_BODY_MAX),
   })

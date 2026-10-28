@@ -12,7 +12,15 @@
 import { isSmsCapable } from "./sms";
 import type { MessageChannel, MessagePurpose, MessagingContact, SkipReason } from "./types";
 
-export function messageBlock(contact: MessagingContact, channel: MessageChannel, purpose: MessagePurpose, options: { automatic: boolean }): SkipReason | null {
+/**
+ * Messages that answer something the patient did or asked for (their booking's confirmation, a change the clinic
+ * made to it, an invoice or receipt they are owed): by EMAIL these go even after the patient used the stop-emails
+ * link, which stops reminder and follow-up emails (design round 3: "Stop reminder emails (booking confirmations will
+ * still be sent)"). By TEXT, "STOP" means no texts at all.
+ */
+export const TRANSACTIONAL_KINDS: ReadonlySet<string> = new Set(["confirmation", "moved", "cancelled", "late_cancelled", "invoice", "receipt", "statement", "letter", "portal_link"]);
+
+export function messageBlock(contact: MessagingContact, channel: MessageChannel, purpose: MessagePurpose, options: { automatic: boolean; kind?: string }): SkipReason | null {
   if (contact.status === "deceased") return "deceased";
   if (options.automatic && contact.status === "archived") return "archived";
   if (channel === "sms" && !isSmsCapable(contact.phoneMobile)) return "no_mobile";
@@ -21,6 +29,7 @@ export function messageBlock(contact: MessagingContact, channel: MessageChannel,
     const ok = channel === "sms" ? contact.marketingSms : contact.marketingEmail;
     return ok ? null : "no_marketing_consent";
   }
+  if (channel === "email" && options.kind && TRANSACTIONAL_KINDS.has(options.kind)) return null;
   const ok = channel === "sms" ? contact.reminderSms : contact.reminderEmail;
   return ok ? null : "opted_out";
 }

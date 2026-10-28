@@ -17,7 +17,7 @@ import { logAuthEvent } from "../../email/log";
 import { RepoInputError, parseInput, type RepoContext } from "../../repos/pms/context";
 import { recordDeliveryReceipt } from "../../repos/pms/comms/messages";
 import { isPackageOn } from "../../repos/pms/entitlements";
-import { SYSTEM_ACTOR } from "./dispatch";
+import { SYSTEM_ACTOR, type DispatchDeps } from "./dispatch";
 import { recordInboundSms } from "./replies";
 import { TEST_PROVIDER_ID } from "./providers/test";
 
@@ -32,6 +32,8 @@ export interface WebhookDeps {
   /** The SMS provider's mode: the webhook exists only for "test". */
   providerMode: "outbox" | "test" | "misconfigured";
   ctx: () => RepoContext;
+  /** Providers for the one confirmation text after a STOP (optional). */
+  dispatch?: () => DispatchDeps;
   nowMs?: () => number;
 }
 
@@ -80,6 +82,7 @@ export async function handleSmsWebhook(req: Request, deps: WebhookDeps): Promise
         { from: String(body.from ?? ""), text: String(body.text ?? ""), providerMessageId: typeof body.id === "string" ? body.id : null, receivedAt: typeof body.receivedAt === "string" ? body.receivedAt : null },
         TEST_PROVIDER_ID,
         SYSTEM_ACTOR,
+        deps.dispatch ? deps.dispatch() : undefined,
       );
       return json(200, { ok: true, duplicate: r.duplicate });
     }

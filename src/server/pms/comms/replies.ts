@@ -19,7 +19,7 @@ import { RepoInputError, nowIso, parseInput, pmsAuditQuery, writeWithAudit, type
 import { changeConsent } from "../../repos/pms/comms/consent";
 import { findPatientsByMobile } from "../../repos/pms/comms/contacts";
 import { findByProviderMessageId, findReplyTarget, getMessage, inboundInsertQuery } from "../../repos/pms/comms/messages";
-import { SYSTEM_ACTOR } from "./dispatch";
+import { SYSTEM_ACTOR, sendStopConfirmation, type DispatchDeps } from "./dispatch";
 
 export const REPLY_WINDOW_DAYS = 14;
 
@@ -32,7 +32,7 @@ export interface InboundResult {
   needsAction: boolean;
 }
 
-export async function recordInboundSms(ctx: RepoContext, tenantId: string, input: InboundSms, provider: string, actor: PmsActor = SYSTEM_ACTOR): Promise<InboundResult> {
+export async function recordInboundSms(ctx: RepoContext, tenantId: string, input: InboundSms, provider: string, actor: PmsActor = SYSTEM_ACTOR, deps?: DispatchDeps): Promise<InboundResult> {
   const d = parseInput(InboundSmsSchema, input, "Reply");
   const key = smsAddressKey(d.from);
   if (!/^\d{8,15}$/.test(key)) throw new RepoInputError("Reply: the sender's number is not a phone number.");
@@ -90,6 +90,7 @@ export async function recordInboundSms(ctx: RepoContext, tenantId: string, input
     // STOP ends texts from the clinic: appointment texts and marketing texts.
     await changeConsent(ctx, tenantId, { patientId, channel: "sms", purpose: "service", value: false, source: "sms_reply", messageId: id }, actor);
     await changeConsent(ctx, tenantId, { patientId, channel: "sms", purpose: "marketing", value: false, source: "sms_reply", messageId: id }, actor);
+    if (deps) await sendStopConfirmation(ctx, tenantId, patientId, actor, deps);
   }
   return { messageId: id, intent, patientId, appointmentId, duplicate: false, needsAction };
 }

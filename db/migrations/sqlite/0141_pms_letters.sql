@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS pms_letters (
   status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'final', 'void')),
   finalised_at TEXT,
   finalised_by TEXT,
+  signature_text TEXT CHECK (signature_text IS NULL OR length(signature_text) <= 300),
   sent_at TEXT,
   sent_via TEXT CHECK (sent_via IS NULL OR sent_via IN ('post', 'email', 'hand')),
   voided_at TEXT,

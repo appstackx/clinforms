@@ -12,6 +12,7 @@ import type { Selectable } from "kysely";
 import { COMMS_ID_PREFIXES as P } from "../../../../modules/pms/comms/ids";
 import type {
   ActionStatus,
+  DocumentType,
   Message,
   MessageChannel,
   MessageDirection,
@@ -25,7 +26,9 @@ import type { PmsActor } from "../../../../modules/pms/core/types";
 import type { BatchQuery } from "../../../db/batch";
 import { runBatch } from "../../../db/batch";
 import type { PmsMessagesTable } from "../../../db/pms-schema/comms";
-import { RepoInputError, assertId, assertTenantId, decryptField, encryptField, nowIso, numOrNull, pmsAudit, pmsAuditQuery, pmsId, writeWithAudit, type DbContext, type RepoContext } from "../context";
+import { RepoInputError, assertId, assertTenantId, decryptField, encryptField, nowIso, num, numOrNull, pmsAuditQuery, pmsId, writeWithAudit, type DbContext, type RepoContext } from "../context";
+import { patientSiteFilter } from "../access";
+import { changeWithAudit, commsAuditWhen } from "./shared";
 
 const T = "pms_messages";
 const MESSAGES = { foreignKey: "The patient or template does not exist in this clinic.", unique: "This message has already been recorded." };
@@ -51,6 +54,9 @@ const SUMMARY_COLUMNS = [
   "action_status",
   "sent_at",
   "delivered_at",
+  "document_type",
+  "document_id",
+  "attempts",
   "created_by",
   "created_at",
 ] as const;
@@ -79,6 +85,9 @@ function toSummary(r: Pick<Row, (typeof SUMMARY_COLUMNS)[number]>): MessageSumma
     actionStatus: (r.action_status as ActionStatus) ?? "none",
     sentAt: r.sent_at,
     deliveredAt: r.delivered_at,
+    documentType: (r.document_type as DocumentType | null) ?? null,
+    documentId: r.document_id ?? null,
+    attempts: Math.max(1, num(r.attempts ?? 1)),
     createdBy: r.created_by,
     createdAt: r.created_at,
   };
@@ -102,7 +111,8 @@ function toMessage(ctx: Pick<RepoContext, "cipher">, r: Row): Message {
  * ----------------------------------------------------------------------------------------------*/
 
 export interface OutboundDraft {
-  patientId: string;
+  /** The patient the message is to or about (null: a payer's statement). */
+  patientId: string | null;
   channel: MessageChannel;
   purpose: MessagePurpose;
   kind: Exclude<MessageKind, "reply">;
@@ -118,6 +128,11 @@ export interface OutboundDraft {
   /** "queued" before the provider is called; "outbox" when the outbox provider keeps it. */
   status: "queued" | "outbox";
   provider: string;
+  /** The patient's reply this message answers. */
+  inReplyToId?: string | null;
+  /** The document it carries (a letter, an invoice…). */
+  documentType?: DocumentType | null;
+  documentId?: string | null;
 }
 
 /** The INSERT of an outbound message (for a batch). The body is encrypted here. */
@@ -136,7 +151,7 @@ export function outboundInsertQuery(ctx: RepoContext, tenantId: string, draft: O
     kind: draft.kind,
     template_id: draft.templateId,
     appointment_id: draft.appointmentId,
-    in_reply_to_id: null,
+    in_reply_to_id: draft.inReplyToId ?? null,
     to_address: draft.toAddress,
     from_address: null,
     address_key: draft.addressKey,
@@ -154,6 +169,9 @@ export function outboundInsertQuery(ctx: RepoContext, tenantId: string, draft: O
     sent_at: draft.status === "outbox" ? at : null,
     delivered_at: null,
     failed_at: null,
+    document_type: draft.documentType ?? null,
+    document_id: draft.documentId ?? null,
+    attempts: 1,
     created_by: actor.userId,
     created_at: at,
     updated_at: at,
@@ -172,7 +190,7 @@ export async function createOutboundMessage(ctx: RepoContext, tenantId: string, 
         action: "pms.message.send",
         targetType: "pms_message",
         targetId: id,
-        detail: { channel: draft.channel, kind: draft.kind, purpose: draft.purpose, status: draft.status, provider: draft.provider, patientId: draft.patientId },
+        detail: { channel: draft.channel, kind: draft.kind, purpose: draft.purpose, status: draft.status, provider: draft.provider, patientId: draft.patientId, ...(draft.documentType ? { documentType: draft.documentType, documentId: draft.documentId ?? null } : {}) },
       }),
     ],
     MESSAGES,
@@ -232,10 +250,17 @@ export async function recordDeliveryReceipt(
     receipt.status === "delivered"
       ? { status: "delivered", delivered_at: receipt.at ?? at, updated_at: at }
       : { status: "failed", failed_at: receipt.at ?? at, error_code: (receipt.errorCode ?? "undelivered").slice(0, 40), updated_at: at };
-  const result = await ctx.db.updateTable(T).set(set).where("tenant_id", "=", tenantId).where("id", "=", row.id).where("status", "in", ["sent", "delivered"]).executeTakeFirst();
-  if (Number(result.numUpdatedRows) === 0) return false;
-  await pmsAudit(ctx, tenantId, actor, { action: "pms.message.status", targetType: "pms_message", targetId: row.id, detail: { status: receipt.status, source: "receipt" } });
-  return true;
+  const changed = await changeWithAudit(ctx, [
+    ctx.db.updateTable(T).set(set).where("tenant_id", "=", tenantId).where("id", "=", row.id).where("status", "in", ["sent", "delivered"]),
+    commsAuditWhen(
+      ctx,
+      tenantId,
+      actor,
+      { action: "pms.message.status", targetType: "pms_message", targetId: row.id, detail: { status: receipt.status, source: "receipt" } },
+      ctx.db.selectFrom(T).select("id").where("tenant_id", "=", tenantId).where("id", "=", row.id).where("status", "=", receipt.status).where("updated_at", "=", at),
+    ),
+  ]);
+  return changed > 0;
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -332,16 +357,59 @@ export async function markReplyDone(ctx: DbContext, tenantId: string, id: string
   assertTenantId(tenantId);
   assertId(id, "message id");
   const at = nowIso(ctx);
-  const result = await ctx.db
+  const changed = await changeWithAudit(ctx, [markReplyDoneQuery(ctx, tenantId, id, actor, at), replyDoneAuditQuery(ctx, tenantId, id, actor, at)]);
+  return changed > 0;
+}
+
+/** The UPDATE that marks a reply dealt with (for a batch – e.g. with the answer). */
+export function markReplyDoneQuery(ctx: DbContext, tenantId: string, id: string, actor: PmsActor, at: string): BatchQuery {
+  return ctx.db
     .updateTable(T)
     .set({ action_status: "done", actioned_by: actor.userId, actioned_at: at, updated_at: at })
     .where("tenant_id", "=", tenantId)
     .where("id", "=", id)
-    .where("action_status", "=", "to_action")
-    .executeTakeFirst();
-  if (Number(result.numUpdatedRows) === 0) return false;
-  await pmsAudit(ctx, tenantId, actor, { action: "pms.message.reply_done", targetType: "pms_message", targetId: id });
-  return true;
+    .where("direction", "=", "inbound")
+    .where("action_status", "=", "to_action");
+}
+
+/** Its audit row, written only when the reply was marked by this change. */
+export function replyDoneAuditQuery(ctx: DbContext, tenantId: string, id: string, actor: PmsActor, at: string): BatchQuery {
+  return commsAuditWhen(
+    ctx,
+    tenantId,
+    actor,
+    { action: "pms.message.reply_done", targetType: "pms_message", targetId: id },
+    ctx.db.selectFrom(T).select("id").where("tenant_id", "=", tenantId).where("id", "=", id).where("action_status", "=", "done").where("actioned_at", "=", at),
+  );
+}
+
+/**
+ * Puts a FAILED outbound message back to "queued" for another try (Retry on the outbox), counting the attempt, with
+ * its audit row in the same batch. Answers false when it is not (or no longer) failed. At most MAX_SEND_ATTEMPTS.
+ */
+export const MAX_SEND_ATTEMPTS = 5;
+export async function requeueFailedMessage(ctx: DbContext, tenantId: string, id: string, actor: PmsActor): Promise<boolean> {
+  assertTenantId(tenantId);
+  assertId(id, "message id");
+  const at = nowIso(ctx);
+  const changed = await changeWithAudit(ctx, [
+    ctx.db
+      .updateTable(T)
+      .set((eb) => ({ status: "queued", error_code: null, failed_at: null, attempts: eb("attempts", "+", 1), updated_at: at }))
+      .where("tenant_id", "=", tenantId)
+      .where("id", "=", id)
+      .where("direction", "=", "outbound")
+      .where("status", "=", "failed")
+      .where("attempts", "<", MAX_SEND_ATTEMPTS),
+    commsAuditWhen(
+      ctx,
+      tenantId,
+      actor,
+      { action: "pms.message.retry", targetType: "pms_message", targetId: id },
+      ctx.db.selectFrom(T).select("id").where("tenant_id", "=", tenantId).where("id", "=", id).where("status", "=", "queued").where("updated_at", "=", at),
+    ),
+  ]);
+  return changed > 0;
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -356,6 +424,12 @@ export interface ListMessagesOptions {
   status?: MessageStatus;
   actionStatus?: ActionStatus;
   appointmentId?: string;
+  documentType?: DocumentType;
+  documentId?: string;
+  /** The member's site scope (null/undefined = every site): only messages about patients they can see. */
+  siteIds?: ReadonlySet<string> | null;
+  /** Created at or after this instant. */
+  since?: string;
   /** Keyset paging: messages older than this id (newest first). */
   beforeId?: string;
   /** Default 50, at most 200. */
@@ -374,8 +448,21 @@ export async function listMessages(ctx: DbContext, tenantId: string, options: Li
   if (options.status) q = q.where("status", "=", options.status);
   if (options.actionStatus) q = q.where("action_status", "=", options.actionStatus);
   if (options.appointmentId) q = q.where("appointment_id", "=", options.appointmentId);
+  if (options.documentType) q = q.where("document_type", "=", options.documentType);
+  if (options.documentId) q = q.where("document_id", "=", options.documentId);
+  if (options.since) q = q.where("created_at", ">=", options.since);
+  if (options.siteIds) q = q.where(inPatientScope(ctx, tenantId, options.siteIds));
   if (options.beforeId) q = q.where("id", "<", options.beforeId);
   return (await q.orderBy("id", "desc").limit(limit).execute()).map(toSummary);
+}
+
+/**
+ * A WHERE on pms_messages / pms_message_schedule: the row's patient is one the member's sites can see
+ * (src/server/pms/access.ts – patientSiteFilter). Rows with no patient (a payer's statement) need every site.
+ */
+export function inPatientScope(ctx: DbContext, tenantId: string, siteIds: ReadonlySet<string>) {
+  return (eb: import("kysely").ExpressionBuilder<import("../../../db/schema").Database, "pms_messages" | "pms_message_schedule">) =>
+    eb("patient_id", "in", ctx.db.selectFrom("pms_patients").select("pms_patients.id").where("pms_patients.tenant_id", "=", tenantId).where(patientSiteFilter(tenantId, siteIds)));
 }
 
 /** One message, subject and body decrypted. */
@@ -393,22 +480,31 @@ export async function listRepliesTo(ctx: DbContext, tenantId: string, messageId:
   ).map(toSummary);
 }
 
-/** Message counts for the overview: waiting for action, in the outbox, failed. */
-export async function messageCounts(ctx: DbContext, tenantId: string): Promise<{ toAction: number; outbox: number; failed: number; queued: number }> {
+/**
+ * Message counts (the Messages header, the nav badge and the dashboard): replies waiting for action, in the outbox,
+ * failed, sending, sent – overall, or created since `since`; in the member's site scope.
+ */
+export async function messageCounts(
+  ctx: DbContext,
+  tenantId: string,
+  options: { since?: string; siteIds?: ReadonlySet<string> | null } = {},
+): Promise<{ toAction: number; outbox: number; failed: number; queued: number; sent: number }> {
   assertTenantId(tenantId);
-  const rows = await ctx.db
+  let q = ctx.db
     .selectFrom(T)
     .select((eb) => ["status", "action_status", eb.fn.countAll<number>().as("n")])
-    .where("tenant_id", "=", tenantId)
-    .groupBy(["status", "action_status"])
-    .execute();
-  const out = { toAction: 0, outbox: 0, failed: 0, queued: 0 };
+    .where("tenant_id", "=", tenantId);
+  if (options.since) q = q.where("created_at", ">=", options.since);
+  if (options.siteIds) q = q.where(inPatientScope(ctx, tenantId, options.siteIds));
+  const rows = await q.groupBy(["status", "action_status"]).execute();
+  const out = { toAction: 0, outbox: 0, failed: 0, queued: 0, sent: 0 };
   for (const r of rows) {
     const n = Number(r.n);
     if (r.action_status === "to_action") out.toAction += n;
     if (r.status === "outbox") out.outbox += n;
     if (r.status === "failed") out.failed += n;
     if (r.status === "queued") out.queued += n;
+    if (r.status === "sent" || r.status === "delivered") out.sent += n;
   }
   return out;
 }

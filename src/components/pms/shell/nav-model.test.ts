@@ -15,7 +15,7 @@ const DESIGN_NAV: PmsNavEntry[] = [
   { id: "diary.rotas", module: "diary", label: "Rotas", href: `${B}/diary/rotas`, order: 12, permission: "diary.manage", group: "manage" },
   { id: "records.patients", module: "records", label: "Patients", href: `${B}/patients`, order: 20, permission: "patients.view", group: "main" },
   { id: "billing.billing", module: "billing", label: "Billing", href: `${B}/billing`, order: 30, permission: "billing.view", group: "main" },
-  { id: "comms.messages", module: "comms", label: "Messages", href: `${B}/messages`, order: 40, permission: "messages.view", group: "main" },
+  { id: "comms.messages", module: "comms", label: "Messages", href: `${B}/messages`, order: 40, permission: "messages.send", group: "main" },
   { id: "portal.booking", module: "portal", label: "Online booking", href: `${B}/online-booking`, order: 50, permission: "booking.manage", group: "main" },
   { id: "reporting.reports", module: "reporting", label: "Reports", href: `${B}/reports`, order: 60, permission: "reports.view", group: "main" },
   { id: "reporting.setup", module: "reporting", label: "Set-up", href: `${B}/setup`, order: 65, permission: "settings.manage", group: "manage" },

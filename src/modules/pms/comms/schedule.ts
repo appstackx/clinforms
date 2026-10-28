@@ -2,8 +2,9 @@
  * When appointment messages go out (pure). All wall-clock times are UK time (Europe/London, with the clock
  * changes); instants are ISO-8601 UTC strings.
  *
- * - Booking confirmations and "moved"/"cancelled" notices are due at once (texts wait for the end of the quiet
- *   hours, default 20:00–08:00 – emails do not).
+ * - Booking confirmations and "moved"/"cancelled"/"late_cancelled" notices are due at once (texts wait for the end
+ *   of the quiet hours, default 20:00–08:00 – emails do not). The "did not attend" follow-up is due an hour after
+ *   the start (DNA_FOLLOW_UP_MINUTES), or at once when marked later; it is not sent more than a day after.
  * - Reminders follow the clinic's rules: "N hours before" or "N days before at HH:MM". A text that would fall in
  *   the quiet hours moves to the end of them, or – when that is too close to the appointment – to just before
  *   they began.
@@ -16,6 +17,8 @@ import type { AppointmentMessageKind, CommsSettings, MessageChannel, ReminderRul
 export const LONDON = "Europe/London";
 export const MIN_REMINDER_LEAD_MINUTES = 60;
 export const SEND_CUTOFF_MINUTES = 30;
+export const DNA_FOLLOW_UP_MINUTES = 60;
+export const DNA_FOLLOW_UP_LIMIT_HOURS = 24;
 const MINUTE = 60_000;
 
 export interface LondonParts {
@@ -114,12 +117,14 @@ export interface PlannedMessage {
   dueAt: string;
   /** Unique per appointment: kind, channel, rule and the start time it was planned for. */
   dedupeKey: string;
+  /** A text moved out of the quiet hours ("Held – quiet hours" on the outbox). */
+  held: boolean;
 }
 
 export interface PlanInput {
   appointment: { startsAt: string; serviceId?: string | null; active: boolean };
-  notify: "none" | "confirmation" | "moved" | "cancelled";
-  settings: Pick<CommsSettings, "confirmationsSms" | "confirmationsEmail" | "changeNotices" | "quietStart" | "quietEnd">;
+  notify: "none" | "confirmation" | "moved" | "cancelled" | "late_cancelled" | "dna";
+  settings: Pick<CommsSettings, "confirmationsSms" | "confirmationsEmail" | "changeNotices" | "dnaFollowUp" | "quietStart" | "quietEnd">;
   /** The clinic's reminder rules (inactive ones are ignored). */
   rules: readonly Pick<ReminderRule, "id" | "channel" | "timing" | "hoursBefore" | "daysBefore" | "sendAt" | "serviceIds" | "active">[];
   now: string;
@@ -135,20 +140,31 @@ export function planAppointmentMessages(input: PlanInput): PlannedMessage[] {
   const startsAt = new Date(appointment.startsAt).toISOString();
   const nowMs = Date.parse(now);
   const start = Date.parse(startsAt);
-  if (Number.isNaN(start) || start <= nowMs) return [];
+  if (Number.isNaN(start)) return [];
   const out: PlannedMessage[] = [];
   const noticeChannels: MessageChannel[] = [];
   if (settings.confirmationsSms) noticeChannels.push("sms");
   if (settings.confirmationsEmail) noticeChannels.push("email");
+  if (!appointment.active && notify === "dna") {
+    if (!settings.dnaFollowUp || nowMs > start + DNA_FOLLOW_UP_LIMIT_HOURS * 60 * MINUTE) return [];
+    const base = new Date(Math.max(nowMs, start + DNA_FOLLOW_UP_MINUTES * MINUTE)).toISOString();
+    for (const channel of noticeChannels) {
+      const due = channel === "sms" ? outOfQuietHours(base, new Date(start + DNA_FOLLOW_UP_LIMIT_HOURS * 60 * MINUTE).toISOString(), settings.quietStart, settings.quietEnd) : base;
+      out.push({ kind: "dna", channel, ruleId: null, dueAt: due, dedupeKey: dedupeKey("dna", channel, null, startsAt), held: due !== base });
+    }
+    return out;
+  }
+  if (start <= nowMs) return [];
   const immediate = (kind: AppointmentMessageKind) => {
     for (const channel of noticeChannels) {
-      const due = channel === "sms" ? outOfQuietHours(new Date(nowMs).toISOString(), startsAt, settings.quietStart, settings.quietEnd) : new Date(nowMs).toISOString();
+      const at = new Date(nowMs).toISOString();
+      const due = channel === "sms" ? outOfQuietHours(at, startsAt, settings.quietStart, settings.quietEnd) : at;
       if (Date.parse(due) >= start) continue;
-      out.push({ kind, channel, ruleId: null, dueAt: due, dedupeKey: dedupeKey(kind, channel, null, startsAt) });
+      out.push({ kind, channel, ruleId: null, dueAt: due, dedupeKey: dedupeKey(kind, channel, null, startsAt), held: due !== at });
     }
   };
   if (!appointment.active) {
-    if (notify === "cancelled" && settings.changeNotices) immediate("cancelled");
+    if ((notify === "cancelled" || notify === "late_cancelled") && settings.changeNotices) immediate(notify);
     return out;
   }
   if (notify === "confirmation") immediate("confirmation");
@@ -156,13 +172,13 @@ export function planAppointmentMessages(input: PlanInput): PlannedMessage[] {
   for (const rule of input.rules) {
     if (!rule.active) continue;
     if (rule.serviceIds && rule.serviceIds.length > 0 && (!appointment.serviceId || !rule.serviceIds.includes(appointment.serviceId))) continue;
-    let due = reminderDueAt(startsAt, rule);
-    if (!due) continue;
-    if (rule.channel === "sms") due = outOfQuietHours(due, startsAt, settings.quietStart, settings.quietEnd);
+    const wanted = reminderDueAt(startsAt, rule);
+    if (!wanted) continue;
+    const due = rule.channel === "sms" ? outOfQuietHours(wanted, startsAt, settings.quietStart, settings.quietEnd) : wanted;
     const dueMs = Date.parse(due);
     if (dueMs <= nowMs) continue;
     if (dueMs > start - MIN_REMINDER_LEAD_MINUTES * MINUTE) continue;
-    out.push({ kind: "reminder", channel: rule.channel, ruleId: rule.id, dueAt: due, dedupeKey: dedupeKey("reminder", rule.channel, rule.id, startsAt) });
+    out.push({ kind: "reminder", channel: rule.channel, ruleId: rule.id, dueAt: due, dedupeKey: dedupeKey("reminder", rule.channel, rule.id, startsAt), held: due !== wanted });
   }
   return out;
 }
@@ -171,6 +187,7 @@ export function planAppointmentMessages(input: PlanInput): PlannedMessage[] {
 export function stillWorthSending(kind: AppointmentMessageKind, startsAtIso: string, nowIso: string): boolean {
   const start = Date.parse(startsAtIso);
   const now = Date.parse(nowIso);
+  if (kind === "dna") return now <= start + DNA_FOLLOW_UP_LIMIT_HOURS * 60 * MINUTE;
   if (now >= start) return false;
   if (kind === "reminder") return now <= start - SEND_CUTOFF_MINUTES * MINUTE;
   return true;
@@ -182,6 +199,14 @@ const DATE_FULL = new Intl.DateTimeFormat("en-GB", { timeZone: LONDON, day: "num
 /** "Tuesday 27 October" (UK time). */
 export function formatAppointmentDate(instant: string): string {
   return DATE_LONG.format(new Date(instant)).replace(",", "");
+}
+
+const DAY_SHORT = new Intl.DateTimeFormat("en-GB", { timeZone: LONDON, weekday: "short" });
+
+/** "Tue 27/10" (UK time) – the texts' date. */
+export function formatAppointmentDay(instant: string): string {
+  const p = londonParts(instant);
+  return `${DAY_SHORT.format(new Date(instant))} ${String(p.day).padStart(2, "0")}/${String(p.month).padStart(2, "0")}`;
 }
 
 /** "27/10/2026" (UK date of the instant). */

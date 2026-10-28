@@ -89,7 +89,11 @@ export async function changeConsent(ctx: RepoContext, tenantId: string, input: C
       }),
     ]);
     let cancelled = 0;
-    if (!d.value && d.purpose === "service") cancelled = await cancelPendingForPatient(ctx, tenantId, patient.id, d.channel, "opted_out", actor);
+    // Opting out of texts stops every planned text; the stop-emails link stops reminder and follow-up emails only
+    // (booking confirmations and change notices still go by email – consent.ts TRANSACTIONAL_KINDS).
+    if (!d.value && d.purpose === "service") {
+      cancelled = await cancelPendingForPatient(ctx, tenantId, patient.id, d.channel, "opted_out", actor, d.channel === "email" ? ["reminder", "dna"] : undefined);
+    }
     return { changed: true, cancelled };
   }
   throw new RepoInputError("The patient's record kept changing. Please try again.");

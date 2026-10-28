@@ -25,6 +25,7 @@ export interface PmsCommsSettingsTable {
   confirmations_sms: WithDefault<number>;
   confirmations_email: WithDefault<number>;
   change_notices: WithDefault<number>;
+  dna_follow_up: WithDefault<number>;
   sms_sender: string | null;
   reply_phone: string | null;
   reply_email: string | null;
@@ -110,6 +111,9 @@ export interface PmsMessagesTable {
   sent_at: IsoTimestamp | null;
   delivered_at: IsoTimestamp | null;
   failed_at: IsoTimestamp | null;
+  document_type: string | null;
+  document_id: string | null;
+  attempts: WithDefault<number>;
   created_by: string | null;
   created_at: IsoTimestamp;
   updated_at: IsoTimestamp;
@@ -137,6 +141,7 @@ export interface PmsMessageScheduleTable {
   claim_token: string | null;
   claimed_at: IsoTimestamp | null;
   attempts: WithDefault<number>;
+  held: WithDefault<number>;
   created_at: IsoTimestamp;
   updated_at: IsoTimestamp;
 }
@@ -192,6 +197,7 @@ export interface PmsLettersTable {
   status: WithDefault<string>;
   finalised_at: IsoTimestamp | null;
   finalised_by: string | null;
+  signature_text: string | null;
   sent_at: IsoTimestamp | null;
   sent_via: string | null;
   voided_at: IsoTimestamp | null;
