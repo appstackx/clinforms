@@ -392,3 +392,17 @@ export async function setPortalAccessFor(actor: ClinicActor, patientId: string, 
   await setPortalAccountStatus(ctx, actor.tenantId, account.id, on ? "active" : "disabled", actor.actor);
   return { ok: true, value: undefined, message: on ? "Portal access switched on." : "Portal access switched off – the patient is signed out." };
 }
+
+/** The record Overview's Forms card: the latest five forms (outcome questionnaires only for clinical.view). */
+export async function formsCardFor(actor: ClinicActor, patientId: string): Promise<{ id: string; name: string; status: "requested" | "submitted" | "cancelled"; detail: string; open: boolean }[]> {
+  if (!can(actor, "patients.view")) return [];
+  const clinical = can(actor, "clinical.view");
+  const rows = (await listResponsesForPatient(actor.repo(), actor.tenantId, patientId)).filter((r) => r.status !== "cancelled" && (clinical || r.kind !== "outcome"));
+  return rows.slice(0, 5).map((r) => ({
+    id: r.id,
+    name: r.name,
+    status: r.status,
+    detail: r.status === "submitted" ? (r.signedAt ? "Signed" : "Completed") : "Waiting",
+    open: r.status === "submitted",
+  }));
+}

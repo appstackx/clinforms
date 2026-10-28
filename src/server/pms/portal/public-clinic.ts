@@ -20,6 +20,15 @@ export interface PublicClinic {
   isDemo: boolean;
 }
 
+/** Two letters for the clinic's badge ("Riverside Physiotherapy (fictional)" → "RP"). */
+export function clinicInitials(name: string): string {
+  const words = name
+    .replace(/\([^)]*\)/g, " ")
+    .split(/\s+/)
+    .filter((w) => /^[A-Za-z]/.test(w) && !/^(and|of|the|&)$/i.test(w));
+  return (words.slice(0, 2).map((w) => w[0].toUpperCase()).join("") || "C").slice(0, 2);
+}
+
 export async function loadPublicClinic(ctx: DbContext, slug: string): Promise<PublicClinic | null> {
   if (typeof slug !== "string" || !TENANT_ID_PATTERN.test(slug)) return null;
   try {

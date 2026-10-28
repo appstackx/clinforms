@@ -129,3 +129,16 @@ export function formatUkDateTime(iso: string, options: { short?: boolean } = {})
 export function isIsoInstant(value: unknown): value is string {
   return typeof value === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value) && !Number.isNaN(Date.parse(value));
 }
+
+/** "Wed 28/10/2026" (UK local date of an instant, or of a "YYYY-MM-DD" date). */
+export function formatDayDate(isoOrDate: string): string {
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(isoOrDate) ? isoOrDate : londonParts(Date.parse(isoOrDate)).date;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return "";
+  const [y, m, d] = date.split("-");
+  return `${weekdayName(weekdayOf(date)).slice(0, 3)} ${d}/${m}/${y}`;
+}
+
+/** "Wed 28/10/2026 at 14:30" (UK local). */
+export function formatWhen(iso: string): string {
+  return `${formatDayDate(iso)} at ${formatUkTime(iso)}`;
+}
