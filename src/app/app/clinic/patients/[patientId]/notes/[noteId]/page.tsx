@@ -1,3 +1,4 @@
+import { mayAmendNote } from "@/modules/pms/core/permissions";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Panel } from "@/components/account/shell";
@@ -35,7 +36,7 @@ export default async function NotePage({ params }: { params: { patientId: string
   const cases = await listCasesForPatient(ctx, actor.tenantId, patient.id);
   const caseTitle = note.caseId ? cases.find((c) => c.id === note.caseId)?.title : null;
   const mine = note.authorUserId === actor.userId;
-  const editable = note.status === "draft" && mine && actor.can("clinical.edit");
+  const editable = note.status === "draft" && mine && actor.can("clinical.write");
   const sectionLabel = Object.fromEntries(note.template.sections.map((s) => [s.key, s.label]));
   const header = (
     <>
@@ -174,7 +175,7 @@ export default async function NotePage({ params }: { params: { patientId: string
               ))}
             </ol>
           ) : null}
-          {actor.can("clinical.sign") && !note.anonymisedAt ? (
+          {note.status === "signed" && !note.anonymisedAt && mayAmendNote(actor.role, actor.can, mine || note.signedByUserId === actor.userId) ? (
             <Panel title="Add an amendment" className="mt-4">
               <AmendmentForm
                 key={note.amendmentCount}

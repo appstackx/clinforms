@@ -172,7 +172,11 @@ export function defineRecordsServiceSuite(label: string, factory: () => Promise<
       const locked = await saveNoteFor(sarah, ids.megan, draft.id, { expectedRev: 3, sections: { objective: "changed" } });
       assert.equal(!locked.ok && locked.code, "invalid");
       assert.match(!locked.ok ? locked.error : "", /signed and locked/);
-      value(await amendNoteFor(tom, ids.megan, draft.id, { kind: "addendum", text: "Patient phoned: headaches eased." }));
+      // Roles design round 2: clinicians amend only their own signed notes; the owner may amend anyone's.
+      const tomAmend = await amendNoteFor(tom, ids.megan, draft.id, { kind: "addendum", text: "Tom's addendum" });
+      assert.equal(!tomAmend.ok && tomAmend.code, "forbidden", "another clinician's note");
+      assert.equal(value(await getNoteFor(tom, ids.megan, draft.id)).amendable, false);
+      value(await amendNoteFor(owner, ids.megan, draft.id, { kind: "addendum", text: "Patient phoned: headaches eased." }));
       const badAmend = await amendNoteFor(sarah, ids.megan, draft.id, { kind: "correction", text: "x" });
       assert.deepEqual(!badAmend.ok && Object.keys(badAmend.fieldErrors ?? {}).sort(), ["reason", "sectionKey"]);
       value(await amendNoteFor(sarah, ids.megan, draft.id, { kind: "correction", sectionKey: "objective", text: "Reduced rotation to the LEFT", reason: "Side recorded wrongly" }));

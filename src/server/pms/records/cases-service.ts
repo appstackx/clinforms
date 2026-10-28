@@ -31,7 +31,7 @@ import { getPractitioner, getSite } from "../../repos/pms/directory";
 import { getPriceList } from "../../repos/pms/price-lists";
 import { getReferrer } from "../../repos/pms/referrers";
 import { listNotesForPatient } from "../../repos/pms/records/notes";
-import { attempt, fail, guard, notFound, ok, patientInClinic, saveFailure, type Failure, type RecordsActor, type Result } from "./access";
+import { attempt, fail, forbidden, guard, notFound, ok, patientInClinic, saveFailure, type Failure, type RecordsActor, type Result } from "./access";
 
 const CASE_RENAMES: Record<string, string> = { excessPence: "excess" };
 const AUTH_RENAMES: Record<string, string> = { valueAuthorisedPence: "valueAuthorised" };
@@ -77,7 +77,9 @@ export async function getCaseDetails(actor: RecordsActor, patientId: string, cas
       listAuthorisations(actor.repo(), actor.tenantId, { caseId: c.id }),
       actor.can("clinical.view") ? listNotesForPatient(actor.repo(), actor.tenantId, c.patientId, { caseId: c.id }) : Promise.resolve(null),
     ]);
-    return ok({ case: c, authorisations: auths.map((a) => ({ ...a, view: authorisationView(a, today) })), notes });
+    // "See referral reason and case notes" (patients.referral): without it the case comes without that text.
+    const shown = actor.can("patients.referral") ? c : { ...c, referralReason: null, notes: null };
+    return ok({ case: shown, authorisations: auths.map((a) => ({ ...a, view: authorisationView(a, today) })), notes });
   });
 }
 
@@ -108,7 +110,7 @@ export async function openCaseFor(actor: RecordsActor, patientId: string, input:
   return attempt("open_case", async () => {
     const patient = await patientInClinic(actor, patientId);
     if (!patient) return notFound();
-    const full: CaseInput = { ...input, patientId: patient.id };
+    const full: CaseInput = actor.can("patients.referral") ? { ...input, patientId: patient.id } : { ...input, referralReason: undefined, notes: undefined, patientId: patient.id };
     const parsed = CaseInputSchema.safeParse(full);
     if (!parsed.success) return fail("invalid", "Some details need checking.", { fieldErrors: renamed(fieldErrors(parsed.error), CASE_RENAMES) });
     const bad = await checkCaseLinks(actor, parsed.data);
@@ -123,6 +125,8 @@ export async function updateCaseFor(actor: RecordsActor, patientId: string, case
   if (denied) return denied;
   const parsed = CasePatchSchema.safeParse(patch);
   if (!parsed.success) return fail("invalid", "Some details need checking.", { fieldErrors: renamed(fieldErrors(parsed.error), CASE_RENAMES) });
+  // Without "See referral reason and case notes" the member never sees that text, so may not overwrite it either.
+  if (!actor.can("patients.referral") && (parsed.data.referralReason !== undefined || parsed.data.notes !== undefined)) return forbidden();
   return attempt("update_case", async () => {
     const c = await caseOfPatient(actor, patientId, caseId);
     if (!c) return notFound();

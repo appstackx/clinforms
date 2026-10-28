@@ -35,7 +35,7 @@ export default async function PatientsPage({ searchParams }: { searchParams: Rec
   const statusParam = one(searchParams.status);
   const status = (STATUSES.some((s) => s.value === statusParam) ? statusParam : "active") as PatientStatus | "any";
   const page = Math.max(1, Math.min(400, Math.floor(Number(one(searchParams.page)) || 1)));
-  const rows = await searchPatients(actor.repo(), actor.tenantId, { q, status, limit: PAGE_SIZE + 1, offset: (page - 1) * PAGE_SIZE });
+  const rows = await searchPatients(actor.repo(), actor.tenantId, { q, status, limit: PAGE_SIZE + 1, offset: (page - 1) * PAGE_SIZE, siteIds: actor.siteIds });
   const more = rows.length > PAGE_SIZE;
   const patients = rows.slice(0, PAGE_SIZE);
   const today = ukToday();

@@ -72,7 +72,7 @@ export async function discardNote(_prev: RecordsActionState, form: FormData): Pr
 }
 
 export async function amendNote(_prev: RecordsActionState, form: FormData): Promise<RecordsActionState> {
-  const actor = await clinicActionActor({ permission: "clinical.sign" });
+  const actor = await clinicActionActor({ permission: "clinical.amend" });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
   const patientId = text(form, "patientId");
   const result = await amendNoteFor(actor, patientId, text(form, "noteId"), {

@@ -38,7 +38,7 @@ const MODULE_ICONS: Readonly<Record<PmsModuleId, ShellNavIcon>> = {
 function toItem(e: PmsNavEntry): ShellNavItem {
   // Set-up entries share the sliders icon (the design's "Set-up"), except data import, which keeps its own.
   const icon = e.group === "manage" && e.module !== "integration" ? "setup" : MODULE_ICONS[e.module] ?? "overview";
-  return { id: e.id, href: e.href, label: e.label, icon, exact: e.module === "foundation" };
+  return { id: e.id, href: e.href, label: e.label, icon, exact: e.module === "foundation" && e.group === "main" };
 }
 
 /** What this member sees: entries their role allows, main first, each list in its modules' order. */

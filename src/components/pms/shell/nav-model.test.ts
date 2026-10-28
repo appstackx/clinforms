@@ -37,8 +37,9 @@ describe("shell navigation by permission", () => {
     }
   });
 
-  it("reception (staff) sees no Reports, no Set-up and no online-booking settings", () => {
-    assert.deepEqual(labels("staff"), { main: ["Overview", "Diary", "Patients", "Billing", "Messages"], manage: [] });
+  it("reception (staff) sees no Reports, no online-booking settings; of Set-up only Rotas", () => {
+    // Roles design round 2: "Edit rotas and the waiting list" is a reception permission by default.
+    assert.deepEqual(labels("staff"), { main: ["Overview", "Diary", "Patients", "Billing", "Messages"], manage: ["Rotas"] });
   });
 
   it("clinicians see the same day-to-day areas", () => {
