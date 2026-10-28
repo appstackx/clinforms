@@ -4,7 +4,7 @@
  * error (kept, left out of the charts). Rules: ./access.ts.
  *
  *   clinical.view – scores and series, one measure's answers
- *   clinical.edit – record, mark in error
+ *   clinical.write – record, mark in error
  */
 import { OutcomeInputSchema, outcomeSeries, scoreOutcome, type OutcomeAnswers, type OutcomeMeasureId, type OutcomeSeries } from "../../../modules/pms/records/outcomes";
 import type { OutcomeRecord, OutcomeSummary } from "../../../modules/pms/records/types";
@@ -53,7 +53,7 @@ export interface RecordOutcomeInput {
 }
 
 export async function recordOutcomeFor(actor: RecordsActor, patientId: string, input: RecordOutcomeInput): Promise<Result<OutcomeRecord>> {
-  const denied = guard(actor, "clinical.edit");
+  const denied = guard(actor, "clinical.write");
   if (denied) return denied;
   return attempt("record_outcome", async () => {
     const patient = await patientInClinic(actor, patientId);
@@ -76,7 +76,7 @@ export async function recordOutcomeFor(actor: RecordsActor, patientId: string, i
 }
 
 export async function markOutcomeInErrorFor(actor: RecordsActor, patientId: string, outcomeId: string, reason: string): Promise<Result<{ changed: boolean }>> {
-  const denied = guard(actor, "clinical.edit");
+  const denied = guard(actor, "clinical.write");
   if (denied) return denied;
   const text = String(reason ?? "").trim();
   if (!text) return fail("invalid", "Give the reason.", { fieldErrors: { reason: "Give the reason." } });

@@ -37,8 +37,9 @@ describe("shell navigation by permission", () => {
     }
   });
 
-  it("reception (staff) sees no Reports, no Set-up and no online-booking settings", () => {
-    assert.deepEqual(labels("staff"), { main: ["Overview", "Diary", "Patients", "Billing", "Messages"], manage: [] });
+  it("reception (staff) sees no Reports, no online-booking settings; of Set-up only Rotas", () => {
+    // Roles design round 2: "Edit rotas and the waiting list" is a reception permission by default.
+    assert.deepEqual(labels("staff"), { main: ["Overview", "Diary", "Patients", "Billing", "Messages"], manage: ["Rotas"] });
   });
 
   it("clinicians see the same day-to-day areas", () => {
@@ -57,16 +58,24 @@ describe("shell navigation by permission", () => {
     assert.equal(icon("foundation.overview"), "overview");
   });
 
-  it("works on this branch's registry: Overview, Diary and Patients; Rotas under Set-up for owners", () => {
+  it("works on this branch's registry: Overview, Diary and Patients; Rotas (diary.rota) under Set-up for reception and owners", () => {
     assert.deepEqual(
       shellNav(PMS_NAV, as("staff")).main.map((i) => i.label),
       ["Overview", "Diary", "Patients"],
     );
-    assert.deepEqual(shellNav(PMS_NAV, as("staff")).manage, []);
     assert.deepEqual(
-      shellNav(PMS_NAV, as("owner")).manage.map((i) => i.label),
+      shellNav(PMS_NAV, as("staff")).manage.map((i) => i.label),
       ["Rotas"],
     );
+    assert.deepEqual(
+      shellNav(PMS_NAV, as("owner")).manage.map((i) => i.label),
+      ["Staff access", "Roles and permissions", "Rotas", "Note templates"],
+    );
+    assert.deepEqual(
+      shellNav(PMS_NAV, as("clinician")).main.map((i) => i.label),
+      ["Overview", "Diary", "Patients", "Unsigned notes"],
+    );
+    assert.deepEqual(shellNav(PMS_NAV, as("clinician")).manage, []);
   });
 });
 

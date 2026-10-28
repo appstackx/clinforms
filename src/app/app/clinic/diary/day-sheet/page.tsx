@@ -64,7 +64,7 @@ export default async function DaySheetPage({ searchParams }: { searchParams: Rec
           <h1 className="text-xl font-semibold">Day sheet – {longDate(date)}</h1>
           <p className="text-sm text-[#475569]">One page per practitioner. Print it as a paper fallback; it goes out of date as soon as the diary changes.</p>
         </div>
-        <DaySheetControls showDob={s.showsDateOfBirth} canSet={actor.can("settings.manage")} />
+        <DaySheetControls showDob={s.showsDateOfBirth} canSet={actor.can("settings.setup")} />
       </div>
       <div id="day-sheet" className="flex flex-col gap-6">
         {groups.length === 0 ? <p className="ds-page">Nothing is booked at {s.site.name} on {longDate(date)}.</p> : null}

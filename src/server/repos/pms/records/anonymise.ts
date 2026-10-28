@@ -140,6 +140,13 @@ export async function anonymisePatient(ctx: RepoContext, tenantId: string, patie
       }))
       .where("tenant_id", "=", tenantId)
       .where("patient_id", "=", patientId),
+    // 0125: the clinical flags' words and the pronouns.
+    db
+      .updateTable("pms_clinical_flags")
+      .set((eb) => ({ flag_enc: null, status: "ended", ended_at: eb.fn.coalesce("ended_at", eb.val(at)), anonymised_at: at, updated_at: at }))
+      .where("tenant_id", "=", tenantId)
+      .where("patient_id", "=", patientId),
+    db.updateTable("pms_patient_extras").set({ pronouns: null, updated_at: at }).where("tenant_id", "=", tenantId).where("id", "=", patientId),
   ]);
   const affected = (i: number) => Number((results[i] as { numAffectedRows?: bigint | number })?.numAffectedRows ?? 0);
 

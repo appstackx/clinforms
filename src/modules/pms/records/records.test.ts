@@ -6,8 +6,14 @@ import { asciiFileName, checkAttachment, formatBytes, MAX_ATTACHMENT_BYTES, safe
 import { BodyChartSchema, describeMarker, MAX_MARKERS, normaliseChart, nudgeMarker, parseBodyChart } from "./body-chart";
 import { addressLines, ageOn, displayName, isPlausibleRecordId, poundsToPence, penceToPounds, wholeNumber } from "./form-values";
 import { AmendmentInputSchema, NoteContentSchema, canSign, canonicalNoteContent, noteHasContent, noteStatusLabel, sectionsForTemplate, shortFingerprint } from "./notes";
+import { pmsCan } from "../core/permissions";
+import { PMS_RECORD_TABS } from "../record-tabs";
+import { recordTabItems, standInPermission } from "./record-tab-model";
+import { ClinicalFlagInputSchema, PronounsSchema, titleLine } from "./flags";
+import { DEFAULT_PATIENT_FILTERS, csvCell, csvLine, filtersFromParams, paramsFromFilters } from "./patient-list";
+import { DEFAULT_UNSIGNED_NOTE_DAYS, overdueWindowLabel, signWithinText } from "./settings";
 import { MEASURES, answersFromForm, formatScore, outcomeChange, scoreOutcome } from "./outcomes";
-import { BUILTIN_TEMPLATES, NoteTemplateInputSchema, NoteTemplatePatchSchema, builtinTemplate, isBuiltinTemplateId, parseSnapshot, sectionKeyFor, toSnapshot } from "./templates";
+import { BUILTIN_TEMPLATES, NoteTemplateInputSchema, NoteTemplatePatchSchema, TemplateSectionsSchema, builtinTemplate, checkedOptions, isBuiltinTemplateId, parseSnapshot, sectionKeyFor, sectionLetter, toSnapshot } from "./templates";
 
 const items = (values: (number | null)[], prefix = "s") => Object.fromEntries(values.map((v, i) => [`${prefix}${i + 1}`, v]));
 
@@ -100,11 +106,28 @@ describe("outcome measures: scoring", () => {
 describe("clinical notes", () => {
   const ia = builtinTemplate("builtin-initial-soap")!;
   it("keeps only the template's sections, one-line sections on one line", () => {
-    const parsed = NoteContentSchema.parse({ sections: { presenting_complaint: "  Neck pain\r\n", consent: "Verbal\nconsent", extra_thing: "smuggled", objective: "   " } });
-    assert.deepEqual(parsed.sections, { presenting_complaint: "Neck pain", consent: "Verbal\nconsent", extra_thing: "smuggled" });
-    assert.deepEqual(sectionsForTemplate(ia, parsed.sections), { presenting_complaint: "Neck pain", consent: "Verbal consent" });
+    const parsed = NoteContentSchema.parse({ sections: { subjective: "  Neck pain\r\n", consent: "Verbal\nconsent", extra_thing: "smuggled", objective: "   " } });
+    assert.deepEqual(parsed.sections, { subjective: "Neck pain", consent: "Verbal\nconsent", extra_thing: "smuggled" });
+    assert.deepEqual(sectionsForTemplate(ia, parsed.sections), { subjective: "Neck pain", consent: "Verbal consent" });
     assert.equal(noteHasContent({}, null), false);
     assert.equal(noteHasContent({}, { markers: [{ view: "front", x: 50, y: 20, kind: "pain", intensity: null, label: null }] }), true);
+  });
+
+  it("a checklist section keeps only its own tick boxes, in the template's order", () => {
+    assert.deepEqual(
+      ia.sections.map((x) => sectionLetter(x)),
+      ["S", "R", "O", "A", "P", "C"],
+    );
+    const flags = ia.sections.find((x) => x.kind === "checklist")!;
+    assert.deepEqual(flags.options, ["Weight loss", "Night pain unrelated to position", "Fever", "Trauma", "Neurological signs"]);
+    const kept = sectionsForTemplate(ia, { red_flags: "Trauma\nnot an option\nWeight loss" });
+    assert.deepEqual(kept, { red_flags: "Weight loss\nTrauma" });
+    assert.deepEqual(checkedOptions(flags, kept.red_flags), ["Weight loss", "Trauma"]);
+    assert.deepEqual(sectionsForTemplate(ia, { red_flags: "nothing valid" }), {});
+    assert.equal(TemplateSectionsSchema.safeParse([{ key: "flags", label: "Flags", kind: "checklist", options: [] }]).success, false, "a checklist needs tick boxes");
+    const ok = TemplateSectionsSchema.parse([{ key: "flags", label: "Flags", kind: "checklist", options: [" Fever "] }, { key: "s", label: "S", options: ["dropped"] }]);
+    assert.deepEqual((ok[0] as { options?: string[] }).options, ["Fever"]);
+    assert.equal("options" in ok[1], false, "options belong to checklists only");
   });
 
   it("only the author signs, a draft, not in the future, with content", () => {
@@ -264,5 +287,67 @@ describe("form values", () => {
     assert.equal(displayName({ title: "Ms", firstName: "Megan", lastName: "Hart", preferredName: "Meg" }), "Ms Megan (Meg) Hart");
     assert.equal(isPlausibleRecordId("pat_01JA2B3C4D5E6F7G8H9JKMNPQR"), true);
     assert.equal(isPlausibleRecordId("pat_1' OR 1=1"), false);
+  });
+});
+
+describe("patient list filters, CSV cells, pronouns and flags", () => {
+  it("reads filters from the URL, dropping anything unknown", () => {
+    const f = filtersFromParams({ q: "  hart ", status: "nonsense", payer: "insurer", practitioner: "not-an-id", nofuture: "1", sort: "desc", page: "3" });
+    assert.deepEqual(f, { ...DEFAULT_PATIENT_FILTERS, q: "hart", payer: "insurer", noFuture: true, sort: "desc", page: 3 });
+    assert.equal(paramsFromFilters(f).toString(), "q=hart&payer=insurer&nofuture=1&sort=desc&page=3");
+    assert.equal(paramsFromFilters(DEFAULT_PATIENT_FILTERS).toString(), "");
+    assert.deepEqual(filtersFromParams(new URLSearchParams("status=any&seen=today")), { ...DEFAULT_PATIENT_FILTERS, status: "any", seenToday: true });
+  });
+
+  it("CSV cells: quoted when needed, formulas defused", () => {
+    assert.equal(csvCell("Hart"), "Hart");
+    assert.equal(csvCell('O"Neil, Jo'), '"O""Neil, Jo"');
+    assert.equal(csvCell("=HYPERLINK(1)"), "'=HYPERLINK(1)");
+    assert.equal(csvCell("+44 7700"), "'+44 7700");
+    assert.equal(csvCell("-1"), "'-1");
+    assert.equal(csvCell("@cmd"), "'@cmd");
+    assert.equal(csvCell(null), "");
+    assert.equal(csvLine(["a", 1, null]), "a,1,");
+  });
+
+  it("pronouns and flags: trimmed, bounded; the title line", () => {
+    assert.equal(PronounsSchema.parse("  she / her "), "she / her");
+    assert.equal(PronounsSchema.parse("   "), null);
+    assert.equal(PronounsSchema.safeParse("x".repeat(41)).success, false);
+    assert.equal(ClinicalFlagInputSchema.parse({ text: " On   anticoagulants " }).text, "On anticoagulants");
+    assert.equal(ClinicalFlagInputSchema.safeParse({ text: " " }).success, false);
+    assert.equal(titleLine("Mrs", "she/her"), "Mrs · she/her");
+    assert.equal(titleLine(null, null), null);
+  });
+
+  it("unsigned-notes wording follows the clinic's setting", () => {
+    assert.equal(DEFAULT_UNSIGNED_NOTE_DAYS, 1);
+    assert.equal(overdueWindowLabel(1), "24 h");
+    assert.equal(overdueWindowLabel(3), "3 days");
+    assert.equal(signWithinText(1), "Sign within 24 hours of the visit.");
+  });
+});
+
+describe("record tabs in the design's order, by role", () => {
+  it("clinician: every tab, stand-ins for modules not merged yet (the diary's own Appointments tab is registered)", () => {
+    const tabs = recordTabItems(PMS_RECORD_TABS, (p) => pmsCan("clinician", p));
+    assert.deepEqual(
+      tabs.map((t) => t.label),
+      ["Overview", "Appointments", "Cases", "Clinical notes", "Outcomes", "Attachments", "Invoices", "Messages", "Forms", "History"],
+    );
+    assert.deepEqual(tabs.filter((t) => t.standIn).map((t) => t.segment), ["tab/invoices", "tab/messages", "tab/forms"]);
+    assert.equal(tabs.find((t) => t.key === "appointments")?.segment, "appointments");
+  });
+  it("reception: no clinical tab at all (absent, not disabled)", () => {
+    const tabs = recordTabItems(PMS_RECORD_TABS, (p) => pmsCan("staff", p)).map((t) => t.label);
+    assert.deepEqual(tabs, ["Overview", "Appointments", "Cases", "Invoices", "Messages", "Forms", "History"]);
+  });
+  it("a module's own tab replaces its stand-in", () => {
+    const withDiary = [...PMS_RECORD_TABS, { id: "diary.appointments", module: "diary" as const, label: "Appointments", segment: "appointments", order: 10, permission: "diary.view" as const }];
+    const tabs = recordTabItems(withDiary, (p) => pmsCan("owner", p));
+    assert.equal(tabs.find((t) => t.key === "appointments")?.segment, "appointments");
+    assert.equal(tabs[1].label, "Appointments");
+    assert.equal(standInPermission("invoices"), "billing.view");
+    assert.equal(standInPermission("notes"), null);
   });
 });

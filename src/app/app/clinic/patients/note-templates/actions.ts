@@ -1,6 +1,6 @@
 "use server";
 /**
- * The note-template editor and the clinic's note settings (owner / administrator: settings.manage). The editor is a
+ * The note-template editor and the clinic's note settings (owner / administrator: settings.setup). The editor is a
  * client component, so these actions take plain objects (validated in the records service,
  * src/server/pms/records/templates-service.ts, which checks the permission again). Every change is a new revision:
  * notes keep the snapshot and version of the template they were started from.
@@ -22,7 +22,7 @@ import {
 const TEMPLATES_PATH = `${PATIENTS_PATH}/note-templates`;
 
 export async function createNoteTemplateAction(input: TemplateEditorInput): Promise<RecordsActionState> {
-  const actor = await clinicActionActor({ permission: "settings.manage" });
+  const actor = await clinicActionActor({ permission: "settings.setup" });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
   const result = await createTemplateFor(actor, input);
   if (result.ok) revalidatePath(TEMPLATES_PATH);
@@ -30,7 +30,7 @@ export async function createNoteTemplateAction(input: TemplateEditorInput): Prom
 }
 
 export async function copyNoteTemplateAction(fromTemplateId: string, name: string): Promise<RecordsActionState> {
-  const actor = await clinicActionActor({ permission: "settings.manage" });
+  const actor = await clinicActionActor({ permission: "settings.setup" });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
   const result = await copyTemplateFor(actor, fromTemplateId, name);
   if (result.ok) revalidatePath(TEMPLATES_PATH);
@@ -38,7 +38,7 @@ export async function copyNoteTemplateAction(fromTemplateId: string, name: strin
 }
 
 export async function updateNoteTemplateAction(templateId: string, expectedRev: number, patch: Partial<TemplateEditorInput>): Promise<RecordsActionState> {
-  const actor = await clinicActionActor({ permission: "settings.manage" });
+  const actor = await clinicActionActor({ permission: "settings.setup" });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
   const result = await updateTemplateFor(actor, templateId, expectedRev, patch);
   if (result.ok) revalidatePath(TEMPLATES_PATH);
@@ -46,7 +46,7 @@ export async function updateNoteTemplateAction(templateId: string, expectedRev: 
 }
 
 export async function retireNoteTemplateAction(templateId: string, expectedRev: number, retired: boolean): Promise<RecordsActionState> {
-  const actor = await clinicActionActor({ permission: "settings.manage" });
+  const actor = await clinicActionActor({ permission: "settings.setup" });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
   const result = await setTemplateRetiredFor(actor, templateId, expectedRev, retired);
   if (result.ok) revalidatePath(TEMPLATES_PATH);
@@ -54,7 +54,7 @@ export async function retireNoteTemplateAction(templateId: string, expectedRev: 
 }
 
 export async function saveRecordsSettingsAction(expectedRev: number, unsignedNoteDays: number): Promise<RecordsActionState> {
-  const actor = await clinicActionActor({ permission: "settings.manage" });
+  const actor = await clinicActionActor({ permission: "settings.setup" });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
   const result = await saveRecordsSettingsFor(actor, expectedRev, { unsignedNoteDays });
   if (result.ok) revalidatePath(TEMPLATES_PATH);

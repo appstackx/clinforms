@@ -112,19 +112,19 @@ export async function openBookingCaseAction(input: OpenBookingCaseRequest): Prom
 }
 
 export async function startTreatmentAction(input: { id: string }): Promise<DiaryActionResult> {
-  const actor = await clinicActionActor({ permission: "clinical.edit" });
+  const actor = await clinicActionActor({ permission: "clinical.write" });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
   return done(await startTreatmentFor(await diaryCallerOf(actor), input));
 }
 
 export async function saveWeeklyRotaAction(input: SaveWeeklyRotaRequest): Promise<DiaryActionResult> {
-  const actor = await clinicActionActor({ permission: "diary.manage" });
+  const actor = await clinicActionActor({ permission: "diary.rota" });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
   return done(await saveWeeklyRotaFor(await diaryCallerOf(actor), input));
 }
 
 export async function setDaySheetDobAction(input: SetDaySheetDobRequest): Promise<DiaryActionResult> {
-  const actor = await clinicActionActor({ permission: "settings.manage" });
+  const actor = await clinicActionActor({ permission: "settings.setup" });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
   return done(await setDaySheetDobFor(await diaryCallerOf(actor), input));
 }

@@ -71,7 +71,11 @@ import { patientDisplayName } from "./view";
 import { clashMessages, diaryAction, fromPmsSave, fromSaveResult, invalid, warningMessages } from "./actions-support";
 import { inScope, type DiaryCaller } from "./caller";
 
-/** The permission each diary write needs (the action of the same name asks for exactly this one). */
+/**
+ * The permission each diary write needs (the action of the same name asks for exactly this one). Roles design round 2:
+ * rotas and the waiting list are "diary.rota" (owner, admin, reception by default); booking from a waiting-list
+ * offer is a booking ("diary.book").
+ */
 export const DIARY_ACTION_PERMISSIONS = {
   bookAppointmentAction: "diary.book",
   rebookAppointmentAction: "diary.book",
@@ -82,20 +86,20 @@ export const DIARY_ACTION_PERMISSIONS = {
   updateAppointmentDetailsAction: "diary.book",
   cancelSeriesAction: "diary.book",
   createBlockAction: "diary.book",
-  createRotaEntryAction: "diary.manage",
-  updateRotaEntryAction: "diary.manage",
-  endRotaEntryAction: "diary.manage",
-  addToWaitingListAction: "diary.book",
-  updateWaitingListEntryAction: "diary.book",
-  setWaitingListStatusAction: "diary.book",
-  offerWaitingListSlotAction: "diary.book",
-  answerWaitingListOfferAction: "diary.book",
+  createRotaEntryAction: "diary.rota",
+  updateRotaEntryAction: "diary.rota",
+  endRotaEntryAction: "diary.rota",
+  addToWaitingListAction: "diary.rota",
+  updateWaitingListEntryAction: "diary.rota",
+  setWaitingListStatusAction: "diary.rota",
+  offerWaitingListSlotAction: "diary.rota",
+  answerWaitingListOfferAction: "diary.rota",
   bookWaitingListOfferAction: "diary.book",
-  setDaySheetDobAction: "settings.manage",
+  setDaySheetDobAction: "settings.setup",
   registerBookingPatientAction: "patients.edit",
   openBookingCaseAction: "patients.edit",
-  startTreatmentAction: "clinical.edit",
-  saveWeeklyRotaAction: "diary.manage",
+  startTreatmentAction: "clinical.write",
+  saveWeeklyRotaAction: "diary.rota",
 } as const satisfies Record<string, PmsPermission>;
 
 export type DiaryActionName = keyof typeof DIARY_ACTION_PERMISSIONS;
@@ -324,7 +328,7 @@ export async function createBlockFor(caller: DiaryCaller, input: unknown): Promi
 }
 
 /* ------------------------------------------------------------------------------------------------
- * Rotas (diary.manage)
+ * Rotas (diary.rota)
  * ----------------------------------------------------------------------------------------------*/
 
 export async function createRotaEntryFor(caller: DiaryCaller, input: unknown): Promise<DiaryActionResult> {
@@ -531,7 +535,7 @@ export type AnswerWaitingListOfferRequest = { offerId: string } & import("../../
 export type BookWaitingListOfferRequest = { offerId: string } & z.input<typeof BookOfferSchema>;
 
 /* ------------------------------------------------------------------------------------------------
- * Diary settings (settings.manage – owners and administrators)
+ * Diary settings (settings.setup – owners and administrators)
  * ----------------------------------------------------------------------------------------------*/
 
 const DaySheetDobSchema = z.object({ on: z.boolean() });
@@ -647,7 +651,7 @@ const StartTreatmentSchema = z.object({ id: PmsIdSchema });
 /**
  * "Start treatment" for an arrived patient: starts the clinician's clinical note for this appointment (the clinic's
  * first note template, linked to the appointment and its case) and answers the note's id – the drawer opens it.
- * clinical.edit (the records service checks it again). The diary has no "in treatment" status of its own.
+ * clinical.write (the records service checks it again). The diary has no "in treatment" status of its own.
  */
 export async function startTreatmentFor(caller: DiaryCaller, input: unknown): Promise<DiaryActionResult> {
   if (!allowed(caller, "startTreatmentAction")) return NOT_ALLOWED;

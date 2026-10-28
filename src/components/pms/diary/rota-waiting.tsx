@@ -3,7 +3,7 @@
  * "Rota and waiting list" (design round 2): left, a practitioner's weekly working pattern from a date – per day on/
  * off, site, hours, break, a bar of the day – with its exceptions (leave, training) and "Add leave or change";
  * right, the site's waiting list – the freed slot banner, each patient's wants / availability / days waiting, "Matches
- * slot", Offer slot by text, Book, Remove – and "Add". Rota changes need diary.manage; the waiting list diary.book.
+ * slot", Offer slot by text, Book, Remove – and "Add". Rota and waiting-list changes need diary.rota; booking from the list diary.book.
  */
 import * as React from "react";
 import Link from "next/link";
@@ -49,7 +49,10 @@ export interface RotaWaitingProps {
     exceptions: { id: string; date: string; label: string; bookingsToMove: number }[];
   };
   waiting: {
+    /** diary.book: "Book" (a booking from the list). */
     canBook: boolean;
+    /** diary.rota: add, offer, remove. */
+    canEdit: boolean;
     rows: WaitingListRow[];
     freed: { date: string; time: string; endTime: string; practitionerId: string; practitionerName: string | null; siteId: string; roomId: string | null; reason: string; matches: string[] } | null;
   };
@@ -380,7 +383,7 @@ function WaitingList({ waiting, site, practitioners, services }: RotaWaitingProp
             {site?.name ?? "All sites"} · {open.length} waiting
           </p>
         </div>
-        {waiting.canBook ? (
+        {waiting.canEdit ? (
           <PmsButton variant="secondary" onClick={() => setAdding((a) => !a)} aria-expanded={adding}>
             <Plus aria-hidden />
             Add
@@ -428,19 +431,23 @@ function WaitingList({ waiting, site, practitioners, services }: RotaWaitingProp
                   {r.waitingDays} {r.waitingDays === 1 ? "day" : "days"}
                 </dd>
               </dl>
-              {waiting.canBook ? (
+              {waiting.canBook || waiting.canEdit ? (
                 <div className="flex flex-wrap gap-2">
-                  {match ? (
+                  {match && waiting.canEdit ? (
                     <PmsButton size="sm" loading={busy === `offer:${r.id}`} onClick={() => void offer(r)}>
                       Offer slot by text
                     </PmsButton>
                   ) : null}
+                  {waiting.canBook ? (
                   <PmsButton size="sm" variant="secondary" asChild>
                     <Link href={`${DIARY_PATH}?book=${r.id}${r.siteId ? `&site=${r.siteId}` : site ? `&site=${site.id}` : ""}${freed && match ? `&date=${freed.date}` : ""}`}>Book</Link>
                   </PmsButton>
-                  <PmsButton size="sm" variant="ghost" loading={busy === `remove:${r.id}`} onClick={() => void remove(r)}>
-                    Remove
-                  </PmsButton>
+                  ) : null}
+                  {waiting.canEdit ? (
+                    <PmsButton size="sm" variant="ghost" loading={busy === `remove:${r.id}`} onClick={() => void remove(r)}>
+                      Remove
+                    </PmsButton>
+                  ) : null}
                 </div>
               ) : null}
             </article>

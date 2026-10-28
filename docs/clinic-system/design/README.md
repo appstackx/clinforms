@@ -44,3 +44,27 @@ Differences from the mock-ups, and why, are listed in the commit message of the 
 other appointment (a practitioner or room is never double-booked – K2-DIARY-006), the day sheet prints no phone
 numbers and dates of birth only when the clinic switches it on (K2-DIARY-017 and Khuram's decision of 28/10/2026),
 the clash text keeps names' capitals (the mock-up lower-cased them).
+
+---
+
+# Round 2 designs (28/10/2026)
+
+**Internal.** 28/10/2026. Seven screens exported (and the records area's patients set, `round2/patients/`, added with feat/cs-records) from Claude Design as standalone pages (`round2/<screen>/`: the
+`.dc.html` artboard, `support.js` and `vendor/react*.js` – the runtime that renders it, not part of the design – and
+the export's `README.md`), plus a 1440 px screenshot of each in `round2/screenshots/`. Fictional data only
+(`@example.com`, `07700 900xxx`, `PH-DEMO-0N`, made-up people and sites); checked for secrets before committing.
+Treat the HTML as a reference mock-up: view it by serving the folder over http on a K2 port (e.g.
+`python3 -m http.server 3190` inside the folder) – some browsers block the scripts over `file://`.
+
+| Folder | Screen | Screenshot | Built |
+|---|---|---|---|
+| `round2/roles-and-permissions-grid-by-role/` (`Roles.dc.html`) | Set-up → Roles and permissions: the permission grid by role, locked cells, Custom markers, unsaved state, review-and-save confirm, change history | `screenshots/Roles.png` | Yes – `/app/clinic/access/roles` (feat/cs-access) |
+| `round2/member-access-one-person/` (`MemberAccess.dc.html`) | Staff access → one member: role, exceptions, works at / can see per site, signing details, "What X can do" | `screenshots/MemberAccess.png` | Yes – `/app/clinic/access/<user>` (feat/cs-access) |
+| `round2/patients/` ([README](round2/patients/README.md)) | Patients list and new patient, patient record by role, clinical-note editor (sign, amend, unsigned notes), patients at 375 px | `round2/patients/screenshots/` | Yes – `/app/clinic/patients` (feat/cs-records) |
+| `round2/set-up/` (`Setup.dc.html`) | Set-up home with its sections (incl. the Staff access list) | `screenshots/Setup.png` | Later (reporting) |
+| `round2/billing-invoices-aged-debt-remittance/` (`BillingList.dc.html`) | Billing: invoices, aged debt, remittance | `screenshots/BillingList.png` | Later (billing) |
+| `round2/messages-outbox-templates-letters-replies/` (`Messages.dc.html`) | Messages: outbox, templates, letters, replies | `screenshots/Messages.png` | Later (comms) |
+| `round2/reports/` (`Reports.dc.html`) | Reports | `screenshots/Reports.png` | Later (reporting) |
+| `round2/import-from-previous-system/` (`Import.dc.html`) | Import from the previous system | `screenshots/Import.png` | Later (integration) |
+
+Original exports: `~/Downloads/<screen name>-html.zip` on Khuram's machine.

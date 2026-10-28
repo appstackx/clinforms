@@ -7,13 +7,14 @@ import { createContext, useContext, useEffect, useId, useRef } from "react";
 import { useFormState, useFormStatus } from "react-dom";
 import { cn } from "@/lib/utils";
 import type { RecordsActionState } from "@/modules/pms/records/types";
+import { inputClasses, pmsButtonVariants } from "@/components/pms/ui";
 
 export type RecordsAction = (prev: RecordsActionState, form: FormData) => Promise<RecordsActionState>;
 
 const ErrorsContext = createContext<Record<string, string>>({});
 
-export const INPUT_CLASS =
-  "block w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm placeholder:text-slate-500 focus:border-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-600/30 disabled:bg-slate-50 disabled:text-slate-600 aria-[invalid=true]:border-red-500";
+/** The design system's input (src/components/pms/ui/inputs.tsx); heights are set where it is used. */
+export const INPUT_CLASS = inputClasses.replace("h-9 ", "block ");
 
 export function ActionForm({
   action,
@@ -40,13 +41,13 @@ export function ActionForm({
       <form action={formAction} className={cn("space-y-4", className)}>
         <div ref={noticeRef} tabIndex={-1} className="outline-none">
           {state?.ok === false ? (
-            <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+            <div role="alert" className="rounded-xl border border-[#FECACA] bg-[#FEF2F2] px-3.5 py-2.5 text-sm text-[#991B1B]">
               {state.error}
               {Object.keys(errors).length > 0 ? <span className="block text-xs">Check the fields marked below.</span> : null}
             </div>
           ) : null}
           {state?.ok === true && showSuccess ? (
-            <div role="status" className="rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-sm text-teal-900">
+            <div role="status" className="rounded-xl border border-[#A7E8BE] bg-[#F0FDF4] px-3.5 py-2.5 text-sm text-[#166534]">
               {state.message ?? successMessage}
             </div>
           ) : null}
@@ -68,7 +69,7 @@ function useField(name: string, hint?: React.ReactNode) {
 
 function Hint({ id, children }: { id: string; children?: React.ReactNode }) {
   return children ? (
-    <p id={`${id}-hint`} className="text-xs text-slate-600">
+    <p id={`${id}-hint`} className="text-xs text-muted-foreground">
       {children}
     </p>
   ) : null;
@@ -112,9 +113,9 @@ export function TextField({
   const f = useField(name, hint);
   return (
     <div className={cn("space-y-1.5", className)}>
-      <label htmlFor={f.id} className="block text-sm font-medium text-slate-800">
+      <label htmlFor={f.id} className="block text-sm font-medium text-foreground">
         {label}
-        {required ? <span className="text-red-700"> *</span> : null}
+        {required ? <span className="text-destructive-strong" aria-hidden> *</span> : null}
       </label>
       <input
         id={f.id}
@@ -129,7 +130,7 @@ export function TextField({
         disabled={disabled}
         aria-invalid={f.error ? true : undefined}
         aria-describedby={f.describedBy}
-        className={cn(INPUT_CLASS, "h-10")}
+        className={cn(INPUT_CLASS, "h-9")}
       />
       <Hint id={f.id}>{hint}</Hint>
       <FieldError id={f.id} error={f.error} />
@@ -159,9 +160,9 @@ export function TextAreaField({
   const f = useField(name, hint);
   return (
     <div className={cn("space-y-1.5", className)}>
-      <label htmlFor={f.id} className="block text-sm font-medium text-slate-800">
+      <label htmlFor={f.id} className="block text-sm font-medium text-foreground">
         {label}
-        {required ? <span className="text-red-700"> *</span> : null}
+        {required ? <span className="text-destructive-strong" aria-hidden> *</span> : null}
       </label>
       <textarea
         id={f.id}
@@ -208,9 +209,9 @@ export function SelectField({
   const f = useField(name, hint);
   return (
     <div className={cn("space-y-1.5", className)}>
-      <label htmlFor={f.id} className="block text-sm font-medium text-slate-800">
+      <label htmlFor={f.id} className="block text-sm font-medium text-foreground">
         {label}
-        {required ? <span className="text-red-700"> *</span> : null}
+        {required ? <span className="text-destructive-strong" aria-hidden> *</span> : null}
       </label>
       <select
         id={f.id}
@@ -219,7 +220,7 @@ export function SelectField({
         required={required}
         aria-invalid={f.error ? true : undefined}
         aria-describedby={f.describedBy}
-        className={cn(INPUT_CLASS, "h-10")}
+        className={cn(INPUT_CLASS, "h-9")}
       >
         {emptyLabel !== undefined ? <option value="">{emptyLabel}</option> : null}
         {options.map((o) => (
@@ -249,7 +250,7 @@ export function CheckboxField({ label, name, defaultChecked, hint }: { label: st
         className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-400 text-teal-700 focus:ring-2 focus:ring-teal-600"
       />
       <div className="min-w-0">
-        <label htmlFor={f.id} className="block text-sm font-medium text-slate-800">
+        <label htmlFor={f.id} className="block text-sm font-medium text-foreground">
           {label}
         </label>
         <Hint id={f.id}>{hint}</Hint>
@@ -278,11 +279,7 @@ export function Submit({
   className?: string;
 }) {
   const { pending } = useFormStatus();
-  const styles = {
-    primary: "bg-teal-700 text-white hover:bg-teal-800 focus-visible:ring-teal-700",
-    secondary: "border border-slate-300 bg-white text-slate-800 hover:bg-slate-50 focus-visible:ring-slate-500",
-    danger: "border border-red-300 bg-white text-red-800 hover:bg-red-50 focus-visible:ring-red-600",
-  }[variant];
+  const styles = pmsButtonVariants({ variant: variant === "danger" ? "destructive" : variant });
   return (
     <button
       type="submit"
@@ -293,11 +290,7 @@ export function Submit({
       onClick={(e) => {
         if (confirmText && !window.confirm(confirmText)) e.preventDefault();
       }}
-      className={cn(
-        "inline-flex h-10 items-center justify-center rounded-lg px-4 text-sm font-semibold shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60",
-        styles,
-        className,
-      )}
+      className={cn(styles, "disabled:opacity-80", className)}
     >
       {pending ? pendingText : children}
     </button>
@@ -306,9 +299,9 @@ export function Submit({
 
 export function Fieldset({ legend, children, description }: { legend: string; children: React.ReactNode; description?: React.ReactNode }) {
   return (
-    <fieldset className="space-y-4 rounded-xl border border-slate-200 p-4">
-      <legend className="px-1 text-sm font-semibold text-slate-900">{legend}</legend>
-      {description ? <p className="-mt-2 text-xs text-slate-600">{description}</p> : null}
+    <fieldset className="space-y-4 rounded-2xl border border-border bg-white p-4">
+      <legend className="px-1 text-sm font-semibold text-foreground">{legend}</legend>
+      {description ? <p className="-mt-2 text-xs text-muted-foreground">{description}</p> : null}
       {children}
     </fieldset>
   );

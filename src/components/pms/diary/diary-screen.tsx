@@ -35,6 +35,7 @@ export interface DiaryScreenProps {
   cookieSite: string | null;
   can: {
     book: boolean;
+    /** diary.override ("Override clashes"): "Book anyway" in the booking dialog. */
     manage: boolean;
     patientsEdit: boolean;
     clinical: boolean;

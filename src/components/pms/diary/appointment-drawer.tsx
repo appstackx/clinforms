@@ -28,7 +28,7 @@ import { weekdayDate } from "./grid-model";
 
 export interface DrawerPermissions {
   book: boolean;
-  /** clinical.edit: "Start treatment" opens a clinical note. */
+  /** clinical.write: "Start treatment" opens a clinical note. */
   clinical: boolean;
 }
 

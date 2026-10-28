@@ -5,10 +5,9 @@
  * directly. Every function in src/server/pms/diary checks `can(…)` and the scope again itself, so a wrong
  * permission in an action file cannot widen what a role may do.
  *
- * Site scope (K2-SITE-004): the default is every site of the clinic. The per-member limit lives in the reporting
- * module's tables (pms_staff_access / pms_staff_sites, not on this branch); a small shared read function for it
- * belongs to the foundation (handover §7.7). Until it exists `resolveDiarySiteScope` answers "every site" – the
- * diary already applies whatever scope it is given to every read and write (proved by the service suite).
+ * Site scope (K2-SITE-004): the foundation's shared read (src/server/pms/access.ts) – the sites the member works at
+ * ∪ the sites they can see; every site by default, with "can see all sites", and always for the owner. The actor
+ * carries it (`actor.siteIds`); the diary applies it to every read and write (proved by the service suite).
  */
 import "server-only";
 import type { PmsPermission } from "../../../modules/pms/core/permissions";
@@ -28,8 +27,8 @@ export interface DiaryCaller {
 }
 
 /** The member's site limit (null = every site). See the note at the top of this file. */
-export async function resolveDiarySiteScope(_actor: ClinicActor): Promise<ReadonlySet<string> | null> {
-  return null;
+export async function resolveDiarySiteScope(actor: Pick<ClinicActor, "siteIds">): Promise<ReadonlySet<string> | null> {
+  return actor.siteIds;
 }
 
 export async function diaryCallerOf(actor: ClinicActor): Promise<DiaryCaller> {

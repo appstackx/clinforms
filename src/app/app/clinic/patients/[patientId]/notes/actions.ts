@@ -12,7 +12,8 @@ import type { RecordsActionState } from "@/modules/pms/records/types";
 import { actorErrorMessage, clinicActionActor } from "@/server/pms/actor";
 import { actionState } from "@/server/pms/records/action-state";
 import { intField, optional, text } from "@/server/pms/records/forms";
-import { amendNoteFor, discardNoteFor, saveNoteFor, startNoteFor } from "@/server/pms/records/notes-service";
+import { amendNoteFor, changeNoteTemplateFor, discardNoteFor, lastNoteForCopyFor, saveNoteFor, startNoteFor, type LastNoteCopy } from "@/server/pms/records/notes-service";
+import type { BodyChart } from "@/modules/pms/records/body-chart";
 import { patientPath } from "@/server/pms/records/record";
 
 function sectionsFrom(form: FormData): Record<string, string> {
@@ -35,7 +36,7 @@ function chartFrom(form: FormData): unknown {
 }
 
 export async function startNote(_prev: RecordsActionState, form: FormData): Promise<RecordsActionState> {
-  const actor = await clinicActionActor({ permission: "clinical.edit" });
+  const actor = await clinicActionActor({ permission: "clinical.write" });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
   const patientId = text(form, "patientId");
   const result = await startNoteFor(actor, patientId, { templateId: text(form, "templateId"), seenOn: text(form, "seenOn"), caseId: optional(form, "caseId"), appointmentId: optional(form, "appointmentId") });
@@ -45,7 +46,7 @@ export async function startNote(_prev: RecordsActionState, form: FormData): Prom
 }
 
 export async function saveNote(_prev: RecordsActionState, form: FormData): Promise<RecordsActionState> {
-  const actor = await clinicActionActor({ permission: "clinical.edit" });
+  const actor = await clinicActionActor({ permission: "clinical.write" });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
   const patientId = text(form, "patientId");
   const sign = text(form, "intent") === "sign";
@@ -62,7 +63,7 @@ export async function saveNote(_prev: RecordsActionState, form: FormData): Promi
 }
 
 export async function discardNote(_prev: RecordsActionState, form: FormData): Promise<RecordsActionState> {
-  const actor = await clinicActionActor({ permission: "clinical.edit" });
+  const actor = await clinicActionActor({ permission: "clinical.write" });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
   const patientId = text(form, "patientId");
   const result = await discardNoteFor(actor, patientId, text(form, "noteId"), intField(form, "expectedRev"));
@@ -72,7 +73,7 @@ export async function discardNote(_prev: RecordsActionState, form: FormData): Pr
 }
 
 export async function amendNote(_prev: RecordsActionState, form: FormData): Promise<RecordsActionState> {
-  const actor = await clinicActionActor({ permission: "clinical.sign" });
+  const actor = await clinicActionActor({ permission: "clinical.amend" });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
   const patientId = text(form, "patientId");
   const result = await amendNoteFor(actor, patientId, text(form, "noteId"), {
@@ -83,4 +84,70 @@ export async function amendNote(_prev: RecordsActionState, form: FormData): Prom
   });
   if (result.ok) revalidatePath(patientPath(patientId, "notes"), "layout");
   return actionState(result, (v) => ({ ok: true, id: v.id, message: "The amendment is added and locked." }));
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * The round-2 note editor (a client component): plain-object actions for autosave, template change, copy from
+ * the last note, discard and amend. Each checks the member and the permission (clinicActionActor), then the records
+ * service checks again, reads the note from the member's own clinic and checks it is the patient's.
+ * ----------------------------------------------------------------------------------------------*/
+
+export type EditorResult<T extends object = object> = ({ ok: true } & T) | { ok: false; error: string; code?: string; rev?: number; fieldErrors?: Record<string, string> };
+
+function failed(result: { ok: false; error: string; code: string; rev?: number; fieldErrors?: Record<string, string> }): EditorResult<never> {
+  return { ok: false, error: result.error, code: result.code, rev: result.rev, fieldErrors: result.fieldErrors };
+}
+
+export interface EditorSave {
+  patientId: string;
+  noteId: string;
+  expectedRev: number;
+  sections: Record<string, string>;
+  bodyChart?: BodyChart | null;
+  sign?: boolean;
+}
+
+/** Autosave / "Save draft" / "Sign and lock" (sign = save then sign; clinical.write and a registration number). */
+export async function saveNoteDraftAction(input: EditorSave): Promise<EditorResult<{ rev: number; signed: boolean; savedAt: string }>> {
+  const actor = await clinicActionActor({ permission: "clinical.write" });
+  if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
+  const result = await saveNoteFor(actor, String(input.patientId), String(input.noteId), { expectedRev: Number(input.expectedRev), sections: input.sections ?? {}, bodyChart: input.bodyChart, sign: input.sign === true });
+  if (!result.ok) return failed(result);
+  if (result.value.signed) revalidatePath(patientPath(String(input.patientId)), "layout");
+  return { ok: true, rev: result.value.rev, signed: result.value.signed, savedAt: new Date().toISOString() };
+}
+
+export async function changeNoteTemplateAction(input: { patientId: string; noteId: string; expectedRev: number; templateId: string }): Promise<EditorResult<{ rev: number }>> {
+  const actor = await clinicActionActor({ permission: "clinical.write" });
+  if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
+  const result = await changeNoteTemplateFor(actor, String(input.patientId), String(input.noteId), Number(input.expectedRev), String(input.templateId));
+  if (!result.ok) return failed(result);
+  revalidatePath(patientPath(String(input.patientId), `notes/${String(input.noteId)}`));
+  return { ok: true, rev: result.value.rev };
+}
+
+export async function copyLastNoteAction(input: { patientId: string; noteId: string }): Promise<EditorResult<{ copy: LastNoteCopy | null }>> {
+  const actor = await clinicActionActor({ permission: "clinical.write" });
+  if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
+  const result = await lastNoteForCopyFor(actor, String(input.patientId), String(input.noteId));
+  if (!result.ok) return failed(result);
+  return { ok: true, copy: result.value };
+}
+
+export async function discardNoteAction(input: { patientId: string; noteId: string; expectedRev: number }): Promise<EditorResult> {
+  const actor = await clinicActionActor({ permission: "clinical.write" });
+  if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
+  const result = await discardNoteFor(actor, String(input.patientId), String(input.noteId), Number(input.expectedRev));
+  if (!result.ok) return failed(result);
+  revalidatePath(patientPath(String(input.patientId)), "layout");
+  return { ok: true };
+}
+
+export async function amendNoteAction(input: { patientId: string; noteId: string; kind: AmendmentKind; sectionKey?: string | null; text: string; reason?: string | null }): Promise<EditorResult> {
+  const actor = await clinicActionActor({ permission: "clinical.amend" });
+  if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
+  const result = await amendNoteFor(actor, String(input.patientId), String(input.noteId), { kind: input.kind, sectionKey: input.sectionKey ?? null, text: String(input.text ?? ""), reason: input.reason ?? null });
+  if (!result.ok) return failed(result);
+  revalidatePath(patientPath(String(input.patientId)), "layout");
+  return { ok: true };
 }

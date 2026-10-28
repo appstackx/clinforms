@@ -13,19 +13,25 @@
  * The actor is the page's / action's ClinicActor (src/server/pms/actor.ts) – the service only needs the parts below,
  * so tests build one for any role without a session.
  */
-import { pmsCan, type PmsPermission, type PmsRole } from "../../../modules/pms/core/permissions";
+import { canWith, effectivePermissions, type PermissionChoices, type PmsPermission, type PmsRole } from "../../../modules/pms/core/permissions";
 import type { Patient, PmsActor, PmsSaveResult } from "../../../modules/pms/core/types";
 import { isPlausibleRecordId } from "../../../modules/pms/records/form-values";
 import { logAuthEvent } from "../../email/log";
 import { RepoInputError, type RepoContext } from "../../repos/context";
 import { findPractitionerByUser } from "../../repos/pms/directory";
 import { getPatient } from "../../repos/pms/patients";
+import { patientVisibleInScope } from "../access";
 import { isLockedError, type NoteAuthor } from "../../repos/pms/records/notes";
 import type { ClinicActor } from "../actor";
 
-export type RecordsActor = Pick<ClinicActor, "tenantId" | "userId" | "name" | "email" | "can" | "actor" | "repo">;
+export type RecordsActor = Pick<ClinicActor, "tenantId" | "userId" | "name" | "email" | "can" | "actor" | "repo"> &
+  Partial<Pick<ClinicActor, "siteIds">> & {
+    /** The member's role (amending others' signed notes is for owners and admins only). */
+    role?: string;
+  };
 
-export type FailureCode = "forbidden" | "not_found" | "invalid" | "conflict" | "locked" | "error";
+/** "registration": signing or amending a clinical note without a registration number on the member's profile. */
+export type FailureCode = "forbidden" | "not_found" | "invalid" | "conflict" | "locked" | "registration" | "error";
 
 export interface Failure {
   ok: false;
@@ -43,6 +49,12 @@ export const NOT_FOUND_MESSAGE = "This record no longer exists in this clinic.";
 export const CONFLICT_MESSAGE = "Someone else changed this record while you were editing it. Reload the page to see their changes, then make yours again.";
 export const LOCKED_MESSAGE = "This note is signed and locked. Add an amendment instead.";
 export const ERROR_MESSAGE = "Something went wrong. Please try again.";
+/**
+ * Khuram's decision 28/10/2026: a clinical note is signed (and amended) only by a member with a registration number
+ * on their practitioner profile – shown on Member access (Set-up → Staff access → the member).
+ */
+export const REGISTRATION_NEEDED_MESSAGE =
+  "Add your registration number to sign notes. It is kept on your practitioner profile (Set-up → Staff access → your name): ask the clinic owner or an administrator to add it.";
 
 export function ok<T>(value: T): { ok: true; value: T } {
   return { ok: true, value };
@@ -87,9 +99,14 @@ export async function attempt<T>(what: string, work: () => Promise<Result<T>>): 
   }
 }
 
-/** The patient of a request in the actor's clinic (null = not in this clinic, or not a plausible id). */
+/**
+ * The patient of a request in the actor's clinic (null = not in this clinic, not a plausible id, or outside the
+ * member's sites – K2-SITE-004, src/server/pms/access.ts: answered exactly like "no such patient").
+ */
 export async function patientInClinic(actor: RecordsActor, patientId: unknown): Promise<Patient | null> {
   if (!isPlausibleRecordId(patientId)) return null;
+  const scope = actor.siteIds ?? null;
+  if (scope !== null && !(await patientVisibleInScope(actor.repo(), actor.tenantId, patientId, scope))) return null;
   return getPatient(actor.repo(), actor.tenantId, patientId);
 }
 
@@ -99,8 +116,22 @@ export async function noteAuthorOf(actor: RecordsActor): Promise<NoteAuthor & { 
   return { name: actor.name || actor.email, registration: practitioner?.registrationNumber ?? null, practitionerId: practitioner?.id ?? null };
 }
 
-/** TESTS and scripts only: an actor of `role` over `ctx` (no session; the permission matrix is the real one). */
-export function testActor(ctx: RepoContext, tenantId: string, role: PmsRole, user: { userId: string; name: string; email?: string; sessionId?: string }): RecordsActor & { role: PmsRole } {
+/** null when the member has a registration number to sign with; otherwise the refusal (nothing is signed). */
+export function registrationFailure(author: Pick<NoteAuthor, "registration">): Failure | null {
+  return author.registration && author.registration.trim() ? null : fail("registration", REGISTRATION_NEEDED_MESSAGE);
+}
+
+/**
+ * TESTS and scripts only: an actor of `role` over `ctx` (no session). Its permissions are the real effective ones
+ * (role default → `access.roleOverrides` → `access.exceptions` → locks); `access.siteIds` limits its sites.
+ */
+export function testActor(
+  ctx: RepoContext,
+  tenantId: string,
+  role: PmsRole,
+  user: { userId: string; name: string; email?: string; sessionId?: string },
+  access: { roleOverrides?: PermissionChoices; exceptions?: PermissionChoices; siteIds?: string[] | null } = {},
+): RecordsActor & { role: PmsRole } {
   const actor: PmsActor = { userId: user.userId, sessionId: user.sessionId ?? `sess_${user.userId}` };
   return {
     role,
@@ -108,7 +139,8 @@ export function testActor(ctx: RepoContext, tenantId: string, role: PmsRole, use
     userId: user.userId,
     name: user.name,
     email: user.email ?? `${user.userId}@example.com`,
-    can: (permission) => pmsCan(role, permission),
+    can: canWith(effectivePermissions({ role, roleOverrides: access.roleOverrides, exceptions: access.exceptions })),
+    siteIds: access.siteIds ? new Set(access.siteIds) : null,
     actor,
     repo: () => ctx,
   };

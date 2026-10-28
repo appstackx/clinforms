@@ -1,6 +1,6 @@
 /**
- * The "Rota and waiting list" page body, shared by /diary/rotas (diary.manage: the rota editor and the waiting list)
- * and /diary/waiting-list (diary.view: the waiting list; the rota editor too for members with diary.manage).
+ * The "Rota and waiting list" page body, shared by /diary/rotas (diary.rota: the rota editor and the waiting list)
+ * and /diary/waiting-list (diary.view: the waiting list; the rota editor too for members with diary.rota).
  */
 import { cookies } from "next/headers";
 import { RotaWaiting } from "@/components/pms/diary/rota-waiting";
@@ -47,13 +47,13 @@ export async function RotaWaitingView({ actor, searchParams, rota }: { actor: Cl
       services={services.map((s) => ({ id: s.id, name: s.name }))}
       rota={{
         show: rota && rotaData !== null && rotaData.ok,
-        canEdit: actor.can("diary.manage"),
+        canEdit: actor.can("diary.rota"),
         practitionerId,
         from,
         days: rotaData && rotaData.ok ? rotaData.data.days : [],
         exceptions: rotaData && rotaData.ok ? rotaData.data.exceptions : [],
       }}
-      waiting={{ canBook: actor.can("diary.book"), rows, freed }}
+      waiting={{ canBook: actor.can("diary.book"), canEdit: actor.can("diary.rota"), rows, freed }}
       today={today}
     />
   );

@@ -8,5 +8,5 @@ import { CLINIC_BASE_PATH } from "../core/modules";
 
 export const DIARY_NAV: readonly PmsNavEntry[] = [
   { id: "diary.diary", module: "diary", label: "Diary", href: `${CLINIC_BASE_PATH}/diary`, order: 10, permission: "diary.view", group: "main" },
-  { id: "diary.rotas", module: "diary", label: "Rotas", href: `${CLINIC_BASE_PATH}/diary/rotas`, order: 12, permission: "diary.manage", group: "manage" },
+  { id: "diary.rotas", module: "diary", label: "Rotas", href: `${CLINIC_BASE_PATH}/diary/rotas`, order: 12, permission: "diary.rota", group: "manage" },
 ];

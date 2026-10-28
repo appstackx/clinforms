@@ -380,7 +380,7 @@ export async function searchDiaryPatients(caller: DiaryCaller, query: unknown): 
   const q = (typeof query === "string" ? query : "").trim().slice(0, 80);
   if (q.length < 2) return { ok: true, data: [] };
   const { ctx, tenantId } = caller;
-  const found = await searchPatients(ctx, tenantId, { q, limit: 10 });
+  const found = await searchPatients(ctx, tenantId, { q, limit: 10, siteIds: caller.siteIds });
   const next = caller.can("diary.view") ? await nextAppointmentsFor(ctx, tenantId, found.map((p) => p.id), nowIso(ctx), { siteIds: scopeList(caller) }) : new Map<string, DiaryItem>();
   return {
     ok: true,

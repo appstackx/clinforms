@@ -46,10 +46,7 @@ export interface BookingDialogProps {
   can: {
     /** patients.edit: register a new patient, open a new case. */
     createPatient: boolean;
-    /**
-     * "Book anyway". TODO(permissions): gated on diary.manage until the configurable "Override clashes"
-     * permission (feat/cs-access) lands – then ask for that one instead.
-     */
+    /** "Book anyway": diary.override ("Override clashes", roles design round 2). */
     override: boolean;
   };
   onBooked: (message: string) => void;

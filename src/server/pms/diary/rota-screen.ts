@@ -2,7 +2,7 @@
  * Data of the "Rota and waiting list" page (design round 2): one practitioner's weekly pattern (per weekday: site,
  * room, hours and the break between two entries), their exceptions (blocked time in the coming eight weeks, with
  * the bookings it covers), and the freed slot the waiting list can fill (the soonest cancelled appointment at the
- * site whose time is still free) with the entries that suit it. diary.view (the rota is changed with diary.manage).
+ * site whose time is still free) with the entries that suit it. diary.view (the rota is changed with diary.rota).
  * Server only.
  */
 import "server-only";

@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<title>Clinical note editor</title>
+<script src="./vendor/react.js"></script>
+<script src="./vendor/react-dom.js"></script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+*{box-sizing:border-box}
+a{color:#0B7970}a:hover{color:#095E57}
+:focus-visible{outline:2px solid #0E958A;outline-offset:2px}
+@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+</style>
+</helmet>
+<div style="min-height: 100vh; background: #F8FAFC; color: #0F172A; font-family: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 14px; line-height: 20px; display: flex; flex-direction: column; position: relative">
+<header style="background: #FFFFFF; border-bottom: 1px solid #E2E8F0; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 10px 16px; min-height: 56px">
+<div style="display: flex; align-items: center; gap: 10px">
+<span aria-hidden="true" style="width: 28px; height: 28px; border-radius: 8px; background: #0B7970; color: #FFFFFF; display: inline-flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg></span>
+<nav aria-label="Product areas" style="display: flex; background: #F1F5F9; border-radius: 10px; padding: 3px; gap: 2px">
+<a href="AppShell.dc.html" aria-current="page" style="height: 30px; padding: 0 12px; border-radius: 8px; background: #FFFFFF; box-shadow: 0 1px 2px rgba(15,23,42,.08); font-weight: 600; color: #0F172A; text-decoration: none; display: inline-flex; align-items: center">{{product}}</a>
+<a href="#clinforms" style="height: 30px; padding: 0 12px; border-radius: 8px; font-weight: 500; color: #475569; text-decoration: none; display: inline-flex; align-items: center">ClinForms</a>
+</nav>
+</div>
+<button type="button" style="height: 36px; padding: 0 10px; border: 1px solid #CBD5E1; border-radius: 8px; background: #FFFFFF; font: inherit; font-weight: 500; display: inline-flex; align-items: center; gap: 8px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0B7970" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0zM12 7a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"></path></svg>Harbour Road<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg></button>
+<button type="button" style="margin-left: auto; height: 40px; padding: 0 8px 0 4px; border: 0; border-radius: 8px; background: transparent; font: inherit; display: inline-flex; align-items: center; gap: 8px; color: #0F172A">
+<span aria-hidden="true" style="width: 32px; height: 32px; border-radius: 999px; background: #CCFBF1; color: #0B5F58; display: inline-flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px">PS</span>
+<span style="display: flex; flex-direction: column; align-items: flex-start; line-height: 16px"><span style="font-weight: 600">Priya Shah</span><span style="font-size: 12px; color: #64748B">Physiotherapist</span></span>
+</button>
+</header>
+
+<div style="display: flex; flex-wrap: wrap; flex: 1; align-items: stretch">
+<aside aria-labelledby="un-h" style="flex: 1 1 260px; background: #FFFFFF; border-right: 1px solid #E2E8F0; padding: 16px 12px; display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; align-items: center; gap: 8px; padding: 0 4px">
+<h2 id="un-h" style="margin: 0; font-size: 15px; font-weight: 600; flex: 1">My unsigned notes</h2>
+<span style="font-size: 12px; font-weight: 600; background: #FEF3C7; color: #864E0E; border-radius: 999px; padding: 0 7px; line-height: 20px">{{unsignedCount}}</span>
+</div>
+<p style="margin: 0; padding: 0 4px; font-size: 12px; color: #64748B">Oldest first. Sign within 24 hours of the visit.</p>
+<ul style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px">
+<sc-for list="{{unsigned}}" as="u" hint-placeholder-count="3">
+<li><a href="NoteEditor.dc.html" aria-current="{{u.cur}}" style="display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: 10px; border: 1px solid {{u.bd}}; background: {{u.bg}}; text-decoration: none; color: #0F172A">
+<span style="display: flex; gap: 6px; align-items: center"><strong style="flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{u.name}}</strong><sc-if value="{{u.overdue}}" hint-placeholder-val="{{false}}"><span style="display: inline-flex; align-items: center; gap: 3px; height: 20px; padding: 0 6px; border-radius: 999px; font-size: 11px; font-weight: 600; background: #FEE2E2; color: #991B1B; white-space: nowrap"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 6v6l4 2"></path></svg>Over 24 h</span></sc-if></span>
+<span style="font-size: 12px; color: #475569">{{u.meta}}</span>
+</a></li>
+</sc-for>
+</ul>
+</aside>
+
+<main style="flex: 999 1 560px; min-width: 0; padding: 16px 24px 32px; display: flex; flex-direction: column; gap: 14px">
+<div style="display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center">
+<div style="flex: 1; min-width: 260px; display: flex; flex-direction: column; gap: 2px">
+<nav aria-label="Breadcrumb" style="font-size: 13px; color: #64748B; display: flex; gap: 6px"><a href="PatientRecord.dc.html">Emily Turner</a><span aria-hidden="true">/</span><span>Clinical notes</span></nav>
+<h1 style="margin: 0; font-size: 20px; line-height: 28px; font-weight: 600">SOAP initial – right shoulder</h1>
+<span style="font-size: 13px; color: #475569">Tue 27/10/2026 11:00 · Initial assessment · Room 1 · Case: right shoulder – rotator cuff</span>
+</div>
+<span style="display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 10px 0 8px; border-radius: 999px; font-size: 13px; font-weight: 500; white-space: nowrap; background: {{status.bg}}; color: {{status.fg}}; border: 1px solid {{status.bd}}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{status.icon}}"></path></svg>{{status.label}}</span>
+</div>
+
+<div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center">
+<span style="display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px 0 7px; border-radius: 6px; font-size: 12px; font-weight: 600; background: #FEF3C7; color: #864E0E"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01"></path></svg>Latex allergy</span>
+<span style="display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px 0 7px; border-radius: 6px; font-size: 12px; font-weight: 600; background: #FEF3C7; color: #864E0E"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01"></path></svg>On anticoagulants</span>
+<span style="font-size: 13px; color: #475569">Emily Turner · DOB 27/09/1982 (44)</span>
+</div>
+
+<sc-if value="{{isDraft}}" hint-placeholder-val="{{true}}">
+<div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 12px; padding: 12px 14px">
+<div style="display: flex; flex-direction: column; gap: 4px"><label for="tpl" style="font-weight: 500">Template</label><select id="tpl" style="height: 36px; padding: 0 10px; border: 1px solid #CBD5E1; border-radius: 8px; font: inherit; background: #FFFFFF; min-width: 220px"><option>SOAP initial assessment</option><option>SOAP follow-up</option><option>Discharge summary</option></select></div>
+<button type="button" style="height: 36px; padding: 0 12px; border-radius: 8px; border: 1px solid #E2E8F0; background: #FFFFFF; font: inherit; font-weight: 500">Copy from last note</button>
+<span role="status" style="margin-left: auto; font-size: 12px; color: #64748B; display: inline-flex; align-items: center; gap: 4px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#166534" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"></path></svg>Draft saved 11:40</span>
+</div>
+</sc-if>
+
+<sc-if value="{{isLocked}}" hint-placeholder-val="{{false}}">
+<div role="status" style="display: flex; gap: 10px; align-items: center; padding: 12px 14px; border-radius: 12px; background: #F0FDF4; border: 1px solid #A7E8BE; flex-wrap: wrap">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#166534" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 11h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2zM7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+<span style="flex: 1; min-width: 240px">Signed by <strong>Priya Shah (PH-DEMO-01)</strong> on 27/10/2026 at 11:42. This note is locked – changes are added as amendments.</span>
+<sc-if value="{{canAmend}}" hint-placeholder-val="{{true}}"><button type="button" onClick="{{startAmend}}" style="height: 36px; padding: 0 14px; border-radius: 8px; border: 1px solid #E2E8F0; background: #FFFFFF; font: inherit; font-weight: 500; cursor: pointer">Add amendment</button></sc-if>
+</div>
+</sc-if>
+
+<div style="display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start">
+<div style="flex: 999 1 420px; min-width: 0; display: flex; flex-direction: column; gap: 12px">
+<sc-for list="{{fields}}" as="f" hint-placeholder-count="4">
+<section style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px">
+<div style="display: flex; align-items: baseline; gap: 8px"><span aria-hidden="true" style="width: 24px; height: 24px; border-radius: 6px; background: #F0FDFA; color: #0B5F58; font-weight: 700; font-size: 13px; display: inline-flex; align-items: center; justify-content: center">{{f.letter}}</span><label for="{{f.id}}" style="font-weight: 600; font-size: 15px">{{f.label}}</label><span style="font-size: 12px; color: #64748B">{{f.hint}}</span></div>
+<sc-if value="{{f.editable}}" hint-placeholder-val="{{true}}"><textarea id="{{f.id}}" rows="{{f.rows}}" value="{{f.value}}" onChange="{{f.change}}" style="padding: 10px 12px; border: 1px solid #CBD5E1; border-radius: 8px; font: inherit; line-height: 22px; resize: vertical; color: #0F172A"></textarea></sc-if>
+<sc-if value="{{f.readonly}}" hint-placeholder-val="{{false}}"><div id="{{f.id}}" style="white-space: pre-wrap; line-height: 22px; color: #0F172A; padding: 2px 0">{{f.value}}</div></sc-if>
+<sc-if value="{{f.isS}}" hint-placeholder-val="{{false}}">
+<fieldset style="border: 0; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 6px 16px">
+<legend style="font-size: 13px; font-weight: 600; margin-bottom: 6px; padding: 0">Red flags screened</legend>
+<sc-for list="{{flags}}" as="g" hint-placeholder-count="5"><label style="display: flex; gap: 6px; align-items: center; font-size: 13px"><input type="checkbox" checked="checked" disabled="{{locked}}" style="width: 16px; height: 16px; margin: 0; accent-color: #0B7970">{{g}} – none</label></sc-for>
+</fieldset>
+</sc-if>
+</section>
+</sc-for>
+
+<sc-for list="{{amendments}}" as="a" hint-placeholder-count="0">
+<section aria-label="Amendment" style="border: 1px solid #C7D4F5; background: #F5F8FF; border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px">
+<div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap"><span style="display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px 0 6px; border-radius: 999px; font-size: 12px; font-weight: 500; background: #E8EEFB; color: #1842B4"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M12 12v6M9 15h6"></path></svg>Amendment 1</span><span style="font-size: 13px; color: #334155">Priya Shah (PH-DEMO-01) · 27/10/2026 12:10 · signed</span></div>
+<span style="font-size: 13px; color: #334155"><strong>Reason:</strong> {{a.reason}}</span>
+<div style="white-space: pre-wrap; line-height: 22px">{{a.text}}</div>
+<span style="font-size: 12px; color: #475569">The original note above is unchanged.</span>
+</section>
+</sc-for>
+
+<sc-if value="{{isAmending}}" hint-placeholder-val="{{false}}">
+<section aria-labelledby="am-h" style="border: 1px solid #0E958A; border-radius: 12px; padding: 14px 16px; background: #FFFFFF; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 0 0 3px rgba(14,149,138,.12)">
+<h2 id="am-h" style="margin: 0; font-size: 15px; font-weight: 600">New amendment</h2>
+<div style="display: flex; flex-direction: column; gap: 4px"><label for="am-r" style="font-weight: 500">Reason for amendment</label><select id="am-r" style="height: 36px; padding: 0 10px; border: 1px solid #CBD5E1; border-radius: 8px; font: inherit; background: #FFFFFF"><option>Additional information received</option><option>Correction of factual error</option><option>Late entry</option></select></div>
+<div style="display: flex; flex-direction: column; gap: 4px"><label for="am-t" style="font-weight: 500">Amendment</label><textarea id="am-t" rows="3" value="{{amendText}}" onChange="{{setAmend}}" style="padding: 10px 12px; border: 1px solid #CBD5E1; border-radius: 8px; font: inherit; line-height: 22px"></textarea></div>
+<div style="display: flex; gap: 8px; justify-content: flex-end"><button type="button" onClick="{{cancelAmend}}" style="height: 36px; padding: 0 14px; border-radius: 8px; border: 1px solid #E2E8F0; background: #FFFFFF; font: inherit; font-weight: 500; cursor: pointer">Cancel</button><button type="button" onClick="{{saveAmend}}" style="height: 36px; padding: 0 14px; border-radius: 8px; border: 0; background: #0B7970; color: #FFFFFF; font: inherit; font-weight: 500; cursor: pointer">Sign amendment</button></div>
+</section>
+</sc-if>
+</div>
+
+<aside aria-labelledby="bc-h" style="flex: 1 1 300px; min-width: 0; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; align-items: center"><h2 id="bc-h" style="margin: 0; font-size: 15px; font-weight: 600; flex: 1">Body chart</h2><sc-if value="{{isDraft}}" hint-placeholder-val="{{true}}"><button type="button" style="height: 32px; padding: 0 10px; border-radius: 8px; border: 1px solid #E2E8F0; background: #FFFFFF; font: inherit; font-size: 13px; font-weight: 500">Add marker</button></sc-if></div>
+<svg role="img" aria-label="Body chart, front and back. Marker 1 right shoulder, marker 2 right lateral upper arm." viewBox="0 0 300 260" style="width: 100%; height: auto; background: #F8FAFC; border-radius: 10px">
+<g fill="#FFFFFF" stroke="#94A3B8" stroke-width="1.5">
+<circle cx="80" cy="34" r="16"></circle>
+<path d="M58 56 Q80 50 102 56 L110 64 L106 130 L54 130 L50 64 Z"></path>
+<path d="M50 64 L36 120 L30 160 M110 64 L124 120 L130 160" fill="none" stroke-width="10" stroke-linecap="round" stroke="#E2E8F0"></path>
+<path d="M50 64 L36 120 L30 160 M110 64 L124 120 L130 160" fill="none"></path>
+<path d="M58 130 L54 200 L52 244 M102 130 L106 200 L108 244 M80 132 L80 150" fill="none"></path>
+<circle cx="220" cy="34" r="16"></circle>
+<path d="M198 56 Q220 50 242 56 L250 64 L246 130 L194 130 L190 64 Z"></path>
+<path d="M190 64 L176 120 L170 160 M250 64 L264 120 L270 160 M198 130 L194 200 L192 244 M242 130 L246 200 L248 244 M220 60 L220 128" fill="none"></path>
+</g>
+<text x="80" y="256" text-anchor="middle" font-size="10" fill="#64748B">Front (patient's right on left)</text>
+<text x="220" y="256" text-anchor="middle" font-size="10" fill="#64748B">Back</text>
+<g>
+<circle cx="52" cy="66" r="10" fill="#0B7970"></circle><text x="52" y="70" text-anchor="middle" font-size="11" font-weight="700" fill="#FFFFFF">1</text>
+<circle cx="40" cy="104" r="10" fill="#1842B4"></circle><text x="40" y="108" text-anchor="middle" font-size="11" font-weight="700" fill="#FFFFFF">2</text>
+<circle cx="248" cy="70" r="10" fill="#0B7970"></circle><text x="248" y="74" text-anchor="middle" font-size="11" font-weight="700" fill="#FFFFFF">1</text>
+</g>
+</svg>
+<ol style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px">
+<li style="display: flex; gap: 8px; align-items: flex-start"><span aria-hidden="true" style="width: 20px; height: 20px; border-radius: 999px; background: #0B7970; color: #FFFFFF; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; flex: none">1</span><span style="display: flex; flex-direction: column"><strong>Right shoulder, anterolateral</strong><span style="font-size: 13px; color: #475569">Deep ache, constant · NPRS 6 (worst 8) · worse lying on R side</span></span></li>
+<li style="display: flex; gap: 8px; align-items: flex-start"><span aria-hidden="true" style="width: 20px; height: 20px; border-radius: 999px; background: #1842B4; color: #FFFFFF; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; flex: none">2</span><span style="display: flex; flex-direction: column"><strong>Right lateral upper arm</strong><span style="font-size: 13px; color: #475569">Referred ache, intermittent · NPRS 4 · no pins and needles</span></span></li>
+</ol>
+<div style="border-top: 1px solid #E2E8F0; padding-top: 10px; display: flex; flex-direction: column; gap: 6px">
+<strong style="font-size: 13px">Outcome measures today</strong>
+<div style="display: flex; gap: 8px; flex-wrap: wrap"><span style="height: 28px; padding: 0 10px; border-radius: 8px; background: #F1F5F9; display: inline-flex; align-items: center; font-size: 13px">NPRS <strong style="margin-left: 6px">6</strong></span><span style="height: 28px; padding: 0 10px; border-radius: 8px; background: #F1F5F9; display: inline-flex; align-items: center; font-size: 13px">QuickDASH <strong style="margin-left: 6px">47.7</strong></span></div>
+</div>
+</aside>
+</div>
+
+<sc-if value="{{isDraft}}" hint-placeholder-val="{{true}}">
+<div style="display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; position: sticky; bottom: 0; padding: 12px 0; background: #F8FAFC; border-top: 1px solid #E2E8F0">
+<span style="font-size: 13px; color: #475569; margin-right: auto; align-self: center">Signing locks the note. You can add amendments later; the original stays visible.</span>
+<button type="button" style="height: 40px; padding: 0 16px; border-radius: 8px; border: 1px solid #E2E8F0; background: #FFFFFF; font: inherit; font-weight: 500">Save draft</button>
+<button type="button" onClick="{{askSign}}" style="height: 40px; padding: 0 16px; border-radius: 8px; border: 0; background: #0B7970; color: #FFFFFF; font: inherit; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; cursor: pointer"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 11h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2zM7 11V7a5 5 0 0 1 10 0v4"></path></svg>Sign and lock</button>
+</div>
+</sc-if>
+</main>
+</div>
+
+<sc-if value="{{confirmOpen}}" hint-placeholder-val="{{false}}">
+<div style="position: absolute; inset: 0; background: rgba(15,23,42,.45); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 30">
+<div role="alertdialog" aria-modal="true" aria-labelledby="sg-t" aria-describedby="sg-d" style="background: #FFFFFF; border-radius: 12px; width: 100%; max-width: 440px; box-shadow: 0 24px 48px rgba(15,23,42,.24); padding: 20px; display: flex; flex-direction: column; gap: 12px">
+<h2 id="sg-t" style="margin: 0; font-size: 17px; font-weight: 600">Sign this note?</h2>
+<p id="sg-d" style="margin: 0; color: #334155">It will be signed as Priya Shah (PH-DEMO-01) and locked. After signing, changes can only be added as dated amendments.</p>
+<label style="display: flex; gap: 8px; align-items: center"><input type="checkbox" checked="checked" style="width: 16px; height: 16px; margin: 0; accent-color: #0B7970">Mark appointment as completed</label>
+<div style="display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap">
+<button type="button" onClick="{{cancelSign}}" style="height: 40px; padding: 0 16px; border-radius: 8px; border: 1px solid #E2E8F0; background: #FFFFFF; font: inherit; font-weight: 500; cursor: pointer">Keep editing</button>
+<button type="button" onClick="{{doSign}}" style="height: 40px; padding: 0 16px; border-radius: 8px; border: 0; background: #0B7970; color: #FFFFFF; font: inherit; font-weight: 600; cursor: pointer">Sign and lock</button>
+</div>
+</div>
+</div>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1240}}'>
+class Component extends DCLogic {
+  constructor(p) {
+    super(p);
+    this.state = {
+      mode: 'draft', confirm: false, amendments: [],
+      amendText: 'Ultrasound report received 27/10/2026: partial-thickness supraspinatus tear. Plan unchanged; review loading at session 3.',
+      v: {
+        s: 'R shoulder pain 6/52, gradual onset after decorating. Worse reaching overhead and lying on R side; disturbed sleep 2–3×/night. No neck pain or arm pins and needles. PMH: AF – on apixaban. Works as a teacher; goal to return to swimming.',
+        o: 'Obs: no swelling or bruising. AROM flexion 120° (P+), abduction 95° painful arc 70–110°, ER 45°, IR to L5. PROM full with end-range pain. Resisted ER and abduction weak and painful. Hawkins-Kennedy +, Empty can +, Drop arm −. Cervical screen clear.',
+        a: 'Presentation consistent with R rotator cuff related shoulder pain (supraspinatus). Irritability moderate. No red flags.',
+        p: 'Education on load management and sleep positions. Isometric ER/abduction 5×45 s, scapular setting. HEP sent via portal. Review in 1 week; consider imaging results when received. Goal: overhead reach pain ≤3/10 in 6 weeks.'
+      }
+    };
+  }
+  renderVals() {
+    const st = this.state;
+    const locked = st.mode !== 'draft';
+    const defs = [
+      { k: 's', letter: 'S', label: 'Subjective', hint: 'History, symptoms, goals', rows: 4 },
+      { k: 'o', letter: 'O', label: 'Objective', hint: 'Observation, range, tests', rows: 4 },
+      { k: 'a', letter: 'A', label: 'Assessment', hint: 'Clinical impression', rows: 2 },
+      { k: 'p', letter: 'P', label: 'Plan', hint: 'Treatment given, home exercise, next steps', rows: 3 }
+    ];
+    const fields = defs.map(d => ({ id: 'f-' + d.k, letter: d.letter, label: d.label, hint: d.hint, rows: d.rows, value: st.v[d.k], editable: !locked, readonly: locked, isS: d.k === 's',
+      change: (e) => { const v = Object.assign({}, st.v); v[d.k] = e.target.value; this.setState({ v }); } }));
+    const S = {
+      draft: { label: 'Unsigned draft', bg: '#FEF3C7', fg: '#864E0E', bd: '#FBD38D', icon: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 6v6l4 2' },
+      signed: { label: 'Signed and locked', bg: '#DCFCE7', fg: '#166534', bd: '#A7E8BE', icon: 'M5 11h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2zM7 11V7a5 5 0 0 1 10 0v4' },
+      amended: { label: 'Signed · amended', bg: '#E8EEFB', fg: '#1842B4', bd: '#C7D4F5', icon: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M12 12v6M9 15h6' }
+    };
+    const statusKey = st.mode === 'draft' ? 'draft' : (st.amendments.length ? 'amended' : 'signed');
+    const unsigned = [
+      { name: 'Margaret Ellis', meta: 'Mon 26/10 09:00 · SOAP initial', overdue: true },
+      { name: 'Emily Turner', meta: 'Today 11:00 · SOAP initial', overdue: false, cur: true },
+      { name: 'Chloe Bennett', meta: 'Today 10:30 · SOAP follow-up', overdue: false }
+    ].filter(u => !(u.cur && locked)).map(u => ({ name: u.name, meta: u.meta, overdue: u.overdue, cur: u.cur ? 'page' : 'false', bg: u.cur ? '#F0FDFA' : '#FFFFFF', bd: u.cur ? '#99E2D8' : '#E2E8F0' }));
+    return {
+      product: 'Clinic system', fields, locked, status: S[statusKey],
+      flags: ['Weight loss', 'Night pain unrelated to position', 'Fever', 'Trauma', 'Neurological signs'],
+      isDraft: !locked, isLocked: locked, canAmend: locked && st.mode !== 'amending', isAmending: st.mode === 'amending',
+      unsigned, unsignedCount: unsigned.length,
+      amendments: st.amendments,
+      amendText: st.amendText, setAmend: (e) => this.setState({ amendText: e.target.value }),
+      confirmOpen: st.confirm,
+      askSign: () => this.setState({ confirm: true }), cancelSign: () => this.setState({ confirm: false }),
+      doSign: () => this.setState({ confirm: false, mode: 'signed' }),
+      startAmend: () => this.setState({ mode: 'amending' }), cancelAmend: () => this.setState({ mode: 'signed' }),
+      saveAmend: () => this.setState({ mode: 'signed', amendments: st.amendments.concat([{ reason: 'Additional information received', text: st.amendText }]) })
+    };
+  }
+}
+</script>
+</body>
+</html>

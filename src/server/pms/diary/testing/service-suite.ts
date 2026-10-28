@@ -298,7 +298,7 @@ export function defineDiaryServiceSuite(
       await suite?.close();
     });
 
-    it("permissions: a role without diary.book cannot write; only diary.manage changes rotas", async () => {
+    it("permissions: a role without diary.book cannot write; only diary.rota changes rotas and the waiting list", async () => {
       const viewer = caller(A, ["clinic.view", "diary.view", "patients.view"]);
       refused(await bookAppointmentFor(viewer, booking(a)), /permission/);
       refused(
@@ -316,19 +316,22 @@ export function defineDiaryServiceSuite(
         await addToWaitingListFor(viewer, { patientId: a.megan }),
         /permission/,
       );
-      for (const role of ["staff", "clinician"] as const) {
-        refused(
-          await createRotaEntryFor(caller(A, role), {
-            practitionerId: a.sarah,
-            siteId: a.siteA,
-            weekday: 3,
-            startTime: "09:00",
-            endTime: "12:00",
-            validFrom: "2026-11-02",
-          }),
-          /permission/,
-        );
-      }
+      // Roles design round 2: rotas and the waiting list are "diary.rota" – owner, admin and reception by default,
+      // not clinicians.
+      refused(
+        await createRotaEntryFor(caller(A, "clinician"), {
+          practitionerId: a.sarah,
+          siteId: a.siteA,
+          weekday: 3,
+          startTime: "09:00",
+          endTime: "12:00",
+          validFrom: "2026-11-02",
+        }),
+        /permission/,
+      );
+      refused(await addToWaitingListFor(caller(A, "clinician"), { patientId: a.megan }), /permission/);
+      assert.equal(caller(A, "staff").can("diary.rota"), true, "reception edits rotas and the waiting list");
+      assert.equal(caller(A, "staff").can("diary.manage"), true, "the old id is an alias of diary.rota");
       const nobody = caller(A, ["clinic.view"]);
       const view = await loadDiaryView(
         nobody,
@@ -1132,7 +1135,7 @@ export function defineDiaryServiceSuite(
       clock = NOW;
     });
 
-    it("rotas: add, change and end (diary.manage), overlap refused with a plain message", async () => {
+    it("rotas: add, change and end (diary.rota), overlap refused with a plain message", async () => {
       const admin = caller(A, "admin");
       const added = await createRotaEntryFor(admin, {
         practitionerId: a.sarah,
