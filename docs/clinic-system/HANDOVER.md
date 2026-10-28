@@ -1,5 +1,7 @@
 # K2 clinic system – handover
 
+> **Update 28/10/2026 (M5 billing – IN PROGRESS, read §14 first):** billing BACK END done and pushed on `feat/cs-billing` `0d5a728` (not yet merged into `feat/clinic-system`); screens, seed and e2e next. See §14.
+
 > **Update 28/10/2026 (latest – read §13 first):** design received for every screen; design system, app shell, configurable permissions, patients/notes and diary SCREENS are built and merged on `feat/clinic-system` `c05be50`; Prototype A passes end to end. Next: billing (M5), running now. See §13.
 
 > **Update 27/10/2026:** M3 merged – diary and records **back ends** are on `feat/clinic-system` `f54aff5` (no screens yet). See §12.
@@ -471,3 +473,53 @@ updated at every milestone so another account can continue if the weekly limit i
 | M9 | Integration | native connector, Complete referrer form flow (round3 ReferrerForm prototype), import |
 | M10 | Full review | security/tenancy, a11y, 50k perf on Postgres/D1, forms-regression identical vs `main` |
 | M11 | Towards production | Khuram's go only |
+
+
+## 14. M5 billing (28/10/2026) – IN PROGRESS (midpoint)
+
+**Where:** worktree `/Users/khuram/Projects/Appstackx/clinforms-wt/cs-billing`, branch `feat/cs-billing`, pushed.
+`feat/clinic-system` is still `c05be50` (billing NOT merged yet). `main` untouched.
+
+| Commit | What |
+|---|---|
+| `547eec6` | `origin/feat/clinic-system` (`c05be50`) merged into the October draft – no conflicts; records test updated (billing's Invoices tab replaces its stand-in) |
+| `94926a8` | Diary fixes from §13.4: (2) arrived / in treatment / completed only from 60 min before the start, DNA only after it (rule + server check + tests; existing diary suites now change statuses on the visit's own time); (3) Double-booked marker is part of the block's top line (never covers text); (4) record "Book" → `diary?patient=<id>` opens the booking form with the patient and open case. Plus `waiveAppointmentFee` for billing |
+| `0d5a728` | Billing back end (review fixes + new work, below) |
+
+### 14.1 Review findings on the October draft (fixed in `0d5a728`)
+1. **Authorisation sessions double-counted**: the diary counts a session when a visit is completed; the draft's
+   `issueInvoice` counted the same sessions again. Now billing counts the VALUE and only hand-entered treatments'
+   sessions (`sessionsUsedBy`).
+2. **No site scope** on invoices/payments: `site_id` added (0133 invoices, 0135 payments; set from the visits / the
+   site the payment was taken at); every billing read applies `actor.siteIds`; out-of-scope = "no such invoice".
+3. **Audit after the batch** in issue, unallocate, reverse, link status: now in the same batch with a conditional
+   `INSERT … WHERE EXISTS` (`billingAuditWhen`); the credit note's authorisation reset is inside its batch (the
+   foundation's `recordAuthorisationUsage` still audits itself just after).
+4. **Lines from the client**: invoicing visits takes appointment ids only; visits, prices, payers and fees are read
+   on the server from the diary adapter.
+5. Missing: void, write-offs, short payments, saved card, clinic-wide "attended not invoiced", invoice search.
+
+### 14.2 What the back end does now
+- Diary visit adapter `src/server/pms/diary/billing-visits.ts` (wired in `visit-source.ts`): CHARGEABLE_STATUSES
+  only – completed, and DNA / late cancellation only with the diary's fee flag; never arrived / in treatment.
+- Pricing (`priceVisits`): completed visits of a case with a payer bill the payer; DNA/late fees and self-pay bill
+  the patient; case price list → default → service price; the case's excess (one amount per case) is taken from
+  the first visits in date order and goes on its own patient invoice (`excess_deduction` on the insurer's).
+- Credit note kinds (0132): credit, write_off, void, transfer (all numbered CN). Void (0134 `voided_at`) =
+  `billing.void`, refused while payments are on it. Write-off / transfer keep the visit billed.
+- Remittance (`remittanceFor`): one insurer payment over many invoices; per invoice short payment → leave /
+  write off (reason) / move to patient (patient invoice + transfer credit). Write-off and move need `billing.refund`.
+- Take payment (`takePaymentFor`): card on file (saved TEST card, 0136), card now (reader, recorded by hand), cash
+  (change), bank transfer, payment link. Refunds go back to the card through the test provider when the payment
+  was taken through it. `stripe_test` still refuses non-test keys; new `CLINIC_STRIPE_TEST_API_BASE` accepts only
+  Stripe's host or a loopback address (for the local e2e stub).
+- Server layer `src/server/pms/billing/{access,views,writes}.ts`; tests `src/server/pms/billing/testing/service-suite.ts`
+  on SQLite, PGlite, D1 stand-in and local D1.
+
+Checks at `0d5a728`: test:pms 412/412, lint clean, billing D1 stack 46/46, parity 11/11 (full chain not yet run).
+
+### 14.3 Next (in this order)
+Screens (billing list/tabs, invoice detail, take payment incl. 375 px, invoice visits, remittance, print invoice +
+statement), wiring (drawer Take payment, record Account card + Invoices tab, patient list Balance + Owes money,
+nav), billing seed from `seed-demo.ts`, `scripts/e2e/pms-billing-screens.cjs`, full chain, merge into
+`feat/clinic-system`, merge back into cs-diary/cs-records, finish this section.
