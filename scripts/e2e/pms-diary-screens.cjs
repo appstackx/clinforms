@@ -507,7 +507,13 @@ async function pickPatient(page, q, name) {
         for (let i = 0; i < data.columns.length && !found; i++) {
           const c = data.columns[i];
           if (!c.practitionerId) continue;
-          const sl = c.freeSlots.find((x) => x.startMinute >= nowMinute + 2 && x.startMinute <= nowMinute + 50);
+          // Free for 45 minutes from the slot: the booking form may default to a 45-minute initial assessment.
+          const starts = new Set(c.freeSlots.map((y) => y.startMinute));
+          const room45 = (x) => {
+            for (let m = x.startMinute; m < x.startMinute + 45; m += x.endMinute - x.startMinute) if (!starts.has(m)) return false;
+            return true;
+          };
+          const sl = c.freeSlots.find((x) => x.startMinute >= nowMinute + 2 && x.startMinute <= nowMinute + 50 && room45(x));
           if (sl) found = { site: st.id, ci: i, minute: sl.startMinute, practitionerId: c.practitionerId };
         }
         if (found) break;

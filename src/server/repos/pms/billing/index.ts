@@ -11,3 +11,4 @@ export * from "./payments";
 export * from "./reports";
 export * from "./saved-cards";
 export * from "./settings";
+export * from "./contribution-terms";

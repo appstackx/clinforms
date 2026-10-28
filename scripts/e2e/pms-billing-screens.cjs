@@ -5,7 +5,9 @@
  * an insurer remittance with a short payment written off, the printed A4 invoice and statement, aged debt, a credit
  * note that gives the balance back (and the refund), void; what reception, a clinician (read-only) and the owner
  * may do; take payment at 375 px and from the diary drawer; the patient record's Account card, Invoices tab and the
- * patient list's Balance / "Owes money"; axe on each screen.
+ * patient list's Balance / "Owes money"; the payer accounts' excess / contribution setting and a case's own (excess
+ * per case, patient contribution per visit, a visit the patient's part covers in full billed to the patient only –
+ * no £0 insurer invoice); axe on each screen.
  *
  *   npm run pms:seed-demo -- --fresh --app-url http://localhost:3188 > seed.out   (scratch SQLite)
  *   node scripts/e2e/stripe-test-stub.cjs 3199 &                                  (the provider's TEST stand-in)
@@ -144,7 +146,7 @@ const invoiceIdOf = (url) => (url.match(/\/invoices\/([^/?#]+)/) || [])[1];
   const clinician = await mk();
   failPages.push(["owner", owner], ["reception", reception], ["clinician", clinician]);
   const shot = (page, name, fullPage = false) => page.screenshot({ path: path.join(OUT, `${name}.png`), fullPage });
-  const s = { self: null, dna: null, insured: null, selfInv: null, dnaInv: null, insurerInv: null, excessInv: null, insurer: null, voidable: null, selfPatientId: null };
+  const s = { perVisit: null, covered: null, self: null, dna: null, insured: null, selfInv: null, dnaInv: null, insurerInv: null, excessInv: null, insurer: null, voidable: null, selfPatientId: null };
 
   try {
     await step("owner, reception and clinician accounts (two-step on)", async () => {
@@ -201,8 +203,9 @@ const invoiceIdOf = (url) => (url.match(/\/invoices\/([^/?#]+)/) || [])[1];
       assert(texts.every((t) => !/In treatment|Arrived/.test(t)), "only chargeable outcomes");
       const fee = texts.findIndex((t) => /Did not attend|Late cancellation/.test(t));
       const self = texts.findIndex((t) => /Completed/.test(t) && /Self-pay/.test(t));
-      let insured = texts.findIndex((t) => /Completed/.test(t) && /excess/.test(t));
-      if (insured < 0) insured = texts.findIndex((t) => /Completed/.test(t) && !/Self-pay/.test(t));
+      // An insured visit the insurer pays part of (one the patient's part covers in full goes to the patient only).
+      let insured = texts.findIndex((t) => /Completed/.test(t) && /excess/.test(t) && !/patient pays it all/.test(t));
+      if (insured < 0) insured = texts.findIndex((t) => /Completed/.test(t) && !/Self-pay/.test(t) && !/patient pays it all/.test(t));
       assert(fee >= 0 && self >= 0 && insured >= 0, `rows: fee ${fee}, self ${self}, insured ${insured} of ${texts.length}`);
       const fees = texts.map((t, i) => (/Did not attend|Late cancellation/.test(t) ? i : -1)).filter((i) => i >= 0);
       s.dna = await rows.nth(fee).getAttribute("data-appointment");
@@ -408,6 +411,119 @@ const invoiceIdOf = (url) => (url.match(/\/invoices\/([^/?#]+)/) || [])[1];
       await owner.click("role=alertdialog >> button:has-text('Void invoice')");
       await owner.waitForSelector("[role=status] >> text=Invoice voided");
       await owner.waitForSelector("main >> text=Void");
+    });
+
+    await step("payer accounts: the owner sets an insurer to 'Patient contribution per visit'; reception sees the setting read-only", async () => {
+      await owner.goto(BILLING);
+      await owner.click("[data-testid=payer-accounts-link]");
+      await owner.waitForURL(/\/billing\/payers$/);
+      await owner.waitForSelector("[data-testid=payer-terms]");
+      const row = owner.locator("[data-testid=payer-terms] li", { hasText: "Kestrel" }).first();
+      assert((await row.count()) === 1, "Kestrel (fictional) listed");
+      assert((await row.locator("[data-testid=payer-mode]").inputValue()) === "per_case", "excess per case by default");
+      await row.locator("[data-testid=payer-mode]").selectOption("per_visit");
+      await row.locator("[data-testid=payer-mode-save]").click();
+      await owner.waitForSelector("[role=status] >> text=/patient contribution per visit/i");
+      await owner.reload();
+      await owner.waitForSelector("[data-testid=payer-terms]");
+      assert((await owner.locator("[data-testid=payer-terms] li", { hasText: "Kestrel" }).locator("[data-testid=payer-mode]").inputValue()) === "per_visit", "saved");
+      await shot(owner, "1440-payer-accounts");
+      await axe(owner, "payer accounts");
+      await reception.goto(`${BILLING}/payers`);
+      await reception.waitForSelector("[data-testid=payer-terms]");
+      assert((await reception.locator("[data-testid=payer-mode]").count()) === 0, "reception cannot change it");
+      assert(/Patient contribution per visit/.test(await reception.locator("[data-testid=payer-terms] li", { hasText: "Kestrel" }).innerText()), "reception reads it");
+    });
+
+    await step("case form: a £20 contribution per visit on one insured case, an excess that covers the whole visit on another", async () => {
+      await owner.goto(`${BILLING}/visits`);
+      await owner.waitForSelector("[data-testid=visits-table]");
+      const rows = await owner.locator("[data-testid=visits-table] tbody tr[data-bill-to=payer]").evaluateAll((trs) =>
+        trs.filter((tr) => /Completed/.test(tr.innerText) && tr.getAttribute("data-case")).map((tr) => ({ appt: tr.getAttribute("data-appointment"), caseId: tr.getAttribute("data-case"), patientId: tr.getAttribute("data-patient") })),
+      );
+      const byCase = new Map();
+      for (const r of rows) if (!byCase.has(r.caseId)) byCase.set(r.caseId, r);
+      const picked = Array.from(byCase.values()).slice(0, 2);
+      assert(picked.length === 2, `two insured cases with a completed visit to invoice: ${rows.length} rows`);
+      [s.perVisit, s.covered] = picked;
+      const edit = async (r, mode, pounds) => {
+        await owner.goto(`${BASE}/app/clinic/patients/${r.patientId}/cases/${r.caseId}`);
+        await owner.click("summary:has-text('Edit the case')");
+        await owner.selectOption("#case-contribution-mode", mode);
+        await owner.fill("input[name=excess]", pounds);
+        await owner.click("button[type=submit]:has-text('Save case')");
+        const answer = owner.locator("details[open] form [role=status], details[open] form [role=alert]").first();
+        await answer.waitFor({ timeout: 20000 }).catch(() => {});
+        const said = (await answer.count()) ? await answer.innerText() : "(nothing shown)";
+        await owner.reload();
+        const after = await owner.locator("main").innerText();
+        assert(mode === "per_visit" ? /Patient contribution per visit \(this case\)/.test(after) : /Excess per case \(this case\)/.test(after), `case ${r.caseId} not saved: ${said}`);
+      };
+      await edit(s.perVisit, "per_visit", "20.00");
+      const facts = await owner.locator("main").innerText();
+      assert(/Patient contribution per visit\s*\n?\s*£20\.00/.test(facts) && /Patient contribution per visit \(this case\)/.test(facts), "the case reads per visit");
+      await owner.click("summary:has-text('Edit the case')");
+      assert((await owner.locator("label[for$=excess], label:has-text('Patient contribution per visit (£)')").count()) > 0, "the amount is labelled per visit");
+      await shot(owner, "1440-case-form-contribution");
+      await edit(s.covered, "per_case", "900.00");
+    });
+
+    await step("invoice the two visits: £20 to the patient + the rest to the insurer; the covered visit to the patient only – no £0 insurer invoice", async () => {
+      await reception.goto(`${BILLING}/visits`);
+      await reception.waitForSelector("[data-testid=visits-table]");
+      await reception.uncheck("input[aria-label='Select all visits']");
+      for (const r of [s.perVisit, s.covered]) await reception.check(`[data-appointment="${r.appt}"] input[type=checkbox]`);
+      const pv = await reception.locator(`[data-appointment="${s.perVisit.appt}"]`).innerText();
+      const cv = await reception.locator(`[data-appointment="${s.covered.appt}"]`).innerText();
+      assert(/contribution £20\.00/.test(pv), `per-visit row: ${pv}`);
+      assert(/excess £[\d.,]+ \(patient pays it all\)/.test(cv), `covered row: ${cv}`);
+      const summary = await reception.locator("[data-testid=visits-summary]").innerText();
+      assert(/^2 visits selected → 3 invoices/.test(summary), summary);
+      await reception.click("button:has-text('Preview drafts')");
+      await reception.waitForSelector("[data-testid=draft-preview]");
+      const preview = await reception.locator("[data-testid=draft-preview]").innerText();
+      assert(!/£0\.00/.test(preview), `no £0 invoice in the preview: ${preview}`);
+      await reception.click("button:has-text('Create and issue')");
+      await reception.waitForSelector("[data-testid=visits-done]");
+      const done = await reception.locator("[data-testid=visits-done] li").allInnerTexts();
+      assert(done.length === 3 && done.every((t) => !/£0\.00/.test(t)), `made: ${done.join(" | ")}`);
+      assert(done.filter((t) => /Insurer/.test(t)).length === 1, "one insurer invoice (the per-visit case)");
+      const hrefs = await reception.locator("[data-testid=visits-done] a[href*='/invoices/']").evaluateAll((as) => as.map((a) => a.getAttribute("href")));
+      const OUT2 = process.env.E2E_OUT2 || OUT;
+      fs.mkdirSync(OUT2, { recursive: true });
+      const seen = {};
+      for (const href of hrefs) {
+        await owner.goto(`${BASE}${href}`);
+        await owner.waitForSelector("[data-testid=split-card]");
+        const card = owner.locator("[data-testid=split-card]");
+        const mode = await card.getAttribute("data-mode");
+        const text = await card.innerText();
+        if (mode === "per_visit" && /This invoice · insurer balance/.test(text)) {
+          assert(/Insured visit – patient contribution per visit/.test(text) && /the patient pays £20\.00 on every visit/.test(text), `per-visit insurer card: ${text}`);
+          assert(/Contribution/.test(await owner.locator("table").first().innerText()), "items column per visit");
+          seen.perVisitInsurer = true;
+          await owner.screenshot({ path: path.join(OUT2, "1440-invoice-detail-per-visit-insurer.png"), fullPage: true });
+          await axe(owner, "invoice detail – contribution per visit");
+        } else if (mode === "per_visit") {
+          assert(/This invoice · patient contribution/.test(text), `per-visit patient card: ${text}`);
+          seen.perVisitPatient = true;
+          await owner.screenshot({ path: path.join(OUT2, "1440-invoice-detail-per-visit-patient.png"), fullPage: true });
+        } else {
+          assert(/Insured visit – split between patient and insurer/.test(text) && /Excess per case/.test(text), `per-case card: ${text}`);
+          assert(/Nothing claimed from .+: the patient's excess covers this visit in full\./.test(text), `fully patient: ${text}`);
+          seen.covered = true;
+          await owner.screenshot({ path: path.join(OUT2, "1440-invoice-detail-per-case-covered.png"), fullPage: true });
+          await axe(owner, "invoice detail – excess covers the visit");
+        }
+      }
+      assert(seen.perVisitInsurer && seen.perVisitPatient && seen.covered, JSON.stringify(seen));
+      // The per-case insurer split made earlier, for comparison.
+      await owner.goto(`${BILLING}/invoices/${s.insurerInv}`);
+      await owner.waitForSelector("[data-testid=split-card]");
+      if ((await owner.locator("[data-testid=split-card]").getAttribute("data-mode")) === "per_case") {
+        assert(/Excess per case: the patient pays the first/.test(await owner.locator("[data-testid=split-explain]").innerText()), "per-case wording");
+      }
+      await owner.screenshot({ path: path.join(OUT2, "1440-invoice-detail-per-case-insurer.png"), fullPage: true });
     });
 
     await step("clinician: billing is read-only (no invoicing, payment, credit or void buttons); the visits page is the 404 page", async () => {

@@ -42,8 +42,9 @@ function previewInvoices(chosen: UninvoicedVisitView[]) {
   for (const v of chosen) {
     if (v.chargePence === null) continue;
     if (v.billTo === "payer") {
-      add(`${v.patientId}|${v.payerLabel}|payer`, v, "payer", v.payerLabel, v.payerPence);
-      if (v.excessPence > 0) add(`${v.patientId}|excess`, v, "patient", v.patientName, v.excessPence);
+      // A visit the patient's part covers in full is billed to the patient only (never a £0 insurer invoice).
+      if (v.payerPence > 0) add(`${v.patientId}|${v.caseId ?? ""}|payer`, v, "payer", v.payerLabel, v.payerPence);
+      if (v.excessPence > 0) add(`${v.patientId}|${v.caseId ?? ""}|excess`, v, "patient", v.patientName, v.excessPence);
     } else {
       add(`${v.patientId}|self`, v, "patient", v.patientName, v.patientPence);
     }
@@ -172,7 +173,7 @@ export function VisitsTable({ visits, mode, today, from, until }: { visits: Unin
                 </thead>
                 <tbody>
                   {shown.map((v) => (
-                    <tr key={v.appointmentId} className="border-t border-border" data-appointment={v.appointmentId}>
+                    <tr key={v.appointmentId} className="border-t border-border" data-appointment={v.appointmentId} data-case={v.caseId ?? ""} data-patient={v.patientId} data-bill-to={v.billTo}>
                       <td className="px-4 py-2">
                         <input
                           type="checkbox"
@@ -191,7 +192,13 @@ export function VisitsTable({ visits, mode, today, from, until }: { visits: Unin
                       <td className="px-3 py-2">{v.practitionerName ?? "–"}</td>
                       <td className="px-3 py-2">
                         {v.payerLabel}
-                        {v.excessPence > 0 ? <span className="text-[#475569]"> · excess {money(v.excessPence)}</span> : null}
+                        {v.excessPence > 0 ? (
+                          <span className="text-[#475569]">
+                            {" "}
+                            · {v.contributionMode === "per_visit" ? "contribution" : "excess"} {money(v.excessPence)}
+                            {v.payerPence === 0 ? " (patient pays it all)" : ""}
+                          </span>
+                        ) : null}
                       </td>
                       <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
                         <span className="inline-flex items-center gap-2">
@@ -247,7 +254,7 @@ export function VisitsTable({ visits, mode, today, from, until }: { visits: Unin
               </li>
             ))}
           </ul>
-          <PmsNotice tone="info" title="How the invoices are made">Prices come from each case&apos;s price list. Insured visits: the excess goes on the patient&apos;s own invoice, the rest to the insurer.</PmsNotice>
+          <PmsNotice tone="info" title="How the invoices are made">Prices come from each case&apos;s price list. Insured visits: the patient&apos;s part (the excess per case, or the contribution per visit) goes on the patient&apos;s own invoice, the rest to the insurer – a visit the patient&apos;s part covers in full goes to the patient only.</PmsNotice>
           <div className="flex flex-wrap justify-end gap-2">
             <PmsButton variant="secondary" onClick={() => setStep(1)}>
               Back

@@ -122,6 +122,9 @@ export function BillingList(props: BillingListProps) {
     <div className="mx-auto flex w-full min-w-0 max-w-[1180px] flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold text-foreground">Billing</h1>
+        <Link href={`${BILLING_PATH}/payers`} className={cn("ml-auto text-sm font-medium text-primary-strong underline underline-offset-2", focusRing)} data-testid="payer-accounts-link">
+          Payer accounts
+        </Link>
         {can.edit ? (
           <Link href={`${BILLING_PATH}/visits`} className={cn(pmsButtonVariants({ variant: "primary" }), "h-9")} data-testid="invoice-visits-button">
             <Plus aria-hidden />
@@ -230,7 +233,7 @@ export function BillingList(props: BillingListProps) {
 
         {tab === "visits" && props.visits ? (
           <div className="flex flex-col gap-3 p-3">
-            <p className="text-sm text-[#475569]">Completed visits, and missed or late-cancelled ones with a fee, that have no invoice yet. Insured visits create a patient invoice for the excess and an insurer invoice for the rest.</p>
+            <p className="text-sm text-[#475569]">Completed visits, and missed or late-cancelled ones with a fee, that have no invoice yet. Insured visits create a patient invoice for the patient&apos;s part (excess or contribution) and an insurer invoice for the rest.</p>
             <VisitsTable visits={props.visits} mode="tab" today={props.today} />
           </div>
         ) : null}

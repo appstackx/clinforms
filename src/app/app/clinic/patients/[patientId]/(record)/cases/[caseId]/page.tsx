@@ -17,6 +17,8 @@ import { patientOr404, patientPath } from "@/server/pms/records/record";
 import { getAuthorisation, getCase, listAuthorisations } from "@/server/repos/pms/cases";
 import { listNotesForPatient } from "@/server/repos/pms/records/notes";
 import { addAuthorisation, saveAuthorisation, saveCase, setAuthorisationStatus } from "../actions";
+import { CONTRIBUTION_MODE_LABELS, effectiveContributionMode } from "@/modules/pms/billing/excess";
+import { caseContributionFor } from "@/server/pms/billing/views";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Case" };
@@ -40,6 +42,8 @@ export default async function CasePage({ params }: { params: { patientId: string
     directoryOptions(actor),
     actor.can("clinical.view") ? listNotesForPatient(ctx, actor.tenantId, patient.id, { caseId: c.id }) : Promise.resolve([]),
   ]);
+  const contribution = actor.can("billing.view") ? await caseContributionFor(actor, c.id) : undefined;
+  const mode = contribution ? effectiveContributionMode(contribution.caseMode, c.payerReferrerId ? contribution.payerModes[c.payerReferrerId] : null) : "per_case";
   const auths = (await Promise.all(summaries.map((a) => getAuthorisation(ctx, actor.tenantId, a.id)))).filter((a): a is NonNullable<typeof a> => Boolean(a));
   const today = ukToday();
   const reports = await hasPackage(actor.tenantId, "reports");
@@ -77,7 +81,10 @@ export default async function CasePage({ params }: { params: { patientId: string
             { label: "Payer", value: `${PAYER_TYPE_LABELS[c.payerType]}${c.payerReferrerId && names.referrers[c.payerReferrerId] ? `: ${names.referrers[c.payerReferrerId]}` : ""}` },
             { label: "Membership or policy number", value: c.membershipNumber },
             { label: "Claim or case reference", value: c.claimReference },
-            { label: "Excess", value: c.excessPence !== null ? formatPence(c.excessPence) : null },
+            { label: mode === "per_visit" ? "Patient contribution per visit" : "Excess", value: c.excessPence !== null ? formatPence(c.excessPence) : null },
+            ...(contribution && c.payerType !== "self_pay"
+              ? [{ label: "Patient's part billed as", value: `${CONTRIBUTION_MODE_LABELS[mode]}${contribution.caseMode ? " (this case)" : " (as the payer account)"}` }]
+              : []),
             { label: "Price list", value: c.priceListId ? names.priceLists[c.priceListId] : "Default prices" },
             { label: "Practitioner", value: c.practitionerId ? names.practitioners[c.practitionerId] : null },
             { label: "Site", value: c.siteId ? names.sites[c.siteId] : null },
@@ -108,6 +115,7 @@ export default async function CasePage({ params }: { params: { patientId: string
                 patientId={patient.id}
                 options={options}
                 submitLabel="Save case"
+                contribution={contribution}
                 values={{ ...c, caseId: c.id, rev: c.rev, excess: penceToPounds(c.excessPence) }}
               />
             </div>

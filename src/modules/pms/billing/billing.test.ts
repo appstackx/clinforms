@@ -5,7 +5,7 @@ import { AGE_BUCKETS, ageBucket, agedDebt } from "./aging";
 import { autoAllocate, unallocated } from "./allocation";
 import { csvCell, penceDecimal, toCsv } from "./csv";
 import { CLAIM_CSV_HEADER, EXPORT_CHANNEL_INFO, claimProblems, claimsCsv } from "./ebilling";
-import { splitExcess } from "./excess";
+import { contributionWording, effectiveContributionMode, fullyCoveredText, isContributionMode, patientShares, splitExcess } from "./excess";
 import { formatDocumentNumber, nextDocumentSeq, parseDocumentNumber } from "./numbers";
 import { BillingSettingsInputSchema, CreditNoteInputSchema, InvoiceDraftInputSchema, InvoiceLineInputSchema, PaymentInputSchema } from "./schemas";
 import { buildStatement } from "./statements";
@@ -313,5 +313,36 @@ describe("M5: excess per visit, void state", () => {
     assert.equal(INVOICE_STATE_LABELS[invoiceState(base, "2026-10-28")], "Issued");
     assert.equal(INVOICE_STATE_LABELS[invoiceState({ ...base, paidPence: 1000 }, "2026-10-28")], "Part-paid");
     assert.equal(invoiceState({ ...base, creditedPence: 5500, voidedAt: "2026-10-28T10:00:00.000Z" }, "2026-10-28"), "void");
+  });
+});
+
+describe("the patient's part of an insured visit (excess per case / contribution per visit)", () => {
+  const lines = [
+    { key: "a", totalPence: 4800 },
+    { key: "b", totalPence: 4800 },
+    { key: "c", totalPence: 1500 },
+  ];
+  it("per case: one amount used up visit by visit, less what was billed already", () => {
+    assert.deepEqual(Array.from(patientShares(lines, "per_case", 6000).values()), [4800, 1200, 0]);
+    assert.deepEqual(Array.from(patientShares(lines, "per_case", 6000, 5000).values()), [1000, 0, 0]);
+    assert.deepEqual(Array.from(patientShares(lines, "per_case", null).values()), [0, 0, 0]);
+  });
+  it("per visit: the contribution on every visit, never more than the visit (a cheap visit is covered in full)", () => {
+    assert.deepEqual(Array.from(patientShares(lines, "per_visit", 2000).values()), [2000, 2000, 1500]);
+    assert.deepEqual(Array.from(patientShares(lines, "per_visit", 2000, 999999).values()), [2000, 2000, 1500], "never used up");
+  });
+  it("the mode: the case's own, else the payer account's, else excess per case", () => {
+    assert.equal(effectiveContributionMode(null, null), "per_case");
+    assert.equal(effectiveContributionMode(null, "per_visit"), "per_visit");
+    assert.equal(effectiveContributionMode("per_case", "per_visit"), "per_case");
+    assert.equal(isContributionMode("per_visit"), true);
+    assert.equal(isContributionMode("both"), false);
+  });
+  it("wording per mode, and lines kept within 200 characters", () => {
+    assert.equal(contributionWording("per_visit").heading, "Insured visit – patient contribution per visit");
+    assert.equal(contributionWording("per_case").column, "Excess");
+    assert.match(contributionWording("per_visit").explain("£20.00", "Kestrel (fictional)"), /pays £20\.00 on every visit and Kestrel \(fictional\) pays the rest/);
+    assert.match(contributionWording("per_case").fullyPatient(null, 1), /^Nothing claimed from the insurer: the patient's excess covers this visit in full\.$/);
+    assert.ok(fullyCoveredText("x".repeat(300), "per_visit").length <= 200);
   });
 });
