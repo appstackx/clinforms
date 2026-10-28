@@ -11,7 +11,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Activity, AlertTriangle, CalendarCheck, CalendarX2, CreditCard, Move, Repeat, User, UserCheck, UserX, X, XCircle, CheckCircle2, Ban } from "lucide-react";
+import { Activity, AlertTriangle, CalendarCheck, CalendarX2, CreditCard, MessageSquare, Move, Repeat, User, UserCheck, UserX, X, XCircle, CheckCircle2, Ban } from "lucide-react";
 import { cancelAppointmentAction, cancelSeriesAction, setAppointmentStatusAction, startTreatmentAction } from "@/app/app/clinic/diary/actions";
 import { CLINIC_BASE_PATH } from "@/modules/pms/core/modules";
 import { formatPence, formatUkDate } from "@/modules/pms/core/text";
@@ -26,6 +26,7 @@ import { Checkbox, SelectInput } from "../ui/inputs";
 import { FlagPill, StatusPill } from "../ui/status-pill";
 import { Kbd } from "../ui/keyboard-hint";
 import { TakePaymentDialog } from "../billing/take-payment-dialog";
+import { SendMessageDialog } from "../comms/send-message-dialog";
 import { diaryApi } from "./api";
 import { weekdayDate } from "./grid-model";
 
@@ -35,6 +36,8 @@ export interface DrawerPermissions {
   pay?: boolean;
   /** clinical.write: "Start treatment" also opens the clinical note for the appointment. */
   clinical: boolean;
+  /** messages.send: "Send message" opens the comms module's send form for the patient (COMMS-011). */
+  message?: boolean;
 }
 
 export interface AppointmentDrawerProps {
@@ -62,6 +65,7 @@ export function AppointmentDrawer({ id, version, can, onClose, onChanged, onErro
   const [charge, setCharge] = React.useState(true);
   const [seriesOpen, setSeriesOpen] = React.useState(false);
   const [payOpen, setPayOpen] = React.useState(false);
+  const [messageOpen, setMessageOpen] = React.useState(false);
   const closeRef = React.useRef<HTMLButtonElement>(null);
   const panelRef = React.useRef<HTMLElement>(null);
 
@@ -178,6 +182,13 @@ export function AppointmentDrawer({ id, version, can, onClose, onChanged, onErro
     </PmsButton>
   ) : null;
   // Billing (M5): the take-payment dialog for the patient (billing.pay); left out without the permission.
+  const sendMessage =
+    d?.kind === "appointment" && d.patient && can.message ? (
+      <PmsButton key="message" variant="secondary" className="h-10 w-full justify-center" onClick={() => setMessageOpen(true)} data-testid="drawer-send-message">
+        <MessageSquare className="h-4 w-4" aria-hidden />
+        Send message
+      </PmsButton>
+    ) : null;
   const takePayment =
     d?.kind === "appointment" && d.patient && can.pay ? (
       <PmsButton key="pay" variant="secondary" className="h-10 w-full justify-center" onClick={() => setPayOpen(true)} data-testid="drawer-take-payment">
@@ -227,6 +238,7 @@ export function AppointmentDrawer({ id, version, can, onClose, onChanged, onErro
   }
   if (d?.kind === "appointment") {
     if (openRecord) actions.push(openRecord);
+    if (sendMessage) actions.push(sendMessage);
     if (takePayment) actions.push(takePayment);
     if (can.book && d.patient && (d.status === "dna" || d.status === "cancelled" || d.status === "late_cancelled" || d.status === "booked" || d.status === "arrived")) {
       actions.push(action("rebook", "Rebook", Repeat, () => onRebook(d)));
@@ -415,6 +427,14 @@ export function AppointmentDrawer({ id, version, can, onClose, onChanged, onErro
         <div className="border-t border-border px-5 py-3 text-xs text-[#475569]">
           {[d.bookedBy ? `Booked by ${d.bookedBy}${d.bookedAt ? ` ${formatUkDate(londonDate(d.bookedAt))}` : ""}` : null, d.confirmationRequested ? "confirmation requested" : null].filter(Boolean).join(" · ")}
         </div>
+      ) : null}
+      {d?.patient && can.message ? (
+        <SendMessageDialog
+          open={messageOpen}
+          onOpenChange={setMessageOpen}
+          patientId={d.patient.id}
+          context={`About the appointment on ${weekdayDate(londonDate(d.startsAt))} at ${d.startTime}${d.serviceName ? `, ${d.serviceName}` : ""}.`}
+        />
       ) : null}
       {d?.patient && can.pay ? (
         <TakePaymentDialog
