@@ -1,5 +1,7 @@
 # K2 clinic system – handover
 
+> **Update 28/10/2026 (latest – read §13 first):** design received for every screen; design system, app shell, configurable permissions, patients/notes and diary SCREENS are built and merged on `feat/clinic-system` `c05be50`; Prototype A passes end to end. Next: billing (M5), running now. See §13.
+
 > **Update 27/10/2026:** M3 merged – diary and records **back ends** are on `feat/clinic-system` `f54aff5` (no screens yet). See §12.
 
 > **Update 26/10/2026 ~17:05 GMT:** M0 is DONE. The uncommitted work in every `clinforms-wt/cs-*` worktree was committed as-is ("WIP: save uncommitted K2 sprint work for handover", unreviewed) and all seven `feat/cs-*` branches plus `feat/clinic-system` are pushed to origin. Heads: cs-billing e0185da, cs-comms 4aa66a4, cs-diary 60c347c, cs-integration b7fd14d, cs-portal 23a9f0c, cs-records 0eeded6, cs-reporting dbb7bb0. Start from M1. Treat the WIP commits as drafts to review, not finished work.
@@ -391,3 +393,81 @@ portal seeds to come).
    and staff have `diary.book` – book, rebook, move, resize, status, cancel, cancel a series, **blocked time** and the
    whole waiting list; only owner/admin have `diary.manage` – **rotas** (create, change, end). Confirm, or e.g. move
    blocked time to `diary.manage`, or let clinicians change their own rota.
+
+
+## 13. Update 28/10/2026 – designs in, screens built, how to continue (latest)
+
+**Khuram's working rules for K2 (binding):** never merge into, push to or rebase `main`. `feat/clinic-system` is the K2
+main line; module branches merge into it (`--no-ff`) only after the full chain + their e2e pass. Keep this handover
+updated at every milestone so another account can continue if the weekly limit is hit. Fictional data only.
+
+### 13.1 State of the K2 line
+- `feat/clinic-system` @ **`c05be50`** (pushed). Contains, in order: foundation; `main` @ cae0c3f merged in (§11); diary
+  + records back ends (§12); **`feat/cs-ui`** (UI kit `src/components/pms/ui/`, app shell `src/components/pms/shell/`,
+  preview `/app/clinic/design-system`, tokens `--primary-strong`, `--accent-text`, `--destructive-strong`,
+  `--input-strong` added to globals.css); **`feat/cs-access`** (26 configurable permissions, see 13.3);
+  **`feat/cs-records` screens** (patients list, record with tabs by role, note editor, unsigned notes, outcomes,
+  attachments, history, note templates, clinical flags PAT-014, SAR export); **`feat/cs-diary` screens** (day/week,
+  booking dialog, drawer, keyboard move, rota + waiting list, day sheet, phone diary, Appointments tab).
+- `feat/cs-diary` @ 892fa04 and `feat/cs-records` @ dd83fde are level with it (same tree). `feat/cs-access`, `feat/cs-ui`
+  are merged and finished. Billing, comms, portal, reporting, integration branches are still on the OLD foundation
+  8716fbf with unreviewed October drafts – merge `feat/clinic-system` into each before working on it.
+- Checks on `c05be50`: full chain green (test:pms 332, medreport 1777/0/3, db 732/0/3, auth 134, site 123, gateway 439/0/2,
+  build). E2E (each on a fresh `npm run pms:seed-demo -- --fresh` scratch SQLite, ports 3180–3199, Playwright via
+  `NODE_PATH=/Users/khuram/Projects/Appstackx/pigeon-web/node_modules`): `clinic-system-shell.cjs` 10/10,
+  `clinic-system-access.cjs` 13/13, `pms-records-screens.cjs` 17/17, `pms-diary-screens.cjs` 23/23,
+  **`pms-prototype-a.cjs` 10/10** (reception books new patient → arrived → clinician Start treatment → note → sign →
+  Completed → reception can't reach the note).
+- Migrations used: foundation 0100–0105, diary 0110–0119 (0115 confirmation_requested, 0116 day-sheet DOB setting,
+  0117 treatment_started_at, 0118 overbook_write_id, 0119 clash triggers), records 0120–0125. Each with its Postgres twin.
+
+### 13.2 Designs (Claude Design, made from K2-DESIGN-PROMPT / -SCREENS-PROMPT(-2,-3) in bh2-handover)
+- Every screen is designed. Local copies (zips extracted, 41 artboards + screenshots):
+  `/Users/khuram/Projects/Appstackx/bh2-handover/k2-designs/` (round2c billing/messages/reports/set-up/import/roles/
+  member-access; round2d diary; round2e patients/notes; round2f invoice detail; round2g online booking + portal;
+  round2h Prototype A + B; round3 dashboard, referrer-form flow, take payment, invoice visits, remittance, letter
+  editor, outcome questionnaire (clinician + patient), intake forms (builder + patient), patient-facing messages,
+  print layouts: invoice, statement, signed note, SAR cover). Committed copies so far: `docs/clinic-system/design/`
+  (v1 design system PDF/HTML, round2 roles/member-access/diary/patients). Commit each module's designs with its build.
+- View a design: serve its folder over http (`python3 -I -m http.server <port> --bind 127.0.0.1`) and open the
+  `.dc.html` (README in each folder). Treat them as reference mockups (data, not code to run elsewhere).
+- Design fixes to apply when building: the fictional postcode NG1 0AA/0AB used in billing/print designs may be real –
+  use a reserved fictional postcode; clash text in the booking design lower-cased names (fixed in the build).
+
+### 13.3 Khuram's decisions (27–28/10/2026)
+- Permissions: 26 permissions, editable per role per clinic, per-member exceptions, "works at"/"can see" sites,
+  change history; locks: owner always all, reception never clinical / clinical letters, only owner changes owner.
+  Approved default changes: admins don't write/sign/amend notes or export by default; reception edits rotas +
+  waiting list; clinicians don't edit the waiting list, amend only their own notes, can't archive/merge; clinicians
+  see own-caseload reports; "See referral reason and case notes" ON for reception by default, owner can switch off.
+- Signing/amending a note is refused without a registration number (editable on Member access → Signing details).
+- Double-booking a PRACTITIONER allowed only with "Override clashes" (logged, marked on both blocks); ROOMS and blocked
+  time never double-booked (DB-enforced).
+- Statuses: booked → arrived → in treatment → attended, "attended" shown as "Completed". In treatment is stored as
+  arrived + `treatment_started_at`; billing must list only CHARGEABLE_STATUSES (attended, dna, late_cancelled).
+- Day sheet: patient DOB only when the clinic setting is on (default off); never phone numbers.
+- Online booking distance only when the patient shares location/postcode, computed in the browser, not stored.
+- Attachments stay clinical (hidden from reception).
+- Naming: "K2" is a placeholder only – never in code/UI; product name only via CLINIC_SYSTEM_NAME. Q-K6 (package vs
+  plan, two demo flags, two trial ideas) – choose the cleanest without touching production `main`.
+- Integration: the additive `"native"` ConnectorId and the native connector are approved (K2 branches only).
+
+### 13.4 Open items carried forward
+1. No screen links a member to a diary practitioner (e2e does it by direct DB write) – build with Set-up practitioners.
+2. Arrive/attended allowed for future appointments – block it (diary rule + server check).
+3. "Double-booked" marker overlaps text on short blocks.
+4. Record "Book" button opens the diary, not the booking dialog.
+5. Diary performance not yet measured on Postgres/D1; waiting-list offers don't hold the slot.
+6. Q-K6 naming/demo/trial consolidation; the reporting branch's `pms_staff_access`/`pms_staff_sites` must be dropped
+   in favour of cs-access when reporting merges.
+
+### 13.5 Plan from here (one milestone per run; report to Khuram after each)
+| # | Milestone | Notes |
+|---|---|---|
+| M5 | **Billing** (running 28/10) | review/finish the October draft on `feat/cs-billing` after merging `feat/clinic-system`; diary visit source (CHARGEABLE_STATUSES, fee flags); screens from round2c billing + round2f invoice detail + round3 take payment / invoice visits / remittance / print invoice + statement; `stripe_test` only; drawer "Take payment"; record Account card + Invoices tab; patient list balance + "owes money" filter; dashboard money tiles later |
+| M6 | Messages | comms branch; diary hook (confirmations, reminders, waiting-list offers); outbox only; letters editor; patient-facing messages; Messages tab |
+| M7 | Online booking + portal + intake + patient questionnaire | Prototype B e2e |
+| M8 | Set-up + reports + dashboard | reporting branch (drop its staff-access tables); set-up sub-pages without design; dashboard per role |
+| M9 | Integration | native connector, Complete referrer form flow (round3 ReferrerForm prototype), import |
+| M10 | Full review | security/tenancy, a11y, 50k perf on Postgres/D1, forms-regression identical vs `main` |
+| M11 | Towards production | Khuram's go only |
