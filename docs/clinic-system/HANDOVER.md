@@ -545,14 +545,14 @@ is one amount per case taken visit by visit (design shows £20 on every visit �
 ### 14.5 Open items
 - Billing settings screen (VAT, prefix, terms, bank details) – defaults/seed only; with Set-up (M8).
 - Email/SMS of receipts, statements, payment links – M6. Dashboard money tiles – M8.
-- A £0 insurer invoice is made (reads "Paid") when the excess covers the whole visit.
+- ~~A £0 insurer invoice is made (reads "Paid") when the excess covers the whole visit.~~ Fixed in §14.8.
 - Insurer e-billing claims CSV (BILL-011) has a back end but no screen; the October react-pdf PDFs remain beside the
   HTML print views – keep one.
 - `docs/clinic-system/billing.md` is referenced in code comments but does not exist.
 - Live card payments need the clinic system's own Stripe account (CLAUDE.md, Q-K4); test mode only today.
 - `round2/set-up` and `round2/import-from-previous-system` designs still carry an `NG… 0..` postcode.
 
-### 14.6 Decisions for Khuram
+### 14.6 Decisions for Khuram (answered 28/10/2026 – see §14.8 "Decisions")
 1. Excess: one amount per case consumed visit by visit (built) vs a per-visit patient contribution as drawn?
 2. "Seen" statuses from 60 minutes before the start, DNA only after it – confirm the window.
 3. Authorisation sessions counted only by the diary (visit booked under the authorisation, on completion); billing
@@ -565,6 +565,66 @@ is one amount per case taken visit by visit (design shows £20 on every visit �
 **M6 Messages** (comms branch): diary hook, outbox, letters, patient-facing messages, Messages tab – and then the
 billing emails (receipts, statements, payment links).
 
+
+### 14.8 Billing follow-up (28/10/2026) – excess modes, no £0 insurer invoice – DONE, merged
+
+**Heads (pushed; `main` untouched):** `feat/cs-billing` `bf6e6f9` (`4a0e61d` feature, `bf6e6f9` diary e2e slot fix)
+· `feat/clinic-system` `f732a11` (merge of `feat/cs-billing`, tree identical to it; `feat/clinic-system` had not
+moved since `0acf07c`, so no catch-up merge was needed).
+
+**Decisions (Khuram, 28/10/2026):**
+1. **Excess – both modes**, chosen per insurer/payer account with an override per case: **"Excess per case"** (one
+   amount used up visit by visit – the DEFAULT, as built in M5) and **"Patient contribution per visit"** (a fixed
+   amount the patient pays on every visit, the insurer pays the rest – as the round 2f design draws).
+2. **No £0 insurer invoice / line**: when the patient's part covers a whole visit, the visit is billed to the patient
+   only and marked as such (nothing claimed from the insurer for it, nothing taken off the authorisation's value).
+3. **Confirmed as built:** "seen" statuses from 60 minutes before the start, DNA only after the start; authorisation
+   sessions counted once, by the diary on completion (billing counts value); DNA / late-cancellation fees always to
+   the patient; void refused while payments are on it and reception cannot credit / refund / void by default;
+   `ZZ99` postcodes in design docs, the app's demo data keeps its `9ZZ` units.
+
+**What was built:**
+- Migrations **0137** `pms_payer_billing_terms` (per payer account: `contribution_mode` `per_case|per_visit`) and
+  `pms_case_billing_terms` (per case, NULL = as the account), **0138** `pms_invoices.per_visit_contribution_pence`
+  (kept on both halves of a per-visit split so the invoice reads the same after the case/account changes). Postgres
+  twins. No row = excess per case. The **amount stays the case's `excess_pence`** (labelled per mode on the form).
+  Billing range used: 0130–0138 (0139 free).
+- Logic: `src/modules/pms/billing/excess.ts` (`patientShares`, `effectiveContributionMode`, wording);
+  `src/server/repos/pms/billing/contribution-terms.ts`; `createDraftInvoice` (invoices.ts): a treatment line the
+  patient's part covers in full moves to the patient's invoice as an `excess` line **with its appointment** (billed
+  once, to the patient); partly covered lines stay on the insurer's invoice less one deduction line; if every line
+  moves, **no payer invoice is made** (`invoice` = the patient's). Per visit: one "Patient contribution – …" line per
+  visit; contributions never use up a case's excess (`excessBilledForCase` ignores per-visit invoices).
+  `priceVisits` / Attended-not-invoiced use the same split ("contribution £20.00", "(patient pays it all)", the
+  preview makes no £0 invoice).
+- Screens: invoice detail wording per mode (heading "Insured visit – patient contribution per visit" vs "… split
+  between patient and insurer", an explanation line with amount and insurer, "Patient contribution · INV…" /
+  "Patient excess · INV…", column "Contribution" / "Excess", and for a fully covered visit "Nothing claimed from
+  <insurer>: the patient's excess/contribution covers this visit in full."); print column; **Billing → Payer
+  accounts** (`/app/clinic/billing/payers`, minimal – no insurer-account screen existed: billing.view reads,
+  `settings.setup` changes); case form "How the patient's part is billed" (As the payer account (…) / Excess per
+  case / Patient contribution per visit), saved by billing after the case (`patients.edit`), case page shows
+  "Patient's part billed as". Audit codes `pms.payer_terms.set`, `pms.case_terms.set`.
+- Tests: repo suite (both modes, account + case override, no-£0 in both modes, authorisation value untouched,
+  clinic isolation) and service suite (permissions, Attended-not-invoiced figures, invoice visits → 3 invoices, no
+  payer invoice for the covered visit, detail view) on SQLite, PGlite, the D1 stand-in and local workerd D1; pure
+  tests. The old repo test's excess went 100.00 → 50.00 so it stays a partial split.
+
+**Results (on `bf6e6f9` = `f732a11`):** typecheck, lint green; test:pms 420/420; test:medreport 1777/0/3; test:db
+820/0/3; test:auth 134/0; test:site 123/0; test:gateway 491/0/2; build green. E2E on fresh `pms:seed-demo -- --fresh`
+scratch SQLite (ports 3190–3192, servers stopped): **pms-billing-screens 21/21** (new: payer accounts, case form
+per visit £20 + excess £900 covering a visit, invoice both → 3 invoices, no £0, detail in both modes, axe clean),
+pms-prototype-a 10/10 (13:42 GMT), pms-diary-screens 24/24 (13:44 GMT; its "next hour" step now picks a slot free
+for 45 minutes – it had picked a 15-minute gap and the booking form defaulted to a 45-minute assessment). Both
+diary/prototype need the clinic's opening hours and a free slot within the hour.
+Screenshots: `/private/tmp/claude-501/-Users-khuram-Projects-Appstackx-bh2-handover/ef471414-85b1-422d-bf98-018c56c69aec/scratchpad/k2design/out-billing2/`
+(`1440-invoice-detail-per-visit-insurer.png`, `…-per-visit-patient.png`, `…-per-case-covered.png`,
+`…-per-case-insurer.png`, `1440-payer-accounts.png`, `1440-case-form-contribution.png`).
+
+**Notes / open:** the demo seed leaves every account on "excess per case" (the e2e sets Kestrel to per visit through
+the screen); the diary's payer label still says "– excess £x" in both modes (diary-owned, cosmetic); the full
+payer-account editor belongs with Set-up (M8). `feat/cs-comms` also edits `invoice-detail.tsx` – expect a small
+merge there when M6 merges.
 
 ## 15. M6 messages (28/10/2026) – IN PROGRESS (midpoint: back end done on `feat/cs-comms`)
 
