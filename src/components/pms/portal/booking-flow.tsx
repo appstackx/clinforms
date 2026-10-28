@@ -8,6 +8,7 @@
  * Distance ("0.8 miles") appears ONLY after the patient taps "Use my location" or types a postcode, and is worked out
  * here in the browser from the sites' map positions – the patient's position is never sent or stored.
  */
+import { districtCentre, loadDistrictCentres, ONS_ATTRIBUTION, postcodeDistrict } from "@/modules/pms/portal/postcode-districts";
 import * as React from "react";
 import Link from "next/link";
 import { Check, ChevronLeft, Clock, Crosshair, MapPin, Search } from "lucide-react";
@@ -169,17 +170,21 @@ export function BookingFlow({ mode, clinicId, data, portalPath, loadSlots, book,
     );
   };
 
-  // A typed postcode: placed near a site in the same postcode district (no lookup service is called).
+  // A typed postcode: placed at its postcode district's centre from the bundled ONS list (Khuram, 28/10/2026 – a
+  // small static file loaded from this site on first use; the postcode itself is never sent anywhere or stored).
   const placePostcode = (text: string) => {
-    const outward = text.trim().toUpperCase().split(/\s+/)[0];
-    if (!/^[A-Z]{1,2}\d[A-Z\d]?$/.test(outward)) return;
-    const near = data.sites.find((s) => s.outward === outward && s.position);
-    if (near?.position) {
-      setOrigin(near.position);
-      setPlaceNote("Distances are worked out on this device from your postcode district. Nothing is sent or stored.");
-    } else {
-      setPlaceNote("We cannot place that postcode. Tap “Use my location” to see distances.");
-    }
+    const outward = postcodeDistrict(text);
+    if (!outward) return;
+    void loadDistrictCentres().then((centres) => {
+      const at = centres ? districtCentre(centres, outward) : null;
+      const near = at ?? data.sites.find((s) => s.outward === outward && s.position)?.position ?? null;
+      if (near) {
+        setOrigin(near);
+        setPlaceNote("Distances are worked out on this device from the middle of your postcode district. Nothing is sent or stored.");
+      } else {
+        setPlaceNote("We cannot place that postcode. Tap “Use my location” to see distances.");
+      }
+    });
   };
 
   const shownSites: (FlowSite & { miles: number | null })[] = data.sites
@@ -356,6 +361,9 @@ export function BookingFlow({ mode, clinicId, data, portalPath, loadSlots, book,
               ))}
             </ul>
             {shownSites.length === 0 ? <p className="mt-4 text-[14px] text-[#475569]">No clinic matches that. Clear the search to see them all.</p> : null}
+            <p className="mt-4 text-[11px] leading-4 text-[#64748B]" data-testid="ons-attribution">
+              Postcode districts: {ONS_ATTRIBUTION.join(" ")}
+            </p>
           </section>
         ) : null}
 
