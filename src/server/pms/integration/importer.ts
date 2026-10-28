@@ -17,9 +17,11 @@ import {
   IMPORT_KIND_INFO,
   type ImportKind,
 } from "../../../modules/pms/integration/import-kinds";
-import type {
-  BatchCounts,
-  BatchStatus,
+import {
+  UNDO_DAYS,
+  undoUntil,
+  type BatchCounts,
+  type BatchStatus,
 } from "../../../modules/pms/integration/import-status";
 import {
   hasError,
@@ -893,6 +895,9 @@ export async function undoBlocker(
 ): Promise<string | null> {
   if (batch.status !== "imported" && batch.status !== "undoing")
     return "Only an import that has finished can be undone.";
+  const now = (ctx.now ? ctx.now() : new Date()).toISOString();
+  if (batch.status === "imported" && batch.importedAt && now > undoUntil(batch.importedAt))
+    return `An import can be undone for ${UNDO_DAYS} days after it finished. Change or archive the records instead.`;
   const n = await countDependentImportedRows(
     ctx,
     tenantId,
