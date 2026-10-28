@@ -23,6 +23,7 @@ export const FOUNDATION_AUDIT_LABELS: Readonly<Record<string, string>> = {
   "pms.room.update": "Room updated",
   "pms.practitioner.create": "Practitioner added",
   "pms.practitioner.update": "Practitioner updated",
+  "pms.practitioner.signing_update": "Signing details changed",
   "pms.service.create": "Appointment type added",
   "pms.service.update": "Appointment type updated",
   "pms.price_list.create": "Price list added",
@@ -31,6 +32,12 @@ export const FOUNDATION_AUDIT_LABELS: Readonly<Record<string, string>> = {
   "pms.price_list_item.remove": "Price removed",
   "pms.settings.update": "Record-keeping settings updated",
   "pms.demo.seed": "Demonstration data loaded",
+  // Configurable access (roles and permissions, member access).
+  "pms.access.roles_update": "Role permissions changed",
+  "pms.access.member_update": "Member access changed",
+  "pms.access.member_deactivate": "Member's clinic-system access switched off",
+  "pms.access.member_reactivate": "Member's clinic-system access switched back on",
+  "pms.access.refused": "Change to a locked permission refused",
   // Packages (entitlements): written under the clinic and, for platform staff, under the platform's own trail.
   "clinic.package_change": "Package switched on or off",
   "platform.entitlement_set": "Clinic package changed",
@@ -48,4 +55,5 @@ export const FOUNDATION_AUDIT_TARGETS: Readonly<Record<string, string>> = {
   pms_service: "Appointment type",
   pms_price_list: "Price list",
   pms_settings: "Record-keeping settings",
+  pms_access: "Access and permissions",
 };

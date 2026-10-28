@@ -13,8 +13,9 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, CheckCircle2, CircleDashed, FileSearch, ListChecks, TriangleAlert } from "lucide-react";
-import { MAX_FORM_FILE_BYTES } from "../../../config.public";
+import { MAX_FORM_FILE_BYTES, MAX_RTF_FILE_BYTES } from "../../../config.public";
 import { FORM_KIND_LABELS, REFERRER_TYPE_LABELS } from "../../../core/labels";
+import { humaniseMergeCodes } from "../../../core/practice-merge-codes";
 import { ReferrerTypeSchema } from "../../../core/schemas";
 import type { FormDefinition, ReferrerType } from "../../../core/types";
 import {
@@ -144,7 +145,7 @@ export function UploadFormDialog({ open, onOpenChange, initialFile, initialRefer
               accept={FORM_ACCEPT}
               onFile={(f) => void accept(f)}
               title="Drop the form here, or choose a file"
-              hint={`Word (.docx), PDF or RTF · up to ${formatBytes(MAX_FORM_FILE_BYTES)} · fillable PDFs work best; flat PDFs are best effort`}
+              hint={`Word (.docx), PDF or RTF · up to ${formatBytes(MAX_FORM_FILE_BYTES)} (an RTF template with pictures up to ${formatBytes(MAX_RTF_FILE_BYTES)}) · fillable PDFs work best; flat PDFs are best effort`}
             />
             {phase.kind === "error" ? (
               <Notice tone="error" title="That file could not be analysed">
@@ -323,9 +324,10 @@ function AnalysedPanel({ result }: { result: AnalyseResult }) {
   const lowFields = form.fields.filter((f) => f.confidence !== "high");
   const low = lowFields.length;
   // The questions counted as "to check" are listed with the layout notes, so the count has its items.
+  // Clinic-system merge codes are shown in plain words (core/practice-merge-codes.ts).
   const checks = [
-    ...(low ? [`${low === 1 ? "Question" : "Questions"} to check in the mapping review: ${lowFields.map((f) => `“${f.label.trim().replace(/[.:;]$/, "")}”`).join(", ")}`] : []),
-    ...distinctNotes([...o.warnings, ...form.analysis.warnings]),
+    ...(low ? [`${low === 1 ? "Question" : "Questions"} to check in the mapping review: ${lowFields.map((f) => `“${humaniseMergeCodes(f.label.trim().replace(/[.:;]$/, ""))}”`).join(", ")}`] : []),
+    ...distinctNotes([...o.warnings, ...form.analysis.warnings]).map((n) => humaniseMergeCodes(n)),
   ];
   const facts = [
     FORM_KIND_LABELS[o.kind],
@@ -390,7 +392,7 @@ function AnalysedPanel({ result }: { result: AnalyseResult }) {
             : "This browser would not store the original file, so you will need to upload it again after closing the tab."}
         </Notice>
       ) : null}
-      <p className="text-sm text-slate-600">Nothing is used for patients until a member of staff checks and confirms the mapping.</p>
+      <p className="text-sm text-slate-600">Nothing is used for patients until your clinic checks the mapping and an owner, administrator or clinician confirms it.</p>
     </div>
   );
 }

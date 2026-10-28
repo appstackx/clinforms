@@ -1,0 +1,606 @@
+{
+  "$comment": "release/bh-trial-2 ownership map (bh-quality plan, W0.4). `paths` maps a repo path or glob to the ONE workstream that may change it on its branch (from the plan's 'Files owned' lists; W0 = foundation, changed after bh2-base only through a W0 follow-up PR by the integrator). Anything not mapped belongs to the integrator. Enforced by scripts/medreport/ownership-guard.mjs (rules in `rules`); checked by scripts/medreport/ownership-guard.test.ts. Only the integrator edits this file. Globs: `*` = within one path segment, `**` = any depth.",
+  "version": 2,
+  "base": {
+    "tag": "bh2-base2",
+    "fallback": "origin/release/bh-trial-2",
+    "note": "Workstream branches start at tag bh2-base2 (bh2-base + the W0 follow-up: the remaining shared definitions and the seams below); until it exists the guard diffs against the merge base with origin/release/bh-trial-2."
+  },
+  "workstreams": {
+    "W0": { "title": "Foundation: base, safety corpus and gates, schema expansion, module split, tokenizer, shared types", "branches": ["ws/bh2-foundation", "ws/bh2-split", "ws/bh2-schema", "ws/bh2-corpus", "ws/bh2-tokenizer"], "exempt": true },
+    "WI": { "title": "Integration", "branches": ["release/bh-trial-2"], "exempt": true },
+    "WA1": { "title": "Issue state and receipt", "branches": ["ws/bh2-issue"], "aliases": ["wa1", "issue"] },
+    "WA2": { "title": "Forms engine", "branches": ["ws/bh2-engine"], "aliases": ["wa2", "engine"] },
+    "WB": { "title": "Opinion guard and attribution", "branches": ["ws/bh2-opinion"], "aliases": ["wb", "opinion"] },
+    "WC": { "title": "Review roles, provenance and amendments", "branches": ["ws/bh2-review", "ws/bh2-review-*"], "aliases": ["wc", "review"] },
+    "WD": { "title": "Drafting, assembly and text edits", "branches": ["ws/bh2-drafting"], "aliases": ["wd", "drafting"] },
+    "WE": { "title": "Data, maps and mapping page", "branches": ["ws/bh2-data"], "aliases": ["we", "data"] },
+    "WF": { "title": "Copy, preview and guide", "branches": ["ws/bh2-copy"], "aliases": ["wf", "copy"] }
+  },
+  "fixBranches": {
+    "pattern": "^ws/bh2-fix[0-9]+-([a-z0-9]+)(?:-.*)?$",
+    "note": "Verification fix branches ws/bh2-fix<N>-<owner>[-<topic>] get the map of <owner> (a workstream alias, e.g. ws/bh2-fix1-wb, ws/bh2-fix2-review-labels)."
+  },
+  "paths": {
+    "src/modules/medreport/core/schemas.ts": "W0",
+    "src/modules/medreport/core/types.ts": "W0",
+    "src/modules/medreport/core/text/**": "W0",
+    "src/modules/medreport/core/validation/__corpus__/**": "W0",
+    "scripts/medreport/corpus-*": "W0",
+    "src/modules/medreport/core/actor.ts": "W0",
+    "src/modules/medreport/core/issue-types.ts": "W0",
+    "src/modules/medreport/core/fix-types.ts": "W0",
+    "src/modules/medreport/core/validation/registry.ts": "W0",
+    "src/modules/medreport/core/validation/hooks.ts": "W0",
+    "src/modules/medreport/core/validation/hooks.test.ts": "W0",
+    "src/modules/medreport/ui/components/review/review-model.ts": "W0",
+    "src/modules/medreport/core/forms.ts": "W0",
+    "src/modules/medreport/core/forms/fields.ts": "W0",
+    "src/modules/medreport/core/validation/index.ts": "W0",
+    "docs/bh2-ownership.json": "W0",
+    "scripts/medreport/ownership-guard.mjs": "W0",
+    "scripts/medreport/ownership-guard.test.ts": "W0",
+    "scripts/medreport/w0-plumbing.test.ts": "W0",
+    "scripts/medreport/schema-expansion.test.ts": "W0",
+    "scripts/medreport/schema-expansion-fixtures.ts": "W0",
+    "src/modules/medreport/core/stored-schemas.ts": "W0",
+    "scripts/medreport/schema-forward-compat.test.ts": "W0",
+    "scripts/medreport/forward-compat-fixture.ts": "W0",
+    "scripts/medreport/fixtures/forward-compat/**": "W0",
+    "src/modules/medreport/core/actor.test.ts": "W0",
+    "src/modules/medreport/api/handlers/sign/checks/context.ts": "W0",
+    "src/modules/medreport/core/activity-actions.ts": "W0",
+    "src/modules/medreport/api/contract.ts": "W0",
+    "src/modules/medreport/core/validation/context.ts": "W0",
+    "scripts/medreport/schema-followup.test.ts": "W0",
+
+    "src/modules/medreport/core/issue-state.ts": "WA1",
+    "src/modules/medreport/core/forms/answers.ts": "WA1",
+    "src/modules/medreport/core/answer-copy.ts": "WA1",
+    "src/modules/medreport/docgen/question-summary.ts": "WA1",
+    "src/modules/medreport/core/conditions.ts": "WA1",
+    "src/modules/medreport/core/validation/run.ts": "WA1",
+    "src/modules/medreport/core/validation/merge-fields.ts": "WA1",
+    "src/modules/medreport/core/validation/placeholders.ts": "WA1",
+    "src/modules/medreport/core/validation/conditions.ts": "WA1",
+    "src/modules/medreport/core/merge-fields.ts": "WA1",
+    "src/modules/medreport/core/report-factory.ts": "WA1",
+    "src/modules/medreport/api/handlers/sign/index.ts": "WA1",
+    "src/modules/medreport/api/handlers/sign/receipt.ts": "WA1",
+    "src/modules/medreport/api/handlers/sign/checks/issue.ts": "WA1",
+    "src/modules/medreport/api/handlers/render.ts": "WA1",
+    "src/modules/medreport/ui/components/review/status.ts": "WA1",
+    "src/modules/medreport/ui/components/review/box-items.ts": "WA1",
+    "src/modules/medreport/ui/components/review/question-nav.tsx": "WA1",
+    "src/modules/medreport/ui/components/review/copy-answers.tsx": "WA1",
+    "src/modules/medreport/auth/sign-receipt.ts": "WA1",
+    "src/modules/medreport/core/validation/choice-marks.ts": "WA1",
+    "src/modules/medreport/ui/components/review/approved-banner.tsx": "WA1",
+    "scripts/admin/check-issued.ts": "WA1",
+
+    "src/modules/medreport/forms/docx-fill.ts": "WA2",
+    "src/modules/medreport/forms/pdf-fill.ts": "WA2",
+    "src/modules/medreport/forms/render-form.ts": "WA2",
+    "src/modules/medreport/forms/choice-marks.ts": "WA2",
+    "src/modules/medreport/api/handlers/forms-fill-preview.ts": "WA2",
+    "src/modules/medreport/core/rtf/**": "WA2",
+    "src/modules/medreport/forms/request-caps.ts": "WA2",
+    "src/modules/medreport/forms/pre-release/**": "WA2",
+    "src/modules/medreport/api/handlers/forms-analyse.ts": "WA2",
+
+    "src/modules/medreport/core/validation/opinion-language.ts": "WB",
+    "src/modules/medreport/core/validation/voice.ts": "WB",
+    "src/modules/medreport/core/voice.ts": "WB",
+    "src/modules/medreport/core/validation/draft-fit/commentary.ts": "WB",
+    "src/modules/medreport/core/validation/attribution-*.ts": "WB",
+    "src/modules/medreport/api/handlers/sign/checks/voice.ts": "WB",
+    "src/modules/medreport/ui/components/review/approve-dialog.tsx": "WB",
+
+    "src/modules/medreport/ui/components/review/provenance.ts": "WC",
+    "src/modules/medreport/ui/components/review/gaps.ts": "WC",
+    "src/modules/medreport/ui/components/review/reducer.ts": "WC",
+    "src/modules/medreport/ui/components/review/labels.ts": "WC",
+    "src/modules/medreport/ui/components/review/use-review-state.ts": "WC",
+    "src/modules/medreport/ui/components/review/use-review-actions.ts": "WC",
+    "src/modules/medreport/ui/components/review/question-card.tsx": "WC",
+    "src/modules/medreport/ui/components/review/flags-panel.tsx": "WC",
+    "src/modules/medreport/ui/components/review/issues.tsx": "WC",
+    "src/modules/medreport/ui/screens/review/review-screen.tsx": "WC",
+    "src/modules/medreport/core/validation/acknowledge.ts": "WC",
+    "src/modules/medreport/api/handlers/store-reports.ts": "WC",
+    "src/modules/medreport/api/handlers/sign/checks/roles.ts": "WC",
+    "src/modules/medreport/ui/screens/new/new-report-screen.tsx": "WC",
+    "src/modules/medreport/ui/components/new/approver-*": "WC",
+    "src/modules/medreport/ui/components/review/table-answer-model.ts": "WC",
+    "src/modules/medreport/core/provenance.ts": "WC",
+    "src/modules/medreport/core/validation/approver-decision.ts": "WC",
+
+    "src/modules/medreport/ai/assemble.ts": "WD",
+    "src/modules/medreport/ai/form-prompts.ts": "WD",
+    "src/modules/medreport/ai/form-drafting*.ts": "WD",
+    "src/modules/medreport/core/duration-bands.ts": "WD",
+    "src/modules/medreport/core/scope.ts": "WD",
+    "src/modules/medreport/core/computed-facts.ts": "WD",
+    "src/modules/medreport/core/forms/answer-shape.ts": "WD",
+    "src/modules/medreport/core/validation/draft-fit.ts": "WD",
+    "src/modules/medreport/core/validation/draft-fit/repeats.ts": "WD",
+    "src/modules/medreport/core/validation/draft-fit/shorten.ts": "WD",
+    "src/modules/medreport/core/validation/draft-fit/fragments.ts": "WD",
+    "src/modules/medreport/core/validation/draft-fit/printed-lead.ts": "WD",
+    "src/modules/medreport/core/validation/draft-fit/measure.ts": "WD",
+    "src/modules/medreport/ui/components/review/fixes.ts": "WD",
+    "src/modules/medreport/ui/components/review/fix-preview.tsx": "WD",
+    "src/modules/medreport/core/labels.ts": "WD",
+    "src/modules/medreport/api/handlers/drafts.ts": "WD",
+    "src/modules/medreport/ai/draft-live.ts": "WD",
+    "src/modules/medreport/ai/draft-demo.ts": "WD",
+    "src/modules/medreport/ai/generate.ts": "WD",
+
+    "scripts/admin/load-forms.ts": "WE",
+    "src/server/admin/load-forms.ts": "WE",
+    "src/server/repos/forms.ts": "WE",
+    "src/lib/activity-copy.ts": "WE",
+    "src/modules/medreport/core/form-map-lint.ts": "WE",
+    "src/modules/medreport/ai/practice-merge-binding.ts": "WE",
+    "src/modules/medreport/ui/components/forms/mapping.ts": "WE",
+    "src/modules/medreport/ui/components/forms/field-editor.tsx": "WE",
+    "src/modules/medreport/ui/screens/forms/form-mapping-screen.tsx": "WE",
+    "src/modules/medreport/core/forms/headings.ts": "WE",
+    "src/modules/medreport/core/forms/guidance.ts": "WE",
+    "src/modules/medreport/core/forms/record-paths.ts": "WE",
+    "src/modules/medreport/core/session-dates.ts": "WE",
+    "src/modules/medreport/api/handlers/forms-confirm.ts": "WE",
+    "src/modules/medreport/api/handlers/store-forms.ts": "WE",
+    "scripts/admin/apply-map-edits.ts": "WE",
+    "scripts/medreport/bh-maps.test.ts": "WE",
+
+    "src/modules/medreport/docgen/pdf/ReportPdf.tsx": "WF",
+    "src/modules/medreport/ui/preview-libs.ts": "WF",
+    "src/modules/medreport/ui/components/shared/docx-instructions.ts": "WF",
+    "src/modules/medreport/ui/components/review/activity-panel.tsx": "WF",
+    "scripts/medreport/guide-terms-check.mjs": "WF",
+    "src/modules/medreport/ui/components/review/review-header.tsx": "WF",
+    "src/lib/activity-copy-release.ts": "WF"
+  },
+  "new": [
+    "src/modules/medreport/core/text/**",
+    "src/modules/medreport/core/validation/__corpus__/**",
+    "scripts/medreport/corpus-*",
+    "src/modules/medreport/ui/components/new/approver-*"
+  ],
+  "integratorOnly": [
+    "README.md",
+    "src/modules/medreport/README.md",
+    "src/modules/medreport/core/validation/__corpus__/pending.json",
+    "src/modules/medreport/core/validation/__corpus__/allowlist.json",
+    "src/modules/medreport/core/validation/__corpus__/retired.json",
+    "docs/bh2-ownership.json",
+    "scripts/medreport/ownership-guard.mjs",
+    "package.json",
+    "package-lock.json",
+    "workers/data-gateway/package.json",
+    "workers/data-gateway/package-lock.json",
+    "tsconfig.json",
+    ".eslintrc.json"
+  ],
+  "forbidden": [
+    { "glob": "demo-assets/**", "why": "third-party templates and maps (Dell's) and fictional replay data stay gitignored – never committed" },
+    { "glob": "**/.env*", "why": "secrets are never committed" }
+  ],
+  "rules": {
+    "owned": "A workstream may add, change, rename or delete the paths mapped to it.",
+    "tests": "Any workstream may ADD a new test file (*.test.ts, *.test.tsx, *.test.mjs) anywhere. In an existing test file it does not own it may only add lines (0 deleted lines); a changed or removed expectation there needs an integrator grant and is listed with its reason (DoC-1 C1).",
+    "corpus": "Corpus cases (__corpus__/cases/*.jsonl) and fixtures are append-only for every workstream: new files and added lines only. safety-corpus.lock.json takes new entries only (node scripts/medreport/corpus-lock.mjs --add, in the commit that adds the case); corpus-guard.mjs <base>, run by the integrator at every merge, refuses a changed or removed entry. Only the integrator edits pending.json, the allowlist and retired.json (retired rows: append-only, each with its decision and superseding cases).",
+    "crossCutting": "A cross-cutting path may be changed by its owner in `paths` or by a workstream named in the entry's wiredBy, and the change must keep the entry's rule.",
+    "grants": "The integrator may grant one path to one workstream for one branch in `grants` (path, workstream, branch, reason). Grants are the only way to touch another workstream's or the integrator's file.",
+    "default": "Everything else – any unmapped path, another workstream's path, an integrator-only path – is refused. W0 and WI branches are exempt."
+  },
+  "grants": [
+    {"path": "src/modules/medreport/core/validation/__corpus__/harness/evaluate.ts", "workstream": "WA1", "branch": "ws/bh2-issue", "reason": "harden-WA1/ws-WA1: postSign passes the built form file (fail-closed /sign, M1); runSign applies input.store.rewrite / dropConditions / dropReportModel before seeding (N1 /sign corpus cases). Additive; existing kinds unchanged."},
+    {"path": "src/modules/medreport/core/validation/__corpus__/harness/http.ts", "workstream": "WA1", "branch": "ws/bh2-issue", "reason": "ws-WA1 M1: postSign in tenant mode stores the report first when the clinic holds no revision (as the Studio does); SignInput.fileBytes sent as fileBase64."},
+    {"path": "src/modules/medreport/core/wording.ts", "workstream": "WA1", "branch": "ws/bh2-issue", "reason": "ws-WA1: one additive wording key for the issue-state messages."},
+    {"path": "src/modules/medreport/ui/components/review/flags-panel.tsx", "workstream": "WA1", "branch": "ws/bh2-issue", "reason": "ws-WA1 round 1: the not-applicable answered flag shown with its issue-state reason."},
+    {"path": "src/modules/medreport/ui/components/review/use-review-actions.ts", "workstream": "WA1", "branch": "ws/bh2-issue", "reason": "ws-WA1 round 1 + harden N6: /sign request plumbing; a refused pre-approval save stops the approval with its own message."},
+    {"path": "src/modules/medreport/ui/screens/review/review-screen.tsx", "workstream": "WA1", "branch": "ws/bh2-issue", "reason": "ws-WA1 minors 2 and 10: ApprovedBanner gets form; not-applicable reasons computed once from notApplicableReasons(report, form)."},
+    {"path": "scripts/medreport/template-instructions.test.ts", "workstream": "WA2", "branch": "ws/bh2-engine", "reason": "Q-1 (C-FILL-1): the expectation now is that the FINAL copy is refused (422) while a template instruction is left; changed expectation granted (DoC-1 C1)."},
+    {"path": "src/modules/medreport/core/validation/__corpus__/harness/pure-paths.ts", "workstream": "WA2", "branch": "ws/bh2-engine", "reason": "FILL-hostile-04/05/06 and FILL-long-01/02: hostile kinds runs, instructions and long, BLOCK/mustFill semantics, raw docx through openZipSafely. Existing kinds run unchanged."},
+    {"path": "scripts/medreport/api-actor.test.ts", "workstream": "WB", "branch": "ws/bh2-opinion", "reason": "WB design 3: the own-notes fixture renames the clinician; edited first-person text is acknowledged by the approver."},
+    {"path": "scripts/medreport/w0-plumbing.test.ts", "workstream": "WB", "branch": "ws/bh2-opinion", "reason": "WB: strict mode with no owner; the voice flag carries its own ackPolicy."},
+    {"path": "src/modules/medreport/api/handlers/sign/checks/context.ts", "workstream": "WB", "branch": "ws/bh2-opinion", "reason": "WB design 13: sign-time confirmations on SignerCheckContext."},
+    {"path": "src/modules/medreport/api/handlers/sign/checks/issue.ts", "workstream": "WB", "branch": "ws/bh2-opinion", "reason": "WB: validationCheck takes an optional voice owner."},
+    {"path": "src/modules/medreport/api/handlers/sign/index.ts", "workstream": "WB", "branch": "ws/bh2-opinion", "reason": "WB: passes confirmations, and the owner signVoiceOwner(report, signer)."},
+    {"path": "src/modules/medreport/core/validation/acknowledge.ts", "workstream": "WB", "branch": "ws/bh2-opinion", "reason": "WB: ackPolicy read first; WC's version supersedes it at the merge."},
+    {"path": "src/modules/medreport/core/validation/validation.test.ts", "workstream": "WB", "branch": "ws/bh2-opinion", "reason": "WB: the F-37 approver fixture; the opposite-note case now checks the return label is among the labels (the modal is also flagged, M1)."},
+    {"path": "src/modules/medreport/core/voice.test.ts", "workstream": "WB", "branch": "ws/bh2-opinion", "reason": "WB: C-1, C-ATTR-3 and B2-1 expectations (approved design)."},
+    {"path": "src/modules/medreport/ui/components/review/fixes.ts", "workstream": "WB", "branch": "ws/bh2-opinion", "reason": "WB: nameClinicianFix and the offeredFixes bridge to attributionActions."},
+    {"path": "scripts/medreport/schema-expansion.test.ts", "workstream": "WC", "branch": "ws/bh2-review", "reason": "WC checked create: the fixture seeds the stored copy and PUTs it back unchanged (201 -> 200); every key still round-trips."},
+    {"path": "scripts/medreport/schema-followup.test.ts", "workstream": "WC", "branch": "ws/bh2-review", "reason": "WC checked create: as schema-expansion.test.ts."},
+    {"path": "scripts/medreport/schema-forward-compat.test.ts", "workstream": "WC", "branch": "ws/bh2-review", "reason": "WC checked create: as schema-expansion.test.ts; the shim fixture still writes every release key."},
+    {"path": "src/app/app/studio/layout.tsx", "workstream": "WC", "branch": "ws/bh2-review", "reason": "WC design 1: signers plumbing for the approver picker."},
+    {"path": "src/app/app/studio/tenant-host.tsx", "workstream": "WC", "branch": "ws/bh2-review", "reason": "WC design 1: signers plumbing for the approver picker."},
+    {"path": "src/modules/medreport/core/validation/__corpus__/harness/evaluate.ts", "workstream": "WC", "branch": "ws/bh2-review", "reason": "harden-WC: additive store forge kinds (relabel-box, answer-unstamped, answer-stamped-own, gap-removed, stamp-name-forged, drafted-text-added, edited-verbatim-added, condition-changed) for the ROLE-forge-* cases."},
+    {"path": "src/modules/medreport/core/validation/__corpus__/harness/http.ts", "workstream": "WC", "branch": "ws/bh2-review", "reason": "ws-WC round 2: authContextOf userId = memberId, the account id the Studio stamps."},
+    {"path": "src/modules/medreport/core/validation/registry.ts", "workstream": "WC", "branch": "ws/bh2-review", "reason": "WC: one validator entry (APPROVER_DECISION)."},
+    {"path": "src/modules/medreport/core/validation/run.ts", "workstream": "WC", "branch": "ws/bh2-review", "reason": "WC A1: the acknowledgement carry-over uses acknowledgementStands; an ack arriving with a never-policy flag is dropped."},
+    {"path": "src/modules/medreport/ui/components/review/question-nav.tsx", "workstream": "WC", "branch": "ws/bh2-review", "reason": "WC: one line (staff statuses)."},
+    {"path": "src/modules/medreport/ui/components/review/status.ts", "workstream": "WC", "branch": "ws/bh2-review", "reason": "WC: answerSource and the statuses staff / staff_input."},
+    {"path": "src/modules/medreport/ui/host-hooks.tsx", "workstream": "WC", "branch": "ws/bh2-review", "reason": "WC design 1: signers plumbing."},
+    {"path": "src/modules/medreport/ui/store/server-api.ts", "workstream": "WC", "branch": "ws/bh2-review", "reason": "check2-WC minor 6: DECISION_REFUSED_CODES – a refused update reloads the stored copy instead of reporting a lost session."},
+    {"path": "src/server/auth/studio-access.ts", "workstream": "WC", "branch": "ws/bh2-review", "reason": "WC design 1: signers plumbing."},
+    {"path": "docs/bh2-ownership.json", "workstream": "WD", "branch": "ws/bh2-drafting", "reason": "WD: core/duration-bands.ts taken off \"new\" once the file exists."},
+    {"path": "scripts/medreport/pmi-patient.test.ts", "workstream": "WD", "branch": "ws/bh2-drafting", "reason": "WD design 1: Case C expects the first-person draft exactly as drafted (no automatic rewording)."},
+    {"path": "scripts/medreport/w0-plumbing.test.ts", "workstream": "WD", "branch": "ws/bh2-drafting", "reason": "WD: the stub test asserts fragmentsPart and printedLeadPart are per-paragraph parts."},
+    {"path": "src/modules/medreport/core/validation/__corpus__/harness/fixes.ts", "workstream": "WD", "branch": "ws/bh2-drafting", "reason": "WD: the digit-start exemption in the one-click harness."},
+    {"path": "src/modules/medreport/core/validation/sources.ts", "workstream": "WD", "branch": "ws/bh2-drafting", "reason": "B1-21: REG line \"Following appointment (first one after the assessment)\"."},
+    {"path": "src/modules/medreport/ui/components/review/issues.tsx", "workstream": "WD", "branch": "ws/bh2-drafting", "reason": "B2-15: showEvidence uses flagEvidenceShown."},
+    {"path": "docs/bh2-ownership.json", "workstream": "WE", "branch": "ws/bh2-data", "reason": "WE: form-map-lint.ts, apply-map-edits.ts and bh-maps.test.ts taken off \"new\"."},
+    {"path": "scripts/medreport/schema-expansion.test.ts", "workstream": "WE", "branch": "ws/bh2-data", "reason": "WE: episode.attendedDates now resolves (one assertion)."},
+    {"path": "src/modules/medreport/core/report-factory.ts", "workstream": "WE", "branch": "ws/bh2-data", "reason": "WE: src.sessions passed to resolveRegistrationValue (one argument)."},
+    {"path": "src/modules/medreport/core/validation/__corpus__/ledger.json", "workstream": "WE", "branch": "ws/bh2-data", "reason": "WE: the lint-accepted hook entry."},
+    {"path": "src/modules/medreport/core/validation/__corpus__/ngram-ignore.json", "workstream": "WE", "branch": "ws/bh2-data", "reason": "WE: 3 phrases that are ClinForms' own wording or generic."},
+    {"path": "src/modules/medreport/ui/screens/review/review-screen.tsx", "workstream": "WE", "branch": "ws/bh2-data", "reason": "WE: a group with no title gets aria-label \"Questions on the form\"."},
+    {"path": "src/server/admin/testing/load-forms-suite.ts", "workstream": "WE", "branch": "ws/bh2-data", "reason": "WE: the form.replace audit detail gains mapSha256 and replacesMapSha256."},
+    {"path": "docs/bh2-ownership.json", "workstream": "WF", "branch": "ws/bh2-copy", "reason": "WF: scripts/medreport/guide-terms-check.mjs taken off \"new\" once the file exists."},
+    {"path": "src/modules/medreport/docgen/view-model.ts", "workstream": "WF", "branch": "ws/bh2-copy", "reason": "B3-21: two additive render-time fields (completion, instructingParty.isFormReferrer), not stored."},
+    {"path": "src/modules/medreport/core/provenance.ts", "workstream": "WC", "branch": "ws/bh2-review", "reason": "WC design 6/7: new WC file (provenance stamps, proposals, factoryBoxOf); mapped to WC in paths at the merge."},
+    {"path": "src/modules/medreport/core/validation/approver-decision.ts", "workstream": "WC", "branch": "ws/bh2-review", "reason": "WC: new WC file (APPROVER_DECISION validator); mapped to WC in paths at the merge."},
+    {"path": "docs/bh2-release.md", "workstream": "WA1", "branch": "ws/bh2-fix1-wa1", "reason": "merge:r1 (orchestrator grant, 27/10/2026): R1T-WA1-02 (shim 2 first, rollback) and R1T-WA1-01 (check-issued --baseline-ref) – run/r1-fix-WA1.md §2."},
+    {"path": "scripts/admin/check-issued.test.ts", "workstream": "WA1", "branch": "ws/bh2-fix1-wa1", "reason": "merge:r1 (orchestrator grant, 27/10/2026): R1T-WA1-01: UNBOUND -> NOT_COMPARED and MAP_CHANGED for a pre-release receipt (UNBOUND was RG-1's vacuous outcome)."},
+    {"path": "scripts/medreport/bh2-integration.test.ts", "workstream": "WA1", "branch": "ws/bh2-fix1-wa1", "reason": "merge:r1 (orchestrator grant, 27/10/2026): R1T-WA1-01: a pre-release report no longer reads the printed words at run time; its gap stays open."},
+    {"path": "scripts/medreport/corpus-diff.ts", "workstream": "WA1", "branch": "ws/bh2-fix1-wa1", "reason": "merge:r1 (orchestrator grant, 27/10/2026): R1T-WA1-07: replay gate compares by code + evidence across boxes, voice owner = Report.approver, rows keyed to approved entries. No allowlist entry added."},
+    {"path": "scripts/medreport/sign-render-binding.test.ts", "workstream": "WA1", "branch": "ws/bh2-fix1-wa1", "reason": "merge:r1 (orchestrator grant, 27/10/2026): R1T-WA1-01 / R1T-WA2-02: a no-hash receipt is production's approval; merged to WA2's version (production's frozen engine, byte for byte)."},
+    {"path": "src/modules/medreport/api/handlers/validate.ts", "workstream": "WA1", "branch": "ws/bh2-fix1-wa1", "reason": "merge:r1 (orchestrator grant, 27/10/2026): R1T-WA1-03 validation budget 413 and R1T-WA1-04 body read as draft on /validate."},
+    {"path": "src/modules/medreport/core/issue-state-trust.test.ts", "workstream": "WA1", "branch": "ws/bh2-fix1-wa1", "reason": "merge:r1 (orchestrator grant, 27/10/2026): R1T-WA1-01: the legacy-reading /sign test pinned legacyRuleOutsBeyondServer, removed with the run-time reading."},
+    {"path": "src/modules/medreport/core/validation/__corpus__/harness/evaluate.ts", "workstream": "WA1", "branch": "ws/bh2-fix1-wa1", "reason": "merge:r1 (orchestrator grant, 27/10/2026): Additive harness inputs render.legacyReceipt, check.render.contains/notContains, store.bodyStatus (ISSUE-legacy-final-*, ROLE-forge-sign-status)."},
+    {"path": "src/modules/medreport/core/validation/citations.ts", "workstream": "WA1", "branch": "ws/bh2-fix1-wa1", "reason": "merge:r1 (orchestrator grant, 27/10/2026): R1T-WA1-L1: UNCITED_PARAGRAPH remedy worded by who wrote the text."},
+    {"path": "src/modules/medreport/core/validation/validation.test.ts", "workstream": "WA1", "branch": "ws/bh2-fix1-wa1", "reason": "merge:r1 (orchestrator grant, 27/10/2026): R1T-WA1-01: B0-7 / R-safety-8 pinned the run-time reading on a report without reportModel (the RG-1 regression); now frozen conditions."},
+    {"path": "src/modules/medreport/ui/components/review/review-model.test.ts", "workstream": "WA1", "branch": "ws/bh2-fix1-wa1", "reason": "merge:r1 (orchestrator grant, 27/10/2026): R1T-WA1-01: B0-7 gap test on a frozen condition; the pre-release report stays open."},
+    {"path": "src/modules/medreport/ui/screens/review/review-screen.tsx", "workstream": "WA1", "branch": "ws/bh2-fix1-wa1", "reason": "merge:r1 (orchestrator grant, 27/10/2026): R1T-WA1-L1: one line, passes the actor to reviewItems."},
+    {"path": "src/modules/medreport/forms/pre-release/**", "workstream": "WA2", "branch": "ws/bh2-fix1-wa2", "reason": "merge:r1 (orchestrator grant, 27/10/2026): R1T-WA2-02: production's forms engine frozen at c883ce5 (never edit) and its entry point; folder mapped to WA2 at this merge."},
+    {"path": "src/modules/medreport/api/handlers/render.ts", "workstream": "WA2", "branch": "ws/bh2-fix1-wa2", "reason": "merge:r1 (orchestrator grant, 27/10/2026): R1T-WA2-02: pre-release receipts dispatched to renderPreReleaseFinal – at the merge placed inside finalFormCopy (WA1's note) so /render and check-issued issue the same document."},
+    {"path": "src/modules/medreport/core/validation/__corpus__/harness/pure-paths.ts", "workstream": "WA2", "branch": "ws/bh2-fix1-wa2", "reason": "merge:r1 (orchestrator grant, 27/10/2026): Additive: fill.issuedWith \"pre-release\" (FILL-prerelease-*)."},
+    {"path": "src/modules/medreport/core/validation/__corpus__/harness/fixtures.ts", "workstream": "WA2", "branch": "ws/bh2-fix1-wa2", "reason": "merge:r1 (orchestrator grant, 27/10/2026): Additive: ParaSpec.control (content control in fictional layouts, FILL-control-*); existing layouts give the same bytes."},
+    {"path": "scripts/medreport/sign-render-binding.test.ts", "workstream": "WA2", "branch": "ws/bh2-fix1-wa2", "reason": "merge:r1 (orchestrator grant, 27/10/2026): R1T-WA2-02: AC-ISSUE-6 re-baselined – a pre-release receipt issues production's document (DoC-1 C1 re-baseline)."},
+    {"path": "scripts/medreport/release-store-fixture.ts", "workstream": "WB", "branch": "ws/bh2-fix1-wb", "reason": "merge:r1 (orchestrator grant, 27/10/2026): New test support (signingMember, asApproversReport, asFactoryCopy, approverRef); identical to WC 8d4d68b's copy – one copy kept at the WC merge."},
+    {"path": "scripts/medreport/usage-recording.test.ts", "workstream": "WB", "branch": "ws/bh2-fix1-wb", "reason": "merge:r1 (orchestrator grant, 27/10/2026): Fixture re-baseline: the creating member may sign and is named as approver (same change as WC 8d4d68b); no assertion weakened."},
+    {"path": "src/modules/medreport/core/voice.test.ts", "workstream": "WB", "branch": "ws/bh2-fix1-wb", "reason": "merge:r1 (orchestrator grant, 27/10/2026): R1T-WB-09/10/11 (E7/E8): per-clause first person – the test's expectation follows the clause-by-clause voice rule."},
+    {"path": "src/modules/medreport/core/schemas.ts", "workstream": "WC", "branch": "ws/bh2-fix1-wc", "reason": "merge:r1 (orchestrator grant, 27/10/2026): R1T-WC-01: DRAFT_TOMBSTONE_MAX_CHARS = 8000 on DraftTombstoneSchema.text (prescribed cap; no production data holds tombstones)."},
+    {"path": "src/modules/medreport/core/validation/__corpus__/harness/evaluate.ts", "workstream": "WC", "branch": "ws/bh2-fix1-wc", "reason": "merge:r1 (orchestrator grant, 27/10/2026): Additive: 12 store forge kinds, storeForm/createOnly/seedPending/seedAsCreator, check.storedStampName, withPersonEditedSubject (ROLE-sign-stale unchanged, still 409)."},
+    {"path": "scripts/medreport/release-store-fixture.ts", "workstream": "WC", "branch": "ws/bh2-fix1-wc", "reason": "merge:r1 (orchestrator grant, 27/10/2026): New test support, byte-identical to WB dfba278's copy (one copy)."},
+    {"path": "scripts/medreport/store-api.test.ts", "workstream": "WC", "branch": "ws/bh2-fix1-wc", "reason": "merge:r1 (orchestrator grant, 27/10/2026): Fixture re-baseline: a create names its approver and carries no unstamped opinion/physio-choice answer (R1T-WC-03/06); no assertion weakened."},
+    {"path": "scripts/medreport/store-client.test.ts", "workstream": "WC", "branch": "ws/bh2-fix1-wc", "reason": "merge:r1 (orchestrator grant, 27/10/2026): Fixture re-baseline (R1T-WC-06 approver on create); no assertion weakened."},
+    {"path": "scripts/medreport/clinic-trial.test.ts", "workstream": "WC", "branch": "ws/bh2-fix1-wc", "reason": "merge:r1 (orchestrator grant, 27/10/2026): Fixture re-baseline (R1T-WC-06 approver on create); no assertion weakened."},
+    {"path": "scripts/medreport/usage-recording.test.ts", "workstream": "WC", "branch": "ws/bh2-fix1-wc", "reason": "merge:r1 (orchestrator grant, 27/10/2026): Fixture re-baseline, identical to WB's change."},
+    {"path": "scripts/medreport/wc-provenance-api.test.ts", "workstream": "WC", "branch": "ws/bh2-fix1-wc", "reason": "merge:r1 (orchestrator grant, 27/10/2026): R1T-WC-08: factory copies leave opinion answers empty; after the takeover Tom adopts instead of 'own words'; a redraft of an opinion box carries no answer."},
+    {"path": "src/server/store/tenant-store.test.ts", "workstream": "WC", "branch": "ws/bh2-fix1-wc", "reason": "merge:r1 (orchestrator grant, 27/10/2026): Fixture re-baseline (R1T-WC-06 approver on create)."},
+    {"path": "src/server/store/store-signin.test.ts", "workstream": "WC", "branch": "ws/bh2-fix1-wc", "reason": "merge:r1 (orchestrator grant, 27/10/2026): Fixture re-baseline (R1T-WC-06 approver on create)."},
+    {"path": "src/modules/medreport/core/text/sentences.ts", "workstream": "WD", "branch": "ws/bh2-fix1-wd", "reason": "merge:r1 (orchestrator grant, 27/10/2026): R1T-WD-01 (SEC-1): linear splitter (differential fuzz vs e89f93f: 0 differences in 381,156 comparisons)."},
+    {"path": "src/modules/medreport/core/validation/__corpus__/harness/fixtures.ts", "workstream": "WD", "branch": "ws/bh2-fix1-wd", "reason": "merge:r1 (orchestrator grant, 27/10/2026): 2 added lines registering the new fictional fixture cf-wd-progress."},
+    {"path": "src/modules/medreport/core/issue-state.ts", "workstream": "WD", "branch": "ws/bh2-fix1-wd", "reason": "merge:r1 (orchestrator grant, 27/10/2026): R1T-WD-L1: a numbered session row's box is not asked when its session is missing (release-model reports only)."},
+    {"path": "src/modules/medreport/core/forms/answers.ts", "workstream": "WD", "branch": "ws/bh2-fix1-wd", "reason": "merge:r1 (orchestrator grant, 27/10/2026): R1T-WD-L1: a not-asked session-row box's printed default is cleared; at the merge combined with WA1's removal of the run-time condition branch."},
+    {"path": "src/modules/medreport/core/schemas.ts", "workstream": "WF", "branch": "ws/bh2-fix1-wf", "reason": "merge:r1 (orchestrator grant, 27/10/2026): TPN-L5: Note.heading (additive, optional, max 60, display only; the production shim keeps unknown keys on read)."},
+    {"path": "scripts/medreport/forward-compat-fixture.ts", "workstream": "WF", "branch": "ws/bh2-fix1-wf", "reason": "merge:r1 (orchestrator grant, 27/10/2026): bundleSnapshot.notes[].heading added to RELEASE_KEYS and the builder (lines added only)."},
+    {"path": "src/modules/medreport/core/validation/__corpus__/harness/pure-paths.ts", "workstream": "WF", "branch": "ws/bh2-fix1-wf", "reason": "merge:r1 (orchestrator grant, 27/10/2026): Two additive probes (records-reviewed-label, save-paused); existing probes unchanged."},
+    {"path": "src/modules/medreport/connectors/file-import/general-notes.ts", "workstream": "WF", "branch": "ws/bh2-fix1-wf", "reason": "merge:r1 (orchestrator grant, 27/10/2026): TPN-L5 root: keep the type words (headingTypeWords); reading behaviour unchanged."},
+    {"path": "src/modules/medreport/connectors/file-import/review-bundle.ts", "workstream": "WF", "branch": "ws/bh2-fix1-wf", "reason": "merge:r1 (orchestrator grant, 27/10/2026): TPN-L5: confirm sets Note.heading."},
+    {"path": "src/modules/medreport/docgen/view-model.ts", "workstream": "WF", "branch": "ws/bh2-fix1-wf", "reason": "merge:r1 (orchestrator grant, 27/10/2026): TPN-L5: noteKindLabel for the records-reviewed rows (Appendix A)."},
+    {"path": "src/modules/medreport/ui/store.ts", "workstream": "WF", "branch": "ws/bh2-fix1-wf", "reason": "merge:r1 (orchestrator grant, 27/10/2026): R1-BC-X1: useStoreSync carries paused."},
+    {"path": "src/modules/medreport/ui/store/server-api.ts", "workstream": "WF", "branch": "ws/bh2-fix1-wf", "reason": "merge:r1 (orchestrator grant, 27/10/2026): R1-BC-X1: a 429 carries retryAfterMs (Retry-After honoured)."},
+    {"path": "src/modules/medreport/ui/store/server-store.ts", "workstream": "WF", "branch": "ws/bh2-fix1-wf", "reason": "merge:r1 (orchestrator grant, 27/10/2026): R1-BC-X1: failure() passes retryAfterMs to the queue."},
+    {"path": "src/modules/medreport/ui/store/write-queue.ts", "workstream": "WF", "branch": "ws/bh2-fix1-wf", "reason": "merge:r1 (orchestrator grant, 27/10/2026): R1-BC-X1: a rate-limited retry pauses the slot instead of giving up."},
+    {"path": "src/modules/medreport/ui/studio-copy.ts", "workstream": "WF", "branch": "ws/bh2-fix1-wf", "reason": "merge:r1 (orchestrator grant, 27/10/2026): R1-BC-X1: savePaused / savePausedHint copy beside saveFailed."},
+    {"path": "src/modules/medreport/ui/components/review/fixes.ts", "workstream": "WC", "branch": "ws/bh2-fixr2-wc", "reason": "merge:r2 (orchestrator grant, 27/10/2026): R2-SEC-2/R2-REG-1: behaviour-preserving split so the store can call the engine's pieces separately (fixRuleProblems = fixTextProblems + one validation + revalidationProblems; offeredFixes uses fixCandidates; new ENGINE_FIX_KINDS pinned by a test); no rule changed, WD's fixes-engine tests unchanged – run/r2-fix-WC.md Exceptions 1."},
+    {"path": "src/modules/medreport/core/validation/__corpus__/harness/evaluate.ts", "workstream": "WC", "branch": "ws/bh2-fixr2-wc", "reason": "merge:r2 (orchestrator grant, 27/10/2026): R2-SAF-2: runStore/runAmend store the case's form map before the seed or v1 create (as the Studio does; 23 locked store cases hold unchanged); additive forge kinds pending-reset, redraft-flip, redraft-drop-gap, no-map-relabel, no-map-gap-na, builtin-version-relabel, answer-stamp-dropped, fix-claims-forged, fix-kind-unknown and knobs seedDrafted/seedResolved/thenForge – Exceptions 2."},
+    {"path": "scripts/medreport/release-store-fixture.ts", "workstream": "WC", "branch": "ws/bh2-fixr2-wc", "reason": "merge:r2 (orchestrator grant, 27/10/2026): Additive test support: withMapHash(report, form) and storeClinicForm(store, tenantId, form); nothing existing changed – Exceptions 3."},
+    {"path": "scripts/medreport/store-api.test.ts", "workstream": "WC", "branch": "ws/bh2-fixr2-wc", "reason": "merge:r2 (orchestrator grant, 27/10/2026): R2-SAF-2 fixture re-baseline: the attested map is stored before a report is created from it and the report names that map's hash (withMapHash/storeClinicForm), as the Studio does; no assertion weakened – Exceptions 4."},
+    {"path": "scripts/medreport/store-client.test.ts", "workstream": "WC", "branch": "ws/bh2-fixr2-wc", "reason": "merge:r2 (orchestrator grant, 27/10/2026): R2-SAF-2 fixture re-baseline: the attested map is stored before a report is created from it and the report names that map's hash (withMapHash/storeClinicForm), as the Studio does; no assertion weakened – Exceptions 4."},
+    {"path": "scripts/medreport/clinic-trial.test.ts", "workstream": "WC", "branch": "ws/bh2-fixr2-wc", "reason": "merge:r2 (orchestrator grant, 27/10/2026): R2-SAF-2 fixture re-baseline: the attested map is stored before a report is created from it and the report names that map's hash (withMapHash/storeClinicForm), as the Studio does; no assertion weakened – Exceptions 4."},
+    {"path": "scripts/medreport/save-paused-rate-limit.test.ts", "workstream": "WC", "branch": "ws/bh2-fixr2-wc", "reason": "merge:r2 (orchestrator grant, 27/10/2026): R2-SAF-2 fixture re-baseline: the attested map is stored before a report is created from it and the report names that map's hash (withMapHash/storeClinicForm), as the Studio does; no assertion weakened – Exceptions 4."},
+    {"path": "scripts/medreport/wc-fix1-cost.test.ts", "workstream": "WC", "branch": "ws/bh2-fixr2-wc", "reason": "merge:r2 (orchestrator grant, 27/10/2026): R2-SAF-2 fixture re-baseline: the attested map is stored before a report is created from it and the report names that map's hash (withMapHash/storeClinicForm), as the Studio does; no assertion weakened – Exceptions 4."},
+    {"path": "src/server/store/tenant-store.test.ts", "workstream": "WC", "branch": "ws/bh2-fixr2-wc", "reason": "merge:r2 (orchestrator grant, 27/10/2026): R2-SAF-2 fixture re-baseline: the attested map is stored before a report is created from it and the report names that map's hash (withMapHash/storeClinicForm), as the Studio does; no assertion weakened – Exceptions 4."},
+    {"path": "src/server/store/store-signin.test.ts", "workstream": "WC", "branch": "ws/bh2-fixr2-wc", "reason": "merge:r2 (orchestrator grant, 27/10/2026): R2-SAF-2 fixture re-baseline: the attested map is stored before a report is created from it and the report names that map's hash (withMapHash/storeClinicForm), as the Studio does; no assertion weakened – Exceptions 4."},
+    {"path": "scripts/medreport/wc-provenance-api.test.ts", "workstream": "WC", "branch": "ws/bh2-fixr2-wc", "reason": "merge:r2 (orchestrator grant, 27/10/2026): R2-SAF-2 fixture re-baseline (createHttpHarness -> clinicHarness, the corpus clinic holding the discharge map) and one stricter expectation: a create of a relabelled box with the map not in the clinic's store is now 403 (was 201); /validate and /sign still treat that box as the map's opinion box – Exceptions 4."},
+    {"path": "src/modules/medreport/core/validation/__corpus__/harness/evaluate.ts", "workstream": "WC", "branch": "ws/bh2-fixr2b-wc", "reason": "merge:r2b (orchestrator grant, 27/10/2026): additive forge kinds only (answer-kind-text, answer-removed, records-paragraph-unstamped, records-paragraph-stamped, flags-amplified-seed, fix-flags-amplified) for the R2-SEC-2 / R2-TPN-01 residual corpus cases; no existing kind or path changed – run/r2b-fix-WC.md Exceptions 1."},
+    {"path": "src/modules/medreport/core/validation/__corpus__/harness/evaluate.ts", "workstream": "WC", "branch": "ws/bh2-fix2c-wc", "reason": "merge:r2c (grant recorded at the r2c merge, 27/10/2026, per the r2c brief): additive forge kinds only (answer-empty-list, answer-empty-list-stamped, answer-blank-words, answer-cleared, fix-edits-long) for the R2-TPN-01 / R2-SEC-2 final-check residual corpus cases; no existing kind or path changed – run/r2c-fix-WC.md Exceptions 1."},
+    {"path": "src/modules/medreport/core/forms/answers.ts", "workstream": "WC", "branch": "ws/bh2-fix2c-wc", "reason": "merge:r2c (grant recorded at the r2c merge, 27/10/2026, per the r2c brief): R2-TPN-01 residual root fix – isSectionAnswered counts a list on a yes/no, tick box, choice, date or number box and blank words as no answer (so answerSet and isSectionAnswered agree, and a held [] blocks at /sign naming the box instead of issuing blank or refusing naming no box); one function, no other change – run/r2c-fix-WC.md Exceptions 2."}
+  ],
+  "seams": [
+    {
+      "id": "receipt-mac",
+      "paths": [
+        "src/modules/medreport/auth/sign-receipt.ts",
+        "src/modules/medreport/api/handlers/sign/receipt.ts",
+        "src/modules/medreport/api/handlers/sign/checks/context.ts"
+      ],
+      "need": "WA1 design 6 (issuedContentSha256, acknowledgementsSha256), WC design 1 (approverTakeover) and WB design 13 (signerConfirmations) all add keys to the MAC-covered receipt.",
+      "resolution": "createReceipt takes `additions` (auth/sign-receipt.ts ReceiptAdditions: exactly those four SignReceipt keys); every /sign check gets one shared `receiptAdditions` object (checks/context.ts, W0) and sets only its own keys; sign/index.ts hands it to mintReceipt. WB and WC never touch the receipt files.",
+      "owners": {
+        "src/modules/medreport/auth/sign-receipt.ts": "WA1",
+        "src/modules/medreport/api/handlers/sign/receipt.ts": "WA1",
+        "src/modules/medreport/api/handlers/sign/checks/context.ts": "W0"
+      },
+      "status": "resolved at bh2-base2"
+    },
+    {
+      "id": "session-dates-call-site",
+      "paths": [
+        "src/modules/medreport/core/report-factory.ts",
+        "src/modules/medreport/core/session-dates.ts"
+      ],
+      "need": "WE re-implements sessionDatesByCode (B2-19) in core/session-dates.ts; its call site is in createFormReport (WA1's file).",
+      "resolution": "The call is wired at bh2-base2: createFormReport asks core/session-dates.ts sessionDatesByCode({field, form, bundle, computedFacts, condition?}) for every drafted box and fills the box from the records when it answers. The stub answers nothing. WE changes only session-dates.ts; WA1 may pass `condition` (the frozen condition) once it freezes conditions.",
+      "owners": {
+        "src/modules/medreport/core/report-factory.ts": "WA1",
+        "src/modules/medreport/core/session-dates.ts": "WE"
+      },
+      "status": "resolved at bh2-base2"
+    },
+    {
+      "id": "review-groups",
+      "paths": [
+        "src/modules/medreport/ui/components/review/status.ts",
+        "src/modules/medreport/core/forms/headings.ts"
+      ],
+      "need": "WE design 4: one formOutline for the review and the mapping page; the review's grouping was in status.ts (WA1).",
+      "resolution": "Pure move: the grouping (headings, sub-questions, the untitled run, UNTITLED_HEADING) is core/forms/headings.ts formOutline (WE); status.ts buildQuestionGroups only builds its questions from it (same groups, ids and order – the existing review-model tests are unchanged).",
+      "owners": {
+        "src/modules/medreport/ui/components/review/status.ts": "WA1",
+        "src/modules/medreport/core/forms/headings.ts": "WE"
+      },
+      "status": "resolved at bh2-base2"
+    },
+    {
+      "id": "choice-validator",
+      "paths": [
+        "src/modules/medreport/core/validation/choice-marks.ts",
+        "src/modules/medreport/forms/choice-marks.ts"
+      ],
+      "need": "WA1 design 5: an unknown or unmatched answer on a choice field blocks, using WA2's choiceAnswerMatches (WA2 design 2); WA1 merges before WA2.",
+      "resolution": "core/validation/choice-marks.ts is WA1's. forms/choice-marks.ts exists at bh2-base2 with choiceAnswerMatches(field, answer) – today's matching (matchOption / yesNoOption) – so WA1 builds on it; WA2 owns it and refines the body. Pure: core imports it.",
+      "owners": {
+        "src/modules/medreport/core/validation/choice-marks.ts": "WA1",
+        "src/modules/medreport/forms/choice-marks.ts": "WA2"
+      },
+      "status": "resolved at bh2-base2"
+    },
+    {
+      "id": "approved-summary-counts",
+      "paths": [
+        "src/modules/medreport/ui/components/review/review-header.tsx",
+        "src/modules/medreport/ui/components/review/approved-banner.tsx"
+      ],
+      "need": "WA1 design 4 (the approved summary's counts) and WF (the review header's layout and copy, the 375 px overflow) both needed review-header.tsx.",
+      "resolution": "Pure move: ApprovedBanner is approved-banner.tsx (WA1), re-exported from review-header.tsx; review-header.tsx (ReviewHeader, GenerationBadge) is WF's. WC's header props come from review-screen.tsx (WC).",
+      "owners": {
+        "src/modules/medreport/ui/components/review/approved-banner.tsx": "WA1",
+        "src/modules/medreport/ui/components/review/review-header.tsx": "WF"
+      },
+      "status": "resolved at bh2-base2"
+    },
+    {
+      "id": "bulk-leave-blank",
+      "paths": [
+        "src/modules/medreport/ui/components/review/box-items.ts",
+        "src/modules/medreport/ui/components/review/gaps.ts"
+      ],
+      "need": "WC design 4: leaving opinion boxes blank in bulk is approver-only – the bulk action is in box-items.ts (WA1).",
+      "resolution": "box-items.ts asks gaps.ts mayLeaveBlankInBulk(report, section, actor) (WC) for every box it offers and acknowledges (BoxContext.actor; leaveOptionalBoxesBlank `by`). The stub allows what is allowed today. WC fills in the rule and passes the actor from its own call sites (use-review-state.ts, review-screen.tsx).",
+      "owners": {
+        "src/modules/medreport/ui/components/review/box-items.ts": "WA1",
+        "src/modules/medreport/ui/components/review/gaps.ts": "WC"
+      },
+      "status": "resolved at bh2-base2"
+    },
+    {
+      "id": "drafting-voice-owner",
+      "paths": [
+        "src/modules/medreport/api/handlers/drafts.ts",
+        "src/modules/medreport/ai/draft-live.ts",
+        "src/modules/medreport/ai/draft-demo.ts",
+        "src/modules/medreport/ai/generate.ts"
+      ],
+      "need": "WD design 2: the drafting voice owner is report.approver (primaryTreatingClinician fallback removed).",
+      "resolution": "The four files are WD's. DraftsRequest.approver is defined (api/contract.ts, W0) and both clients already send report.approver with every form draft (ui/components/new/generate.ts, ui/components/review/use-review-actions.ts), so WD changes the server side only.",
+      "owners": {
+        "src/modules/medreport/api/handlers/drafts.ts": "WD",
+        "src/modules/medreport/ai/draft-live.ts": "WD",
+        "src/modules/medreport/ai/draft-demo.ts": "WD",
+        "src/modules/medreport/ai/generate.ts": "WD"
+      },
+      "status": "resolved at bh2-base2"
+    },
+    {
+      "id": "activity-labels",
+      "paths": [
+        "src/lib/activity-copy.ts",
+        "src/lib/activity-copy-release.ts",
+        "src/modules/medreport/core/activity-actions.ts",
+        "src/modules/medreport/ui/components/review/activity-panel.tsx"
+      ],
+      "need": "WF labels the release's actions (adopt, disposition set and cleared, takeover, acceptance, own words, superseded; AC-CPY-2 no raw codes); the clinic activity page's label table is WE's file.",
+      "resolution": "The report's own activity codes are named once in core/activity-actions.ts (W0; KNOWN_ACTIVITY_ACTIONS includes them) and labelled in activity-panel.tsx (WF). Server audit actions the release adds for reports are labelled in src/lib/activity-copy-release.ts (WF), which activity-copy.ts (WE) merges into its Reports group, labels and detail descriptions.",
+      "owners": {
+        "src/lib/activity-copy.ts": "WE",
+        "src/lib/activity-copy-release.ts": "WF",
+        "src/modules/medreport/core/activity-actions.ts": "W0",
+        "src/modules/medreport/ui/components/review/activity-panel.tsx": "WF"
+      },
+      "status": "resolved at bh2-base2"
+    },
+    {
+      "id": "table-answers",
+      "paths": [
+        "src/modules/medreport/ui/components/review/table-answer-model.ts"
+      ],
+      "need": "WC design 2: stamping `by` on every changed answer includes table answers (setRowsAnswer).",
+      "resolution": "WC's (no other workstream needs it).",
+      "owners": {
+        "src/modules/medreport/ui/components/review/table-answer-model.ts": "WC"
+      },
+      "status": "resolved at bh2-base2"
+    },
+    {
+      "id": "voice-owner",
+      "paths": [
+        "src/modules/medreport/core/validation/context.ts",
+        "src/modules/medreport/core/validation/attribution-owner.ts"
+      ],
+      "need": "WB design 6: the voice owner is report.approver at review, /validate and /sign – their validateReport calls are in WC's, the integrator's and WA1's files.",
+      "resolution": "context.ts voiceOwnerOf (W0) asks attribution-owner.ts defaultVoiceOwner(report) (WB) whenever a caller names no owner; today the report's author, as before. /render passes receipt.signer itself (WA1 design 7).",
+      "owners": {
+        "src/modules/medreport/core/validation/context.ts": "W0",
+        "src/modules/medreport/core/validation/attribution-owner.ts": "WB"
+      },
+      "status": "resolved at bh2-base2"
+    },
+    {
+      "id": "fill-outcomes",
+      "paths": [
+        "src/modules/medreport/core/issue-types.ts",
+        "src/modules/medreport/forms/render-form.ts",
+        "src/modules/medreport/ui/api-client.ts",
+        "src/modules/medreport/api/contract.ts"
+      ],
+      "need": "WA2 design 1 and 3: the fill reports a FillOutcome per field, which WA1's /sign dry run (design 6) and the review card read.",
+      "resolution": "FillOutcome / FILL_OUTCOME_KINDS are in core/issue-types.ts (W0); FormRenderOutput.outcomes (render-form.ts, WA2) is optional; HEADERS.fillOutcomes (api/contract.ts, W0) and FileDownload.outcomes (ui/api-client.ts parses it, [] when absent).",
+      "owners": {
+        "src/modules/medreport/core/issue-types.ts": "W0",
+        "src/modules/medreport/forms/render-form.ts": "WA2",
+        "src/modules/medreport/ui/api-client.ts": "integrator",
+        "src/modules/medreport/api/contract.ts": "W0"
+      },
+      "status": "resolved at bh2-base2"
+    },
+    {
+      "id": "apply-fix",
+      "paths": [
+        "src/modules/medreport/ui/components/review/use-review-state.ts",
+        "src/modules/medreport/ui/components/review/fixes.ts"
+      ],
+      "need": "WD design 6 (a fix applied records fixes[] and keeps origin ai) and the corpus contract (reducer action applyFix {proposal}) – the reducer is WC's.",
+      "resolution": "ReviewAction applyFix {proposal: FixProposal} is wired in use-review-state.ts (WC) to fixes.ts applyFixProposal(report, proposal, actor) (WD; stub: unchanged). WD decides what applying means without WC's file.",
+      "owners": {
+        "src/modules/medreport/ui/components/review/use-review-state.ts": "WC",
+        "src/modules/medreport/ui/components/review/fixes.ts": "WD"
+      },
+      "status": "resolved at bh2-base2"
+    },
+    {
+      "id": "fix-generators-and-anchor",
+      "paths": [
+        "src/modules/medreport/core/validation/attribution-fixes.ts",
+        "src/modules/medreport/core/validation/attribution-anchor.ts"
+      ],
+      "need": "WD's engine consumes WB's fix generators (WD design 6) and WD's band information reads WB's findAnchor (WD design 4); WB merges before WD but both start at bh2-base2.",
+      "resolution": "Stubs in WB's namespace: ATTRIBUTION_FIX_GENERATORS (empty) and findAnchor (null). WD imports them; WB fills them in.",
+      "owners": {
+        "src/modules/medreport/core/validation/attribution-fixes.ts": "WB",
+        "src/modules/medreport/core/validation/attribution-anchor.ts": "WB"
+      },
+      "status": "resolved at bh2-base2"
+    },
+    {
+      "id": "sign-time-confirmations",
+      "paths": [
+        "src/modules/medreport/ui/components/review/approve-dialog.tsx",
+        "src/modules/medreport/ui/components/review/use-review-actions.ts",
+        "src/modules/medreport/api/contract.ts"
+      ],
+      "need": "WB design 13: the approver's sign-time confirmations need the approve dialog, the /sign request and the receipt.",
+      "resolution": "approve-dialog.tsx is WB's; ApproveInput.confirmations (typed) travels unchanged through use-review-actions.ts (WC) as SignRequest.confirmations (api/contract.ts, W0) to signerConfirmationsCheck (WB), which records them through receiptAdditions.",
+      "owners": {
+        "src/modules/medreport/ui/components/review/approve-dialog.tsx": "WB",
+        "src/modules/medreport/ui/components/review/use-review-actions.ts": "WC"
+      },
+      "status": "resolved at bh2-base2"
+    },
+    {
+      "id": "demo-sign-file",
+      "paths": [
+        "src/modules/medreport/ui/components/review/use-review-actions.ts",
+        "src/modules/medreport/api/contract.ts"
+      ],
+      "need": "WA1 design 6: in demo mode /sign gets the referrer's file for the dry-run FINAL fill – the sign call is in WC's file.",
+      "resolution": "Wired at bh2-base2: the public demo's approval of a Word or PDF form sends SignRequest.fileBase64 (the file the review already holds for its renders); /sign ignores it until WA1 reads it.",
+      "owners": {
+        "src/modules/medreport/ui/components/review/use-review-actions.ts": "WC",
+        "src/modules/medreport/api/handlers/sign/index.ts": "WA1"
+      },
+      "status": "resolved at bh2-base2"
+    },
+    {
+      "id": "form-request-caps",
+      "paths": [
+        "src/modules/medreport/forms/request-caps.ts",
+        "src/modules/medreport/api/handlers/forms-confirm.ts",
+        "src/modules/medreport/api/handlers/forms-analyse.ts",
+        "src/modules/medreport/api/handlers/forms-fill-preview.ts"
+      ],
+      "need": "WA2 design 4: size caps on a map in a request (analyse, fill-preview, confirm; 422 FORM_TOO_COMPLEX) – /forms/confirm is WE's file. WA2 design 7: the converter stamp analysis.convertedWith is set where an RTF upload is analysed (forms-analyse.ts).",
+      "resolution": "forms/request-caps.ts formRequestCapIssues(form) (WA2; stub: no problem found) is already called by forms-confirm.ts (WE), which refuses 422 FORM_TOO_COMPLEX with its issues; WA2 calls it from its own forms-analyse.ts and forms-fill-preview.ts and fills it in.",
+      "owners": {
+        "src/modules/medreport/forms/request-caps.ts": "WA2",
+        "src/modules/medreport/api/handlers/forms-confirm.ts": "WE",
+        "src/modules/medreport/api/handlers/forms-analyse.ts": "WA2",
+        "src/modules/medreport/api/handlers/forms-fill-preview.ts": "WA2"
+      },
+      "status": "resolved at bh2-base2"
+    },
+    {
+      "id": "barrels",
+      "paths": [
+        "src/modules/medreport/ui/components/review/review-model.ts",
+        "src/modules/medreport/core/forms.ts",
+        "src/modules/medreport/core/validation/index.ts"
+      ],
+      "need": "A workstream that renames or removes an export of its split file (WC design 7 deletes the activity-text parsers, re-exported by review-model.ts) would have had to edit the W0 barrel.",
+      "resolution": "The three barrels re-export each split file whole (export * from …): every old import path keeps working, and a split file's exports change with that file alone.",
+      "owners": {
+        "src/modules/medreport/ui/components/review/review-model.ts": "W0",
+        "src/modules/medreport/core/forms.ts": "W0",
+        "src/modules/medreport/core/validation/index.ts": "W0"
+      },
+      "status": "resolved at bh2-base2"
+    },
+    {
+      "id": "fix-preview-ui",
+      "paths": [
+        "src/modules/medreport/ui/components/review/fix-preview.tsx",
+        "src/modules/medreport/ui/components/review/issues.tsx"
+      ],
+      "need": "WD design 6: every one-click fix shows a before/after preview with Undo – the flag cards are WC's (issues.tsx, question-card.tsx).",
+      "resolution": "fix-preview.tsx FixPreview {report, flag, actor, onApply} exists at bh2-base2 (WD; stub renders nothing). WC places it next to a flag in its own files and passes onApply = dispatch applyFix; WD fills it in.",
+      "owners": {
+        "src/modules/medreport/ui/components/review/fix-preview.tsx": "WD",
+        "src/modules/medreport/ui/components/review/issues.tsx": "WC"
+      },
+      "status": "resolved at bh2-base2"
+    }
+  ],
+  "crossCutting": [
+    {
+      "id": "reuse-notes",
+      "since": "6d897da (merge of feat/reuse-notes 5d92879, Khuram's decision 26/10: ships with this release)",
+      "paths": [
+        "src/modules/medreport/core/reuse.ts",
+        "src/modules/medreport/api/handlers/store-report-reuse.ts",
+        "src/app/api/reports/v1/store/reports/[id]/reuse/route.ts",
+        "src/app/app/studio/new/page.tsx",
+        "src/modules/medreport/ui/components/new/generate.ts",
+        "src/modules/medreport/ui/screens/new/new-report-screen.tsx",
+        "src/modules/medreport/core/report-factory.ts",
+        "scripts/medreport/report-reuse.test.ts",
+        "scripts/e2e/reuse-notes.cjs"
+      ],
+      "owner": "integrator",
+      "rule": "A report made from an earlier report's notes (\"Complete another form for this patient\") goes through the same report factory as a new one (generate.ts createTargetReport -> core/report-factory.ts createFormReport / createReport) and gets everything a new report gets: the approver (W0.6 plumbing, WC picker), conditions frozen at creation in section.condition and the issue state (WA1), and model 2 (Report.reportModel = REPORT_MODEL, set by the report factory since bh2-base – W0.6). No reuse-only creation path. The reuse endpoint stays tenant-scoped (the clinic's own store, id only) and consent is never carried over (core/reuse.ts recordForAnotherForm).",
+      "wiredBy": ["W0.6", "WA1", "WC"],
+      "tests": [
+        "scripts/medreport/report-reuse.test.ts",
+        "src/modules/medreport/ui/tenant-mode.test.ts",
+        "src/modules/medreport/ui/routes.test.ts",
+        "scripts/e2e/reuse-notes.cjs"
+      ]
+    }
+  ]
+}

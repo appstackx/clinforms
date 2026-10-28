@@ -22,6 +22,7 @@ import { PRODUCT } from "../config.public";
 import { bundleClinic } from "../core/clinic";
 import { ageOn, compareIsoDateTime, formatUkDate, formatUkDateTime, todayIso } from "../core/dates";
 import { shortFingerprint } from "../core/fingerprint";
+import { referrerNamesMatch } from "../core/forms";
 import {
   APPOINTMENT_STATUS_LABELS,
   INCIDENT_TYPE_LABELS,
@@ -165,6 +166,12 @@ export interface ReportViewModel {
     contactName: string;
     address: string;
     hasReference: boolean;
+    /**
+     * Additive (bh2 WF, B3-21): false when the report completes a form from another organisation than the instructing
+     * party (a case manager's referral, an insurer's portal form) – the PDF's details then read "Referral from" and
+     * "Referral reference", never "Your reference".
+     */
+    isFormReferrer: boolean;
   };
   incident: { present: boolean; date: string; mechanism: string; typeLabel: string };
   episode: {
@@ -177,6 +184,17 @@ export interface ReportViewModel {
     clinicianNames: string;
   };
   clinicians: { name: string; hcpc: string }[];
+  /**
+   * Additive (bh2 WF, B3-21): who completed the report and whose clinical notes it draws on – the PDF's opening line
+   * said "by the treating physiotherapist" whoever approved it. From the verified receipt and the report's hashed content
+   * only, never its activity or flags.
+   */
+  completion: {
+    /** The receipt's signer once approved; before that the approver chosen when the report was created; else null. */
+    approver: { name: string; role: string; hcpc: string } | null;
+    /** The authors of the clinical notes the report cites (of every note when it cites none), in date order, once each. */
+    noteAuthors: string[];
+  };
   sections: ReportViewSection[];
   hasAttendance: boolean;
   attendance: AttendanceRow[];
@@ -419,6 +437,17 @@ function viewParagraphs(section: ReportSection, noteDates: Map<string, string>, 
   return out;
 }
 
+/**
+ * What a note is called in the records-reviewed list: its own heading's type words when the import kept them
+ * (Note.heading – "Review", "Re-assessment"), else its type's label. bh2 fix round 1 (R1T-WF-L1): a note headed
+ * "Review" is stored as a follow-up, and was listed as "Follow-up".
+ */
+export function noteKindLabel(note: Pick<EpisodeBundle["notes"][number], "type" | "heading">): string {
+  const own = note.heading?.trim().replace(/\s+/g, " ");
+  if (own) return own.charAt(0).toUpperCase() + own.slice(1);
+  return NOTE_TYPE_LABELS[note.type] ?? note.type;
+}
+
 function recordsReviewedRows(
   report: Report,
   bundle: EpisodeBundle,
@@ -443,7 +472,7 @@ function recordsReviewedRows(
     .map((n) =>
       row(
         formatUkDate(n.date),
-        `Clinical note – ${NOTE_TYPE_LABELS[n.type] ?? n.type}`,
+        `Clinical note – ${noteKindLabel(n)}`,
         `${n.author.name} (HCPC ${n.author.hcpc})`,
         cited.has(n.id),
       ),
@@ -550,6 +579,19 @@ export function buildViewModel(
     }
   }
   const clinicians = authors.length ? authors : bundle.clinicians.map((c) => ({ name: c.name, hcpc: c.hcpc }));
+  // bh2 WF (B3-21): the approver and the notes the report relies on, for the PDF's opening line.
+  const cited = citedIds(report);
+  const citedNotes = notes.filter((n) => cited.has(n.id));
+  const noteAuthors: string[] = [];
+  for (const n of citedNotes.length ? citedNotes : notes) {
+    const name = n.author.name.trim();
+    if (name && !noteAuthors.includes(name)) noteAuthors.push(name);
+  }
+  const approver = receipt
+    ? { name: receipt.signer.name, role: receipt.signer.role ?? "", hcpc: receipt.signer.hcpc }
+    : report.approver
+      ? { name: report.approver.name, role: "", hcpc: report.approver.hcpc }
+      : null;
 
   const hash = receipt?.contentSha256 ?? "";
   const hashShort = hash ? shortFingerprint(hash) : "";
@@ -600,6 +642,7 @@ export function buildViewModel(
       contactName: party.contactName,
       address: party.address,
       hasReference: party.reference.trim() !== "",
+      isFormReferrer: !report.form || referrerNamesMatch(report.form.referrer.name, party.name),
     },
     incident: {
       present: Boolean(bundle.incident?.date),
@@ -617,6 +660,7 @@ export function buildViewModel(
       clinicianNames: clinicians.map((c) => `${c.name} (HCPC ${c.hcpc})`).join(", ") || "Not recorded",
     },
     clinicians,
+    completion: { approver, noteAuthors },
     sections,
     hasAttendance: attendance.length > 0,
     attendance,

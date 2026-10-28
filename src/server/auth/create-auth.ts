@@ -31,6 +31,7 @@ import { logAuthEvent } from "../email/log";
 import { appendAudit } from "../repos/audit";
 import { deleteMemberProfile } from "../repos/member-profile";
 import { appOrigin, betterAuthBaseURL, isPlatformAdmin, usesSecureCookies, type BaseUrlSetting } from "./config";
+import { INVITATION_DAYS, invitationExpiry } from "./invitation-expiry";
 import { inviteLink } from "./invite-token";
 import { AuthDateParsePlugin } from "./pg-dates";
 import { MEMBER_ROLES, accessControl, parseMemberRole, roles } from "./roles";
@@ -47,7 +48,8 @@ export function invitationRef(invitationId: string): string {
   return `inv_${createHash("sha256").update(invitationId, "utf8").digest("base64url").slice(0, 16)}`;
 }
 
-export const INVITATION_TTL_SECONDS = 7 * 24 * 3600;
+/** Better Auth's own invitation lifetime (its "resend" path). New invitations: invitationExpiry() (same UK clock time). */
+export const INVITATION_TTL_SECONDS = INVITATION_DAYS * 24 * 3600;
 export const RESET_TOKEN_TTL_SECONDS = 2 * 3600;
 export const SESSION_TTL_SECONDS = 12 * 3600;
 export const COOKIE_PREFIX = "clinforms";
@@ -82,6 +84,10 @@ export const DISABLED_PATHS = [
   // open invitations to owners and administrators only, server-side (Settings → Members).
   "/organization/list-invitations",
   "/organization/get-full-organization",
+  // Security fix 24/10/2026 (ops M2): with email on, this HTTP route would send reset emails limited per IP only. The
+  // reset page's server action (3 an hour per address + per IP) and the platform's owner reset link call
+  // auth.api.requestPasswordReset directly – disabledPaths only closes the HTTP route.
+  "/request-password-reset",
 ];
 
 /** Successful calls to these paths are audited by the after hook (it knows the acting member). */
@@ -410,6 +416,8 @@ export function createAuth(input: CreateAuthInput) {
             if (platformAdminEmail(email) && !(await db.selectFrom("user").select("id").where("email", "=", email).executeTakeFirst())) {
               throw new APIError("FORBIDDEN", { message: "This address cannot be invited from a clinic.", code: "PLATFORM_ADMIN_ADDRESS" });
             }
+            // Expires at the same UK clock time a week later (the email and Settings → Members show it).
+            return { data: { expiresAt: invitationExpiry(new Date()) } };
           },
           async beforeUpdateMemberRole({ newRole }) {
             requireClinicRole(newRole);

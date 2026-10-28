@@ -64,7 +64,7 @@ record tabs, audit labels, schema). Everything else is read-only; ask the orches
 | Module | Builds | SQLite / D1 migrations | Postgres twins | Nav `order` band |
 |---|---|---|---|---|
 | **foundation** | Packages (entitlements), shell, brand, shared patient record, directory, demo seed | `0100`–`0109` | `20261024000100`–`…0109` | 0–9 |
-| **diary** | Multi-site diary: availability/rotas, appointments, rooms, statuses (attended, did not attend, late cancellation), recurring bookings, no double booking, day/week views by practitioner and room | `0110`–`0119` | `…0110`–`…0119` | 10–19 |
+| **diary** | Multi-site diary: availability/rotas, appointments, rooms, statuses (booked, arrived, in treatment, attended – "Completed" on screen –, did not attend, late cancellation), recurring bookings, no double booking of rooms (a practitioner only with `diary.override`, logged), day/week views by practitioner and room | `0110`–`0119` | `…0110`–`…0119` | 10–19 |
 | **records** | Patient list and record screens, cases and authorisations screens, clinical notes (templates, sign and lock, amendments, attachments, outcome measures) | `0120`–`0129` | `…0120`–`…0129` | 20–29 |
 | **billing** | Invoices (self-pay, insurer/MLC on account, excess split), credit notes, payments (manual + provider interface), insurer/MLC accounts and statements, debtors | `0130`–`0139` | `…0130`–`…0139` | 30–39 |
 | **comms** | Reminders (SMS/email, outbox by default), message log, templates, letters with merge fields | `0140`–`0149` | `…0140`–`…0149` | 40–49 |
@@ -86,7 +86,7 @@ range or a missing twin.
 | diary | routes `src/app/app/clinic/diary/**`; record tab folder `src/app/app/clinic/patients/[patientId]/appointments/**` |
 | records | routes `src/app/app/clinic/patients/**` (the list, the record's layout and its first page, cases, authorisations, notes) – except other modules' tab folders |
 | billing | routes `src/app/app/clinic/billing/**`; tab folder `…/patients/[patientId]/invoices/**` |
-| comms | routes `src/app/app/clinic/messages/**`, `src/app/app/clinic/letters/**`; tab folder `…/patients/[patientId]/messages/**` |
+| comms | routes `src/app/app/clinic/messages/**`, `src/app/app/clinic/letters/**`; tab folder `…/patients/[patientId]/messages/**` (in the record's `(record)` group); its sessionless endpoints `src/app/api/clinic-messages/**` (the message run for the cron, the SMS provider's webhook, the stop-emails link – thin wrappers over `src/server/pms/comms/*`, M6) |
 | portal | routes `src/app/app/clinic/online-booking/**`, `src/app/app/clinic/intake/**`; public routes `src/app/(public-clinic)/**` (booking, portal, intake – create the route group); tab folder `…/patients/[patientId]/forms/**` |
 | reporting | routes `src/app/app/clinic/reports/**`, `src/app/app/clinic/setup/**` (UI over the foundation's directory repositories) |
 | integration | routes `src/app/app/clinic/import/**`; `src/server/pms/native-connector.ts`; with the orchestrator's go only: the additive `"native"` in medreport's `ConnectorIdSchema` and one registration line in `src/app/api/_medreport-glue.ts` |
@@ -192,11 +192,23 @@ invl crn pay acct stmt`; comms `msg mtpl ltr`; portal `bkr ptl ifm ifr`; reporti
   (`src/server/pms/http.ts`: actor, same-origin for writes, JSON errors, `no-store`).
 - Repositories get `actor.repo()` (database + cipher), `actor.tenantId` and `actor.actor` (audit). Never take a
   tenant id or a user id from the request.
-- **Permissions** (`src/modules/pms/core/permissions.ts`, fixed list): `clinic.view`, `patients.view|edit|export`,
-  `clinical.view|edit|sign`, `diary.view|book|manage`, `billing.view|edit|manage`, `messages.view|send|manage`,
-  `booking.manage`, `reports.view|export`, `directory.edit`, `settings.manage`, `import.run`. Owner/administrator:
-  all. Clinician: patients, clinical notes, diary, messages, billing read-only. **Staff (reception): no clinical
-  notes**; patients, diary, billing, messages.
+- **Permissions** (`src/modules/pms/core/permissions.ts`; changed 28/10/2026 with Khuram's approval – roles design
+  round 2): 26 permissions in 7 groups (Diary `diary.view|book|override|rota`; Patients
+  `patients.view|edit|referral|merge`; Clinical `clinical.view|write|amend`; Billing `billing.view|edit|pay|refund|void`;
+  Messages `messages.send|templates|letters`; Reports `reports.own|all|export`; Settings
+  `settings.setup|members|import|owner`) with a default per role, plus `clinic.view` for every active member. A clinic
+  can change a role's defaults and give one member exceptions (Set-up → Roles and permissions / Staff access,
+  migration 0103); `actor.can()` answers the EFFECTIVE permission. Locks always win: the owner has everything, only
+  the owner changes the owner, **reception (staff) never gets a clinical permission or clinical letters**. The first
+  build's ids (`patients.export`, `clinical.edit|sign`, `diary.manage`, `billing.manage`, `messages.view|manage`,
+  `booking.manage`, `reports.view`, `directory.edit`, `settings.manage`, `import.run`) still work as aliases
+  (`LEGACY_ALIASES`); new code uses the grid's ids. Site scope: `actor.siteIds` (works at ∪ can see; null = every
+  site) from `src/server/pms/access.ts` – apply it to every list and record read.
+- **Appointment statuses for other modules (28/10/2026, Khuram's decision B):** "in treatment" is stored as status
+  `arrived` with `treatment_started_at` set (migration 0117), so an adapter reading `pms_appointments.status` sees
+  `arrived`. Billing's visit source lists only `CHARGEABLE_STATUSES` (attended, dna, late_cancelled –
+  `src/modules/pms/diary/rules.ts`): in treatment is NOT billable until attended. Reports count in treatment as
+  arrived (`reportingStatus`). On screen `attended` is "Completed" everywhere.
 - **Navigation:** add entries to `src/modules/pms/nav/<m>.ts` (`{ id: "<m>.<x>", module, label, href under
   /app/clinic, order in your band, permission, group: "main" | "manage" }`). "manage" entries show in the shell's
   "Set-up" row. **Record tabs:** `src/modules/pms/record-tabs/<m>.ts` (`segment` = your folder under

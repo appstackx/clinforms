@@ -132,3 +132,20 @@ test("analytics sends each event when it is captured, so nothing queued before a
   const source = fs.readFileSync(path.join(process.cwd(), "src/components/analytics/posthog.ts"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
   assert.match(source, /posthog\.init\(key, \{[\s\S]*?\brequest_batching: false,[\s\S]*?\}\);/);
 });
+
+test("invitation and reset links never leave in an event (24/10/2026): page views dropped, URL properties stripped of the token", () => {
+  const INVITE = "https://clinforms.co.uk/accept-invite?token=inv123.MACMACMACMACMAC";
+  const RESET = "https://clinforms.co.uk/reset-password?token=rst_abcdefabcdef";
+  for (const url of [INVITE, RESET]) {
+    const { pathname } = new URL(url);
+    assert.equal(filterOutgoingEvent({ event: "$pageview", properties: { $current_url: url, $pathname: pathname } }, ORIGIN), null, "no page view of the sign-in pages");
+    const out = filterOutgoingEvent(
+      { event: "two_factor_enabled", properties: { $current_url: url, $referrer: url, $pathname: `${pathname}?token=x` }, $set_once: { $initial_current_url: url, $initial_referrer: url } },
+      ORIGIN,
+    );
+    assert.ok(out);
+    const sent = JSON.stringify(out);
+    assert.ok(!sent.includes("token") && !sent.includes("inv123") && !sent.includes("rst_"), sent);
+    assert.equal(out.properties.$current_url, `https://clinforms.co.uk${pathname}`);
+  }
+});

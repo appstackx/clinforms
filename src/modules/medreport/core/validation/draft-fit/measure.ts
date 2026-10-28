@@ -1,0 +1,359 @@
+/**
+ * DRAFT_FIT parts about what a drafted answer measures: its time point, the day it is dated to, and a medicine's dose
+ * (bh2 WD design 6 and 8). Warnings only – each answers a question the clinician settles.
+ *
+ * - "later note" (B0-6): on an initial assessment form, a paragraph citing a note dated after that assessment.
+ * - "earlier note" (B1-6, B3-7): on any other form, a drafted text answer to a question about the present position
+ *   ("… now", "current …", "at discharge") that cites only notes older than the latest note. Compact and structured
+ *   answers in that situation are held back at drafting (ai/assemble.ts) and never reach here as drafted text.
+ * - "date" (B3-7): a sentence dated to a day that none of the paragraph's cited sources has – not a cited note's own
+ *   date, and not a date a cited note, the registration or a computed fact records (the incident, attendance, outcome
+ *   scores). A sentence is dated by its lead ("On 16/09/2026 …", "At the discharge assessment on 16/09/2026 …",
+ *   "16/09/2026: …") or, anywhere in it, by an attendance dated to a day ("I recorded at the discharge assessment on
+ *   16/09/2026 …", "… at the review of 06/05/2026", "in the note dated 06/05/2026").
+ * - "dose" (B3-12): a medicine the patient was taking, named without a dose that no cited source gives either – every
+ *   mention of the medicine (or its brand name) in every cited source is read, each in its own sentence; a deterministic
+ *   one-click adds "(dose not stated)" (ui/components/review/fixes.ts) next to the mention the flag is about.
+ *
+ * The time-point helpers are shared with drafting assembly (ai/assemble.ts) so both read the same rule.
+ *
+ * Split out of core/validation/draft-fit.ts by W0.4 (bh2 module split); the "earlier note", "date" and "dose" parts and
+ * the shared helpers are bh2 WD. draft-fit.ts runs the parts.
+ * Owner: WD (drafting and text edits) – docs/bh2-ownership.json.
+ */
+import { formatUkDate } from "../../dates";
+import { formTimeKind } from "../../forms/answer-shape";
+import { reportKindOf } from "../../forms";
+import { initialAssessmentView } from "../../scope";
+import { splitSentences } from "../../text/sentences";
+import type { EpisodeBundle, FormField, Note, ReportFlag } from "../../types";
+import { getValidationContext, makeFlag } from "../context";
+import type { DraftFitPart } from "../draft-fit";
+import type { ValidatorInput } from "../registry";
+
+/* ------------------------------------------------------------------------------------------------
+ * Shared time-point helpers (also used by ai/assemble.ts)
+ * ----------------------------------------------------------------------------------------------*/
+
+/** The latest note's date (the latest attended session that has a note), or null. */
+export function latestNoteDate(bundle: Pick<EpisodeBundle, "notes">): string | null {
+  let latest: string | null = null;
+  for (const n of bundle.notes) if (!latest || n.date > latest) latest = n.date;
+  return latest;
+}
+
+/**
+ * When a drafted answer cites notes and every cited note is older than the latest note, the newest of them (ISO date);
+ * else null (it cites the latest note, or cites no note at all).
+ */
+export function onlyOlderNotes(sourceIds: readonly string[], bundle: Pick<EpisodeBundle, "notes">): string | null {
+  const latest = latestNoteDate(bundle);
+  if (!latest) return null;
+  const dates = sourceIds.map((id) => bundle.notes.find((n) => n.id === id)?.date).filter((d): d is string => Boolean(d));
+  if (dates.length === 0) return null;
+  const newest = dates.slice().sort()[dates.length - 1];
+  return newest < latest ? newest : null;
+}
+
+/** On an initial assessment form: the latest cited note dated after that assessment (ISO date), else null. */
+export function laterThanAssessment(sourceIds: readonly string[], bundle: EpisodeBundle): { later: string; assessment: string } | null {
+  const ia = initialAssessmentView(bundle);
+  if (!ia) return null;
+  const later = sourceIds
+    .map((id) => bundle.notes.find((n) => n.id === id)?.date)
+    .filter((d): d is string => Boolean(d) && (d as string) > ia.date)
+    .sort();
+  return later.length ? { later: later[later.length - 1], assessment: ia.date } : null;
+}
+
+/** A question about the present position: "Pain now", "Current medication", "Work status at discharge". */
+export const PRESENT_LABEL = /\b(?:now|current(?:ly)?|at (?:the )?discharge|on discharge|latest|present(?:ly)?|still|today)\b/i;
+
+/* ------------------------------------------------------------------------------------------------
+ * "later note" and "earlier note"
+ * ----------------------------------------------------------------------------------------------*/
+
+export function laterNotePart(input: ValidatorInput): DraftFitPart {
+  const ia = input.report.form && reportKindOf(input.report.form.title) === "initial" ? initialAssessmentView(input.bundle) : null;
+  const later = input.report.form ? formTimeKind(input.report.form) === "later" : false;
+  const fields = new Map((input.form?.fields ?? []).map((f) => [f.id, f] as const));
+  const noteDate = new Map(input.bundle.notes.map((n) => [n.id, n.date]));
+  const latest = latestNoteDate(input.bundle);
+  return {
+    paragraph(p, section) {
+      const flags: ReportFlag[] = [];
+      if (ia) {
+        const laterDates = p.sourceIds.map((id) => noteDate.get(id)).filter((d): d is string => Boolean(d) && (d as string) > ia.date).sort();
+        if (laterDates.length > 0) {
+          flags.push(
+            makeFlag({
+              code: "DRAFT_FIT",
+              severity: "warning",
+              sectionKey: section.key,
+              paragraphId: p.id,
+              evidence: `later note ${laterDates[laterDates.length - 1]}`,
+              message: `From a later note of ${formatUkDate(laterDates[laterDates.length - 1])} – check it belongs on an initial assessment (${formatUkDate(ia.date)}).`,
+            }),
+          );
+        }
+      } else if (later && latest) {
+        // bh2 WD design 8 (B1-6, B3-7): a printed text answer about the present position from an older note.
+        const field = fields.get(section.fieldId ?? section.key) as FormField | undefined;
+        const printed = !section.answer || section.answer.kind === "text";
+        const older = printed && field && PRESENT_LABEL.test(field.label) ? onlyOlderNotes(p.sourceIds, input.bundle) : null;
+        if (older && section.paragraphs[0] === p) {
+          flags.push(
+            makeFlag({
+              code: "DRAFT_FIT",
+              severity: "warning",
+              sectionKey: section.key,
+              paragraphId: p.id,
+              evidence: `earlier note ${older}`,
+              message: `From the note of ${formatUkDate(older)} – the latest note is ${formatUkDate(latest)}: check this is still right as the form asks it now.`,
+            }),
+          );
+        }
+      }
+      return flags;
+    },
+  };
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * "date": a sentence dated to a day none of its sources has
+ * ----------------------------------------------------------------------------------------------*/
+
+const UK_DATE = /\b(\d{2})\/(\d{2})\/(\d{4})\b/g;
+/** "On 16/09/2026 …", "At the discharge assessment on 16/09/2026, …", "16/09/2026: …" at the start of a sentence. */
+const DATE_LEAD = /^(?:On (\d{2}\/\d{2}\/\d{4})\b|At (?:my |the |his |her |a |an )?[A-Za-z][A-Za-z -]{0,40}? on (\d{2}\/\d{2}\/\d{4})\b|(\d{2}\/\d{2}\/\d{4}):)/;
+/** An attendance dated to a day anywhere in a sentence: "… at the discharge assessment on 16/09/2026", "the review of …". */
+const DATED_ATTENDANCE =
+  /\b(?:assessment|review|appointment|session|visit|consultation|examination|discharge|follow-up|note)\s+(?:on|of|dated)\s+(\d{2}\/\d{2}\/\d{4})\b/gi;
+
+/** The days a sentence is dated to: its lead, and every dated attendance in it. */
+function datedDays(sentence: string): string[] {
+  const out: string[] = [];
+  const m = DATE_LEAD.exec(sentence);
+  if (m) out.push(m[1] ?? m[2] ?? m[3]);
+  const re = new RegExp(DATED_ATTENDANCE.source, "gi");
+  let a: RegExpExecArray | null;
+  while ((a = re.exec(sentence)) !== null) if (out.indexOf(a[1]) < 0) out.push(a[1]);
+  return out;
+}
+
+function ukToIso(d: string): string {
+  const [dd, mm, yyyy] = d.split("/");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function datesIn(text: string): string[] {
+  const out: string[] = [];
+  const re = new RegExp(UK_DATE.source, "g");
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) out.push(`${m[3]}-${m[2]}-${m[1]}`);
+  // ISO dates as the record writes some (registration, facts).
+  for (const iso of text.match(/\b\d{4}-\d{2}-\d{2}\b/g) ?? []) out.push(iso);
+  return out;
+}
+
+export function datedLeadPart(input: ValidatorInput): DraftFitPart {
+  const ctx = getValidationContext(input);
+  const notes = new Map(input.bundle.notes.map((n) => [n.id, n] as const));
+  return {
+    paragraph(p, section) {
+      const flags: ReportFlag[] = [];
+      const cited = ctx.cited(p).validIds;
+      if (cited.length === 0) return flags;
+      const days = new Set<string>();
+      for (const id of cited) {
+        const note: Note | undefined = notes.get(id);
+        if (note) days.add(note.date);
+        // A day the cited source itself records (the incident date in a note, a date in the registration or a fact).
+        for (const d of datesIn(ctx.sourceTexts.get(id) ?? "")) days.add(d);
+      }
+      for (const s of splitSentences(p.text)) {
+        const lead = datedDays(s.text.slice(s.bodyStart - s.start)).find((d) => !days.has(ukToIso(d))) ?? null;
+        if (!lead) continue;
+        flags.push(
+          makeFlag({
+            code: "DRAFT_FIT",
+            severity: "warning",
+            sectionKey: section.key,
+            paragraphId: p.id,
+            evidence: `date ${lead}`,
+            message: `Check the date: this answer is dated ${lead}, but none of the sources it cites is from that day.`,
+          }),
+        );
+        break;
+      }
+      return flags;
+    },
+  };
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * "dose": a medicine named without a dose (B3-12)
+ * ----------------------------------------------------------------------------------------------*/
+
+/** Medicines physiotherapy notes commonly record (generic and common UK brand names). */
+const MEDICINES = [
+  "ibuprofen", "paracetamol", "naproxen", "diclofenac", "co-codamol", "cocodamol", "codeine", "dihydrocodeine", "tramadol",
+  "morphine", "oramorph", "aspirin", "celecoxib", "etoricoxib", "meloxicam", "amitriptyline", "nortriptyline", "gabapentin",
+  "pregabalin", "duloxetine", "prednisolone", "diazepam", "baclofen", "methocarbamol", "nurofen", "voltarol", "solpadeine",
+];
+const MEDICINE = new RegExp(`\\b(${MEDICINES.map((m) => m.replace(/-/g, "\\-")).join("|")})\\b`, "gi");
+/** The same medicine under another name (a brand, a spelling): a dose given under either name is a dose given. */
+const SAME_MEDICINE: Readonly<Record<string, readonly string[]>> = {
+  ibuprofen: ["nurofen"],
+  nurofen: ["ibuprofen"],
+  diclofenac: ["voltarol"],
+  voltarol: ["diclofenac"],
+  "co-codamol": ["cocodamol", "solpadeine"],
+  cocodamol: ["co-codamol", "solpadeine"],
+  solpadeine: ["co-codamol", "cocodamol"],
+  morphine: ["oramorph"],
+  oramorph: ["morphine"],
+};
+/** Taking it (not "stopped", "no", "declined"). */
+const TAKING = /\b(?:tak(?:es|ing|en)|took|prescribed|using|uses|used|on regular|started|continu(?:es|ing|ed)\s+(?:with|to take))\b/i;
+const NOT_TAKING = /\b(?:no|not|never|stopped|declined|without|nil|refused|avoid(?:s|ed|ing)?)\b/i;
+/**
+ * A dose: an amount ("400 mg", "1 g", "5 ml"), a strength ("30/500"), a count of tablets or capsules ("two tablets"), or
+ * the word "dose". A frequency alone ("as needed", "PRN", "three times a day") is not a dose – "(dose not stated)" is
+ * then still true.
+ */
+const DOSE =
+  /\b\d+(?:\.\d+)?\s?(?:mg|g|mcg|µg|micrograms?|milligrams?|ml|mls)\b|\b\d+\/\d+\b|\b(?:one|two|three|four|\d+)\s+(?:tablets?|capsules?|puffs?|doses?)\b|\b(?:dose|doses|dosage)\b|\b\d{2,4}\s*(?:x\s*)?(?:od|bd|bid|tds|tid|qds|qid|nocte|mane|prn|daily|twice|three times|four times|once|a day|per day)\b/i;
+
+/** A medicine the text says is taken, named without a dose in its sentence: its name (lower case) and where it ends. */
+export interface UndosedMention {
+  name: string;
+  /** The offset in the text just after the name (where "(dose not stated)" goes). */
+  end: number;
+}
+
+/** Every medicine the text says is taken, named without a dose in that sentence, in order. */
+export function medicinesWithoutDose(text: string): UndosedMention[] {
+  const out: UndosedMention[] = [];
+  for (const s of splitSentences(text)) {
+    if (DOSE.test(s.text) || new RegExp(`(?:${MEDICINE.source})\\s*\\(?\\d{2,4}\\b`, "i").test(s.text)) continue;
+    const re = new RegExp(MEDICINE.source, "gi");
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(s.text)) !== null) {
+      const before = s.text.slice(0, m.index);
+      if (!TAKING.test(before) || NOT_TAKING.test(before)) continue;
+      if (/^\s*\(dose/i.test(s.text.slice(m.index + m[0].length))) continue;
+      out.push({ name: m[1].toLowerCase(), end: s.start + m.index + m[0].length });
+    }
+  }
+  return out;
+}
+
+/**
+ * Whether the cited text gives a dose for the medicine: a sentence that names it (or its brand) holds a dose, or one of
+ * the two sentences or lines after it does before another medicine is named ("Started on ibuprofen by his GP. 400 mg
+ * three times a day.", "Meds: ibuprofen⏎400 mg tds" – bh2 WD harden N4). A bare strength with how often ("Ibuprofen
+ * 400 tds") or straight after the name ("Ibuprofen 400") is a dose too. In doubt the notes give a dose: the warning
+ * and its "(dose not stated)" fix are for a medicine whose notes say nothing of the dose.
+ */
+export function citedDoseFor(name: string, citedText: string): boolean {
+  const names = [name, ...(SAME_MEDICINE[name] ?? [])];
+  const alternatives = names.map((n) => n.replace(/-/g, "\\-")).join("|");
+  const named = new RegExp(`\\b(?:${alternatives})\\b`, "i");
+  // A strength written straight after the name, without a unit ("Ibuprofen 400", "naproxen 500 mg").
+  const strength = new RegExp(`\\b(?:${alternatives})\\s*\\(?\\d{2,4}(?:\\.\\d+)?\\b`, "i");
+  const anyMedicine = new RegExp(MEDICINE.source, "i");
+  const sentences = splitSentences(citedText, "notes");
+  return sentences.some((s, i) => {
+    if (!named.test(s.text)) return false;
+    if (DOSE.test(s.text) || strength.test(s.text)) return true;
+    // The next sentences or lines, up to two, until one names another medicine.
+    for (const next of sentences.slice(i + 1, i + 3)) {
+      if (anyMedicine.test(next.text) && !named.test(next.text)) return false;
+      if (DOSE.test(next.text)) return true;
+    }
+    return false;
+  });
+}
+
+/** The first medicine of the text that is taken, named without a dose, that the cited sources give no dose for either. */
+export function undosedMedicine(text: string, citedText: string): string | null {
+  for (const m of medicinesWithoutDose(text)) if (!citedDoseFor(m.name, citedText)) return m.name;
+  return null;
+}
+
+export function dosePart(input: ValidatorInput): DraftFitPart {
+  const ctx = getValidationContext(input);
+  return {
+    paragraph(p, section) {
+      if (section.answer && section.answer.kind !== "text") return [];
+      const cited = ctx.cited(p).validIds.map((id) => ctx.sourceTexts.get(id) ?? "").join("\n");
+      const medicine = undosedMedicine(p.text, cited);
+      if (!medicine) return [];
+      return [
+        makeFlag({
+          code: "DRAFT_FIT",
+          severity: "warning",
+          sectionKey: section.key,
+          paragraphId: p.id,
+          evidence: `dose ${medicine}`,
+          message: `No dose is given for ${medicine}, and the notes it cites record none: say “(dose not stated)”, or add the dose.`,
+        }),
+      ];
+    },
+  };
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Attendance framing (bh2 fix round 1, R1T-WD-L3)
+ * ----------------------------------------------------------------------------------------------*/
+
+/** "7 of 7 appointments were attended", "attended 7 of 7 sessions": the same number twice. */
+const N_OF_N = /\b(?:attended\s+)?(\d{1,3})\s+(?:out\s+)?of\s+(?:the\s+)?(\d{1,3})\s+(?:booked\s+|planned\s+|scheduled\s+)?(?:appointments?|sessions?|visits?|treatments?)\b/gi;
+/** "with 1 did not attend" – the attendance record's abbreviation written out into a sentence that has no verb for it. */
+const WITH_N_DNA = /\bwith\s+(\d{1,3}|one|two|three|four|five|six)\s+(?:did not attend|DNA)\b/i;
+
+/**
+ * A drafted attendance line that misreads the attendance record (R1T-WD-L3): "7 of 7 appointments were attended" reads
+ * as if those were all the appointments (the record's own wording avoids it: "7 appointments attended to date, none
+ * missed (1 cancelled with notice)"), and "…, with 1 did not attend on 22/09/2026" is not a sentence. Advice only – the
+ * figures are the record's; the person rewords it or keeps it.
+ */
+export function attendanceFramingPart(input: ValidatorInput): DraftFitPart {
+  const fact = (input.computedFacts ?? []).find((f) => f.id === "FACT-attendance");
+  const record = fact ? ` – the attendance record gives “${fact.value}”` : "";
+  return {
+    paragraph(p, section) {
+      if (section.answer && section.answer.kind !== "text") return [];
+      const flags: ReportFlag[] = [];
+      for (const m of Array.from(p.text.matchAll(N_OF_N))) {
+        if (m[1] !== m[2]) continue;
+        flags.push(
+          makeFlag({
+            code: "DRAFT_FIT",
+            severity: "warning",
+            sectionKey: section.key,
+            paragraphId: p.id,
+            evidence: `attendance ${m[1]} of ${m[2]}`,
+            message: `“${m[0]}” reads as if those were all the appointments${record}: say “${m[1]} appointments were attended and none was missed”, or keep it.`,
+          }),
+        );
+        break;
+      }
+      const dna = WITH_N_DNA.exec(p.text);
+      if (dna) {
+        flags.push(
+          makeFlag({
+            code: "DRAFT_FIT",
+            severity: "warning",
+            sectionKey: section.key,
+            paragraphId: p.id,
+            evidence: "attendance wording",
+            message: `“${dna[0]}” is not a whole sentence: say “${dna[1]} ${/^(?:1|one)$/i.test(dna[1]) ? "appointment was" : "appointments were"} missed (did not attend)” with the date, or reword it.`,
+          }),
+        );
+      }
+      return flags;
+    },
+  };
+}

@@ -234,6 +234,9 @@ function toPractitioner(r: Selectable<PmsPractitionersTable>): Practitioner {
     displayName: r.display_name,
     profession: r.profession as Profession,
     registrationNumber: r.registration_number,
+    registrationBody: r.registration_body ?? null,
+    // Rows read before migration 0105 have no column: they may sign (as before).
+    maySign: r.may_sign === undefined || r.may_sign === null ? true : isOn(r.may_sign),
     email: r.email,
     phone: r.phone,
     colour: r.colour,
@@ -319,6 +322,89 @@ export async function updatePractitioner(ctx: DbContext, tenantId: string, id: s
   if (Number(result.numUpdatedRows) === 0) return null;
   await pmsAudit(ctx, tenantId, actor, { action: "pms.practitioner.update", targetType: "pms_practitioner", targetId: id, detail: { fields } });
   return getPractitioner(ctx, tenantId, id);
+}
+
+export interface PractitionerSigning {
+  registrationBody: string;
+  /** Normalised (src/modules/pms/core/signing.ts checkSigning); null = none yet. */
+  registrationNumber: string | null;
+  maySign: boolean;
+}
+
+/**
+ * Member access → "Signing details" (settings.members): the member's register, registration number and "may sign",
+ * on their practitioner record – created (not bookable, so it does not appear as a diary column until set-up says
+ * so) when the member has none. The change and its audit row (field names only, never the number) are one batch.
+ */
+export async function setPractitionerSigning(
+  ctx: DbContext,
+  tenantId: string,
+  member: { userId: string; name: string; email: string | null },
+  signing: PractitionerSigning,
+  actor: PmsActor,
+): Promise<{ practitioner: Practitioner; created: boolean; fields: string[] }> {
+  assertTenantId(tenantId);
+  assertId(member.userId, "user id");
+  const at = nowIso(ctx);
+  const existing = await findPractitionerByUser(ctx, tenantId, member.userId);
+  if (!existing) {
+    const id = pmsId(P.practitioner, ctx);
+    await writeWithAudit(
+      ctx,
+      [
+        ctx.db.insertInto("pms_practitioners").values({
+          tenant_id: tenantId,
+          id,
+          user_id: member.userId,
+          display_name: (member.name || member.email || "Practitioner").slice(0, 120),
+          profession: "physiotherapist",
+          registration_number: signing.registrationNumber,
+          registration_body: signing.registrationBody,
+          may_sign: b01(signing.maySign),
+          email: member.email,
+          bookable: 0,
+          online_bookable: 0,
+          active: 1,
+          sort_order: 0,
+          created_at: at,
+          updated_at: at,
+        }),
+        pmsAuditQuery(ctx, tenantId, actor, { action: "pms.practitioner.create", targetType: "pms_practitioner", targetId: id, detail: { for: "signing", userId: member.userId } }),
+        pmsAuditQuery(ctx, tenantId, actor, {
+          action: "pms.practitioner.signing_update",
+          targetType: "pms_practitioner",
+          targetId: id,
+          detail: { fields: ["registrationBody", "registrationNumber", "maySign"], maySign: signing.maySign, hasNumber: signing.registrationNumber !== null },
+        }),
+      ],
+      PRACTITIONER_MESSAGES,
+    );
+    return { practitioner: (await getPractitioner(ctx, tenantId, id)) as Practitioner, created: true, fields: ["registrationBody", "registrationNumber", "maySign"] };
+  }
+  const fields = [
+    (existing.registrationBody ?? "HCPC") !== signing.registrationBody || existing.registrationBody === null ? "registrationBody" : null,
+    existing.registrationNumber !== signing.registrationNumber ? "registrationNumber" : null,
+    existing.maySign !== signing.maySign ? "maySign" : null,
+  ].filter((f): f is string => f !== null);
+  if (fields.length === 0) return { practitioner: existing, created: false, fields };
+  await writeWithAudit(
+    ctx,
+    [
+      ctx.db
+        .updateTable("pms_practitioners")
+        .set({ registration_body: signing.registrationBody, registration_number: signing.registrationNumber, may_sign: b01(signing.maySign), updated_at: at })
+        .where("tenant_id", "=", tenantId)
+        .where("id", "=", existing.id),
+      pmsAuditQuery(ctx, tenantId, actor, {
+        action: "pms.practitioner.signing_update",
+        targetType: "pms_practitioner",
+        targetId: existing.id,
+        detail: { fields, maySign: signing.maySign, hasNumber: signing.registrationNumber !== null },
+      }),
+    ],
+    PRACTITIONER_MESSAGES,
+  );
+  return { practitioner: (await getPractitioner(ctx, tenantId, existing.id)) as Practitioner, created: false, fields };
 }
 
 export async function getPractitioner(ctx: DbContext, tenantId: string, id: string): Promise<Practitioner | null> {

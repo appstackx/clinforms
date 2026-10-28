@@ -34,7 +34,12 @@ export type Inline =
   /** A character of a symbol font kept as a Word symbol (w:sym), e.g. a Wingdings arrow. */
   | { kind: "sym"; font: string; char: number; style: RunStyle }
   /** PAGE / NUMPAGES in a page header or footer: a live Word field with its last printed result. */
-  | { kind: "field"; instr: "PAGE" | "NUMPAGES" | "SECTIONPAGES"; text: string; style: RunStyle };
+  | { kind: "field"; instr: "PAGE" | "NUMPAGES" | "SECTIONPAGES"; text: string; style: RunStyle }
+  /**
+   * Fix round 1 (B0-14): a PNG or JPEG picture (a provider's logo) drawn in line with the text, `width` × `height` twips
+   * – also a picture frame (\shp) the template placed, drawn where it is anchored.
+   */
+  | { kind: "picture"; format: "png" | "jpeg"; data: Uint8Array; width: number; height: number; style: RunStyle };
 
 export interface Border {
   /** WordprocessingML border value: "single", "double", "dotted", "dashed", "thick", "nil". */
@@ -156,6 +161,13 @@ export interface RtfStats {
   mergeFields: number;
   /** Their names, distinct, in order (at most 50). */
   mergeFieldNames: string[];
+  /**
+   * 10/2026: a clinic system's own letter codes (<<P_SURNAME>>, <<DATE>> – upper case in double angle brackets) kept
+   * as printed in the body, for the form reading to fill from the record (core/practice-merge-codes.ts).
+   */
+  practiceCodes: number;
+  /** Their names, distinct, in order (at most 50). */
+  practiceCodeNames: string[];
   /** Text that looks like another system's fill-in token ([Name], {Name}, $Name$, %Name%) – kept, noted. */
   otherTokens: number;
   /** Up to three of them as printed. */
@@ -164,7 +176,10 @@ export interface RtfStats {
   formCheckboxes: number;
   formDropdowns: number;
   tickBoxes: number;
+  /** Pictures left out (formats other than PNG and JPEG, linked pictures, oversized ones). */
   pictures: number;
+  /** Fix round 1 (B0-14): pictures carried over into the Word file (PNG and JPEG, also in picture frames). */
+  picturesKept: number;
   objects: number;
   shapes: number;
   footnotes: number;
@@ -230,6 +245,8 @@ export function emptyStats(): RtfStats {
     cells: 0,
     mergeFields: 0,
     mergeFieldNames: [],
+    practiceCodes: 0,
+    practiceCodeNames: [],
     otherTokens: 0,
     otherTokenExamples: [],
     formTextFields: 0,
@@ -237,6 +254,7 @@ export function emptyStats(): RtfStats {
     formDropdowns: 0,
     tickBoxes: 0,
     pictures: 0,
+    picturesKept: 0,
     objects: 0,
     shapes: 0,
     footnotes: 0,

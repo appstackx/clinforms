@@ -76,7 +76,7 @@ import { DEMO_CLINIC } from "@/modules/medreport/config.public";
 import { bundleClinic } from "@/modules/medreport/core/clinic";
 import { computeFacts } from "@/modules/medreport/core/computed-facts";
 import { FORM_ATTESTATIONS, formTemplateId, resolveRegistrationValue } from "@/modules/medreport/core/forms";
-import type { EpisodeBundle, FormDefinition, Report, SignReceipt } from "@/modules/medreport/core/types";
+import type { EpisodeBundle, FormDefinition, Report, ReportFlag, SignReceipt } from "@/modules/medreport/core/types";
 import { HARROW_PIKE_FORM as HARROW_PIKE_RAW } from "@/modules/medreport/forms/samples/maps/harrow-pike";
 import { getSampleForm } from "@/modules/medreport/forms/samples/registry";
 import { loadClinicProfile } from "@/server/auth/medreport-actor";
@@ -98,6 +98,8 @@ const A = "clinic-a";
 const B = "clinic-b";
 const C = "clinic-c"; // no clinic profile
 
+// Members of these (real, not demo) clinics hold ZZ-prefixed signing numbers: the registration format, never a real HCPC
+// profession – a made-up PH-DEMO number approves in a demo clinic only (10/2026, scripts/medreport/demo-clinic.test.ts).
 const MEMBERS: Record<string, AuthContext> = {
   "owner-a": { userId: "u_owner_a", authSessionId: "s_owner_a", tenantId: A, role: "owner", name: "Olivia Owner (fictional)", twoFactorVerified: true },
   "clin-a": {
@@ -106,7 +108,7 @@ const MEMBERS: Record<string, AuthContext> = {
     tenantId: A,
     role: "clinician",
     name: "Sam Ward (fictional)",
-    clinician: { name: "Sam Ward (fictional)", hcpc: "PH-DEMO-05", jobTitle: "Physiotherapist", canSign: true },
+    clinician: { name: "Sam Ward (fictional)", hcpc: "ZZ0005", jobTitle: "Physiotherapist", canSign: true },
     twoFactorVerified: true,
   },
   "nosign-a": {
@@ -115,7 +117,7 @@ const MEMBERS: Record<string, AuthContext> = {
     tenantId: A,
     role: "clinician",
     name: "Nia Lane (fictional)",
-    clinician: { name: "Nia Lane (fictional)", hcpc: "PH-DEMO-06", canSign: false },
+    clinician: { name: "Nia Lane (fictional)", hcpc: "ZZ0006", canSign: false },
     twoFactorVerified: true,
   },
   "staff-a": { userId: "u_staff_a", authSessionId: "s_staff_a", tenantId: A, role: "staff", name: "Pat Desk (fictional)", twoFactorVerified: true },
@@ -126,7 +128,7 @@ const MEMBERS: Record<string, AuthContext> = {
     tenantId: B,
     role: "clinician",
     name: "Bea Long (fictional)",
-    clinician: { name: "Bea Long (fictional)", hcpc: "PH-DEMO-07", canSign: true },
+    clinician: { name: "Bea Long (fictional)", hcpc: "ZZ0007", canSign: true },
     twoFactorVerified: true,
   },
   "clin-c": {
@@ -135,7 +137,7 @@ const MEMBERS: Record<string, AuthContext> = {
     tenantId: C,
     role: "clinician",
     name: "Cal Moss (fictional)",
-    clinician: { name: "Cal Moss (fictional)", hcpc: "PH-DEMO-08", canSign: true },
+    clinician: { name: "Cal Moss (fictional)", hcpc: "ZZ0008", canSign: true },
     twoFactorVerified: true,
   },
 };
@@ -278,9 +280,22 @@ const attest = (f: FormDefinition) => withAttestedConfirmation(f, "Practice mana
 const DEMO_FORM = attest(HARROW_PIKE_RAW);
 const formOf = (tenantId: string) => attest({ ...HARROW_PIKE_RAW, tenantId });
 
+/**
+ * bh2 fix round 1 (WB, R1T-WB-03 – SEC-3): the clinician's own words as the Studio stores them. On a clinic's report
+ * with no approving clinician, "clinician" text nobody's stamp vouches for is a person's (checked, never taken as the
+ * approver's own); the review stamps every paragraph a person writes (Paragraph.by). The sample's own words carry the
+ * stamp of a fictional clinician who may approve. A report that names its approver is left as it is.
+ */
+const OWN_WORDS_BY: NonNullable<Report["sections"][number]["paragraphs"][number]["by"]> = { memberId: "user-sample-clinician", name: "Sam Ward (fictional)", role: "clinician", canSign: true, hcpc: "ZZ0005" };
+function withOwnWordsStamped(r: Report): Report {
+  if (!r.approver) for (const s of r.sections) for (const p of s.paragraphs) if (p.origin === "clinician" && !p.by) p.by = OWN_WORDS_BY;
+  return r;
+}
+
 /** The completed sample report, as clinic `tenantId`'s own (bundle and report relabelled). */
 function reportOf(tenantId: string, opts: { connectorId?: "tm3" | "tm3-sim"; patientId?: string; episodeId?: string } = {}): Report {
   const r = completedSampleReport("megan-hart", DEMO_FORM, { id: `rpt_${tenantId}` });
+  withOwnWordsStamped(r);
   const episodeRef = {
     connectorId: opts.connectorId ?? r.episodeRef.connectorId,
     patientId: opts.patientId ?? r.episodeRef.patientId,
@@ -291,7 +306,7 @@ function reportOf(tenantId: string, opts: { connectorId?: "tm3" | "tm3-sim"; pat
 
 const bundleOf = (tenantId: string): EpisodeBundle => ({ ...getDemoBundle("megan-hart"), tenantId });
 
-const signBody = (report: Report, form: FormDefinition, signer = { name: "Sam Ward (fictional)", hcpc: "PH-DEMO-05" }, typed = signer.name) => ({
+const signBody = (report: Report, form: FormDefinition, signer = { name: "Sam Ward (fictional)", hcpc: "ZZ0005" }, typed = signer.name) => ({
   report,
   signer,
   typedSignature: typed,
@@ -344,7 +359,7 @@ describe("unauthenticated callers", () => {
     const { createSessionToken } = await import("@/modules/medreport/auth/session-token");
     const clinicSession = createSessionToken({ tenantId: A, kind: "launch", connectorId: "tm3", patientId: "pms-p1", episodeId: "pms-p1-e1" }).token;
     await expectProblem(await call(handleValidate, "/validate", { body: { report: reportOf(A) }, bearer: clinicSession }), 401, "UNAUTHORIZED");
-    const lt = createLaunchToken({ tenantId: A, connectorId: "tm3", patientId: "pms-p1", episodeId: "pms-p1-e1", clinician: { name: "Sam Ward (fictional)", hcpc: "PH-DEMO-05" } });
+    const lt = createLaunchToken({ tenantId: A, connectorId: "tm3", patientId: "pms-p1", episodeId: "pms-p1-e1", clinician: { name: "Sam Ward (fictional)", hcpc: "ZZ0005" } });
     await expectProblem(await call(handleLaunchVerify, "/launch/verify", { body: { token: lt.token } }), 401, "UNAUTHORIZED");
   });
 
@@ -501,7 +516,7 @@ describe("clinic members – tenancy", () => {
   test("an approval receipt issued to clinic B never makes a FINAL copy or a file-back for clinic A", async () => {
     const formB = formOf(B);
     const reportB = reportOf(B, { connectorId: "tm3", patientId: "pms-p1", episodeId: "pms-p1-e1" });
-    const signedB = await call(handleSign, "/sign", { member: "clin-b", body: signBody(reportB, formB, { name: "Bea Long (fictional)", hcpc: "PH-DEMO-07" }) });
+    const signedB = await call(handleSign, "/sign", { member: "clin-b", body: signBody(reportB, formB, { name: "Bea Long (fictional)", hcpc: "ZZ0007" }) });
     assert.equal(signedB.status, 200, await signedB.clone().text());
     const { receipt } = SignResponseSchema.parse(await signedB.json());
     assert.equal(receipt.tenantId, B);
@@ -621,7 +636,7 @@ describe("clinic members – roles and approval", () => {
     // Staff may draft (here the fictional record has prepared demo answers; no role refusal).
     assert.equal(draft.status, 200, await draft.clone().text());
     await expectProblem(await call(handleSign, "/sign", { member: "staff-a", body: signBody(report, form, { name: "Pat Desk (fictional)", hcpc: "X" }) }), 403, "SIGNER_NOT_ALLOWED");
-    await expectProblem(await call(handleSign, "/sign", { member: "nosign-a", body: signBody(report, form, { name: "Nia Lane (fictional)", hcpc: "PH-DEMO-06" }) }), 403, "SIGNER_NOT_ALLOWED");
+    await expectProblem(await call(handleSign, "/sign", { member: "nosign-a", body: signBody(report, form, { name: "Nia Lane (fictional)", hcpc: "ZZ0006" }) }), 403, "SIGNER_NOT_ALLOWED");
     await expectProblem(await call(handleSign, "/sign", { member: "owner-a", body: signBody(report, form, { name: "Olivia Owner (fictional)", hcpc: "X" }) }), 403, "SIGNER_NOT_ALLOWED");
   });
 
@@ -635,13 +650,13 @@ describe("clinic members – roles and approval", () => {
       "SIGNER_MISMATCH",
     );
     // The typed signature must be the member's own name.
-    const wrongName = await call(handleSign, "/sign", { member: "clin-a", body: signBody(report, form, { name: "Sam W", hcpc: "PH-DEMO-05" }, "Sam W") });
+    const wrongName = await call(handleSign, "/sign", { member: "clin-a", body: signBody(report, form, { name: "Sam W", hcpc: "ZZ0005" }, "Sam W") });
     await expectProblem(wrongName, 422, "VALIDATION_FAILED");
     // Same HCPC, any name in the body: the receipt names the member.
-    const res = await call(handleSign, "/sign", { member: "clin-a", body: signBody(report, form, { name: "S. Ward", hcpc: "ph-demo-05" }, "Sam Ward (fictional)") });
+    const res = await call(handleSign, "/sign", { member: "clin-a", body: signBody(report, form, { name: "S. Ward", hcpc: "zz0005" }, "Sam Ward (fictional)") });
     assert.equal(res.status, 200, await res.clone().text());
     const { receipt } = SignResponseSchema.parse(await res.json());
-    assert.deepEqual(receipt.signer, { name: "Sam Ward (fictional)", hcpc: "PH-DEMO-05", role: "Physiotherapist" });
+    assert.deepEqual(receipt.signer, { name: "Sam Ward (fictional)", hcpc: "ZZ0005", role: "Physiotherapist" });
     assert.deepEqual(receipt.approvedVia, { kind: "user", sid: "s_clin_a", userId: "u_clin_a" });
     assert.equal(receipt.tenantId, A);
     const row = (await listAudit({ db: db1 }, A)).find((r) => r.action === "report.sign" && r.targetId === report.id);
@@ -669,7 +684,7 @@ describe("clinic members – roles and approval", () => {
     assert.ok(sections.find((s) => s.key === "F-15")?.paragraphs.some((p) => p.text.startsWith("On 07/07/2026 I recorded")));
     const report: Report = { ...base, id: "rpt_voice", sections, author: { name: "Sarah Reid", hcpc: "PH-DEMO-01", role: "Senior Physiotherapist, MCSP" } };
     const form = formOf(A);
-    const refused = await call(handleSign, "/sign", { member: "clin-a", body: signBody(report, form, { name: "S. Ward", hcpc: "PH-DEMO-05" }, "Sam Ward (fictional)") });
+    const refused = await call(handleSign, "/sign", { member: "clin-a", body: signBody(report, form, { name: "S. Ward", hcpc: "ZZ0005" }, "Sam Ward (fictional)") });
     const problem = await problemOf(refused.clone());
     await expectProblem(refused, 409, "SIGNER_NOT_AUTHOR");
     assert.match(problem.detail ?? "", /Sarah Reid/);
@@ -679,19 +694,43 @@ describe("clinic members – roles and approval", () => {
       ...report,
       sections: report.sections.map((s) => (s.key === "F-15" ? { ...s, paragraphs: s.paragraphs.map((p) => ({ ...p, origin: "edited" as const, originalText: p.text })) } : s)),
     };
-    const ok = await call(handleSign, "/sign", { member: "clin-a", body: signBody(edited, form, { name: "S. Ward", hcpc: "PH-DEMO-05" }, "Sam Ward (fictional)") });
+    // bh2 WB design 7 (AC-OPN-3): edited text in the first person over Sarah Reid's note is checked too – the approver
+    // acknowledges it with a reason (their own account), then approves.
+    const editedRefused = await call(handleSign, "/sign", { member: "clin-a", body: signBody(edited, form, { name: "S. Ward", hcpc: "ZZ0005" }, "Sam Ward (fictional)") });
+    const editedFlags = ((await problemOf(editedRefused.clone())) as { flags?: ReportFlag[] }).flags ?? [];
+    await expectProblem(editedRefused, 409, "SIGNOFF_BLOCKED");
+    assert.ok(editedFlags.length > 0 && editedFlags.every((f) => f.ackPolicy === "approver"), JSON.stringify(editedFlags));
+    const acknowledged: Report = { ...edited, flags: editedFlags.map((f) => ({ ...f, acknowledged: { reason: "My own account: I saw Ms Hart on 07/07/2026 too.", at: "2026-10-07T10:00:00.000Z" } })) };
+    const ok = await call(handleSign, "/sign", { member: "clin-a", body: signBody(acknowledged, form, { name: "S. Ward", hcpc: "ZZ0005" }, "Sam Ward (fictional)") });
     assert.equal(ok.status, 200, await ok.clone().text());
-    // The author approving their own first-person draft is fine (the author is the member).
-    const own: Report = { ...report, author: { name: "Sam Ward (fictional)", hcpc: "PH-DEMO-05" } };
-    const mine = await call(handleSign, "/sign", { member: "clin-a", body: signBody(own, form, { name: "S. Ward", hcpc: "PH-DEMO-05" }, "Sam Ward (fictional)") });
+    // The author approving their own first-person draft of their own notes is fine (the author is the member).
+    const sam = { name: "Sam Ward (fictional)", hcpc: "ZZ0005" };
+    const samsNotes = { ...report.bundleSnapshot, notes: report.bundleSnapshot.notes.map((n) => ({ ...n, author: sam })) };
+    // bh2 WB design 9 (C-ATTR-2): the drafted text names the notes' clinician too, or "Sarah Reid recorded" is a wrong name.
+    const samsText = report.sections.map((s) => ({ ...s, paragraphs: s.paragraphs.map((p) => ({ ...p, text: p.text.split("Sarah Reid").join(sam.name) })) }));
+    const own: Report = { ...report, author: sam, bundleSnapshot: samsNotes, sections: samsText };
+    const mine = await call(handleSign, "/sign", { member: "clin-a", body: signBody(own, form, { name: "S. Ward", hcpc: "ZZ0005" }, "Sam Ward (fictional)") });
     assert.equal(mine.status, 200, await mine.clone().text());
+    // Fix round 1 (B0-1): the author is the member, but the "I" reports Sarah Reid's note – refused, naming her.
+    const othersNote: Report = { ...report, author: sam };
+    const blocked = await call(handleSign, "/sign", { member: "clin-a", body: signBody(othersNote, form, { name: "S. Ward", hcpc: "ZZ0005" }, "Sam Ward (fictional)") });
+    const blockedProblem = (await problemOf(blocked.clone())) as { flags?: Array<{ code: string; sectionKey?: string; evidence?: string }> };
+    await expectProblem(blocked, 409, "SIGNOFF_BLOCKED");
+    assert.ok(blockedProblem.flags?.some((f) => f.code === "OTHER_CLINICIAN_VOICE" && f.sectionKey === "F-15" && f.evidence === "Sarah Reid"));
+    // No author named (a draft staff prepared): the signer's "I" must still be theirs.
+    const noAuthor: Report = { ...report, author: undefined };
+    const unnamed = await call(handleSign, "/sign", { member: "clin-a", body: signBody(noAuthor, form, { name: "S. Ward", hcpc: "ZZ0005" }, "Sam Ward (fictional)") });
+    const unnamedProblem = await problemOf(unnamed.clone());
+    await expectProblem(unnamed, 409, "SIGNER_NOT_AUTHOR");
+    assert.match(unnamedProblem.detail ?? "", /Sarah Reid/);
+    assert.match(unnamedProblem.detail ?? "", /F-15/);
   });
 
   test("launch from the clinic's own system: clinic partner key → the clinic's Studio; only its member redeems it; scope and launch clinician enforced", async () => {
     const key = await createPartnerKey({ db: db1 }, A, { name: "Clinic system", createdBy: "u_owner_a" });
     const launch = await call(handleLaunch, "/launch", {
       headers: { "x-partner-key": key.key },
-      body: { connectorId: "tm3", patientId: "pms-p1", episodeId: "pms-p1-e1", clinician: { name: "Sam Ward (fictional)", hcpc: "PH-DEMO-05" } },
+      body: { connectorId: "tm3", patientId: "pms-p1", episodeId: "pms-p1-e1", clinician: { name: "Sam Ward (fictional)", hcpc: "ZZ0005" } },
     });
     assert.equal(launch.status, 201, await launch.clone().text());
     const { launchUrl } = (await launch.json()) as { launchUrl: string };
@@ -701,7 +740,7 @@ describe("clinic members – roles and approval", () => {
     await expectProblem(
       await call(handleLaunch, "/launch", {
         headers: { "x-partner-key": key.key },
-        body: { connectorId: "tm3-sim", patientId: "sim-pat-001", episodeId: "sim-ep-1001", clinician: { name: "Sam Ward (fictional)", hcpc: "PH-DEMO-05" } },
+        body: { connectorId: "tm3-sim", patientId: "sim-pat-001", episodeId: "sim-ep-1001", clinician: { name: "Sam Ward (fictional)", hcpc: "ZZ0005" } },
       }),
       403,
       "CONNECTOR_NOT_AVAILABLE",
@@ -771,7 +810,7 @@ describe("clinic members – roles and approval", () => {
     await expectProblem(
       await call(handleLaunch, "/launch", {
         headers: { "x-partner-key": key.key },
-        body: { connectorId: "tm3", patientId: "pms-p1", episodeId: "pms-p1-e1", clinician: { name: "Sam Ward (fictional)", hcpc: "PH-DEMO-05" } },
+        body: { connectorId: "tm3", patientId: "pms-p1", episodeId: "pms-p1-e1", clinician: { name: "Sam Ward (fictional)", hcpc: "ZZ0005" } },
       }),
       401,
       "PARTNER_KEY_INVALID",

@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<title>Diary – week view</title>
+<script src="./vendor/react.js"></script>
+<script src="./vendor/react-dom.js"></script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+*{box-sizing:border-box}
+a{color:#0B7970}a:hover{color:#095E57}
+:focus-visible{outline:2px solid #0E958A;outline-offset:2px}
+@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+</style>
+</helmet>
+<div style="min-height: 100vh; background: #F8FAFC; color: #0F172A; font-family: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 14px; line-height: 20px; display: flex; flex-direction: column">
+<header style="background: #FFFFFF; border-bottom: 1px solid #E2E8F0; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 10px 16px; min-height: 56px">
+<div style="display: flex; align-items: center; gap: 10px">
+<span aria-hidden="true" style="width: 28px; height: 28px; border-radius: 8px; background: #0B7970; color: #FFFFFF; display: inline-flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg></span>
+<nav aria-label="Product areas" style="display: flex; background: #F1F5F9; border-radius: 10px; padding: 3px; gap: 2px">
+<a href="AppShell.dc.html" aria-current="page" style="height: 30px; padding: 0 12px; border-radius: 8px; background: #FFFFFF; box-shadow: 0 1px 2px rgba(15,23,42,.08); font-weight: 600; color: #0F172A; text-decoration: none; display: inline-flex; align-items: center">{{product}}</a>
+<a href="#clinforms" style="height: 30px; padding: 0 12px; border-radius: 8px; font-weight: 500; color: #475569; text-decoration: none; display: inline-flex; align-items: center">ClinForms</a>
+</nav>
+</div>
+<button type="button" aria-haspopup="listbox" style="height: 36px; padding: 0 10px; border: 1px solid #CBD5E1; border-radius: 8px; background: #FFFFFF; font: inherit; font-weight: 500; display: inline-flex; align-items: center; gap: 8px; cursor: pointer"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0B7970" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0zM12 7a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"></path></svg>Harbour Road<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg></button>
+<div role="search" style="flex: 1 1 260px; max-width: 480px; height: 36px; padding: 0 10px; border: 1px solid #CBD5E1; border-radius: 8px; display: flex; align-items: center; gap: 8px; background: #F8FAFC">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 3a8 8 0 1 0 0 16 8 8 0 0 0 0-16zM21 21l-4.3-4.3"></path></svg>
+<input type="search" aria-label="Search patients" placeholder="Search patients – name, DOB, phone, email" style="border: 0; font: inherit; flex: 1; min-width: 0; background: transparent">
+</div>
+<button type="button" aria-haspopup="menu" style="margin-left: auto; height: 40px; padding: 0 8px 0 4px; border: 0; border-radius: 8px; background: transparent; font: inherit; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; color: #0F172A">
+<span aria-hidden="true" style="width: 32px; height: 32px; border-radius: 999px; background: #CCFBF1; color: #0B5F58; display: inline-flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px">PS</span>
+<span style="display: flex; flex-direction: column; align-items: flex-start; line-height: 16px"><span style="font-weight: 600">Priya Shah</span><span style="font-size: 12px; color: #64748B">Physiotherapist</span></span>
+</button>
+</header>
+
+<div style="display: flex; flex-wrap: wrap; flex: 1; align-items: stretch">
+<nav aria-label="Clinic" style="flex: 1 1 216px; background: #FFFFFF; border-right: 1px solid #E2E8F0; padding: 12px 8px; display: flex; flex-direction: column; gap: 2px">
+<a href="DiaryDay.dc.html" aria-current="page" style="height: 36px; padding: 0 10px; border-radius: 8px; display: flex; align-items: center; gap: 10px; text-decoration: none; color: #0B5F58; background: #E6F7F5; font-weight: 600"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"></path></svg>Diary</a>
+<a href="PatientList.dc.html" style="height: 36px; padding: 0 10px; border-radius: 8px; display: flex; align-items: center; gap: 10px; text-decoration: none; color: #334155; font-weight: 500"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"></path></svg>Patients</a>
+<a href="NoteEditor.dc.html" style="height: 36px; padding: 0 10px; border-radius: 8px; display: flex; align-items: center; gap: 10px; text-decoration: none; color: #334155; font-weight: 500"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"></path></svg><span style="flex: 1">Unsigned notes</span><span style="font-size: 12px; font-weight: 600; background: #FEF3C7; color: #864E0E; border-radius: 999px; padding: 0 7px; line-height: 20px">3</span></a>
+<a href="BillingList.dc.html" style="height: 36px; padding: 0 10px; border-radius: 8px; display: flex; align-items: center; gap: 10px; text-decoration: none; color: #334155; font-weight: 500"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 7c0-5.333-8-5.333-8 0M10 7v14M6 21h12M6 13h10"></path></svg>Billing</a>
+<a href="Messages.dc.html" style="height: 36px; padding: 0 10px; border-radius: 8px; display: flex; align-items: center; gap: 10px; text-decoration: none; color: #334155; font-weight: 500"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>Messages</a>
+</nav>
+
+<main style="flex: 999 1 560px; min-width: 0; padding: 16px 20px; display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px">
+<div style="display: flex; align-items: center; gap: 4px">
+<button type="button" aria-label="Previous week" style="height: 36px; width: 36px; border: 1px solid #E2E8F0; border-radius: 8px; background: #FFFFFF; display: inline-flex; align-items: center; justify-content: center; color: #0F172A"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg></button>
+<button type="button" style="height: 36px; padding: 0 12px; border: 1px solid #E2E8F0; border-radius: 8px; background: #FFFFFF; font: inherit; font-weight: 500">This week</button>
+<button type="button" aria-label="Next week" style="height: 36px; width: 36px; border: 1px solid #E2E8F0; border-radius: 8px; background: #FFFFFF; display: inline-flex; align-items: center; justify-content: center; color: #0F172A"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"></path></svg></button>
+</div>
+<h1 style="margin: 0; font-size: 18px; line-height: 28px; font-weight: 600; white-space: nowrap">26/10 – 31/10/2026</h1>
+<div role="group" aria-label="View" style="display: flex; background: #F1F5F9; border-radius: 8px; padding: 3px; gap: 2px">
+<a href="DiaryDay.dc.html" style="height: 30px; padding: 0 12px; border-radius: 6px; font-weight: 500; color: #475569; text-decoration: none; display: inline-flex; align-items: center">Day</a>
+<span aria-current="page" style="height: 30px; padding: 0 12px; border-radius: 6px; background: #FFFFFF; box-shadow: 0 1px 2px rgba(15,23,42,.08); font-weight: 600; display: inline-flex; align-items: center">Week</span>
+</div>
+<div style="display: flex; flex-direction: column; gap: 0">
+<label for="wk-prac" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Practitioner</label>
+<div style="position: relative">
+<select id="wk-prac" style="height: 36px; padding: 0 32px 0 36px; border: 1px solid #CBD5E1; border-radius: 8px; font: inherit; font-weight: 500; background: #FFFFFF; appearance: none; color: #0F172A">
+<option>Priya Shah – Room 1</option><option>Tom Hughes – Room 2</option><option>Aisha Rahman – Gym</option><option>Dan Murphy – Room 3</option>
+</select>
+<span aria-hidden="true" style="position: absolute; left: 8px; top: 7px; width: 22px; height: 22px; border-radius: 999px; background: #CCFBF1; color: #0B5F58; font-size: 10px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center">PS</span>
+<svg style="position: absolute; right: 10px; top: 10px; pointer-events: none" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg>
+</div>
+</div>
+<div style="margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap">
+<span style="font-size: 13px; color: #475569">This week: <strong style="color: #0F172A">31 appointments</strong> · 78% booked · 2 DNA</span>
+<a href="BookingDialog.dc.html" style="height: 36px; padding: 0 14px; border-radius: 8px; background: #0B7970; color: #FFFFFF; text-decoration: none; font-weight: 500; display: inline-flex; align-items: center; gap: 6px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>New appointment</a>
+</div>
+</div>
+
+<div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; overflow: hidden">
+<div style="overflow-x: auto">
+<div style="min-width: 900px">
+<div style="display: grid; grid-template-columns: 56px repeat(6, minmax(0, 1fr)); border-bottom: 1px solid #E2E8F0">
+<div></div>
+<sc-for list="{{days}}" as="d" hint-placeholder-count="6">
+<div style="padding: 8px 10px; border-left: 1px solid #E2E8F0; display: flex; align-items: baseline; gap: 6px; background: {{d.headBg}}">
+<span style="font-weight: 600; color: {{d.headFg}}">{{d.dow}}</span><span style="font-variant-numeric: tabular-nums; color: {{d.subFg}}">{{d.date}}</span>
+<span style="margin-left: auto; font-size: 12px; color: #64748B; white-space: nowrap">{{d.count}}</span>
+</div>
+</sc-for>
+</div>
+<div style="display: flex">
+<div aria-hidden="true" style="width: 56px; flex: none; position: relative; height: 800px">
+<sc-for list="{{hours}}" as="h" hint-placeholder-count="10"><span style="position: absolute; top: {{h.top}}; right: 8px; font-size: 11px; color: #64748B; font-variant-numeric: tabular-nums">{{h.label}}</span></sc-for>
+</div>
+<div style="flex: 1; position: relative; height: 800px; background-image: linear-gradient(#E2E8F0 1px, transparent 1px), linear-gradient(#F1F5F9 1px, transparent 1px); background-size: 100% 80px, 100% 20px">
+<sc-for list="{{seps}}" as="s" hint-placeholder-count="6"><div style="position: absolute; top: 0; bottom: 0; left: {{s}}; border-left: 1px solid #E2E8F0"></div></sc-for>
+<div aria-hidden="true" style="position: absolute; top: 0; height: 800px; left: calc(100% / 6); width: calc(100% / 6); background: rgba(14,149,138,.04)"></div>
+<sc-for list="{{blocks}}" as="b" hint-placeholder-count="30">
+<sc-if value="{{b.isAppt}}" hint-placeholder-val="{{true}}">
+<button type="button" aria-label="{{b.aria}}" style="position: absolute; top: {{b.top}}; left: {{b.left}}; width: {{b.width}}; height: {{b.height}}; border-radius: 6px; border: 1px solid {{b.bd}}; background: {{b.bg}}; color: {{b.fg}}; padding: 2px 6px; font: inherit; text-align: left; display: flex; flex-direction: column; overflow: hidden; cursor: pointer">
+<span style="display: flex; align-items: center; gap: 4px; width: 100%; font-size: 11px; line-height: 14px"><span style="font-variant-numeric: tabular-nums; font-weight: 600">{{b.time}}</span><svg style="margin-left: auto; flex: none" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{b.icon}}"></path></svg><span style="font-weight: 600; white-space: nowrap">{{b.statusLabel}}</span></span>
+<span style="font-size: 12px; line-height: 16px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%; text-decoration: {{b.deco}}">{{b.typeMark}}{{b.name}}</span>
+</button>
+</sc-if>
+<sc-if value="{{b.notAppt}}" hint-placeholder-val="{{false}}">
+<div style="position: absolute; top: {{b.top}}; left: {{b.left}}; width: {{b.width}}; height: {{b.height}}; border-radius: 6px; border: 1px solid #CBD5E1; background: repeating-linear-gradient(135deg,#F1F5F9 0 6px,#E2E8F0 6px 12px); color: #334155; padding: 4px 6px; font-size: 12px; font-weight: 600; display: flex; gap: 4px; align-items: flex-start">
+<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="margin-top: 2px; flex: none"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM4.93 4.93l14.14 14.14"></path></svg><span>{{b.name}}</span>
+</div>
+</sc-if>
+</sc-for>
+<div aria-hidden="true" style="position: absolute; left: calc(100% / 6); width: calc(100% / 6); top: 213px; border-top: 2px solid #0E958A; z-index: 3"></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<p style="margin: 0; font-size: 12px; color: #64748B">"+" marks an initial assessment. Hatched areas are outside the rota or blocked. Click an empty slot to book it.</p>
+</main>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1000}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const fmt = m => String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+    const I = {
+      cal: 'M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z',
+      ucheck: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM16 11l2 2 4-4',
+      act: 'M22 12h-4l-3 9L9 3l-3 9H2',
+      done: 'M22 11.08V12a10 10 0 1 1-5.93-9.14M22 4L12 14.01l-3-3',
+      ux: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM17 8l5 5M22 8l-5 5',
+      calx: 'M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM10 14l4 4M14 14l-4 4',
+      xc: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM15 9l-6 6M9 9l6 6'
+    };
+    const H = (a, b) => 'repeating-linear-gradient(135deg,' + a + ' 0 6px,' + b + ' 6px 12px)';
+    const S = {
+      b: { bg: '#E8EEFB', fg: '#1842B4', bd: '#C7D4F5', icon: I.cal, label: '' },
+      a: { bg: '#FEF3C7', fg: '#864E0E', bd: '#FBD38D', icon: I.ucheck, label: 'Arrived' },
+      t: { bg: '#D5F5F0', fg: '#0B5F58', bd: '#99E2D8', icon: I.act, label: 'In treatment' },
+      c: { bg: '#DCFCE7', fg: '#166534', bd: '#A7E8BE', icon: I.done, label: '' },
+      d: { bg: '#FEE2E2', fg: '#991B1B', bd: '#FCA5A5', icon: I.ux, label: 'DNA' },
+      l: { bg: H('#FFF7ED', '#FFEDD5'), fg: '#9A3412', bd: '#FDBA74', icon: I.calx, label: 'Late' },
+      x: { bg: H('#F8FAFC', '#EEF2F6'), fg: '#475569', bd: '#CBD5E1', icon: I.xc, label: 'Canc.' }
+    };
+    const raw = [
+      [0, '08:00', 30, 'Ravi Patel', 'f', 'c'], [0, '09:00', 45, 'Lucy Fraser', 'i', 'c'], [0, '10:00', 30, 'Sam Whitfield', 'f', 'c'], [0, '11:00', 30, 'Ellie Ward', 'f', 'd'], [0, '14:00', 30, 'Grace Kim', 'f', 'c'], [0, '15:00', 45, 'Arjun Mehta', 'i', 'c'], [0, '16:30', 30, 'Paul Rowe', 'f', 'c'],
+      [1, '08:00', 30, 'Ravi Patel', 'f', 'c'], [1, '08:30', 30, 'Owen Price', 'f', 'd'], [1, '09:00', 45, 'Margaret Ellis', 'i', 'c'], [1, '10:00', 30, 'Liam O’Connor', 'f', 'c'], [1, '10:30', 30, 'Chloe Bennett', 'f', 't'], [1, '11:00', 45, 'Emily Turner', 'i', 'a'], [1, '14:00', 30, 'Hannah Wright', 'f', 'l'], [1, '15:00', 30, 'George Lewis', 'f', 'b'], [1, '16:00', 45, 'Isla Morgan', 'i', 'b'],
+      [2, '08:30', 30, 'Fatima Begum', 'f', 'b'], [2, '09:30', 30, 'Chloe Bennett', 'f', 'b'], [2, '10:00', 45, 'Joseph Allen', 'i', 'b'], [2, '11:30', 30, 'Margaret Ellis', 'f', 'b'], [2, '14:00', 30, 'Ben Carter', 'f', 'x'], [2, '15:30', 30, 'Emily Turner', 'f', 'b'],
+      [3, '09:00', 30, 'Liam O’Connor', 'f', 'b'], [3, '10:00', 30, 'Ravi Patel', 'f', 'b'], [3, '11:00', 45, 'Megan Cole', 'i', 'b'], [3, '15:00', 30, 'Hannah Wright', 'f', 'b'],
+      [4, '08:00', 30, 'Owen Price', 'f', 'b'], [4, '09:00', 30, 'Grace Kim', 'f', 'b'], [4, '10:30', 45, 'Ola Nowak', 'i', 'b'],
+      [5, '09:00', 30, 'Isla Morgan', 'f', 'b'], [5, '10:00', 30, 'Paul Rowe', 'f', 'b']
+    ];
+    const blocksRaw = [
+      [0, '12:30', 60, 'Lunch'], [1, '12:30', 60, 'Lunch'], [2, '12:30', 60, 'Lunch'], [3, '12:30', 60, 'Lunch'],
+      [4, '12:00', 360, 'Annual leave (pm)'], [5, '08:00', 60, 'Closed'], [5, '13:00', 300, 'Closed – Saturday pm'],
+      [2, '16:30', 90, 'CPD – in-service training']
+    ];
+    const tm = s => +s.slice(0, 2) * 60 + +s.slice(3);
+    const PX = 20 / 15; const W = 'calc(100% / 6 - 6px)';
+    const pos = (d, start, dur) => ({ top: ((start - 480) * PX + 1) + 'px', height: (dur * PX - 2) + 'px', left: 'calc(' + d + ' * 100% / 6 + 3px)', width: W });
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const blocks = raw.map(r => {
+      const s = S[r[5]]; const start = tm(r[1]);
+      return Object.assign(pos(r[0], start, r[2]), {
+        isAppt: true, notAppt: false, name: r[3], typeMark: r[4] === 'i' ? '+ ' : '',
+        time: r[1], bg: s.bg, fg: s.fg, bd: s.bd, icon: s.icon, statusLabel: s.label,
+        deco: (r[5] === 'x' || r[5] === 'l') ? 'line-through' : 'none',
+        aria: days[r[0]] + ' ' + r[1] + ', ' + r[3] + ', ' + (r[4] === 'i' ? 'initial' : 'follow-up') + ', ' + ({ b: 'booked', a: 'arrived', t: 'in treatment', c: 'completed', d: 'did not attend', l: 'late cancellation', x: 'cancelled' })[r[5]]
+      });
+    }).concat(blocksRaw.map(b => Object.assign(pos(b[0], tm(b[1]), b[2]), { isAppt: false, notAppt: true, name: b[3] })));
+    const counts = [7, 9, 6, 4, 3, 2];
+    return {
+      product: 'Clinic system',
+      days: days.map((dow, i) => ({ dow, date: (26 + i) + '/10', count: counts[i] + ' appts', headBg: i === 1 ? '#F0FDFA' : '#FFFFFF', headFg: i === 1 ? '#0B5F58' : '#0F172A', subFg: i === 1 ? '#0B5F58' : '#64748B' })),
+      seps: [0, 1, 2, 3, 4, 5].map(i => 'calc(' + i + ' * 100% / 6)'),
+      hours: [8, 9, 10, 11, 12, 13, 14, 15, 16, 17].map(h => ({ label: String(h).padStart(2, '0') + ':00', top: ((h - 8) * 80) + 'px' })),
+      blocks
+    };
+  }
+}
+</script>
+</body>
+</html>

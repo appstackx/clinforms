@@ -18,7 +18,7 @@ import "server-only";
  * Owner: forms-engine agent (contract-stage implementation; signatures are final).
  */
 import { createHash } from "node:crypto";
-import { MAX_FORM_FILE_BYTES } from "../config.public";
+import { MAX_FORM_FILE_BYTES, MAX_RTF_FILE_BYTES } from "../config.public";
 import type { FormMimeType } from "../core/types";
 import { HttpError } from "../api/http";
 import { RtfConversionError, convertRtfToDocx, isRtfBytes } from "../core/rtf";
@@ -64,7 +64,7 @@ function decodeRtfFormFile(rtf: Uint8Array, maxBytes: number): DecodedFormFile {
   const started = Date.now();
   let converted: ReturnType<typeof convertRtfToDocx>;
   try {
-    converted = convertRtfToDocx(rtf, { maxBytes });
+    converted = convertRtfToDocx(rtf, { maxBytes, maxTextBytes: maxBytes });
   } catch (err) {
     if (err instanceof RtfConversionError) {
       if (err.code === "RTF_TOO_LARGE") throw new HttpError(413, "Form file too large", { code: "PAYLOAD_TOO_LARGE", detail: err.message });
@@ -96,17 +96,21 @@ function decodeRtfFormFile(rtf: Uint8Array, maxBytes: number): DecodedFormFile {
  */
 export function decodeFormFile(base64: string, opts: { maxBytes?: number; convertRtf?: boolean } = {}): DecodedFormFile {
   const maxBytes = opts.maxBytes ?? MAX_FORM_FILE_BYTES;
+  // 10/2026: an RTF template may be larger (its pictures are hex text) – the converter checks it (12 MB in all, at
+  // most `maxBytes` besides pictures and objects: core/rtf assertRtfWithinLimits). Everything else: `maxBytes`.
+  const maxRaw = opts.convertRtf ? Math.max(maxBytes, MAX_RTF_FILE_BYTES) : maxBytes;
   // Rough pre-check before allocating: 4 base64 chars → 3 bytes.
-  if (Math.floor((base64.length * 3) / 4) > maxBytes + 3) {
+  if (Math.floor((base64.length * 3) / 4) > maxRaw + 3) {
     throw new HttpError(413, "Form file too large", {
       code: "PAYLOAD_TOO_LARGE",
-      detail: `Form files can be up to ${Math.round(maxBytes / (1024 * 1024))} MB.`,
+      detail: `Form files can be up to ${Math.round(maxBytes / (1024 * 1024))} MB${opts.convertRtf ? ` (RTF templates with pictures up to ${Math.round(MAX_RTF_FILE_BYTES / (1024 * 1024))} MB)` : ""}.`,
     });
   }
   const bytes = new Uint8Array(Buffer.from(base64.replace(/^data:[^,]*,/, ""), "base64"));
   if (bytes.byteLength === 0) {
     throw new HttpError(422, "The form file is empty", { code: "FORM_INVALID", detail: "Choose the referrer's .docx or PDF form." });
   }
+  if (opts.convertRtf && isRtfBytes(bytes) && !sniffFormFile(bytes.subarray(0, Math.min(bytes.byteLength, 4096)))) return decodeRtfFormFile(bytes, maxBytes);
   if (bytes.byteLength > maxBytes) {
     throw new HttpError(413, "Form file too large", {
       code: "PAYLOAD_TOO_LARGE",

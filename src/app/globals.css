@@ -35,6 +35,15 @@
     --ring: 175 83% 32%;
 
     --radius: 0.75rem;
+
+    /*
+     * Clinic system design v1 (docs/clinic-system/design/): darker steps added where white text or small text on
+     * the base colour fails WCAG AA. Additive only – no existing token changes, so ClinForms looks the same.
+     */
+    --primary-strong: 175 83% 26%; /* #0B7970 – filled buttons, links, small teal text (5.3:1 on white) */
+    --accent-text: 32 81% 29%; /* #864E0E – warning text and icons (7.0:1) */
+    --destructive-strong: 0 74% 42%; /* #BA1C1C – destructive buttons, error text (6.4:1) */
+    --input-strong: 213 27% 84%; /* #CBD5E1 – input borders (3:1 against white) */
   }
 }
 

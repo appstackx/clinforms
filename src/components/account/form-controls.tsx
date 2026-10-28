@@ -1,5 +1,5 @@
 "use client";
-/** Client-side form helpers for server-action forms (pending state, copy-to-clipboard). */
+/** Client-side form helpers for server-action forms (pending state, outcome, copy-to-clipboard). */
 import { useState } from "react";
 import { useFormStatus } from "react-dom";
 import { cn } from "@/lib/utils";
@@ -41,6 +41,26 @@ export function SubmitButton({
     >
       {pending ? (pendingText ?? "Please wait…") : children}
     </button>
+  );
+}
+
+/**
+ * A settings form's outcome – "Saved." or the error – placed right next to the button that was clicked: a notice at
+ * the top of a long form is out of sight after clicking Save at the bottom (test run 24/10/2026). The status region
+ * is always there, so screen readers announce the outcome.
+ */
+export function FormResult({ state, success = "Saved." }: { state: { ok: true } | { ok: false; error: string } | null; success?: string }) {
+  if (state?.ok === false) {
+    return (
+      <span role="alert" className="text-sm text-red-700">
+        {state.error}
+      </span>
+    );
+  }
+  return (
+    <span role="status" className="text-sm text-teal-700">
+      {state?.ok === true ? success : null}
+    </span>
   );
 }
 

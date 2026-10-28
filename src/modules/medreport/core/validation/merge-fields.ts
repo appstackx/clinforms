@@ -8,8 +8,10 @@
  *   field code, text printed on a PDF page).
  * Forms analysed before 10/2026 carry no record and get only the answer check; the final render's scan
  * (forms/render-form.ts) still refuses to issue such a form with a merge field left on it.
+ * A clinic-system code (<<P_GROUPREF>>) is named in plain words in the message (practiceCodeInWords); the evidence
+ * keeps the code as found, so flag IDs do not change.
  */
-import { findMergeTokens, listMergeTokens, unresolvedMergeFields } from "../merge-fields";
+import { findMergeTokens, listMergeTokensInWords, practiceCodeInWords, unresolvedMergeFields } from "../merge-fields";
 import type { ReportFlag } from "../types";
 import { getValidationContext, makeFlag } from "./context";
 import type { ValidatorInput } from "./index";
@@ -27,7 +29,7 @@ export function validateMergeFields(input: ValidatorInput): ReportFlag[] {
         sectionKey: section.key,
         paragraphId: p.id,
         evidence: `mail-merge field ${tokens[0]}`,
-        message: `This answer contains a mail-merge field (${listMergeTokens(tokens)}). Replace it with the real answer before approving.`,
+        message: `This answer contains a mail-merge field (${listMergeTokensInWords(tokens)}). Replace it with the real answer before approving.`,
       }),
     );
   }
@@ -36,6 +38,9 @@ export function validateMergeFields(input: ValidatorInput): ReportFlag[] {
   if (!form) return flags;
   for (const left of unresolvedMergeFields(form, input.report)) {
     const times = left.count > 1 ? ` (${left.count} times)` : "";
+    const words = practiceCodeInWords(left.text);
+    // A clinic-system code in plain words; any other merge field as printed.
+    const what = words ? `${words}, in ${left.where}` : `${left.text} in ${left.where}`;
     flags.push(
       makeFlag({
         code: "MISSING_PLACEHOLDER",
@@ -43,8 +48,8 @@ export function validateMergeFields(input: ValidatorInput): ReportFlag[] {
         ...(left.fieldId && { sectionKey: left.fieldId }),
         evidence: `mail-merge field ${left.text} in ${left.where}`,
         message: left.fixed
-          ? `This form still contains a mail-merge field: ${left.text} in ${left.where}${times}. It cannot be completed here, so the form cannot be approved with it. Ask the referrer for the form without mail-merge fields (or remove them from the template) and upload it again.`
-          : `This form still contains a mail-merge field: ${left.text} in ${left.where}${times}. Answer the question whose box it is – or, in the form's mapping, make a question replace “${left.text}” – before approving.`,
+          ? `This form still contains a mail-merge field: ${what}${times}. It cannot be completed here, so the form cannot be approved with it. Ask the referrer for the form without mail-merge fields (or remove them from the template) and upload it again.`
+          : `This form still contains a mail-merge field: ${what}${times}. Answer the question whose box it is – or, in the form's mapping, make a question replace ${words ? "it" : `“${left.text}”`} – before approving.`,
       }),
     );
   }

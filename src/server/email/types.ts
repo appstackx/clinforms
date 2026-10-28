@@ -24,7 +24,12 @@ export interface EmailMessage {
 }
 
 export interface DeliveryResult {
-  status: "sent" | "not_sent" | "failed";
+  /**
+   * sent – handed to the provider (or printed by `log`); not_sent – email is off (`none`) or the address can never
+   * receive mail; failed – the provider refused it; withheld – not sent on purpose: the caller only wanted the link
+   * (captureOutbox with send: false, e.g. the admin script, or a platform reset link).
+   */
+  status: "sent" | "not_sent" | "failed" | "withheld";
   provider: EmailProviderName;
 }
 

@@ -13,7 +13,8 @@ test("the signer's recorded opinion becomes their own voice", () => {
   );
   assert.equal(
     rewriteInFirstPerson("At the final review on 07/07/2026, Sarah Reid, Senior Physiotherapist, assessed residual intermittent low-level neck ache. She recorded advice to take workstation breaks every 30–45 minutes.", "Sarah Reid"),
-    "At my final review on 07/07/2026, I assessed residual intermittent low-level neck ache. I recorded advice to take workstation breaks every 30–45 minutes.",
+    // bh2 WB design 11 (C-1): only the owner's own name changes – "She recorded" is never taken as the owner.
+    "At my final review on 07/07/2026, I assessed residual intermittent low-level neck ache. She recorded advice to take workstation breaks every 30–45 minutes.",
   );
   assert.equal(
     rewriteInFirstPerson("At the initial assessment on 09/06/2026, Mr Brooks told Tom Ellis, physiotherapist, that he lifted a carton.", "Tom Ellis"),
@@ -155,6 +156,15 @@ test("the signer's own record reads as clinical statements, not record-keeping (
     ["On 01/09/2026 I recorded an assessment of shoulder pain, and on 01/10/2026 I recorded the assessment as shoulder pain, improving.", "Assessment on 01/09/2026: shoulder pain, and on 01/10/2026 the assessment was shoulder pain, improving."],
     ["On 22/09/2026 I recorded that, in my opinion, Mr Brooks is fit for a phased return to normal duties over 2 weeks.", "On 22/09/2026, in my opinion, Mr Brooks is fit for a phased return to normal duties over 2 weeks."],
     ["I recorded my assessment that the presentation was consistent with WAD II.", "In my assessment, the presentation was consistent with WAD II."],
+    // Fix round 1 (B0-23), seen on an approved Proclaim final report: no dangling "and that" after the rewrite.
+    [
+      "On 16/09/2026 I recorded that, in my opinion, the remaining occasional stiffness should settle within 4–6 weeks with his home exercise programme, and that no further treatment is needed.",
+      "On 16/09/2026, in my opinion, the remaining occasional stiffness should settle within 4–6 weeks with his home exercise programme, and no further treatment is needed.",
+    ],
+    [
+      "On 16/09/2026 I recorded my opinion that the remaining stiffness should settle within 4–6 weeks, and that no further treatment is needed.",
+      "On 16/09/2026, in my opinion, the remaining stiffness should settle within 4–6 weeks, and no further treatment is needed.",
+    ],
   ];
   for (const [input, expected] of cases) {
     assert.equal(plainClinicalWording(input), expected, input);
@@ -169,16 +179,17 @@ test("the signer's own record reads as clinical statements, not record-keeping (
 test("\"Write in my own voice\" gives plain clinical wording, including a paragraph that only says \"she recorded\"", () => {
   assert.equal(
     inOwnClinicalWording("On 01/10/2026 Sarah Reid, physiotherapist, recorded a further treatment request to Bupa for 4 further sessions. She recorded the goals for the further sessions as: front crawl.", "Sarah Reid"),
-    "Further treatment requested on 01/10/2026: 4 further sessions. Goals for the further sessions: front crawl.",
+    // bh2 WB design 11 (C-1): "She recorded" stays as written (the pronoun may be a colleague or a GP).
+    "Further treatment requested on 01/10/2026: 4 further sessions. She recorded the goals for the further sessions as: front crawl.",
   );
   const pronounOnly = "On 01/10/2026 she recorded the shoulder as improving, and Mrs Lane's goals not yet met.";
   assert.equal(inOwnClinicalWording(pronounOnly, "Sarah Reid"), pronounOnly, "without the pronoun option a paragraph that does not name the author is left alone");
-  assert.equal(inOwnClinicalWording(pronounOnly, "Sarah Reid", { pronouns: true }), "On 01/10/2026, the shoulder was improving, and Mrs Lane's goals not yet met.");
+  assert.equal(inOwnClinicalWording(pronounOnly, "Sarah Reid", { pronouns: true }), pronounOnly, "bh2 (C-1): the pronoun option changes nothing");
   assert.equal(inOwnClinicalWording("She reported pain on 01/10/2026.", "Sarah Reid", { pronouns: true }), "She reported pain on 01/10/2026.", "the patient's own report is not the clinician's");
 
   const bundle = { notes: [{ id: "N-004", author: { name: "Sarah Reid" } }, { id: "N-005", author: { name: "Sarah Reid" } }, { id: "N-009", author: { name: "Tom Ellis" } }] } as unknown as Parameters<typeof isOwnVoiceCandidate>[1];
   assert.equal(isOwnVoiceCandidate({ text: pronounOnly, sourceIds: ["N-004", "N-005"], origin: "ai" }, bundle, "Sarah Reid"), false);
-  assert.equal(isOwnVoiceCandidate({ text: pronounOnly, sourceIds: ["N-004", "N-005"], origin: "ai" }, bundle, "Sarah Reid", { pronouns: true }), true);
+  assert.equal(isOwnVoiceCandidate({ text: pronounOnly, sourceIds: ["N-004", "N-005"], origin: "ai" }, bundle, "Sarah Reid", { pronouns: true }), false, "bh2 (C-1)");
   assert.equal(isOwnVoiceCandidate({ text: "On 01/10/2026 I recorded that X.", sourceIds: ["N-005"], origin: "ai" }, bundle, "Sarah Reid", { pronouns: true }), true, "a first-person draft");
   assert.equal(isOwnVoiceCandidate({ text: pronounOnly, sourceIds: ["N-009"], origin: "ai" }, bundle, "Sarah Reid", { pronouns: true }), false, "another clinician's note");
 });
@@ -210,4 +221,84 @@ test("fix wave 2: otherClinicianVoice – only unedited drafted answers in the a
   assert.equal(otherClinicianVoice(report, { name: "sarah  reid" }), null, "no HCPC: same name");
   assert.equal(otherClinicianVoice({ ...report, author: undefined } as typeof report, { name: "Sam Patel", hcpc: "PH123456" }), null, "third-person drafts");
   assert.equal(sameClinician({ name: "A", hcpc: "X1" }, { name: "A", hcpc: "X2" }), false);
+});
+
+/* Fix round 1 (B0-1): another physio's notes and opinions in the approver's first person. */
+
+const TOM_ONLY = {
+  notes: [
+    { id: "N-001", author: { name: "Tom Ellis", hcpc: "PH-DEMO-02" } },
+    { id: "N-005", author: { name: "Tom Ellis", hcpc: "PH-DEMO-02" } },
+  ],
+} as unknown as Parameters<typeof import("./voice").otherCliniciansInFirstPerson>[1];
+const SARAH = { name: "Sarah Reid", hcpc: "ZZ0001" };
+
+test("fix round 1: otherCliniciansInFirstPerson – 'I' / 'me' / 'my' citing another clinician's note", async () => {
+  const { otherCliniciansInFirstPerson } = await import("./voice");
+  const p = (text: string, sourceIds = ["N-001"]) => ({ text, sourceIds });
+  // Gemma Whitlock's notes are all Tom Ellis's; Sarah Reid signs.
+  for (const text of [
+    "Mrs Whitlock told me that she saw her GP on 03/09/2026.",
+    "My assessment on 08/09/2026 was acute non-specific (mechanical) low back pain.",
+    "In my opinion, she should be able to return to full duties, including 12-hour shifts, within 4 weeks.",
+    "I also advised ice and compression.",
+  ]) {
+    assert.deepEqual(otherCliniciansInFirstPerson(p(text), TOM_ONLY, SARAH), ["Tom Ellis"], text);
+  }
+  const mine = { notes: [{ id: "N-001", author: { name: "Sarah Reid", hcpc: "ZZ0001" } }, { id: "N-004", author: { name: "Tom Ellis", hcpc: "PH-DEMO-02" } }] } as typeof TOM_ONLY;
+  assert.equal(otherCliniciansInFirstPerson(p("Mr Ellery told me that driving was uncomfortable."), mine, SARAH), null, "the signer's own note");
+  assert.equal(otherCliniciansInFirstPerson(p("Tom Ellis, physiotherapist, recorded that she told him it eased."), TOM_ONLY, SARAH), null, "third person");
+  assert.equal(otherCliniciansInFirstPerson(p("She said “my back aches by the end of the shift”."), TOM_ONLY, SARAH), null, "a quotation from the note");
+  // The signer's notes and another's together: fine while the other clinician is named.
+  // bh2 WB design 7 (C-ATTR-3, lic-1/lic-2): the first person on drafted text only when every cited note is the owner's.
+  // bh2 fix round 1 (R1T-WB-09, Khuram's E7/E8 decision of 26/10/2026): the first person clause by clause – the owner's
+  // own clause beside Tom Ellis named in the third person is licensed; an "I" over a date only Tom's note has is not.
+  assert.equal(otherCliniciansInFirstPerson(p("I repeated soft tissue release on 22/07/2026, and Tom Ellis, physiotherapist, recorded it on 05/08/2026.", ["N-001", "N-004"]), mine, SARAH), null);
+  assert.deepEqual(otherCliniciansInFirstPerson(p("I repeated soft tissue release on 22/07/2026 and on 05/08/2026.", ["N-001", "N-004"]), { notes: [{ ...mine.notes[0], date: "2026-07-22" }, { ...mine.notes[1], date: "2026-08-05" }] } as typeof TOM_ONLY, SARAH), ["Tom Ellis"]);
+  // No signing author: nothing is anyone's "I".
+  assert.deepEqual(otherCliniciansInFirstPerson(p("Mr Ellery told me that driving was uncomfortable."), mine, null), ["Sarah Reid"]);
+  assert.equal(otherCliniciansInFirstPerson(p("7 appointments were attended, and I was told of none missed.", ["FACT-attendance"]), TOM_ONLY, SARAH), null, "no note cited");
+});
+
+test("fix round 1: nameClinicianInstead – the inverse of the first-person rewrite, or null", async () => {
+  const { nameClinicianInstead } = await import("./voice");
+  assert.equal(nameClinicianInstead("Mrs Whitlock told me that she saw her GP on 03/09/2026.", "Tom Ellis"), "Mrs Whitlock told Tom Ellis that she saw her GP on 03/09/2026.");
+  assert.equal(
+    nameClinicianInstead("My assessment on 08/09/2026 was acute non-specific (mechanical) low back pain following a moving and handling incident at work on 01/09/2026.", "Tom Ellis"),
+    "Tom Ellis's assessment on 08/09/2026 was acute non-specific (mechanical) low back pain following a moving and handling incident at work on 01/09/2026.",
+  );
+  assert.equal(
+    nameClinicianInstead("On 13/10/2026, in my opinion, she should be able to return to full duties within 4 weeks. I requested 3 further sessions.", "Tom Ellis"),
+    null,
+    "bh2 WB design 10 (B2-1): never with the owner's own-opinion wording",
+  );
+  assert.equal(nameClinicianInstead("She said “my back aches”, and I advised heat.", "Tom Ellis"), "She said “my back aches”, and Tom Ellis advised heat.", "quotations untouched");
+  assert.equal(nameClinicianInstead("He was graded WAD I and I advised rest.", "Tom Ellis"), "He was graded WAD I and Tom Ellis advised rest.", "a numeral stays");
+  assert.equal(nameClinicianInstead("I'm told she improved.", "Tom Ellis"), null, "a contraction: rewritten by hand");
+  assert.equal(nameClinicianInstead("Tom Ellis recorded full movement.", "Tom Ellis"), null, "nothing to change");
+  // Already named: the "my" may be the signer's own ("covered my leave") – rewriting it would make it false.
+  assert.equal(
+    nameClinicianInstead("On 05/08/2026 Tom Ellis, physiotherapist, covered my leave and recorded mobilisations and soft tissue release.", "Tom Ellis"),
+    null,
+    "the clinician is named already: rewritten by hand",
+  );
+});
+
+test("fix round 1 (B0-23): gap wording names whose note it is – never “my note” or “your note”", async () => {
+  const { notesNamedByAuthor } = await import("./voice");
+  const notes = [
+    { date: "2026-07-15", author: { name: "Sarah Reid" } },
+    { date: "2026-08-05", author: { name: "Tom Ellis" } },
+    { date: "2026-09-16", author: { name: "Sarah Reid" } },
+  ];
+  assert.equal(
+    notesNamedByAuthor("Your discharge note of 16/09/2026 says the stiffness should settle within 4–6 weeks.", notes),
+    "Sarah Reid's discharge note of 16/09/2026 says the stiffness should settle within 4–6 weeks.",
+  );
+  assert.equal(notesNamedByAuthor("What did my note of 05/08/2026 record?", notes), "What did Tom Ellis's note of 05/08/2026 record?", "the note's own author, by its date");
+  assert.equal(notesNamedByAuthor("Your notes do not record a dose. Check my initial assessment note.", notes), "The notes do not record a dose. Check the initial assessment note.", "no date: “the”");
+  assert.equal(notesNamedByAuthor("She said “my notes from the gym say so”.", notes), "She said “my notes from the gym say so”.", "quotations untouched");
+  assert.equal(notesNamedByAuthor("Sarah Reid's note of 15/07/2026 records no dose.", notes), "Sarah Reid's note of 15/07/2026 records no dose.", "nothing to change");
+  assert.equal(notesNamedByAuthor("Check your records for the date.", notes), "Check your records for the date.", "not a note");
+  assert.equal(notesNamedByAuthor("Does your clinic have no notes of it?", notes), "Does your clinic have no notes of it?", "not someone's note");
 });

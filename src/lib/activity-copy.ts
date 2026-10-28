@@ -12,6 +12,9 @@
  */
 import { PMS_AUDIT_ACTIONS, PMS_AUDIT_LABELS, PMS_AUDIT_TARGETS } from "../modules/pms/audit";
 import { CLINIC_SYSTEM_NAME } from "./brand";
+import { WORDING } from "../modules/medreport/core/wording";
+// bh2 W0 follow-up (seam "activity-labels"): the release's report audit actions are WF's (activity-copy-release.ts).
+import { RELEASE_REPORT_AUDIT_ACTIONS, RELEASE_REPORT_AUDIT_LABELS, describeReleaseReportAuditDetail } from "./activity-copy-release";
 
 export interface ActivityGroup {
   label: string;
@@ -39,16 +42,36 @@ export const ACTIVITY_GROUPS: readonly ActivityGroup[] = [
   },
   {
     label: "Clinic account",
-    actions: ["clinic.create", "clinic.update", "clinic.offboard", "api_key.create", "api_key.revoke", "audit.export"],
+    actions: [
+      "clinic.create",
+      "clinic.update",
+      "clinic.offboard",
+      "clinic.trial_set",
+      "clinic.trial_started",
+      "clinic.trial_extended",
+      "clinic.trial_ended",
+      "clinic.trial_converted",
+      "clinic.limits_set",
+      "clinic.package_set",
+      "clinic.package_removed",
+      "clinic.forms_loaded",
+      "clinic.forms_replaced",
+      "clinic.demo_on",
+      "clinic.demo_off",
+      "api_key.create",
+      "api_key.revoke",
+      "audit.export",
+    ],
   },
   {
     label: "Forms",
-    actions: ["file.upload", "form.create", "form.update", "form.analyse_live", "form.confirm", "form.store_confirmed", "form.delete", "settings.update"],
+    actions: ["file.upload", "form.create", "form.replace", "form.update", "form.analyse_live", "form.confirm", "form.lint_accepted", "form.store_confirmed", "form.delete", "settings.update"],
   },
   {
     label: "Reports",
     actions: [
       "notes.imported",
+      "notes.reused",
       "report.create",
       "report.update",
       "report.draft_live",
@@ -59,6 +82,7 @@ export const ACTIVITY_GROUPS: readonly ActivityGroup[] = [
       "report.export",
       "report.delete",
       "launch.issue",
+      ...RELEASE_REPORT_AUDIT_ACTIONS,
     ],
   },
 ];
@@ -84,19 +108,37 @@ export const ACTIVITY_LABELS: Readonly<Record<string, string>> = {
   "clinic.create": "Clinic account opened",
   "clinic.update": "Clinic details updated",
   "clinic.offboard": "Clinic account closed",
+  "clinic.trial_set": "Trial set up by ClinForms",
+  "clinic.trial_started": "Trial started",
+  "clinic.trial_extended": "Trial extended by ClinForms",
+  "clinic.trial_ended": "Trial ended by ClinForms",
+  "clinic.trial_converted": "Trial converted to a full account",
+  "clinic.limits_set": "Drafting limits changed by ClinForms",
+  "clinic.package_set": "Package set by ClinForms",
+  "clinic.package_removed": "Package removed by ClinForms",
+  "clinic.forms_loaded": "Forms added to the library by ClinForms",
+  "clinic.forms_replaced": "Forms updated in the library by ClinForms",
+  "clinic.demo_on": "Made a demo clinic by ClinForms",
+  "clinic.demo_off": "Demo clinic switched off by ClinForms",
   "api_key.create": "API key created",
   "api_key.revoke": "API key revoked",
   "audit.export": "Activity downloaded",
   // The Studio and the Report API (src/modules/medreport: auth/actor.ts AUDIT_ACTIONS and the /store handlers).
   "file.upload": "Form file uploaded",
   "form.create": "Form added to the library",
+  "form.replace": "Form replaced by an updated version from ClinForms",
   "form.update": "Form mapping saved",
   "form.analyse_live": "Form questions read from the file",
   "form.confirm": "Form mapping confirmed",
+  // bh2 WE design 2: a clinician accepted a clinical-judgement question as the map words it (map lint L5, /forms/confirm).
+  "form.lint_accepted": "Form question accepted as worded by a clinician",
   "form.store_confirmed": "Confirmed form mapping saved",
   "form.delete": "Form removed from the library",
   "settings.update": "Referrer form links updated",
   "notes.imported": "Patient notes imported",
+  // Review fix 25/10/2026: written each time the wizard reads an earlier report's notes (a reload counts again), so it
+  // says the notes were opened – a new report shows as its own "Report started" row.
+  "notes.reused": "Patient notes opened from an earlier report",
   "report.create": "Report started",
   "report.update": "Report saved",
   "report.draft_live": "Answers drafted from the notes",
@@ -113,6 +155,18 @@ export const ACTIVITY_LABELS: Readonly<Record<string, string>> = {
   "platform.access_request_reopened": "Access request marked as not contacted",
   // The clinic system (src/modules/pms/audit/*), incl. package changes.
   ...PMS_AUDIT_LABELS,
+  "platform.trial_set": "Trial set up",
+  "platform.trial_extended": "Trial extended",
+  "platform.trial_ended": "Trial ended",
+  "platform.trial_converted": "Trial converted to a full account",
+  "platform.limits_set": "Drafting limits changed",
+  "platform.package_set": "Package set",
+  "platform.package_removed": "Package removed",
+  "platform.usage_export": "Usage downloaded (CSV)",
+  "platform.owner_reset_link": "Owner password reset link created",
+  "platform.demo_on": "Demo clinic switched on",
+  "platform.demo_off": "Demo clinic switched off",
+  ...RELEASE_REPORT_AUDIT_LABELS,
 };
 
 const NOUNS: Readonly<Record<string, string>> = {
@@ -190,7 +244,8 @@ export function describeActivityDetail(action: string, detail: Record<string, un
     case "member.role_change":
       return detail.from ? `${role(detail.from)} → ${role(detail.to)}` : `Now ${role(detail.to)}`;
     case "member.profile_update":
-      return detail.canSign === true ? "May sign forms" : "Does not sign forms";
+      // A made-up demo number (demo clinics only) is flagged in the row, never stored as the number itself.
+      return `${detail.canSign === true ? "May sign forms" : "Does not sign forms"}${detail.demoNumber === true ? " · made-up demo number" : ""}`;
     case "clinic.update": {
       const fields = Array.isArray(detail.fields) ? detail.fields.map((f) => CLINIC_FIELDS[String(f)] ?? String(f)) : [];
       return fields.length ? `Changed: ${fields.join(", ")}` : null;
@@ -202,6 +257,7 @@ export function describeActivityDetail(action: string, detail: Record<string, un
     case "auth.session_revoke":
       return SESSION_SCOPES[String(detail.scope)] ?? null;
     case "auth.password_reset_link":
+      if (detail.delivery === "platform") return "Created by ClinForms support for the owner";
       return detail.delivery === "sent" ? "Emailed to the member" : "Shown to the administrator to pass on";
     case "auth.password_reset_link_refused":
       return RESET_REFUSALS[String(detail.reason)] ?? null;
@@ -223,13 +279,29 @@ export function describeActivityDetail(action: string, detail: Record<string, un
       const parts = [counts.join(", "), from ?? null, detail.layout === "general" ? "checked before use" : null].filter(Boolean);
       return parts.length ? parts.join(" · ") : null;
     }
-    case "report.render_final":
-      return detail.format === "pdf" ? "PDF" : detail.format === "original" ? "In the referrer's own format" : detail.format === "docx" ? "Word" : null;
+    case "notes.reused": {
+      // 25/10/2026: the earlier report's checked notes were opened for another form (the row links to that report).
+      const n = (key: string, one: string, many: string) => (typeof detail[key] === "number" ? `${detail[key]} ${detail[key] === 1 ? one : many}` : null);
+      const counts = [n("notes", "note", "notes"), n("appointments", "appointment", "appointments"), n("outcomeScores", "outcome score", "outcome scores")].filter(Boolean);
+      const from = detail.sourceStatus === "signed" ? "from an approved report" : detail.sourceStatus === "draft" ? "from a draft report" : null;
+      const consent = detail.consentReset === true ? "consent to be recorded again" : null;
+      const parts = [counts.join(", "), from, consent].filter(Boolean);
+      return parts.length ? parts.join(" · ") : null;
+    }
+    case "report.render_final": {
+      const format = detail.format === "pdf" ? "PDF" : detail.format === "original" ? "In the referrer's own format" : detail.format === "docx" ? "Word" : null;
+      return [format, detail.demoClinic === true ? WORDING.demoClinic.finalWithNotice : null].filter(Boolean).join(" · ") || null;
+    }
+    case "report.sign":
+      // A demo clinic's approval says so: with the made-up number used, or with a registration number (never shown).
+      if (detail.demoClinic !== true) return null;
+      return typeof detail.demoNumber === "string" ? WORDING.demoClinic.approvedWithDemoNumber(detail.demoNumber) : WORDING.demoClinic.approvedInDemoClinic;
     case "report.update":
     case "report.create":
     case "report.store_signed":
       return typeof detail.rev === "number" ? `Version ${detail.rev}` : null;
     case "platform.clinic_create":
+    case "platform.owner_reset_link":
       return typeof detail.tenantId === "string" ? `Clinic id ${detail.tenantId}` : null;
     case "clinic.package_change":
     case "platform.entitlement_set": {
@@ -238,9 +310,95 @@ export function describeActivityDetail(action: string, detail: Record<string, un
       const where = action === "platform.entitlement_set" && typeof detail.tenantId === "string" ? ` · clinic id ${detail.tenantId}` : "";
       return `${name} ${detail.on === true ? "on" : "off"}${where}`;
     }
+    case "clinic.trial_set":
+    case "platform.trial_set": {
+      const days = typeof detail.days === "number" ? `${detail.days} ${detail.days === 1 ? "day" : "days"}` : null;
+      const start = detail.start === "first_sign_in" ? "starts when the owner first signs in" : typeof detail.endsAt === "string" ? `ends ${ukDateTime(detail.endsAt)}` : null;
+      return withClinic(action, detail, [days, start].filter(Boolean).join(", ") || null);
+    }
+    case "clinic.forms_loaded":
+      return typeof detail.forms === "number" ? `${detail.forms} ${detail.forms === 1 ? "form" : "forms"} to check and confirm` : null;
+    case "clinic.forms_replaced": {
+      const n = (key: string) => (typeof detail[key] === "number" ? (detail[key] as number) : 0);
+      const changed = n("replaced") + n("forms");
+      return changed > 0 ? `${changed} ${changed === 1 ? "form" : "forms"} to check and confirm` : null;
+    }
+    case "form.replace":
+      return typeof detail.fields === "number" ? `${detail.fields} ${detail.fields === 1 ? "question" : "questions"} to check and confirm` : null;
+    case "form.lint_accepted": {
+      const which = typeof detail.fieldId === "string" ? `Question ${detail.fieldId}` : null;
+      const what = typeof detail.judgement === "string" ? `asks for a clinical judgement (${detail.judgement})` : null;
+      const why = typeof detail.reason === "string" && detail.reason.trim() ? `because: “${detail.reason.trim().slice(0, 200)}”` : null;
+      return [which, what, why].filter(Boolean).join(" ") || null;
+    }
+    case "clinic.trial_started":
+      return typeof detail.endsAt === "string" ? `Ends ${ukDateTime(detail.endsAt)}` : null;
+    case "clinic.trial_extended":
+    case "platform.trial_extended":
+      return withClinic(
+        action,
+        detail,
+        typeof detail.days === "number" ? `${detail.days} more ${detail.days === 1 ? "day" : "days"}${typeof detail.endsAt === "string" ? `, now ends ${ukDateTime(detail.endsAt)}` : ""}` : null,
+      );
+    case "clinic.trial_ended":
+    case "platform.trial_ended":
+    case "clinic.trial_converted":
+    case "platform.trial_converted":
+      return withClinic(action, detail, null);
+    case "clinic.demo_on":
+    case "platform.demo_on":
+      return withClinic(action, detail, WORDING.demoClinic.switchedOn);
+    case "clinic.demo_off":
+    case "platform.demo_off":
+      return withClinic(action, detail, WORDING.demoClinic.switchedOff(typeof detail.membersWithDemoNumbers === "number" ? detail.membersWithDemoNumbers : 0));
+    case "clinic.limits_set":
+    case "platform.limits_set": {
+      const per = (v: unknown, unit: string) => (typeof v === "number" ? `${v.toLocaleString("en-GB")} a ${unit}` : `default a ${unit}`);
+      return withClinic(action, detail, `${per(detail.perMinute, "minute")}, ${per(detail.perDay, "day")}`);
+    }
+    case "clinic.package_set":
+    case "platform.package_set": {
+      const name = PACKAGE_NAMES[String(detail.package)] ?? null;
+      const price = typeof detail.monthlyPricePence === "number" ? `${pounds(detail.monthlyPricePence)} a month` : null;
+      const reports = typeof detail.reportsIncluded === "number" ? `${detail.reportsIncluded.toLocaleString("en-GB")} ${detail.reportsIncluded === 1 ? "report" : "reports"}` : null;
+      const extra =
+        typeof detail.extraReportPence === "number" ? `extra ${pounds(detail.extraReportPence)} each` : detail.extraReportPence === null ? "extra report price not set yet" : null;
+      return withClinic(action, detail, [name, price, reports, extra].filter(Boolean).join(", ") || null);
+    }
+    case "clinic.package_removed":
+    case "platform.package_removed":
+      return withClinic(action, detail, null);
+    case "platform.usage_export":
+      return typeof detail.rows === "number" ? `${detail.rows} ${detail.rows === 1 ? "clinic" : "clinics"}` : null;
     default:
-      return null;
+      return describeReleaseReportAuditDetail(action, detail);
   }
+}
+
+const PACKAGE_NAMES: Readonly<Record<string, string>> = {
+  starter: "Starter",
+  practice: "Practice",
+  group: "Group",
+  group_plus: "Group Plus",
+  custom: "Custom",
+  trial: "Trial",
+};
+
+function pounds(pence: number): string {
+  return `£${(pence / 100).toFixed(pence % 100 === 0 ? 0 : 2)}`;
+}
+
+/** "24 October 2026, 10:15" (UK time). */
+function ukDateTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(d);
+}
+
+/** Platform rows name the clinic they changed; a clinic's own rows do not need to. */
+function withClinic(action: string, detail: Record<string, unknown>, text: string | null): string | null {
+  if (!action.startsWith("platform.") || typeof detail.tenantId !== "string") return text;
+  return [`Clinic id ${detail.tenantId}`, text].filter(Boolean).join(" · ");
 }
 
 /** Names of the people and things an entry points at, for display. */

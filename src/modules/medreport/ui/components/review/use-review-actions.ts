@@ -7,7 +7,7 @@
  * A clinic's Studio also reports report_approved / report_downloaded through HostHooks.track (counts and
  * enumerated values only – ui/studio-events.ts).
  *
- * Owner: studio-b agent.
+ * Owner: WC (review roles and provenance) – docs/bh2-ownership.json (formerly studio-b agent).
  */
 import { useCallback, useRef, useState } from "react";
 import type { RenderFormat, RenderRequest } from "../../../api/contract";
@@ -15,9 +15,11 @@ import { BATCH_CONCURRENCY, NOTICES } from "../../../config.public";
 import { sha256HexBytes } from "../../../core/fingerprint";
 import { prefillSigners, prefillSignersText } from "../../../core/parties";
 import { planDraftGroups } from "../../../core/report-factory";
+import { ReportSchema } from "../../../core/schemas";
 import type { FormDefinition, Report, ReportTemplate } from "../../../core/types";
 import { ApiError, api, passcodeVerifier, saveBlob, toBase64, type FileDownload } from "../../api-client";
-import { flushStore } from "../../store";
+import { flushStore, getReport, getStoreMode, saveReport, saveReportDurable } from "../../store";
+import { isSupersededBy, supersededEntry } from "../../../core/provenance";
 import type { HostHooks } from "../../host-hooks";
 import { TENANT_COPY } from "../../studio-copy";
 import { downloadFormat, reportEventProps } from "../../studio-events";
@@ -27,6 +29,7 @@ import type { ApproveInput, ApproveResult } from "./approve-dialog";
 import type { FormFileState } from "./preview-panel";
 import { markApproved } from "./review-model";
 import type { Toast } from "./review-ui";
+import type { Actor } from "../../../core/actor";
 import type { ReviewAction } from "./use-review-state";
 
 export type DownloadKind = "original" | "pdf" | "docx";
@@ -66,7 +69,7 @@ export function useReviewActions(opts: {
   form: FormDefinition | null;
   template: ReportTemplate | null;
   file: FormFileState;
-  actor: string;
+  actor: Actor;
   hooks: HostHooks;
   dispatch(action: ReviewAction): void;
   commit(next: Report): boolean;
@@ -87,16 +90,37 @@ export function useReviewActions(opts: {
 
   const approve = useCallback(
     async (input: ApproveInput): Promise<ApproveResult> => {
-      const fresh = validateNow();
+      const validated = validateNow();
+      // /sign signs the report as this build knows it (core/schemas.ts) and the store keeps exactly that, so the approved
+      // copy is that same shape: keys a later release wrote into a stored draft (kept on reading, core/stored-schemas.ts)
+      // are not part of it. For a report written by this build both are the same.
+      const strict = ReportSchema.safeParse(validated);
+      const fresh = strict.success ? strict.data : validated;
       try {
         // Approval is authenticated: the tab's launch session for this patient (bound to the clinician
         // the clinic system opened it for), else a demo-tenant session.
         const { connectorId, patientId, episodeId } = fresh.episodeRef;
         const sessionToken = await sessionTokenFor({ tenantId: fresh.tenantId, connectorId, patientId, episodeId });
-        const res = await api.sign({ report: fresh, ...input, ...(form ? { form } : {}) }, { sessionToken });
+        // bh2 W0 follow-up (WA1 design 6): the public demo sends the referrer's original file with the approval, for /sign's
+        // dry-run FINAL fill (a clinic's Studio fills the file it stores). /sign reads it once WA1 lands; ignored until then.
+        const demoFile = form && form.kind !== "questions" && hooks.mode !== "tenant" && file.status === "ready" ? { fileBase64: file.base64 } : {};
+        // bh2 WA1 design 6: a clinic's /sign approves exactly the stored revision (409 STALE_REPORT otherwise) – store
+        // what is being approved first.
+        // harden-WA1 (check2 N6): a save the clinic's Studio refused (a decision it does not allow, a newer revision) stops
+        // here – never sent on to be refused by /sign as "a change is not saved yet, or someone else saved a newer version".
+        if (hooks.mode === "tenant" && !(await saveReportDurable(fresh))) {
+          return { ok: false, title: "This report could not be saved", detail: "Nothing was approved: the clinic's Studio did not accept your latest changes, so they are not part of its copy. Reload the report, check it, and approve again." };
+        }
+        const res = await api.sign({ report: fresh, ...input, ...(form ? { form } : {}), ...demoFile }, { sessionToken });
         const approved = markApproved(fresh, res.receipt, res.flags, { isForm, prefill: Boolean(form && prefillSigners(form)), plain: hooks.mode === "tenant" });
         // The approval must reach the store before the clinician moves on (a clinic's Studio: the server).
         const saved = commit(approved) && (await flushStore());
+        // WC design 8: an approved amended version supersedes the version it amends. A clinic's store does that on the
+        // server when it stores this approval; the public demo's browser store has no server, so it happens here.
+        if (saved && approved.amends && getStoreMode() !== "server") {
+          const v1 = getReport(approved.amends.reportId);
+          if (v1 && !isSupersededBy(v1, approved.id)) saveReport({ ...v1, activity: [...v1.activity, supersededEntry(approved)] });
+        }
         hooks.track?.("report_approved", reportEventProps(approved));
         toast({
           tone: "success",
@@ -114,7 +138,8 @@ export function useReviewActions(opts: {
         if (err instanceof ApiError) {
           const p = err.problem;
           if (err.code === "SIGNOFF_BLOCKED") return { ok: false, title: "Blocking items remain", detail: p.detail, blocking: p.flags };
-          if (err.code === "VALIDATION_FAILED") return { ok: false, title: p.title, detail: p.detail, issues: (p.issues ?? []).map((i) => i.message) };
+          // bh2 WA1: ISSUE_REFUSED lists the boxes the dry-run FINAL fill could not issue as approved.
+          if (err.code === "VALIDATION_FAILED" || err.code === "ISSUE_REFUSED") return { ok: false, title: p.title, detail: p.detail, issues: (p.issues ?? []).map((i) => i.message) };
           if (err.code === "SIGNER_MISMATCH" || err.code === "SESSION_MISMATCH" || err.code === "FORM_NOT_CONFIRMED" || err.code === "FORM_MISMATCH") {
             return { ok: false, title: p.title, detail: p.detail };
           }
@@ -123,7 +148,7 @@ export function useReviewActions(opts: {
         return { ok: false, title: "The approval could not be completed", detail: "Check your connection and try again." };
       }
     },
-    [validateNow, form, isForm, commit, toast, hooks],
+    [validateNow, form, file, isForm, commit, toast, hooks],
   );
 
   /* Render -------------------------------------------------------------------------------------- */
@@ -319,15 +344,18 @@ export function useReviewActions(opts: {
               instructingParty: current.instructingParty,
               sectionKeys: group,
               reportId: current.id,
+              ...(current.amends ? { amendsReportId: current.amends.reportId } : {}),
               prefer,
               ...(form ? { form } : {}),
               ...(form && current.author ? { author: current.author } : {}),
+              // bh2 W0 follow-up (WD design 2): the approving physio is the drafting voice owner – read by /drafts once WD lands.
+              ...(form && current.approver ? { approver: current.approver } : {}),
             });
             dispatch({ type: "applyDraft", result: res });
           } catch (err) {
             const p = problemText(err, "Drafting failed");
             setDraftFailures((list) => [...list, { keys: group, message: p.detail ? `${p.title}: ${p.detail}` : p.title, code: p.code }]);
-            dispatch({ type: "activity", action: "draft_failed", actor: "System", detail: `Drafting ${group.join(", ")} failed (${WORDING.drafting.failureCode(p.code)}).` });
+            dispatch({ type: "systemActivity", action: "draft_failed", detail: `Drafting ${group.join(", ")} failed (${WORDING.drafting.failureCode(p.code)}).` });
           } finally {
             setDraftingKeys((prev) => {
               const next = new Set(prev);
