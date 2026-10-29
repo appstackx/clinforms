@@ -216,10 +216,12 @@ export interface LastNoteCopy {
 
 /**
  * "Copy from last note": the text of the patient's latest signed note other than this one (decrypted – the
- * opening is recorded in the patient's history, like any note read). null when there is none.
+ * opening is recorded in the patient's history, like any note read). null when there is none. clinical.write +
+ * clinical.view.
  */
 export async function lastNoteForCopyFor(actor: RecordsActor, patientId: string, excludeNoteId?: string): Promise<Result<LastNoteCopy | null>> {
-  const denied = guard(actor, "clinical.write");
+  // M10 L1: this reads a signed note's text – clinical.view as well as clinical.write (they can be granted apart).
+  const denied = guard(actor, "clinical.write", "clinical.view");
   if (denied) return denied;
   return attempt("copy_last_note", async () => {
     const patient = await patientInClinic(actor, patientId);

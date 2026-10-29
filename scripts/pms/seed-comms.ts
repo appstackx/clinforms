@@ -165,7 +165,7 @@ export async function seedComms(base: Pick<RepoContext, "db" | "cipher">, tenant
     const caseRow = await ctx.db.selectFrom("pms_cases").select("id").where("tenant_id", "=", tenantId).where("patient_id", "=", megan.id).orderBy("opened_on", "desc").limit(1).executeTakeFirst();
     const gp = tpl("gp-discharge");
     if (gp) {
-      const l = await startLetter(ctx, tenantId, { patientId: megan.id, templateId: gp.id, caseId: caseRow?.id ?? null, practitionerId: prac.id, recipientKind: "gp" }, SEED_ACTOR, "Riverside Physiotherapy (fictional)");
+      const l = await startLetter(ctx, tenantId, { patientId: megan.id, templateId: gp.id, caseId: caseRow?.id ?? null, practitionerId: prac.id, recipientKind: "gp", clinical: true }, SEED_ACTOR, "Riverside Physiotherapy (fictional)");
       const body = l.body
         .replace(/\[\[Summarise progress and the outcome measures\]\]/, "Pain improved from 7/10 to 2/10 (NPRS) over six sessions; back to full work and walking 5 km.")
         .replace(/\[\[Home exercise programme and self-management advice\]\]/, "A home exercise programme to continue three times a week; advice on pacing and posture at work.")
@@ -177,7 +177,7 @@ export async function seedComms(base: Pick<RepoContext, "db" | "cipher">, tenant
     }
     const progress = tpl("payer-progress");
     if (progress) {
-      await startLetter(ctx, tenantId, { patientId: megan.id, templateId: progress.id, caseId: caseRow?.id ?? null, practitionerId: prac.id }, SEED_ACTOR, "Riverside Physiotherapy (fictional)");
+      await startLetter(ctx, tenantId, { patientId: megan.id, templateId: progress.id, caseId: caseRow?.id ?? null, practitionerId: prac.id, clinical: true }, SEED_ACTOR, "Riverside Physiotherapy (fictional)");
       letters++;
     }
   }

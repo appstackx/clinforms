@@ -290,7 +290,7 @@ export async function startLetterFor(actor: CommsActor, input: unknown): Promise
     const letter = await startLetter(
       actor.repo(),
       actor.tenantId,
-      { patientId: p.id, templateId: d.templateId, caseId: d.caseId ?? null, practitionerId: me?.id ?? null, recipientKind, recipientReferrerId },
+      { patientId: p.id, templateId: d.templateId, caseId: d.caseId ?? null, practitionerId: me?.id ?? null, recipientKind, recipientReferrerId, clinical: actor.can("clinical.view") },
       actor.actor,
       actor.name,
     );
@@ -328,7 +328,7 @@ export async function saveLetterFor(actor: CommsActor, input: unknown): Promise<
     if (!l) return fail("not_found", LETTER_NOT_FOUND);
     const clean = { ...patch, recipientEmail: patch.recipientEmail === "" ? null : patch.recipientEmail, recipientPostcode: patch.recipientPostcode === "" ? null : patch.recipientPostcode };
     if (patch.subject !== undefined || patch.body !== undefined) {
-      const filled = await fillLetterFields(actor.repo(), actor.tenantId, { ...l, recipientName: clean.recipientName ?? l.recipientName, recipientAddress: clean.recipientAddress ?? l.recipientAddress, recipientPostcode: clean.recipientPostcode ?? l.recipientPostcode }, { subject: patch.subject ?? l.subject, body: patch.body ?? l.body });
+      const filled = await fillLetterFields(actor.repo(), actor.tenantId, { ...l, recipientName: clean.recipientName ?? l.recipientName, recipientAddress: clean.recipientAddress ?? l.recipientAddress, recipientPostcode: clean.recipientPostcode ?? l.recipientPostcode }, { subject: patch.subject ?? l.subject, body: patch.body ?? l.body }, actor.can("clinical.view"));
       clean.subject = filled.subject;
       clean.body = filled.body;
     }

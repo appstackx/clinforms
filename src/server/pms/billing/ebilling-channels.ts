@@ -22,13 +22,17 @@ export interface ExportedFile {
 
 export interface InsurerBillingChannel {
   readonly info: ExportChannelInfo;
-  submit(ctx: RepoContext, tenantId: string, invoiceIds: string[], actor: PmsActor): Promise<ExportedFile>;
+  /** `clinical`: the member has clinical.view – otherwise the "Diagnosis code" column is left blank (M10 L5). */
+  submit(ctx: RepoContext, tenantId: string, invoiceIds: string[], actor: PmsActor, options?: { clinical?: boolean }): Promise<ExportedFile>;
 }
 
 const CSV_CHANNEL: InsurerBillingChannel = {
   info: EXPORT_CHANNEL_INFO.csv,
-  async submit(ctx, tenantId, invoiceIds, actor) {
-    const { lines, skipped } = await claimLines(ctx, tenantId, invoiceIds);
+  async submit(ctx, tenantId, invoiceIds, actor, options = {}) {
+    const read = await claimLines(ctx, tenantId, invoiceIds);
+    const skipped = read.skipped;
+    // A diagnosis is clinical: blank for a member without clinical.view (M10 L5).
+    const lines = options.clinical === true ? read.lines : read.lines.map((l) => ({ ...l, diagnosisCode: null }));
     const included = invoiceIds.filter((id) => !skipped.includes(id));
     if (included.length === 0) throw new RepoInputError("None of the chosen invoices is an issued insurer invoice.");
     const { batchRef } = await recordInvoiceExports(ctx, tenantId, included, "csv", actor);

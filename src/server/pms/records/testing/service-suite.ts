@@ -462,6 +462,9 @@ export function defineRecordsServiceSuite(label: string, factory: () => Promise<
       assert.ok(copy && copy.noteId === ids.note && copy.sections.objective === "Reduced rotation to the right");
       assert.equal(value(await lastNoteForCopyFor(sarah, ids.megan, ids.note)), null, "none other than this one");
       assert.deepEqual(await lastNoteForCopyFor(staff, ids.megan), refused);
+      // M10 L1: writing notes without seeing them (clinical.view switched off for the member) copies nothing.
+      const writeOnly = testActor(ctx, A, "clinician", { userId: "user_sarah_01", name: "Sarah Reid" }, { exceptions: { "clinical.view": false } });
+      assert.deepEqual(await lastNoteForCopyFor(writeOnly, ids.megan), refused);
     });
 
     it("errors are plain: no database message, no patient data", async () => {
@@ -511,6 +514,14 @@ export function defineRecordsServiceSuite(label: string, factory: () => Promise<
 
     it("subject access: owner-only; the PDF and JSON hold everything about this patient and nothing about anyone else", async () => {
       for (const who of [sarah, tom, staff]) assert.equal((await subjectAccessExportFor(who, ids.megan, "pdf", { clinicName: "x" })).ok, false);
+      // M10 H1: reports.export can be granted to reception (or kept by an admin without clinical.view) – the copy holds
+      // every note and outcome, so it also needs clinical.view.
+      const exportingReception = testActor(ctx, A, "staff", { userId: "user_reception_05", name: "Jess Taylor" }, { exceptions: { "reports.export": true } });
+      const adminNoClinical = testActor(ctx, A, "admin", { userId: "user_admin_06", name: "Office Admin" }, { exceptions: { "reports.export": true, "clinical.view": false } });
+      for (const who of [exportingReception, adminNoClinical]) {
+        assert.ok(who.can("reports.export"));
+        for (const format of ["pdf", "json"] as const) assert.deepEqual(await subjectAccessExportFor(who, ids.megan, format, { clinicName: "x" }), { ok: false, code: "forbidden", error: FORBIDDEN_MESSAGE });
+      }
       const clinicName = "Riverside Physiotherapy (fictional)";
       const json = value(await subjectAccessExportFor(owner, ids.megan, "json", { clinicName }));
       const pdf = value(await subjectAccessExportFor(owner, ids.megan, "pdf", { clinicName }));

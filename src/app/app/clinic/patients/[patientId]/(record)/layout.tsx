@@ -81,7 +81,7 @@ export default async function PatientRecordLayout({ children, params }: { childr
     ...(actor.can("clinical.write") && !h.anonymised ? [{ label: "Clinical flags", href: patientPath(p.id, "details#clinical-flags") }] : []),
     ...(canMessage ? [{ label: "Send message", href: patientPath(p.id, "messages?send=1"), phoneOnly: true }] : []),
     ...(canPay ? [{ label: "Take payment", href: patientPath(p.id, "invoices?pay=1"), phoneOnly: true }] : []),
-    ...(actor.can("reports.export")
+    ...(actor.can("reports.export") && actor.can("clinical.view")
       ? [
           { label: "Subject access copy (PDF)", href: patientPath(p.id, "export?format=pdf"), download: true },
           { label: "Subject access data (JSON)", href: patientPath(p.id, "export?format=json"), download: true },
