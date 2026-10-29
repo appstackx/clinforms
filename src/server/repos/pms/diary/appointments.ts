@@ -1061,30 +1061,31 @@ export interface DiaryDayCount {
 export async function countDiaryDay(ctx: DbContext, tenantId: string, q: { date: string; now: string; siteIds?: readonly string[] | null; practitionerId?: string | null }): Promise<DiaryDayCount[]> {
   assertTenantId(tenantId);
   if (!isIsoDate(q.date)) throw new RepoInputError("date must be YYYY-MM-DD.");
-  const groups: (readonly string[] | null)[] = [];
-  if (q.siteIds) for (let i = 0; i < q.siteIds.length; i += LIST_PARAMS) groups.push(q.siteIds.slice(i, i + LIST_PARAMS));
-  else groups.push(null);
+  // One day of the whole clinic, grouped (a few hundred rows at most), read by pms_appointments_starts_on; the sites
+  // and the practitioner are filtered here. With "site_id IN (?…)" or "practitioner_id = ?" in the SQL, SQLite / D1
+  // (no statistics) chose the site or practitioner index and read their whole history for one day (M10).
+  const sites = q.siteIds ? new Set(q.siteIds) : null;
+  const rows = await ctx.db
+    .selectFrom(T)
+    .select(["site_id", "practitioner_id", "status", (eb) => eb.fn.countAll<number>().as("n"), (eb) => eb.fn.count<number>("treatment_started_at").as("started")])
+    .select((eb) => eb.fn.sum<number>(eb.case().when("ends_at", ">", q.now).then(1).else(0).end()).as("later"))
+    .where("tenant_id", "=", tenantId)
+    .where("starts_on", "=", q.date)
+    .where("kind", "=", "appointment")
+    .where("status", "not in", ["cancelled", "late_cancelled"])
+    .groupBy(["site_id", "practitioner_id", "status"])
+    .execute();
   const out: DiaryDayCount[] = [];
-  for (const sites of groups) {
-    let query = ctx.db
-      .selectFrom(T)
-      .select(["site_id", "practitioner_id", "status", (eb) => eb.fn.countAll<number>().as("n"), (eb) => eb.fn.count<number>("treatment_started_at").as("started")])
-      .select((eb) => eb.fn.sum<number>(eb.case().when("ends_at", ">", q.now).then(1).else(0).end()).as("later"))
-      .where("tenant_id", "=", tenantId)
-      .where("starts_on", "=", q.date)
-      .where("kind", "=", "appointment")
-      .where("status", "not in", ["cancelled", "late_cancelled"]);
-    if (sites) query = query.where("site_id", "in", sites as string[]);
-    if (q.practitionerId) query = query.where("practitioner_id", "=", q.practitionerId);
-    for (const r of await query.groupBy(["site_id", "practitioner_id", "status"]).execute()) {
-      const base = { siteId: r.site_id, practitionerId: r.practitioner_id };
-      const n = num(r.n);
-      if (r.status === "arrived") {
-        const started = num(r.started);
-        if (n - started > 0) out.push({ ...base, status: "arrived", appointments: n - started, toArrive: 0 });
-        if (started > 0) out.push({ ...base, status: "in_treatment", appointments: started, toArrive: 0 });
-      } else out.push({ ...base, status: r.status as AppointmentStatus, appointments: n, toArrive: r.status === "booked" ? num(r.later) : 0 });
-    }
+  for (const r of rows) {
+    if (sites && !(r.site_id && sites.has(r.site_id))) continue;
+    if (q.practitionerId && r.practitioner_id !== q.practitionerId) continue;
+    const base = { siteId: r.site_id, practitionerId: r.practitioner_id };
+    const n = num(r.n);
+    if (r.status === "arrived") {
+      const started = num(r.started);
+      if (n - started > 0) out.push({ ...base, status: "arrived", appointments: n - started, toArrive: 0 });
+      if (started > 0) out.push({ ...base, status: "in_treatment", appointments: started, toArrive: 0 });
+    } else out.push({ ...base, status: r.status as AppointmentStatus, appointments: n, toArrive: r.status === "booked" ? num(r.later) : 0 });
   }
   return out;
 }
