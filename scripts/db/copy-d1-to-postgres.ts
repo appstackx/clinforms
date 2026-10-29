@@ -10,7 +10,8 @@
  * - The target must be migrated (npm run db:migrate with CLINFORMS_DB=postgres) and EMPTY.
  * - Tables are inserted in foreign-key order (TABLES_IN_FK_ORDER) inside ONE transaction; ciphertext is copied
  *   as-is (same keys, same AAD). Before COMMIT the target's row counts and per-table checksums (SHA-256 over
- *   the rows in primary-key order, timestamps normalised to ISO) must equal the source's – else ROLLBACK.
+ *   the rows in primary-key order – byte order on both sides, see pgOrderBy – timestamps normalised to ISO)
+ *   must equal the source's – else ROLLBACK.
  * - --dry-run reads the source and prints counts and checksums; nothing is written.
  */
 import { createHash } from "node:crypto";
@@ -141,11 +142,33 @@ async function summarise(source: SourceReader, table: TableName): Promise<TableS
   return { table, rows, sha256: hash.digest("hex") };
 }
 
+/**
+ * ORDER BY for reading the Postgres target back in the SAME row order as the source. SQLite/D1 compares text
+ * with BINARY (byte order: "B" < "a"), while a Postgres database's default collation is usually a language
+ * one (Supabase: en_US.UTF-8, where "a" < "B"). Text key columns therefore get COLLATE "C" (byte order of
+ * the UTF-8 text, the same as SQLite's BINARY); other key types (integers, timestamps) sort the same anyway.
+ */
+export async function pgOrderBy(client: PgMigrationClient, table: TableName): Promise<string> {
+  const { rows } = await client.query(
+    "select column_name, data_type from information_schema.columns where table_schema = 'public' and table_name = $1",
+    [table],
+  );
+  const textTypes = new Set(["text", "character varying", "character"]);
+  return PRIMARY_KEYS[table]
+    .map((column) => {
+      const info = rows.find((r) => r.column_name === column);
+      return textTypes.has(String(info?.data_type)) ? `${quote(column)} collate "C"` : quote(column);
+    })
+    .join(", ");
+}
+
 /** Reads the Postgres target back the same way (inside the copy transaction). */
 function pgSource(client: PgMigrationClient): SourceReader {
+  const order = new Map<TableName, Promise<string>>();
   return {
     async readPage(table, limit, offset) {
-      const { rows } = await client.query(`select * from public.${quote(table)} order by ${orderBy(table)} limit $1 offset $2`, [limit, offset]);
+      if (!order.has(table)) order.set(table, pgOrderBy(client, table));
+      const { rows } = await client.query(`select * from public.${quote(table)} order by ${await order.get(table)} limit $1 offset $2`, [limit, offset]);
       return rows;
     },
     async close() {},

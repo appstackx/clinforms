@@ -85,6 +85,44 @@ describe("copy D1/SQLite → Postgres", () => {
   });
 });
 
+describe("copy D1/SQLite → Postgres when the target's text collation is not byte order (Supabase: en_US.UTF-8)", () => {
+  // Rehearsal 29/10: preview D1 → Supabase failed "Verification failed for organization": the rows were copied
+  // exactly, but Better Auth's mixed-case ids sort differently (SQLite BINARY "B" < "a", en_US "a" < "B"), so the
+  // target read back in another order and the checksum differed. PGlite's default is "C", so the key columns get
+  // the ICU "unicode" collation here to reproduce Supabase's ordering.
+  it("verifies and commits; the rows are identical", async () => {
+    const src = createSqliteTestDb();
+    const pglite = await createPglite();
+    try {
+      const ids = ["Zq9", "aB1", "B7x", "a0c", "_x", "éa", "Ab2"];
+      for (const id of ids) {
+        src.sqlite
+          .prepare('insert into "organization" ("id", "name", "slug", "logo", "createdAt", "metadata") values (?, ?, ?, null, ?, ?)')
+          .run(`org_${id}`, `Clinic ${id} (fictional)`, `clinic-${ids.indexOf(id)}`, "2026-10-01T09:00:00.000Z", '{"k":1}');
+        src.sqlite.prepare('insert into rate_limits ("key", window_start, count) values (?, ?, 1)').run(`rl:${id}`, "2026-10-29T21:00:00.000Z");
+      }
+      await applyPostgresMigrations(pgliteMigrationClient(pglite));
+      await pglite.exec(`
+        alter table public."organization" alter column "id" type text collate "unicode";
+        alter table public.rate_limits alter column "key" type text collate "unicode";`);
+      const sorted = await pglite.query<{ lt: boolean }>(`select 'a' < 'B' collate "unicode" as lt`);
+      assert.equal(sorted.rows[0].lt, true, "the test target must sort like en_US, not byte order");
+
+      const lines: string[] = [];
+      const result = await copyDatabase(sqliteSource(src.sqlite), pgliteMigrationClient(pglite), { log: (l) => lines.push(l) });
+      assert.equal(result.dryRun, false);
+      assert.ok(lines.some((l) => l.startsWith("verified organization")));
+      assert.ok(lines.some((l) => l.startsWith("verified rate_limits")));
+      const copied = await pglite.query<{ id: string; createdAt: unknown; metadata: string }>('select * from public."organization"');
+      assert.deepEqual(copied.rows.map((r) => r.id).sort(), ids.map((id) => `org_${id}`).sort());
+      assert.ok(copied.rows.every((r) => r.metadata === '{"k":1}' && new Date(r.createdAt as string).toISOString() === "2026-10-01T09:00:00.000Z"));
+    } finally {
+      await src.close();
+      await pglite.close();
+    }
+  });
+});
+
 describe("Supabase provisioning helpers", () => {
   it("uses organization_slug and region_selection eu-west-2", () => {
     assert.deepEqual(createProjectBody("clinforms-prod", "my-org", "pw"), {
