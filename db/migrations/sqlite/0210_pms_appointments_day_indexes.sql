@@ -3,5 +3,5 @@
 -- Kept in step with supabase/migrations/20261024000210_pms_appointments_day_indexes.sql (db/parity.test.ts). Idempotent.
 -- Keep semicolons out of comments.
 
-CREATE INDEX IF NOT EXISTS pms_appointments_starts_on ON pms_appointments (tenant_id, starts_on);
+CREATE INDEX IF NOT EXISTS pms_appointments_starts_on ON pms_appointments (tenant_id, starts_on, site_id);
 CREATE INDEX IF NOT EXISTS pms_appointments_updated ON pms_appointments (tenant_id, updated_at);

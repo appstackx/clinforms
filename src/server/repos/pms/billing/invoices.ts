@@ -233,16 +233,22 @@ export async function billedAppointmentIds(ctx: RepoContext, tenantId: string, a
  *  mode only: contributions per visit (invoices with per_visit_contribution_pence) never use up the case's excess. */
 export async function excessBilledForCase(ctx: RepoContext, tenantId: string, caseId: string, excludeInvoiceId?: string): Promise<number> {
   assertTenantId(tenantId);
-  let q = ctx.db
-    .selectFrom("pms_invoice_lines as l")
-    .innerJoin("pms_invoices as i", (j) => j.onRef("i.tenant_id", "=", "l.tenant_id").onRef("i.id", "=", "l.invoice_id"))
-    .select((eb) => eb.fn.coalesce(eb.fn.sum<number>(sql<number>`l.total_pence - l.credited_pence`), sql<number>`0`).as("n"))
-    .where("l.tenant_id", "=", tenantId)
+  // The case's invoices first (pms_invoices_case), then their lines (pms_invoice_lines_line_no): as a join, SQLite
+  // started from the lines and read every invoice line of the clinic for each case (M10).
+  let invoices = ctx.db
+    .selectFrom("pms_invoices as i")
+    .select("i.id")
+    .where("i.tenant_id", "=", tenantId)
     .where("i.case_id", "=", caseId)
-    .where("l.kind", "=", "excess")
     .where("i.per_visit_contribution_pence", "is", null)
     .where("i.status", "in", ["draft", "issued"]);
-  if (excludeInvoiceId) q = q.where("i.id", "<>", excludeInvoiceId);
+  if (excludeInvoiceId) invoices = invoices.where("i.id", "<>", excludeInvoiceId);
+  const q = ctx.db
+    .selectFrom("pms_invoice_lines as l")
+    .select((eb) => eb.fn.coalesce(eb.fn.sum<number>(sql<number>`l.total_pence - l.credited_pence`), sql<number>`0`).as("n"))
+    .where("l.tenant_id", "=", tenantId)
+    .where("l.kind", "=", "excess")
+    .where("l.invoice_id", "in", invoices);
   const row = await q.executeTakeFirst();
   return num(row?.n ?? 0);
 }
