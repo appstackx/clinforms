@@ -29,3 +29,17 @@ export { avatarColour, initialsOf, AVATAR_COLOURS, type AvatarColour } from "./a
 export { Kbd, KeyboardHint, ShortcutsSheet, type ShortcutsSheetProps } from "./keyboard-hint";
 export { GLOBAL_SHORTCUTS, DIARY_SHORTCUTS, isTypingTarget, isPlainKey, type Shortcut, type ShortcutGroup } from "./shortcuts";
 export { ScrollRegion, type ScrollRegionProps } from "./scroll-region";
+// Brief Part A (round 2 "missing components"). The context menu (right-click a diary block) lives in ./context-menu.
+export { DatePicker, TimePicker, type DatePickerProps, type TimePickerProps } from "./date-picker";
+export { formatUkDate, parseUkDate, longUkDate, monthGrid, moveFocus, timeSlots, inRange, clampDate, addDays, addMonths, weekdayOf } from "./date-model";
+export { PmsPopover, useDismiss, useKeepInView, type PmsPopoverProps, type PopoverTriggerProps } from "./popover";
+export { PmsTooltip, TruncatedText, type PmsTooltipProps } from "./tooltip";
+export { DropdownMenu, nextEnabled, typeAhead, type DropdownMenuProps, type DropdownMenuEntry, type DropdownMenuTriggerProps } from "./dropdown-menu";
+export { PatientCombobox, type PatientComboboxProps, type PatientHit } from "./patient-combobox";
+export { StepIndicator, stepStates, type StepIndicatorProps, type StepState } from "./step-indicator";
+export { FileUpload, checkFile, formatBytes, acceptText, type FileUploadProps, type UploadItem } from "./file-upload";
+export { PmsChart, type PmsChartProps } from "./chart";
+export { niceMax, dataMax, axisTicks, stackSegments, SERIES_STYLES, type ChartKind, type ChartSeries } from "./chart-model";
+export { Breadcrumb, BackLink, parentOf, type BreadcrumbProps, type BreadcrumbItem } from "./breadcrumb";
+export { SegmentedControl, type SegmentedControlProps, type SegmentOption } from "./segmented-control";
+export { UnsavedChangesBanner, LockedBanner, useWarnBeforeLeaving, unsavedText, type UnsavedChangesBannerProps, type LockedBannerProps } from "./banners";
