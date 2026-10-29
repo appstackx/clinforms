@@ -1,5 +1,10 @@
 # K2 clinic system – handover
 
+> **Read §21 first (29/10/2026 – latest):** final check DONE – K2 is ready for production on `feat/clinic-system`
+> **`332b2b8`**: full chain and every e2e green, ClinForms forms output identical to `main`, one go-live bug fixed
+> (Turnstile widget/token, §21.3). Go-live steps that need Khuram: §21.7 and [`M11-RUNSHEET.md`](M11-RUNSHEET.md);
+> decisions to confirm: §21.5.
+
 > **Update 29/10/2026 (latest – read §19 first):** M9b polish DONE – waiting-list offers hold their slot, diary blocks
 > at every height, closure notice, Send message from the drawer, message-sync sweep, share a document with the patient,
 > form on a clinic device verified by staff, signed-copy PDF, Preview as patient, portal audit write ids, New and returning
@@ -1625,3 +1630,233 @@ Production build: **pms-billing-screens 21/21** (local payment stub), **pms-poli
 **pms-messages-screens 18/18**. pms-diary-screens fails 4 steps at the real clock at night (no free slot in the next hour)
 and 2 steps on any day other than the demo Wednesday (hard-coded dates, open item 8 in §19). Running a dev server
 overwrites `.next`, so run the production-build scripts first.
+
+## 21. Ready for production – status 29/10/2026
+
+Final verification of the K2 line after M8–M10, one bug fixed (§21.3), production pack written. `main` untouched; no
+production action (no deploy, no production DB read). Fictional data only.
+
+### 21.1 Heads (all pushed)
+| What | Where | Sha |
+|---|---|---|
+| **K2 line** | `feat/clinic-system` | **`332b2b8`** (three `--no-ff` merges of `feat/cs-final` onto `1d861d9`: `c7ec444`, `24bc57b`, `332b2b8`; tree = `feat/cs-final` `5162e9b`) |
+| Final-check fix | `feat/cs-final` (from `1d861d9`) | `c72601c` (fix + tests), `a7c120f` (wording-scan allow entry), `5162e9b` (billing e2e wait) |
+| Read shim for connector id `"native"` (ships to `main` FIRST, its own deployment) | `fix/native-connector-read-shim` (from `main` `cae0c3f`) | `4e867f3` – not merged, not deployed |
+| `main` (reference for the forms regression) | `main` | `cae0c3f` (untouched) |
+| Docs | `docs/k2-spec`: this file, [`M11-RUNSHEET.md`](M11-RUNSHEET.md) (go-live run-sheet), `contract.md`, `requirements.md` | see `git log docs/k2-spec` |
+
+Migrations on the K2 line: 52 new SQLite files 0100–0105, 0110–0125, 0130–0142, 0150–0152, 0160, 0170, 0180–0185, 0189,
+0190, 0210–0213 (+ Postgres twins); 0191–0209 and 0214–0219 unused. They create 76 tables, 149 indexes, 9 triggers and
+alter or drop nothing of ClinForms'.
+
+### 21.2 Final chain and e2e
+**Chain** (sequential, nothing else running; worktree `clinforms-wt/k2-final`, `npm ci` root + `workers/data-gateway`,
+`.env.local` from cs-reporting; disk 37 GiB free):
+
+| Step | `1d861d9` (start) | `24bc57b` (after the fix; `332b2b8` differs only in one e2e script) |
+|---|---|---|
+| typecheck | green | green |
+| lint | green | green |
+| test:pms | 780/0 | **782/0** (+2 final-check tests) |
+| test:medreport | 1786/0/3 | **1786/0/3** |
+| test:db | 1185/0/3 | **1187/0/3** |
+| test:auth | 139/0 | 139/0 |
+| test:site | 155/0 | 155/0 |
+| test:gateway | 646/0/2 | 646/0/2 |
+| build | green | green |
+
+No timing test failed (R2-SEC-2 "under a second" passed in every run). On the first merge (`c7ec444`) test:medreport
+had 1 fail – the neutral-wording scan on the widget's script address (§21.3), fixed in `a7c120f`.
+
+**E2E** on `332b2b8` (`24bc57b` + the billing script fix), each on a fresh `npm run pms:seed-demo -- --fresh` scratch
+SQLite (+ reports-only clinic B), ports 3240–3248, Playwright from pigeon-web, servers stopped after each.
+Runner: scratchpad `k2final/k2final-e2e.sh` / `k2final/batch.sh <port> <out> prod|dev <scripts…>`.
+
+| Script | Mode | Result |
+|---|---|---|
+| clinic-system-access | production build | 13/13 |
+| clinic-system-shell | production build | 11/11 |
+| pms-billing-screens (local payment stub) | production build | **20/21 twice, then 21/21** – test drift, fixed (`5162e9b`): the remittance step read the page under the M10 loading skeleton (the save had worked) |
+| pms-design-system | production build | 14/14 |
+| pms-integration (`DEMO_FLAG=1`) | production build | 14/14 |
+| pms-m10-ux | production build | 8/8 |
+| pms-polish-portal | production build | 9/9 |
+| pms-portal-screens | production build | 15/15 |
+| pms-prototype-b | production build | 6/6 |
+| pms-records-screens | production build | 17/17 |
+| pms-setup-reports | production build | 13/13 |
+| **pms-human-check** (new; Cloudflare test keys) | production build | **3/3** (1/3 on `1d861d9`) |
+| tenant-studio `FLOW=complete` (Reports-only clinic) | production build | 15/15 (5 "page problems" = RSC prefetch fallbacks on marketing links, not failures) |
+| pms-diary-screens | `next dev`, TEST clock Wed 28/10/2026 10:30 London | 32/32 |
+| pms-prototype-a | dev + clock | 10/10 |
+| pms-messages-screens | dev + clock | 18/18 |
+| pms-polish | dev + clock | 9/9 |
+| pms-polish-reports | dev + clock | 8/8 |
+| pms-setup-reports | dev + clock | 13/13 |
+
+**Forms regression vs `main`** (as M9: `forms-regression.cjs`, public demo, on a production build of `origin/main`
+`cae0c3f` – detached worktree, removed afterwards – and of the K2 head; `compare-form-outputs.ts` on the two
+`final-outputs`): **All 5 files match** – R2 Northfield and R4 Ashcroft PDFs byte-identical; R1, R3, R5 Word files
+EQUIVALENT (all 21 parts identical, only ZIP container bytes differ). Both runs 7/7 steps, no page problems, no HTTP ≥ 400.
+**ClinForms output is identical.**
+Logs and screenshots: session scratchpad `k2final/` (`chain/`, `chain-1d861d9/`, `e2e/`, `forms-reg/`).
+
+### 21.3 Bug fixed in the final check (`feat/cs-final` `c72601c` + `a7c120f`, merged as `24bc57b`; head `332b2b8`)
+**Turnstile was required but could not work.** Since M10 M6, production (`VERCEL_ENV=production`) refuses public
+bookings and will not let staff switch on booking for new patients until `NEXT_PUBLIC_CLINIC_TURNSTILE_SITE_KEY` and
+`CLINIC_TURNSTILE_SECRET` are set. But no page rendered the Turnstile widget and neither server action passed its
+token on, so the moment both keys were set **every public booking and every "Email me a sign-in link" was refused**
+("Please complete the check that you are not a robot…"). Public online booking for new patients was therefore
+impossible on production either way.
+Fix: `src/components/pms/portal/human-check.tsx` (explicit Turnstile render; token to the form; reset after each
+submit, because a token works once). The booking flow's "Check and confirm" step (public mode only) and the portal
+sign-in (both the form and "Send it again") show it when the page passes `humanCheckSiteKey()`; Confirm / Email me a
+link wait for a token. `book/actions.ts` and `portal/actions.ts` pass `humanTokenFrom(input)` as
+`FlowDeps.humanToken`. `next.config.mjs` adds `https://challenges.cloudflare.com` to `script-src` and `frame-src` (CSP
+still report-only) only when the site key is set at build time. Without the keys nothing changes: no widget, no
+request to Cloudflare, the same CSP for ClinForms.
+Tests: `security-m10.test.ts` "final check" ×2 (the token reaches siteverify; pages and actions wired – fails on
+`1d861d9`); new e2e `scripts/e2e/pms-human-check.cjs` with Cloudflare's published test keys (site key
+`1x00000000000000000000AA`, secret `1x0000000000000000000000000000000AA`; always pass; needs network): **1/3 on
+`1d861d9`, 3/3 on the fix** (public booking with the widget; portal sign-in link twice). The neutral-wording scan
+(`neutral-wording-files.test.ts`) flagged the widget's script address in `human-check.tsx` on the first merge
+(`c7ec444`); it is loaded, never shown, so it got an allow entry with its reason (`a7c120f`).
+The reviewer's `portal.cjs` (scratchpad `m10ux-tools/`, `m10fix/tools/`) is not part of the repo's e2e set, so it was left
+as it is (§20.3 open item stands for that tool only; the repo's own portal helpers already use the scratch-DB secret).
+
+### 21.4 What is built (by module)
+- **Foundation / access** – clinic packages (Reports on, clinic system off per clinic), app shell and product switch,
+  configurable role permissions with locks, page-permission map (real 404s), design system, test clock (dev only).
+- **Patients and records** – patient list (search, filters incl. site, export), record with overview, notes (sign,
+  addenda, copy from last), cases, outcomes, attachments, consent, history, subject-access export, data rights.
+- **Diary** – day/week/room views, drag/keyboard move and resize, recurring series, rotas, blocks, closures, waiting
+  list with held offers, clash/overbook rules, appointment drawer with history and context menu, free-slot search.
+- **Billing** – invoices, credit notes, payments (manual; Stripe test stub), payers and contribution terms (excess
+  modes), insurer claims screen + CSV, aged debt, "attended, not invoiced", bank details.
+- **Messages (comms)** – templates and rules, confirmations / reminders / moved / cancelled / DNA notices, outbox
+  (sign-in links hidden), letters (Word/PDF, merge fields, discharge letter), manual "Send due messages now".
+- **Online booking, portal, intake** – public booking page, patient portal (email link sign-in, book / move / cancel,
+  forms, documents), intake and outcome questionnaires, clinic device paired by code, staff verification, Turnstile.
+- **Set-up, reports, dashboard** – sites and hours, rooms, services, prices, payers, practitioners, billing settings,
+  targets, audit trail; seven reports with CSV; "Today" per role.
+- **Integration** – native ClinForms connector, "Complete referrer form" filed back to the case and Forms tab, import
+  from the previous system (patients, cases, appointments; undo 7 days), invoices import check only.
+- **ClinForms side** – unchanged for clinics without the clinic system (forms regression §21.2); read shim on its own
+  branch for rollback safety.
+
+### 21.5 Decisions taken overnight – Khuram to confirm (default chosen and built; change any)
+From §17.10 (M8 set-up, reports, dashboard)
+1. Reception keeps "Practitioner rotas" in its main list and has no Set-up area; owners/admins find rotas under Set-up. **Default: as described.**
+2. A site with no opening-hours rows is unrestricted; closing a site = switch it off or add a closure. **Default: unrestricted.**
+3. Dashboard "Request extension" = a new letter to the insurer (no request workflow). **Default: a letter.**
+4. New-vs-returning report: keep it out of the six or add a seventh page. **Default: added as the seventh report (M9b), nav label "New and returning".**
+5. Outcome measures "due" = first visit of a case (no score yet) or every 4th attended session. **Default: as described.**
+
+From §18.6 (M9 integration)
+6. Reception may start "Complete referrer form", but ClinForms gets no clinical notes/outcomes from their account. **Default: allowed, no clinical prefill.**
+7. Filed referrer forms are clinical: list visible with `patients.view`, file only with `clinical.view`. **Default: as described.**
+8. Import undo: patients/cases archived (never deleted), appointments deleted only when untouched; undo window 7 days. **Default: as described.**
+9. "Import N" needs a tick that the issues were looked at (replaces the draft's staff sample check). **Default: the tick.**
+10. Native approval files the form to the case automatically, once. **Default: auto-file.**
+11. The 50,000-row PGlite import run is kept out of the everyday chain (8 min); SQLite 50,000 stays in. **Default: as described.**
+12. `"native"` kept in ClinForms' connector enum with a read shim on `main`, not a new connector-id mechanism. **Default: enum + shim (`fix/native-connector-read-shim` `4e867f3`).**
+
+From §19.4 (M9b polish)
+13. Waiting-list offer holds: default 2 hours (choices 30 min / 1 h / 2 h / 4 h / 1 day), never past the slot's start; the held patient may still book it; a hold cannot be overridden; blocked time cannot go over a hold; offers made before migration 0180 hold nothing. **Default: as described.**
+14. Hold expiry by comparing times (no job); expired offers stay "open", shown as "hold has ended". **Default: as described.**
+15. The message sweep keeps a pending confirmation / moved notice for the current start, and cancellation / DNA notices while still true (applies to every sync). **Default: as described.**
+16. "Send message" from the appointment drawer sends now (only the patient's merge fields). **Default: as described.**
+17. Sharing a document with the patient needs `clinical.view` + `clinical.write`; email on by default; no copy of the file kept. **Default: as described.**
+18. Clinic-device forms: verified by the member's own password; stored unverified until then; hand-offs last 30 min; no outcome questionnaires on a device. **Default: as described.**
+19. New and returning report: "new" = first attended appointment ever, counted for its practitioner/site; the weekly table counts visits, the figures count patients. **Default: as described.**
+20. Utilisation: every kind of practitioner block counts at any site; room-only blocks do not reduce practitioner time. **Default: as described.**
+21. Audit search by patient name: up to 20 patients, needs "View patients". **Default: as described.**
+22. Demo seed history only on a clinic's first seed run. **Default: as described.**
+
+From §20.1 (M10 security)
+23. C1: the stored copy of a portal sign-in email has the whole link replaced; a failed sign-in email is never re-sent from the log (the patient asks again or staff resend the form). Payment and stop-email links stay visible. **Default: as described.**
+24. H1: subject-access export without `clinical.view` is refused (no partial copy). **Default: refused.**
+25. H2: a native ClinForms report needs `clinical.view` when it holds notes or outcome scores or is approved; refused = 404; reception still opens forms they started (no clinical prefill) until approved; the Studio list may still show the id. **Default: as described.**
+26. H3: clinic device paired by an 8-character code only (no QR), 10 tries per address and 60 per clinic per 10 minutes; the device stays on "hand back" until staff verify or end it; the staff page refreshes every 5 s. **Default: as described.**
+27. H4: `settings.members` locked off for clinicians and reception; only the owner changes the admin row. **Default: as described.**
+28. M4: public bookings matched to an existing patient also get the new-patient forms (so the answer reveals nothing). **Default: as described.**
+29. M6: production = `VERCEL_ENV=production`; there, public booking is refused and new-patient booking cannot be switched on without Turnstile; cap of 40 public bookings an hour per clinic. **Default: as described.**
+30. L7: sign-in answers take at least 2.5 s, bookings at least 1.5 s; manage-link cookie `clinic_manage`, address `/booking/manage` (old links still work); staff email change ends portal sessions; `forUserId` optional launch claim. **Default: as described.**
+31. ClinForms behaviour unchanged for non-native reports and clinics without the clinic system; `session.ts` untouched. **Default: as described.**
+
+From §20.2 (M10 UX, design, production)
+32. Switching Reports off on the platform page needs the clinic id typed (checked on the server). **Default: typed id.**
+33. Offboarding above the gateway's 100-statement limit (only with about 720+ accounts) runs as ordered batches, organization last – not atomic as a whole. **Default: ordered batches.**
+34. Global CSS not split (19.2 kB gzip; 13.6 kB without the clinic system). **Default: not split.**
+35. No loading skeleton on public pages that redirect or 404. **Default: none.**
+36. Patient list Site filter = a case or appointment at the site; out-of-scope sites ignored; desktop only. **Default: as described.**
+37. Keyboard move/resize across practitioners or sites needs a second Enter; New appointment opens on the first free slot (grid steps); time picker is a native select. **Default: as described.**
+38. Generic "Clinic system" phrases in ClinForms code kept (they mean a third-party system). **Default: kept.**
+
+From §20.4 (M10 performance)
+39. Migration numbers: diary 0210, records 0211, billing 0212, foundation 0213; 0214–0219 unused. **Default: as described.**
+40. No `audit_log (tenant_id, target_id)` index (ClinForms table; history tab ~68 ms without it) and no `PRAGMA optimize` migration. **Default: neither.**
+41. "Attended, not invoiced" shows the newest 500 with "Showing the 500 most recent of N"; Today's "Invoices to raise" lists the 4 longest waiting with the full count. **Default: as described.**
+42. Today's overdue list shows the 4 longest overdue of all overdue invoices. **Default: as described.**
+43. `listDiary` throws over 90 IN-list ids instead of silently cutting the list. **Default: throw.**
+44. Import undo writes one audit row per group of up to 90 (with a count) instead of two rows per record. **Default: as described.**
+
+From the final check (§21.3)
+45. The Turnstile widget sits on the booking's "Check and confirm" step (public booking only) and on the portal sign-in (form and "Send it again"); Confirm / Email me a link stay disabled until it gives a token; Managed mode; portal bookings by signed-in patients and staff bookings have no widget. **Default: as described.**
+46. The CSP gets `challenges.cloudflare.com` only when the site key is set at build time (so Turnstile needs a redeploy after the variables are added). **Default: as described.**
+
+### 21.6 Open items and known limits
+**Before go-live (blocking, all Khuram's – §21.7):** the read shim on `main` and live; production D1 migrations; the
+K2 merge; Turnstile for public booking (until then production refuses public bookings – safe); a real email provider
+before any patient can use the portal (the outbox-only default sends nothing, and sign-in links are not shown to
+staff).
+
+**Open items (not blocking an "off for every clinic" release):**
+1. Preview rehearsal (run-sheet §2) not run – needs preview D1 and a preview deployment.
+2. "Send due messages" on real D1 – re-measure (12.7 s on the local workerd proxy, D1's own time 0.15 s). The message
+   run stays manual on Hobby (one cron a day, used by retention).
+3. Import: invoices / opening balances (billing port unwired), reconciliation report, historic notes/documents archive,
+   mapping saved per clinic, possible-duplicate warning, "Download skipped rows". Imported future appointments get no
+   confirmation/reminder messages.
+4. A clinic's own Word/RTF letter templates filled in their own layout; portal sharing of letters; "Send to insurer" on
+   a filed form.
+5. CF-006: no dedicated native-connector usage test (usage counting is connector-agnostic).
+6. Five portal set-up tables still key audit rows on revision + time (staff-only screens).
+7. `audit_log (tenant_id, target_id)` index – not added (decision 40).
+8. pms-diary-screens / pms-messages-screens hard-code dates of the demo week – they pass only with the test clock on
+   Wed 28/10/2026 (and pms-diary-screens needs free slots in the next hour at the real clock).
+9. The reviewer's crawl tool `portal.cjs` (scratchpad, not in the repo) still reads sign-in links from Messages, which
+   C1 hides – update it to the repo helpers' approach if the crawl is run again.
+10. The remaining axe target-size case on 15-minute diary blocks with appointments directly above and below (needs
+    ≥ 26 px per 15 min; keyboard, drawer and context menu reach every block).
+
+**Known limits:**
+- A missing or out-of-scope record id under a loading skeleton returns HTTP 200 with the 404 page (no data shown).
+- The Studio's snapshot list still lists ids of native reports a member may not open (opening answers 404).
+- SMS webhook replay check uses the message id only (SMS provider not live).
+- A same-millisecond double use of one sign-in link by its own holder could open two sessions.
+- Offboarding above about 720 member accounts is ordered batches, not one atomic batch.
+- Clinic device on a staff PC may still hold a staff session in that browser – use kiosk / guided access.
+- Two simultaneous OFFERS of the same slot are checked by the server only (bookings over a hold are database-enforced);
+  a "moved" notice lost to a failed sync is not re-created.
+- Utilisation year is the slowest report (about 1.6 s on local D1 at 50k patients); the owes-money filter reads through
+  the patient index (about 180 ms).
+- The global CSS includes the clinic-system styles on every page (19.2 kB gzip vs 13.6 kB).
+- `typecheck:gateway` reports one `pdfjs-dist` declaration error in a file unchanged since `main` (not run in the chain).
+
+### 21.7 Go-live steps that need Khuram
+All in [`M11-RUNSHEET.md`](M11-RUNSHEET.md) (gates G1–G9 first). In order:
+1. **Ship the read shim** `fix/native-connector-read-shim` `4e867f3` to `main` on its own and let it deploy – this
+   deployment is K2's rollback point (run-sheet §1).
+2. (M11, no production access) merge the candidate with the new `main`, re-run the chain, the forms regression and
+   the preview rehearsal on preview D1 (§2–§3).
+3. **Apply the 52 migrations to production D1** after taking a time-travel bookmark (§4).
+4. **Merge `feat/clinic-system` into `main` and push** – the clinic system is off for every clinic (§5).
+5. Read-only smoke tests and the flag check (every clinic Reports ON, clinic OFF) (§6a–6b); **signed-in check as
+   `appstackx-test`**, not Blue Heart (§6c).
+6. When public online booking is wanted: **create the Turnstile widget** (hostnames `clinforms.co.uk`,
+   `www.clinforms.co.uk`), set `NEXT_PUBLIC_CLINIC_TURNSTILE_SITE_KEY` and `CLINIC_TURNSTILE_SECRET` (Sensitive) for
+   Production, redeploy (§4b).
+7. Only with a separate go: switch the clinic package on for a demo or test clinic (§6d). Never switch Reports off for a
+   live clinic (the platform page now asks for the clinic id typed).
+8. Answer the decisions in §21.5.
