@@ -14,6 +14,7 @@ import Link from "next/link";
 import { CheckCircle2, Download, ExternalLink, Loader2, PenLine, Save, ShieldCheck } from "lucide-react";
 import { formatUkDateTime } from "../../../core/dates";
 import { shortFingerprint } from "../../../core/fingerprint";
+import { UNKNOWN_CONNECTOR_FILING, isKnownConnectorId } from "../../../core/labels";
 import { countOutcomes, issueState } from "../../../core/issue-state";
 import type { ActivityEntry, FormDefinition, Report } from "../../../core/types";
 import { useStudioMode } from "../../host-hooks";
@@ -178,7 +179,9 @@ export const ApprovedBanner = forwardRef<
             ? tenant
               ? "Made from the uploaded notes – download the completed form and attach it to the patient's record in your clinic system."
               : "Made from an uploaded export – download the completed form and attach it to the patient record."
-            : "Filing to TM3 needs the live TM3 connection (partner access)."}
+            : !isKnownConnectorId(report.episodeRef.connectorId)
+              ? UNKNOWN_CONNECTOR_FILING
+              : "Filing to TM3 needs the live TM3 connection (partner access)."}
         </p>
       )}
       {lastFiled && (

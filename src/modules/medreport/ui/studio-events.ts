@@ -66,7 +66,8 @@ export function reportEventProps(report: Pick<Report, "episodeRef" | "sections" 
   const openGaps = report.gaps.filter((g) => !g.resolution).length;
   const live = report.generation.some((g) => g.mode === "live");
   return withCounts({
-    source: SOURCE[report.episodeRef.connectorId],
+    // A connector id this build does not know (a later release's clinic system record) counts as a clinic system.
+    source: Object.prototype.hasOwnProperty.call(SOURCE, report.episodeRef.connectorId) ? SOURCE[report.episodeRef.connectorId] : "clinic_system",
     ...(report.form ? { form_kind: FORM_KIND[report.form.kind] } : {}),
     referrer_type: REFERRER_TYPE[report.form?.referrer.type ?? report.instructingParty.type],
     question_count: report.sections.length,

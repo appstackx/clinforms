@@ -1907,8 +1907,9 @@ receipts and form maps (plan W0.3). Rolled back to a build that reads them with 
 unreadable (`GET /store/reports/{id}` 500, the public demo's list dropped them) – and where they parsed, the unknown
 keys were dropped, so fingerprints, receipt MACs and map attestations no longer matched.
 - **Reads** of stored records use `core/stored-schemas.ts`: `StoredReportSchema`, `StoredSignReceiptSchema`,
-  `StoredFormDefinitionSchema` – the write schemas with every object loose (unknown keys kept as written) and three
-  open enums (`FORWARD_OPEN_ENUMS`: flag codes, paragraph origins, record paths; any other enum, literal, fill kind or
+  `StoredFormDefinitionSchema` – the write schemas with every object loose (unknown keys kept as written) and four
+  open enums (`FORWARD_OPEN_ENUMS`: flag codes, paragraph origins, record paths, connector ids – 10/2026, the clinic
+  system's `"native"`, fix/native-connector-read-shim; any other enum, literal, fill kind or
   anchor kind stays closed, as do all bounds – except a registration `part`, up to 30 session lines). Used by the
   store GETs and 409 copies, the Studio's store client, the browser store, `verifyReceipt`/`verifyReceiptMac`, and the
   request bodies that carry stored records for reading (`/validate`, `/render`, `/forms/fill-preview`, the write-back
@@ -1916,8 +1917,12 @@ keys were dropped, so fingerprints, receipt MACs and map attestations no longer 
 - **Writes stay strict** (`core/schemas.ts`): PUT bodies, `/sign`'s report, `/forms/confirm`. The Studio approves the
   report as `/sign` signs it (`ReportSchema`, keys it does not know left out), so the stored approval is that shape.
 - **Unknown members:** generic labels (`core/labels.ts` `UNKNOWN_MEMBER_LABELS`, `flagCodeLabel`,
-  `registrationPathLabel`, review `originLabel`); an unknown record path resolves to nothing (a gap for staff). The
-  validators recompute flags with this build's codes only.
+  `registrationPathLabel`, `connectorIdLabel`, review `originLabel`); an unknown record path resolves to nothing (a gap
+  for staff). The validators recompute flags with this build's codes only. A report from an unknown connector is listed,
+  read, verified and rendered like any other ("Clinic system", "From clinic records", event source `clinic_system`);
+  what needs the connector is refused with a 4xx ("Re-use notes" 403 `CONNECTOR_NOT_AVAILABLE`, filing back 404 – no
+  such connector), and the review says to download the form instead of filing it.
+- Tests: `scripts/medreport/native-connector-read-shim.test.ts` (connector ids).
 - **Nothing that verified before changes:** `verifyReceipt` checks the MAC and the content hash as stored and, failing
   that, as this build knows the records (exactly the pre-shim check). The form map's hash works the same way
   (`auth/attestations.ts` `formMapMatches`: `verifyFormConfirmation`, the `report.form.mapSha256` check in
