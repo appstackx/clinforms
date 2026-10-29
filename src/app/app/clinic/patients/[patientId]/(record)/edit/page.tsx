@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { PatientForm } from "@/components/pms/records/patient-form";
 import { SectionHeader } from "@/components/pms/records/ui";
-import { activityTime } from "@/server/admin/activity";
+import { formatUkDateTime } from "@/modules/pms/core/access";
 import { requireClinicActor } from "@/server/pms/actor";
 import { patientOr404 } from "@/server/pms/records/record";
 import { getAnonymisation } from "@/server/repos/pms/records/anonymise";
@@ -29,7 +29,7 @@ export default async function EditPatientPage({ params }: { params: { patientId:
         key={patient.rev}
         action={savePatientDetails}
         submitLabel="Save details"
-        consentRecordedOn={patient.consentTreatmentAt ? activityTime(patient.consentTreatmentAt) : null}
+        consentRecordedOn={patient.consentTreatmentAt ? formatUkDateTime(patient.consentTreatmentAt) : null}
         values={{
           ...patient,
           patientId: patient.id,

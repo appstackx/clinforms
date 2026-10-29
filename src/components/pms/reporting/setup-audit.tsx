@@ -7,6 +7,7 @@ import type { AuditSearchParams } from "@/modules/pms/reporting/schemas";
 import type { AuditScreen } from "@/modules/pms/reporting/setup-view";
 import { SetupCard, SetupGrid, SetupHeader, SetupPage, setupFocus } from "./setup-kit";
 import { ScrollRegion } from "@/components/pms/ui/scroll-region";
+import { formatUkDateTime } from "@/modules/pms/core/access";
 
 const PATH = "/app/clinic/setup/audit";
 
@@ -17,7 +18,8 @@ function query(p: Partial<Record<string, string | null>>): string {
   return s ? `?${s}` : "";
 }
 
-const when = (iso: string) => new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
+/** "29/10/2026 00:51" (UK time) – the same as the record's History. */
+const when = formatUkDateTime;
 
 export function AuditTrail({ screen, params }: { screen: AuditScreen; params: AuditSearchParams }) {
   const base = { from: params.from, to: params.to, area: params.area, action: params.action, user: params.userId, type: params.targetType, record: params.targetId, patient: params.patient };

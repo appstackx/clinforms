@@ -34,7 +34,8 @@ describe("UK time", () => {
     assert.equal(hhmmToMinutes("24:00"), 1440);
     assert.equal(hhmmToMinutes("9.30"), null);
     assert.equal(formatDateLong("2026-10-26"), "Monday 26 October 2026");
-    assert.equal(formatDateLong("2026-10-26", { short: true }), "Mon 26 Oct");
+    assert.equal(formatDateLong("2026-10-26", { short: true }), "Mon 26/10");
+    assert.equal(formatDateLong("2026-11-02", { short: true, withYear: true }), "Mon 02/11/2026");
     assert.equal(formatUkTime("2026-07-01T08:00:00.000Z"), "09:00");
     assert.equal(formatUkDateTime("2026-10-26T09:30:00.000Z"), "Monday 26 October 2026 at 09:30");
   });

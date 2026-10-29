@@ -99,14 +99,14 @@ export function weekdayName(weekday: number): string {
   return WEEKDAY_NAMES[(weekday - 1 + 7) % 7] ?? "";
 }
 
-/** "2026-10-26" → "Monday 26 October 2026" (or "Mon 26 Oct" when short). */
+/** "2026-10-26" → "Monday 26 October 2026" (or "Mon 26/10" when short – DD/MM, "Mon 26/10/2026" with the year). */
 export function formatDateLong(date: string, options: { short?: boolean; withYear?: boolean } = {}): string {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return "";
   const [y, m, d] = date.split("-").map(Number);
   const weekday = weekdayName(weekdayOf(date));
   const month = MONTH_NAMES[m - 1] ?? "";
   const withYear = options.withYear ?? !options.short;
-  if (options.short) return `${weekday.slice(0, 3)} ${d} ${month.slice(0, 3)}${withYear ? ` ${y}` : ""}`;
+  if (options.short) return `${weekday.slice(0, 3)} ${String(d).padStart(2, "0")}/${String(m).padStart(2, "0")}${withYear ? `/${y}` : ""}`;
   return `${weekday} ${d} ${month}${withYear ? ` ${y}` : ""}`;
 }
 

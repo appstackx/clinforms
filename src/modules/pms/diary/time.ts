@@ -196,11 +196,11 @@ export function formatDayHeading(date: string): string {
   return `${weekdayName(isoWeekday(date))} ${d} ${MONTH_NAMES[m - 1]} ${y}`;
 }
 
-/** "Sat 24 Oct" */
+/** "Sat 24/10" (the design's DD/MM short day; M10 rules – was "Sat 24 Oct") */
 export function formatDayShort(date: string): string {
   if (!isIsoDay(date)) return "";
-  const [, m, d] = date.split("-").map(Number);
-  return `${weekdayName(isoWeekday(date)).slice(0, 3)} ${d} ${MONTH_NAMES[m - 1].slice(0, 3)}`;
+  const [, mm, dd] = date.split("-");
+  return `${weekdayName(isoWeekday(date)).slice(0, 3)} ${dd}/${mm}`;
 }
 
 export const WEEKDAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] as const;

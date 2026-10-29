@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { EmptyState, SectionHeader, TableBox, TD, TH } from "@/components/pms/records/ui";
 import { describeRecordsDetail } from "@/modules/pms/records/copy";
-import { activityTime, loadActivityLookups, presentActivity } from "@/server/admin/activity";
+import { loadActivityLookups, presentActivity } from "@/server/admin/activity";
+import { formatUkDateTime } from "@/modules/pms/core/access";
 import { requireClinicActor } from "@/server/pms/actor";
 import { redactClinicalDetail } from "@/server/pms/records/history-service";
 import { patientOr404 } from "@/server/pms/records/record";
@@ -49,7 +50,7 @@ export default async function PatientHistoryPage({ params }: { params: { patient
           <tbody className="divide-y divide-border">
             {rows.map((r, i) => (
               <tr key={r.id}>
-                <td className={`${TD} whitespace-nowrap tabular-nums`}>{activityTime(r.at)}</td>
+                <td className={`${TD} whitespace-nowrap tabular-nums`}>{formatUkDateTime(r.at)}</td>
                 <td className={TD}>{r.who}</td>
                 <td className={TD}>{r.label}</td>
                 <td className={`${TD} text-[#334155]`}>{describeRecordsDetail(r.action, entries[i].detail) ?? r.detail ?? ""}</td>
