@@ -1,11 +1,11 @@
+import type { Metadata } from "next";
 import { ReferrersSetup } from "@/components/pms/reporting/setup-pages";
 import { REFERRER_KINDS } from "@/modules/pms/core/schemas";
 import { requireClinicActor } from "@/server/pms/actor";
 import { referrersScreenFor } from "@/server/pms/reporting/setup";
-import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const generateMetadata = gatedMetadata({ title: "Referrers and insurers" }, "settings.setup");
+export const metadata: Metadata = { title: "Referrers and insurers" };
 
 /**
  * /app/clinic/setup/referrers[?kind=&referrer=] – Set-up → Referrers and insurers (settings.setup): the directory and,

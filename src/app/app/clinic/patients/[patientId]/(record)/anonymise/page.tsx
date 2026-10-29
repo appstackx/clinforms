@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { ActionForm, CheckboxField, Submit, TextField } from "@/components/pms/records/form";
 import { Card } from "@/components/pms/records/ui";
 import { PmsNotice } from "@/components/pms/ui";
@@ -6,10 +7,9 @@ import { requireClinicActor } from "@/server/pms/actor";
 import { anonymiseEligibilityFor } from "@/server/pms/records/patients-service";
 import { patientOr404 } from "@/server/pms/records/record";
 import { anonymiseRecord } from "../../actions";
-import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const generateMetadata = gatedMetadata({ title: "Anonymise record", robots: { index: false, follow: false } }, "patients.merge");
+export const metadata: Metadata = { title: "Anonymise record", robots: { index: false, follow: false } };
 
 /**
  * Anonymise a record (K2-PAT-010; owners and administrators): only after the record-keeping period, never on hold,

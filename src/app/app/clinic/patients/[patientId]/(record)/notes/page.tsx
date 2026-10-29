@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { Pencil } from "lucide-react";
 import { NewNoteButton } from "@/components/pms/records/new-note-button";
@@ -9,10 +10,9 @@ import { listNotesFor } from "@/server/pms/records/notes-service";
 import { loadRecordHeader } from "@/server/pms/records/record-header";
 import { patientPath } from "@/server/pms/records/record";
 import { newNote } from "../../actions";
-import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const generateMetadata = gatedMetadata({ title: "Clinical notes", robots: { index: false, follow: false } }, "clinical.view");
+export const metadata: Metadata = { title: "Clinical notes", robots: { index: false, follow: false } };
 
 /**
  * The record's Clinical notes tab (design round 2): every note, newest consultation first, with its state

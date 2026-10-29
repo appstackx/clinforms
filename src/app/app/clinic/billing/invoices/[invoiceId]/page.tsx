@@ -1,13 +1,13 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { InvoiceDetail } from "@/components/pms/billing/invoice-detail";
 import { requireClinicActor } from "@/server/pms/actor";
 import { printInvoiceFor, invoiceDetailFor, printClinicOf } from "@/server/pms/billing/views";
 import { getPmsSettings } from "@/server/repos/pms/settings";
 import { pmsNow } from "../../../../../../modules/pms/core/clock";
-import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const generateMetadata = gatedMetadata({ title: "Invoice" }, "billing.view");
+export const metadata: Metadata = { title: "Invoice" };
 
 /**
  * /app/clinic/billing/invoices/[invoiceId] (design round 2f): one invoice. billing.view; each action needs its own

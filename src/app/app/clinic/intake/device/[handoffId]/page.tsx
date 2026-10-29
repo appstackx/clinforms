@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { HandoffVerify } from "@/components/pms/portal/handoff-verify";
 import { STAFF_PORTAL_PATHS } from "@/modules/pms/portal/paths";
@@ -5,10 +6,9 @@ import { formatWhen } from "@/modules/pms/portal/time";
 import { requireClinicActor } from "@/server/pms/actor";
 import { handoffStaffViewFor } from "@/server/pms/portal/clinic-device";
 import { endHandoffAction, verifyHandoffAction } from "./actions";
-import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const generateMetadata = gatedMetadata({ title: "Form completed in the clinic" }, "patients.edit");
+export const metadata: Metadata = { title: "Form completed in the clinic" };
 
 /**
  * /app/clinic/intake/device/<hand-off> – the device was handed back: the member of staff checks it is the right

@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { Clock } from "lucide-react";
 import { dayLabel, personName } from "@/components/pms/records/format";
@@ -9,10 +10,9 @@ import { ukToday } from "@/modules/pms/core/text";
 import { requireClinicActor } from "@/server/pms/actor";
 import { unsignedNotesFor } from "@/server/pms/records/notes-service";
 import { patientPath } from "@/server/pms/records/record";
-import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const generateMetadata = gatedMetadata({ title: "Unsigned notes" }, "clinical.view");
+export const metadata: Metadata = { title: "Unsigned notes" };
 
 /**
  * /app/clinic/patients/unsigned-notes – unsigned notes (K2-NOTE-008, design round 2): a clinician's own drafts, oldest

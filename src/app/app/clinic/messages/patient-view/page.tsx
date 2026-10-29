@@ -1,12 +1,12 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { MESSAGES_PATH } from "@/components/pms/comms/format";
 import { PatientFacing } from "@/components/pms/comms/patient-facing";
 import { requireClinicActor } from "@/server/pms/actor";
 import { patientFacingFor } from "@/server/pms/comms/views";
-import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const generateMetadata = gatedMetadata({ title: "What patients receive" }, "messages.send");
+export const metadata: Metadata = { title: "What patients receive" };
 
 /** /app/clinic/messages/patient-view (design round 3, "Patient-facing messages"). messages.send. */
 export default async function PatientFacingPage() {

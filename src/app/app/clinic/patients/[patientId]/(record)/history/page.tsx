@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { EmptyState, SectionHeader, TableBox, TD, TH } from "@/components/pms/records/ui";
 import { describeRecordsDetail } from "@/modules/pms/records/copy";
 import { loadActivityLookups, presentActivity } from "@/server/admin/activity";
@@ -6,10 +7,9 @@ import { requireClinicActor } from "@/server/pms/actor";
 import { redactClinicalDetail } from "@/server/pms/records/history-service";
 import { patientOr404 } from "@/server/pms/records/record";
 import { listPatientHistory } from "@/server/repos/pms/records/history";
-import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const generateMetadata = gatedMetadata({ title: "History" }, "patients.view");
+export const metadata: Metadata = { title: "History" };
 
 /**
  * Who did what with this patient's record, newest first: registration and changes, cases and authorisations, notes

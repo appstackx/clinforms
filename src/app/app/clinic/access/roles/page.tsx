@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { RolesGrid } from "@/components/pms/access/roles-grid";
 import { describeChangeItem, formatUkDateTime, overridesFor } from "@/modules/pms/core/access";
@@ -5,10 +6,9 @@ import { ACCESS_PERMISSION_DEFS, PMS_ROLES, rolePermission } from "@/modules/pms
 import { requireClinicActor } from "@/server/pms/actor";
 import { loadRolesScreen } from "@/server/pms/access-screens";
 import { saveRoles } from "./actions";
-import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const generateMetadata = gatedMetadata({ title: "Roles and permissions" }, "settings.members");
+export const metadata: Metadata = { title: "Roles and permissions" };
 
 /** Set-up → Roles and permissions (design round 2). Owners and admins by default ("Manage members and permissions"). */
 export default async function RolesPage() {

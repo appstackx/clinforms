@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { DiaryScreen } from "@/components/pms/diary/diary-screen";
 import { SITE_COOKIE } from "@/components/pms/shell/site-cookie";
@@ -8,10 +9,9 @@ import { diaryCallerOf } from "@/server/pms/diary/caller";
 import { loadDiaryView } from "@/server/pms/diary/view";
 import { unsignedNotesFor } from "@/server/pms/records/notes-service";
 import { listReferrers } from "@/server/repos/pms/referrers";
-import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const generateMetadata = gatedMetadata({ title: "Diary" }, "diary.view");
+export const metadata: Metadata = { title: "Diary" };
 
 /**
  * /app/clinic/diary – the diary (design round 2): ?date=YYYY-MM-DD&view=day|week&by=practitioner|room&site=…

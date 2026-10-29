@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { EmptyState, LinkButton, Pill, SectionHeader } from "@/components/pms/records/ui";
 import { authorisationView } from "@/modules/pms/core/authorisations";
@@ -8,10 +9,9 @@ import { caseReferralsFor } from "@/server/pms/records/cases-service";
 import { directoryOptions } from "@/server/pms/records/directory-options";
 import { patientOr404, patientPath } from "@/server/pms/records/record";
 import { listAuthorisations, listCasesForPatient } from "@/server/repos/pms/cases";
-import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const generateMetadata = gatedMetadata({ title: "Cases" }, "patients.view");
+export const metadata: Metadata = { title: "Cases" };
 
 /** A patient's cases (episodes of care): who pays, and the treatment authorisations with what is left. */
 export default async function PatientCasesPage({ params }: { params: { patientId: string } }) {

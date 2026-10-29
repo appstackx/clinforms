@@ -1,11 +1,11 @@
+import type { Metadata } from "next";
 import { TemplateManager } from "@/components/pms/records/template-editor";
 import { requireClinicActor } from "@/server/pms/actor";
 import { listTemplatesFor, recordsSettingsFor } from "@/server/pms/records/templates-service";
 import { copyNoteTemplateAction, createNoteTemplateAction, retireNoteTemplateAction, saveRecordsSettingsAction, updateNoteTemplateAction } from "./actions";
-import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const generateMetadata = gatedMetadata({ title: "Note templates" }, "settings.setup");
+export const metadata: Metadata = { title: "Note templates" };
 
 /**
  * /app/clinic/patients/note-templates – the clinic's note templates and the unsigned-notes threshold (Set-up;

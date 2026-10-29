@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { PrintToolbar } from "@/components/pms/billing/print-toolbar";
 import { LETTERS_PATH } from "@/components/pms/comms/format";
@@ -5,10 +6,9 @@ import { LETTER_PRINT_CSS, LetterSheet } from "@/components/pms/comms/letter-she
 import { requireClinicActor } from "@/server/pms/actor";
 import { letterFor } from "@/server/pms/comms/views";
 import { ScrollRegion } from "@/components/pms/ui/scroll-region";
-import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const generateMetadata = gatedMetadata({ title: "Print letter" }, "messages.letters");
+export const metadata: Metadata = { title: "Print letter" };
 
 /** /app/clinic/letters/[letterId]/print – the A4 letter; only it prints ("Save as PDF" for a PDF). messages.letters. */
 export default async function PrintLetterPage({ params }: { params: { letterId: string } }) {

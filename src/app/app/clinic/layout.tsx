@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
+import { notFound } from "next/navigation";
 import { reportsSection } from "@/components/pms/reporting/reports-nav";
 import { ClinicShell } from "@/components/pms/shell/clinic-shell";
 import { clinicRoleLabel, shellNav, sitesSummary } from "@/components/pms/shell/nav-model";
@@ -9,6 +10,8 @@ import { roleLabel } from "@/lib/account-copy";
 import { CLINIC_SYSTEM_NAME } from "@/lib/brand";
 import { CLINIC_BASE_PATH } from "@/modules/pms/core/modules";
 import { PMS_NAV } from "@/modules/pms/nav";
+import { pagePermissionFor } from "@/modules/pms/core/page-permissions";
+import { REPORTS_PATH, isReportId, reportAccess } from "@/modules/pms/reporting/catalogue";
 import { currentBrand } from "@/server/brand";
 import { requireClinicActor } from "@/server/pms/actor";
 import { unansweredRepliesFor } from "@/server/pms/comms/views";
@@ -37,6 +40,13 @@ export const metadata: Metadata = {
  */
 export default async function ClinicSystemLayout({ children }: { children: React.ReactNode }) {
   const actor = await requireClinicActor();
+  // A page the member may not open answers a real 404 on a full page load – checked here, above the sections'
+  // loading skeletons, which would otherwise stream status 200 first (src/modules/pms/core/page-permissions.ts).
+  const path = headers().get("x-clinforms-path");
+  const needs = pagePermissionFor(path);
+  if (needs && !needs.some((p) => actor.can(p))) notFound();
+  const report = path?.split(/[?#]/)[0].match(new RegExp(`^${REPORTS_PATH}/([a-z]+)$`))?.[1];
+  if (report && report !== "export" && (!isReportId(report) || reportAccess(report, (p) => actor.can(p)) === null)) notFound();
   const brand = currentBrand();
   const ctx = actor.repo();
   const [reports, sites, scope, replies] = await Promise.all([

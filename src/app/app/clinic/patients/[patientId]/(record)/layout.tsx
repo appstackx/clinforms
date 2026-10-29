@@ -1,4 +1,3 @@
-import type { Metadata } from "next";
 import Link from "next/link";
 import { AlertTriangle, Ban, CalendarPlus, CreditCard, Pencil, Phone, Send, ShieldCheck } from "lucide-react";
 import { MoreActionsMenu, RecordTabs, type MenuItem, type RecordTabLink } from "@/components/pms/records/record-menus";
@@ -42,16 +41,6 @@ const lowerFirst = (s: string) => (s ? s.charAt(0).toLowerCase() + s.slice(1) : 
  * clinician as drawn) and opens the take-payment dialog on the Invoices tab; "Send message" opens the Messages tab with
  * its send form (?send=1); "Book" opens the diary's booking form for this patient.
  */
-/**
- * The patient is looked up here too (read once per request – loadRecordHeader is cached), so a patient who is not
- * there or not in the member's sites gets a real 404 before the loading skeleton streams (src/server/pms/page-gate.ts).
- */
-export async function generateMetadata({ params }: { params: { patientId: string } }): Promise<Metadata> {
-  const actor = await requireClinicActor({ permission: "patients.view" });
-  await loadRecordHeader(actor, params.patientId);
-  return {};
-}
-
 export default async function PatientRecordLayout({ children, params }: { children: React.ReactNode; params: { patientId: string } }) {
   const actor = await requireClinicActor({ permission: "patients.view" });
   const h = await loadRecordHeader(actor, params.patientId);

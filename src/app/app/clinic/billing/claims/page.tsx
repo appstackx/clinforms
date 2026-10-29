@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { BILLING_PATH, date, focusRing, money } from "@/components/pms/billing/format";
@@ -5,10 +6,9 @@ import { PmsNotice, pmsButtonVariants } from "@/components/pms/ui";
 import { requireClinicActor } from "@/server/pms/actor";
 import { claimsFor } from "@/server/pms/billing/claims";
 import { ScrollRegion } from "@/components/pms/ui/scroll-region";
-import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const generateMetadata = gatedMetadata({ title: "Insurer claims" }, "billing.view");
+export const metadata: Metadata = { title: "Insurer claims" };
 
 function one(v: string | string[] | undefined): string {
   return (Array.isArray(v) ? v[0] : v) ?? "";

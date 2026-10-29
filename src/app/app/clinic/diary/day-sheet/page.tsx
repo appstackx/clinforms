@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { DaySheetControls } from "@/components/pms/diary/day-sheet-controls";
 import { longDate } from "@/components/pms/diary/grid-model";
@@ -10,10 +11,9 @@ import { requireClinicActor } from "@/server/pms/actor";
 import { diaryCallerOf } from "@/server/pms/diary/caller";
 import { loadDaySheet } from "@/server/pms/diary/reads";
 import { listSites } from "@/server/repos/pms/directory";
-import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const generateMetadata = gatedMetadata({ title: "Day sheet" }, "diary.view");
+export const metadata: Metadata = { title: "Day sheet" };
 
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? "";
 

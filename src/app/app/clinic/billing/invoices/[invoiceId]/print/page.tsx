@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { BILLING_PATH } from "@/components/pms/billing/format";
 import { PRINT_CSS, PrintInvoiceSheet } from "@/components/pms/billing/print-sheets";
@@ -6,10 +7,9 @@ import { requireClinicActor } from "@/server/pms/actor";
 import { printInvoiceFor } from "@/server/pms/billing/views";
 import { getPmsSettings } from "@/server/repos/pms/settings";
 import { ScrollRegion } from "@/components/pms/ui/scroll-region";
-import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const generateMetadata = gatedMetadata({ title: "Print invoice" }, "billing.view");
+export const metadata: Metadata = { title: "Print invoice" };
 
 /** /app/clinic/billing/invoices/[invoiceId]/print (design round 3 "Print – invoice A4"): the A4 sheet; only it prints. */
 export default async function PrintInvoicePage({ params }: { params: { invoiceId: string } }) {

@@ -1,9 +1,9 @@
+import type { Metadata } from "next";
 import { requireClinicActor } from "@/server/pms/actor";
 import { RotaWaitingView } from "../rota-waiting-view";
-import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const generateMetadata = gatedMetadata({ title: "Waiting list" }, "diary.view");
+export const metadata: Metadata = { title: "Waiting list" };
 
 /**
  * /app/clinic/diary/waiting-list?site=… – the site's waiting list (diary.view; changes need diary.rota; booking from it diary.book). Members who

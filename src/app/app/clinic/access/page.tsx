@@ -1,12 +1,12 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PMS_ROLE_LABELS } from "@/modules/pms/core/permissions";
 import { requireClinicActor } from "@/server/pms/actor";
 import { loadStaffList } from "@/server/pms/access-screens";
-import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const generateMetadata = gatedMetadata({ title: "Staff access" }, "settings.members");
+export const metadata: Metadata = { title: "Staff access" };
 
 /**
  * Set-up → Staff access: the clinic's members with their role and the sites they can see; each opens their member

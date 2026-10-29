@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { BILLING_PATH } from "@/components/pms/billing/format";
 import { PRINT_CSS, PrintStatementSheet } from "@/components/pms/billing/print-sheets";
@@ -9,10 +10,9 @@ import { requireClinicActor } from "@/server/pms/actor";
 import { statementFor } from "@/server/pms/billing/views";
 import { getPmsSettings } from "@/server/repos/pms/settings";
 import { ScrollRegion } from "@/components/pms/ui/scroll-region";
-import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const generateMetadata = gatedMetadata({ title: "Statement" }, "billing.view");
+export const metadata: Metadata = { title: "Statement" };
 
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? "";
 

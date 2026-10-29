@@ -1,10 +1,10 @@
+import type { Metadata } from "next";
 import { RoomsSetup } from "@/components/pms/reporting/setup-pages";
 import { requireClinicActor } from "@/server/pms/actor";
 import { roomsScreenFor } from "@/server/pms/reporting/setup";
-import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const generateMetadata = gatedMetadata({ title: "Rooms" }, "settings.setup");
+export const metadata: Metadata = { title: "Rooms" };
 
 /** /app/clinic/setup/rooms[?site=&room=] – Set-up → Rooms (settings.setup; the member's sites only). */
 export default async function RoomsSetupPage({ searchParams }: { searchParams: { site?: string; room?: string } }) {

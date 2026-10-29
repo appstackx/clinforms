@@ -1,10 +1,10 @@
+import type { Metadata } from "next";
 import { RecordsSetup } from "@/components/pms/reporting/setup-pages";
 import { requireClinicActor } from "@/server/pms/actor";
 import { recordsScreenFor } from "@/server/pms/reporting/setup";
-import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const generateMetadata = gatedMetadata({ title: "Record templates" }, "settings.setup");
+export const metadata: Metadata = { title: "Record templates" };
 
 /** /app/clinic/setup/records – Set-up → Record templates: the note templates (editor at /patients/note-templates) and record keeping. */
 export default async function RecordsSetupPage() {

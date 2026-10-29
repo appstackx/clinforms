@@ -1,11 +1,11 @@
+import type { Metadata } from "next";
 import { MessagesPage, type MessagesTab, type OutboxFilterKey } from "@/components/pms/comms/messages-page";
 import { requireClinicActor } from "@/server/pms/actor";
 import { lettersFor, messagesHomeFor, outboxFor, repliesFor, sendFormFor, templatesFor } from "@/server/pms/comms/views";
 import { nowIso } from "@/server/repos/pms/context";
-import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const generateMetadata = gatedMetadata({ title: "Messages" }, "messages.send");
+export const metadata: Metadata = { title: "Messages" };
 
 const TABS: readonly MessagesTab[] = ["outbox", "replies", "templates", "letters", "send"];
 const FILTERS: readonly OutboxFilterKey[] = ["all", "planned", "sent", "failed", "skipped"];

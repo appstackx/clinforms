@@ -3,18 +3,14 @@ import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 import { ReportScreen } from "@/components/pms/reporting/report-screen";
 import { SITE_COOKIE } from "@/components/pms/shell/site-cookie";
-import { REPORTS, REPORT_EXPORT_PATH, isReportId, reportAccess } from "@/modules/pms/reporting/catalogue";
+import { REPORTS, REPORT_EXPORT_PATH, isReportId } from "@/modules/pms/reporting/catalogue";
 import { requireClinicActor } from "@/server/pms/actor";
 import { reportPageFor } from "@/server/pms/reporting/service";
 
 export const dynamic = "force-dynamic";
 
-/** The report's access is checked here too, so a member who may not open it gets a real 404 (src/server/pms/page-gate.ts). */
-export async function generateMetadata({ params }: { params: { report: string } }): Promise<Metadata> {
-  if (!isReportId(params.report)) notFound();
-  const actor = await requireClinicActor();
-  if (reportAccess(params.report, (p) => actor.can(p)) === null) notFound();
-  return { title: REPORTS[params.report].title };
+export function generateMetadata({ params }: { params: { report: string } }): Metadata {
+  return { title: isReportId(params.report) ? REPORTS[params.report].title : "Reports" };
 }
 
 /**

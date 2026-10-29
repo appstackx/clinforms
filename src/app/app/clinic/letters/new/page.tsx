@@ -1,11 +1,11 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { LetterStart } from "@/components/pms/comms/letter-start";
 import { requireClinicActor } from "@/server/pms/actor";
 import { letterStartFor } from "@/server/pms/comms/views";
-import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const generateMetadata = gatedMetadata({ title: "New letter" }, "messages.letters");
+export const metadata: Metadata = { title: "New letter" };
 
 /** /app/clinic/letters/new?patient=<id> – choose a template, case and recipient. messages.letters (never reception). */
 export default async function NewLetterPage({ searchParams }: { searchParams: { patient?: string } }) {

@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { ImportStart } from "@/components/pms/integration/import-start";
 import { ukDateTimeAt } from "@/components/pms/integration/format";
@@ -6,10 +7,9 @@ import { describeCounts, BATCH_STATUS_LABELS } from "@/modules/pms/integration/i
 import { IMPORT_KIND_INFO } from "@/modules/pms/integration/import-kinds";
 import { requireClinicActor } from "@/server/pms/actor";
 import { listImportsFor } from "@/server/pms/integration/import-service";
-import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const generateMetadata = gatedMetadata({ title: "Import data" }, "settings.import");
+export const metadata: Metadata = { title: "Import data" };
 
 const BASE = "/app/clinic/setup/import";
 

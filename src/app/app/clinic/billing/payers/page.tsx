@@ -1,10 +1,10 @@
+import type { Metadata } from "next";
 import { PayerTerms } from "@/components/pms/billing/payer-terms";
 import { requireClinicActor } from "@/server/pms/actor";
 import { payerTermsFor } from "@/server/pms/billing/views";
-import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const generateMetadata = gatedMetadata({ title: "Payer accounts" }, "billing.view");
+export const metadata: Metadata = { title: "Payer accounts" };
 
 /**
  * /app/clinic/billing/payers: how each payer account bills the patient's part of an insured visit – excess per case

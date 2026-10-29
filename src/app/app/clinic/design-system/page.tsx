@@ -1,10 +1,10 @@
+import type { Metadata } from "next";
 import { DesignSystemPreview } from "@/components/pms/design-system/preview";
 import { CLINIC_SYSTEM_NAME } from "@/lib/brand";
 import { requireClinicActor } from "@/server/pms/actor";
-import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const generateMetadata = gatedMetadata({ title: "Design system", robots: { index: false, follow: false } }, "settings.manage");
+export const metadata: Metadata = { title: "Design system", robots: { index: false, follow: false } };
 
 /**
  * /app/clinic/design-system – every component of the clinic system's kit (src/components/pms/ui) with the design's

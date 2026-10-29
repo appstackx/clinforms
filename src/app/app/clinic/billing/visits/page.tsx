@@ -1,12 +1,12 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { BILLING_PATH } from "@/components/pms/billing/format";
 import { VisitsTable } from "@/components/pms/billing/visits-table";
 import { requireClinicActor } from "@/server/pms/actor";
 import { uninvoicedVisitsFor } from "@/server/pms/billing/views";
-import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const generateMetadata = gatedMetadata({ title: "Invoice visits" }, "billing.edit");
+export const metadata: Metadata = { title: "Invoice visits" };
 
 /**
  * /app/clinic/billing/visits (design round 3 "Invoice attended visits"): completed visits, and missed or

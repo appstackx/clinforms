@@ -10,6 +10,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { PAGE_PERMISSIONS, pagePermissionFor } from "@/modules/pms/core/page-permissions";
 import { SectionError } from "@/components/pms/ui/section-error";
 import { SectionLoading, type SectionLayout } from "@/components/pms/ui/section-loading";
 import { PublicError } from "@/components/pms/portal/public-error";
@@ -46,18 +47,39 @@ describe("route boundaries – every clinic and public section", () => {
   }
 });
 
-/** Every staff page that needs a permission checks it in generateMetadata too (src/server/pms/page-gate.ts). */
+/** The clinic shell's layout knows each page's permission (src/modules/pms/core/page-permissions.ts). */
 function pagesUnder(dir: string): string[] {
   return readdirSync(path.join(ROOT, dir), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? pagesUnder(path.join(dir, e.name)) : e.name === "page.tsx" ? [path.join(dir, e.name)] : []));
 }
-describe("a page's 404 / redirect is answered before its loading skeleton streams", () => {
-  it("each /app/clinic page with a permission or its own 404 / redirect has a generateMetadata that runs the same check", () => {
-    const missing = pagesUnder(STAFF).filter((f) => {
-      const src = readFileSync(path.join(ROOT, f), "utf8");
-      const gated = /requireClinicActor\(\{ permission:|notFound\(\)|redirect\(/.test(src);
-      return gated && !/export (const|async function|function) generateMetadata/.test(src);
-    });
-    assert.deepEqual(missing, []);
+describe("a page the member may not open answers 404 before the loading skeleton streams", () => {
+  it("the table holds every /app/clinic page's own permission, and nothing else", () => {
+    const fromPages = pagesUnder(STAFF)
+      .map((f) => {
+        const perm = /requireClinicActor\(\{ permission: "([a-z._]+)" \}\)/.exec(readFileSync(path.join(ROOT, f), "utf8"))?.[1];
+        const route = f.slice(STAFF.length, -"/page.tsx".length).replace(/\/\([^)]+\)/g, "") || "/";
+        return perm ? `${route} ${perm}` : null;
+      })
+      .filter(Boolean)
+      .sort();
+    assert.deepEqual(PAGE_PERMISSIONS.map(([r, p]) => `${r} ${p}`).sort(), fromPages);
+  });
+  it("addresses resolve to their page's permission (a static segment beats a [param] one)", () => {
+    assert.deepEqual(pagePermissionFor("/app/clinic/access"), ["settings.members"]);
+    assert.deepEqual(pagePermissionFor("/app/clinic/patients/new?x=1"), ["patients.edit"]);
+    assert.deepEqual(pagePermissionFor("/app/clinic/patients/pat_01J/notes/note_01J"), ["clinical.view"]);
+    assert.deepEqual(pagePermissionFor("/app/clinic/patients/pat_01J/invoices"), ["billing.view"]);
+    assert.deepEqual(pagePermissionFor("/app/clinic/patients/pat_01J"), ["patients.view"]);
+    assert.deepEqual(pagePermissionFor("/app/clinic/patients/unsigned-notes"), ["clinical.view"]);
+    assert.deepEqual(pagePermissionFor("/app/clinic/billing/visits"), ["billing.edit"]);
+    assert.ok(pagePermissionFor("/app/clinic/setup")?.includes("settings.members"));
+    assert.equal(pagePermissionFor("/app/clinic"), null);
+    assert.equal(pagePermissionFor("/app/studio"), null);
+    assert.equal(pagePermissionFor(null), null);
+  });
+  it("the clinic layout applies it", () => {
+    const layout = readFileSync(path.join(ROOT, STAFF, "layout.tsx"), "utf8");
+    assert.match(layout, /pagePermissionFor\(path\)/);
+    assert.match(layout, /x-clinforms-path/);
   });
 });
 

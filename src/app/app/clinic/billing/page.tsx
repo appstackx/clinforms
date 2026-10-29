@@ -1,12 +1,12 @@
+import type { Metadata } from "next";
 import { BillingList, type BillingTab } from "@/components/pms/billing/billing-list";
 import { INVOICE_LIST_STATES, type InvoiceListState } from "@/server/repos/pms/billing/invoices";
 import { requireClinicActor } from "@/server/pms/actor";
 import { agedDebtFor, billingHomeFor, payerAccountsFor, recentRemittancesFor, statementAccountsFor, uninvoicedVisitsFor } from "@/server/pms/billing/views";
 import { pmsNow } from "../../../../modules/pms/core/clock";
-import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const generateMetadata = gatedMetadata({ title: "Billing" }, "billing.view");
+export const metadata: Metadata = { title: "Billing" };
 
 const TABS: readonly BillingTab[] = ["invoices", "visits", "aged", "remittances", "statements"];
 

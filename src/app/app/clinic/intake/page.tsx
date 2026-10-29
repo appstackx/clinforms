@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { IntakeStarterButtons } from "@/components/pms/portal/intake-starters";
 import { INTAKE_FORM_KIND_LABELS, SEND_WHEN_LABELS } from "@/modules/pms/portal/schemas";
@@ -7,10 +8,9 @@ import { requireClinicActor } from "@/server/pms/actor";
 import { intakeFormsFor } from "@/server/pms/portal/staff";
 import { addStarterFormAction, newIntakeFormAction } from "./actions";
 import { ScrollRegion } from "@/components/pms/ui/scroll-region";
-import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const generateMetadata = gatedMetadata({ title: "Intake forms" }, "settings.setup");
+export const metadata: Metadata = { title: "Intake forms" };
 
 const STATUS: Record<string, string> = { draft: "Draft", active: "Published", archived: "Archived" };
 

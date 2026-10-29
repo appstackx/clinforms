@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { Card as Panel } from "@/components/pms/records/ui";
 import { ActionForm, Submit, TextField } from "@/components/pms/records/form";
@@ -11,10 +12,9 @@ import { patientOr404 } from "@/server/pms/records/record";
 import { listCasesForPatient } from "@/server/repos/pms/cases";
 import { listOutcomesForPatient } from "@/server/repos/pms/records/outcomes";
 import { markMeasureInError, recordMeasure } from "./actions";
-import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const generateMetadata = gatedMetadata({ title: "Outcome measures" }, "clinical.view");
+export const metadata: Metadata = { title: "Outcome measures" };
 
 /** Outcome measures over time (NDI, ODI, NPRS, PSFS, QuickDASH): a chart and table per measure, and recording a new one. */
 export default async function OutcomesPage({ params }: { params: { patientId: string } }) {
