@@ -7,7 +7,7 @@
  * - Usage is one conditional UPDATE: it never goes over what was authorised, never below zero.
  * - Never deleted by the app (close a case; cancel an authorisation).
  */
-import type { Selectable } from "kysely";
+import { sql, type Selectable } from "kysely";
 import { FOUNDATION_ID_PREFIXES as P } from "../../../modules/pms/core/ids";
 import {
   AuthorisationInputSchema,
@@ -47,6 +47,28 @@ import {
 import { pmsNow } from "../../../modules/pms/core/clock";
 
 const C = "pms_cases";
+
+/** Ids per statement of an import undo (D1: 100 bound parameters). */
+const UNDO_GROUP = 90;
+
+/** Items whose stored revision is still the one given, read 90 at a time; grouped by that revision. */
+async function stillAtRevision(ctx: RepoContext, table: "pms_cases", tenantId: string, items: readonly { id: string; rev: number }[]): Promise<Map<number, string[]>> {
+  const wanted = new Map(items.map((i) => [i.id, i.rev]));
+  const ids = Array.from(wanted.keys());
+  const byRev = new Map<number, string[]>();
+  for (let i = 0; i < ids.length; i += UNDO_GROUP) {
+    const rows = await ctx.db.selectFrom(table).select(["id", "rev"]).where("tenant_id", "=", tenantId).where("id", "in", ids.slice(i, i + UNDO_GROUP)).execute();
+    for (const r of rows) {
+      const rev = num(r.rev);
+      if (wanted.get(r.id) !== rev) continue;
+      const list = byRev.get(rev);
+      if (list) list.push(r.id);
+      else byRev.set(rev, [r.id]);
+    }
+  }
+  return byRev;
+}
+
 const A = "pms_authorisations";
 const CASE_MESSAGES = {
   unique: "A case with this import reference already exists.",
@@ -506,4 +528,64 @@ export async function listExpiringAuthorisations(ctx: RepoContext, tenantId: str
     .limit(Math.min(Math.max(1, range.limit ?? 50), 500))
     .execute();
   return rows.map((r) => toAuthorisation(ctx, r, false));
+}
+
+/**
+ * Undo of an import (integration): each case still exactly as imported is closed (closed today unless it already
+ * had a date, never before it opened) and its import reference released; then the authorisations the import added
+ * to those cases are cancelled when nobody changed them (revision 1). One UPDATE per group of up to 90 with the same
+ * revision and one audit row per group, in batches. Returns the case ids changed.
+ */
+export async function closeImportedCases(
+  ctx: RepoContext,
+  tenantId: string,
+  items: readonly { id: string; rev: number; authorisationId?: string | null }[],
+  actor: PmsActor,
+): Promise<Set<string>> {
+  assertTenantId(tenantId);
+  for (const i of items) assertId(i.id, "case id");
+  const at = nowIso(ctx);
+  const today = ukToday(ctx.now ? ctx.now() : pmsNow());
+  const done = new Set<string>();
+  const queries = [];
+  for (const [rev, ids] of Array.from((await stillAtRevision(ctx, C, tenantId, items)).entries())) {
+    for (let i = 0; i < ids.length; i += UNDO_GROUP) {
+      const group = ids.slice(i, i + UNDO_GROUP);
+      queries.push(
+        ctx.db
+          .updateTable(C)
+          .set((eb) => ({
+            status: "closed",
+            import_ref: null,
+            closed_on: eb.fn.coalesce("closed_on", sql<string>`case when opened_on > ${today} then opened_on else ${today} end`),
+            rev: eb("rev", "+", 1),
+            updated_at: at,
+          }))
+          .where("tenant_id", "=", tenantId)
+          .where("id", "in", group)
+          .where("rev", "=", rev)
+          .returning("id"),
+        pmsAuditQuery(ctx, tenantId, actor, { action: "pms.case.import_undo", targetType: "pms_case", targetId: group[0], detail: { count: group.length } }),
+      );
+    }
+  }
+  for (let i = 0; i < queries.length; i += 90) {
+    for (const r of await runBatch(ctx.db, queries.slice(i, i + 90))) for (const row of r.rows) if (typeof row.id === "string") done.add(row.id);
+  }
+  const auths = items.filter((i) => done.has(i.id) && i.authorisationId).map((i) => i.authorisationId as string);
+  const authQueries = [];
+  for (let i = 0; i < auths.length; i += UNDO_GROUP) {
+    const group = auths.slice(i, i + UNDO_GROUP);
+    authQueries.push(
+      ctx.db
+        .updateTable(A)
+        .set((eb) => ({ status: "cancelled", import_ref: null, rev: eb("rev", "+", 1), updated_at: at }))
+        .where("tenant_id", "=", tenantId)
+        .where("id", "in", group)
+        .where("rev", "=", 1),
+      pmsAuditQuery(ctx, tenantId, actor, { action: "pms.authorisation.import_undo", targetType: "pms_authorisation", targetId: group[0], detail: { count: group.length } }),
+    );
+  }
+  for (let i = 0; i < authQueries.length; i += 90) await runBatch(ctx.db, authQueries.slice(i, i + 90));
+  return done;
 }
