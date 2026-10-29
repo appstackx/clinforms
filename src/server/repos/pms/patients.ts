@@ -43,6 +43,28 @@ import {
 import { pmsNow } from "../../../modules/pms/core/clock";
 
 const T = "pms_patients";
+
+/** Ids per statement of an import undo (D1: 100 bound parameters). */
+const UNDO_GROUP = 90;
+
+/** Items whose stored revision is still the one given, read 90 at a time; grouped by that revision. */
+async function stillAtRevision(ctx: RepoContext, table: "pms_patients", tenantId: string, items: readonly { id: string; rev: number }[]): Promise<Map<number, string[]>> {
+  const wanted = new Map(items.map((i) => [i.id, i.rev]));
+  const ids = Array.from(wanted.keys());
+  const byRev = new Map<number, string[]>();
+  for (let i = 0; i < ids.length; i += UNDO_GROUP) {
+    const rows = await ctx.db.selectFrom(table).select(["id", "rev"]).where("tenant_id", "=", tenantId).where("id", "in", ids.slice(i, i + UNDO_GROUP)).execute();
+    for (const r of rows) {
+      const rev = num(r.rev);
+      if (wanted.get(r.id) !== rev) continue;
+      const list = byRev.get(rev);
+      if (list) list.push(r.id);
+      else byRev.set(rev, [r.id]);
+    }
+  }
+  return byRev;
+}
+
 const MESSAGES = { unique: "A patient with this import reference already exists.", foreignKey: "The patient this record merges into does not exist." };
 
 type Row = Selectable<PmsPatientsTable>;
@@ -498,4 +520,37 @@ export async function countPatients(ctx: RepoContext, tenantId: string, status: 
   if (status !== "any") q = q.where("status", "=", status);
   const row = await q.executeTakeFirst();
   return num(row?.n ?? 0);
+}
+
+/**
+ * Undo of an import (integration): each patient still exactly as imported (the revision the import wrote) has its
+ * import reference released and is archived – one UPDATE per group of up to 90 with the same revision and one
+ * audit row per group ("pms.patient.import_undo", the count), all in one batch. Returns the ids changed
+ * (RETURNING – a patient edited meanwhile is left as it is).
+ */
+export async function archiveImportedPatients(ctx: RepoContext, tenantId: string, items: readonly { id: string; rev: number }[], actor: PmsActor): Promise<Set<string>> {
+  assertTenantId(tenantId);
+  for (const i of items) assertId(i.id, "patient id");
+  const at = nowIso(ctx);
+  const done = new Set<string>();
+  const queries = [];
+  for (const [rev, ids] of Array.from((await stillAtRevision(ctx, T, tenantId, items)).entries())) {
+    for (let i = 0; i < ids.length; i += UNDO_GROUP) {
+      const group = ids.slice(i, i + UNDO_GROUP);
+      queries.push(
+        ctx.db
+          .updateTable(T)
+          .set((eb) => ({ import_ref: null, status: "archived", archived_at: eb.fn.coalesce("archived_at", sql<string>`${at}`), rev: eb("rev", "+", 1), updated_at: at }))
+          .where("tenant_id", "=", tenantId)
+          .where("id", "in", group)
+          .where("rev", "=", rev)
+          .returning("id"),
+        pmsAuditQuery(ctx, tenantId, actor, { action: "pms.patient.import_undo", targetType: "pms_patient", targetId: group[0], detail: { count: group.length } }),
+      );
+    }
+  }
+  for (let i = 0; i < queries.length; i += 90) {
+    for (const r of await runBatch(ctx.db, queries.slice(i, i + 90))) for (const row of r.rows) if (typeof row.id === "string") done.add(row.id);
+  }
+  return done;
 }

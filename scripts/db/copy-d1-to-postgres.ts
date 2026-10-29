@@ -66,19 +66,35 @@ const MAX_INSERT_ROWS = 100;
 const MAX_INSERT_BYTES = 1_000_000;
 
 export interface SourceReader {
-  readPage(table: TableName, limit: number, offset: number): Promise<Row[]>;
+  /** Up to `limit` rows in primary-key order, after the row `after` (keyset paging – null = from the start). */
+  readPage(table: TableName, limit: number, after: Row | null): Promise<Row[]>;
   close(): Promise<void>;
 }
 
 const quote = (id: string) => `"${id.replace(/"/g, '""')}"`;
 const orderBy = (table: TableName) => PRIMARY_KEYS[table].map(quote).join(", ");
 
+/**
+ * " where (pk…) > (?, …)" after the last row of the previous page, and its parameters: keyset paging, so every page
+ * is an index seek (LIMIT/OFFSET re-read every earlier row – on D1 each page cost the rows before it again).
+ * `mark(i)` is the placeholder of the i-th parameter (1-based): "?" for SQLite / D1, "$n" for Postgres.
+ */
+export function afterClause(table: TableName, after: Row | null, mark: (i: number) => string): { sql: string; params: unknown[] } {
+  if (!after) return { sql: "", params: [] };
+  const keys = PRIMARY_KEYS[table];
+  const params = keys.map((k) => after[k]);
+  const cols = keys.map(quote).join(", ");
+  const marks = keys.map((_, i) => mark(i + 1)).join(", ");
+  return keys.length === 1 ? { sql: ` where ${cols} > ${marks}`, params } : { sql: ` where (${cols}) > (${marks})`, params };
+}
+
 export function sqliteSource(db: SqliteDatabaseLike, closeAfter = false): SourceReader {
   return {
-    async readPage(table, limit, offset) {
+    async readPage(table, limit, after) {
+      const w = afterClause(table, after, () => "?");
       return db
-        .prepare(`select * from ${quote(table)} order by ${orderBy(table)} limit ? offset ?`)
-        .all(limit, offset)
+        .prepare(`select * from ${quote(table)}${w.sql} order by ${orderBy(table)} limit ?`)
+        .all(...(w.params as never[]), limit)
         .map((r) => ({ ...(r as Row) }));
     },
     async close() {
@@ -87,13 +103,12 @@ export function sqliteSource(db: SqliteDatabaseLike, closeAfter = false): Source
   };
 }
 
-export function gatewaySource(url: string, secret: string): SourceReader {
-  const db = new Kysely<Database>({ dialect: new D1HttpDialect({ url, secret, timeoutMs: 60_000 }) });
+export function gatewaySource(url: string, secret: string, fetchImpl?: typeof fetch): SourceReader {
+  const db = new Kysely<Database>({ dialect: new D1HttpDialect({ url, secret, timeoutMs: 60_000, ...(fetchImpl ? { fetch: fetchImpl } : {}) }) });
   return {
-    async readPage(table, limit, offset) {
-      const result = await db.executeQuery<Row>(
-        CompiledQuery.raw(`select * from ${quote(table)} order by ${orderBy(table)} limit ? offset ?`, [limit, offset]),
-      );
+    async readPage(table, limit, after) {
+      const w = afterClause(table, after, () => "?");
+      const result = await db.executeQuery<Row>(CompiledQuery.raw(`select * from ${quote(table)}${w.sql} order by ${orderBy(table)} limit ?`, [...w.params, limit]));
       return result.rows;
     },
     close: () => db.destroy(),
@@ -125,10 +140,12 @@ export interface TableSummary {
 
 async function* readAll(source: SourceReader, table: TableName): AsyncGenerator<Row[]> {
   const size = PAGE_SIZE[table] ?? DEFAULT_PAGE;
-  for (let offset = 0; ; offset += size) {
-    const page = await source.readPage(table, size, offset);
+  let after: Row | null = null;
+  for (;;) {
+    const page: Row[] = await source.readPage(table, size, after);
     if (page.length > 0) yield page;
     if (page.length < size) return;
+    after = page[page.length - 1];
   }
 }
 
@@ -147,8 +164,9 @@ async function summarise(source: SourceReader, table: TableName): Promise<TableS
 /** Reads the Postgres target back the same way (inside the copy transaction). */
 function pgSource(client: PgMigrationClient): SourceReader {
   return {
-    async readPage(table, limit, offset) {
-      const { rows } = await client.query(`select * from public.${quote(table)} order by ${orderBy(table)} limit $1 offset $2`, [limit, offset]);
+    async readPage(table, limit, after) {
+      const w = afterClause(table, after, (i) => `$${i}`);
+      const { rows } = await client.query(`select * from public.${quote(table)}${w.sql} order by ${orderBy(table)} limit $${w.params.length + 1}`, [...w.params, limit]);
       return rows;
     },
     async close() {},

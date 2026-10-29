@@ -5,7 +5,7 @@
 import { OCCUPYING_STATUSES, freeSlots, slotSuits, spansOverlap, type BusySpan, type FreeSlot, type WaitingPreferences } from "../../../../modules/pms/diary/rules";
 import { addDays, londonRange } from "../../../../modules/pms/diary/time";
 import { RepoInputError, assertTenantId, nowIso, type DbContext } from "../context";
-import { listDiary } from "./appointments";
+import { listOccupiedSpans } from "./appointments";
 import { APPOINTMENTS, heldSlots } from "./shared";
 import { availabilityWindows } from "./availability";
 import { loadServiceRef } from "./shared";
@@ -54,21 +54,7 @@ export async function findFreeSlots(ctx: DbContext, tenantId: string, q: FreeSlo
   if (windows.length === 0) return [];
   const practitionerIds = Array.from(new Set(windows.map((w) => w.practitionerId)));
   const roomIds = Array.from(new Set(windows.map((w) => w.roomId).filter((r): r is string => r !== null)));
-  // Occupying items of those practitioners and rooms (any site: a practitioner booked elsewhere is busy), a day
-  // at a time. A day whose list would be cut short offers nothing (never a slot that only looks free).
-  const busy: BusySpan[] = [];
-  const fullDays = new Set<string>();
-  for (const date of Array.from(new Set(windows.map((w) => w.date)))) {
-    const { items, truncated } = await listDiary(ctx, tenantId, { ...londonRange(date, 1), practitionerIds, roomIds, limit: 500 });
-    if (truncated) fullDays.add(date);
-    for (const i of items) busy.push({ practitionerId: i.practitionerId, roomId: i.roomId, startsAt: i.startsAt, endsAt: i.endsAt });
-  }
-  // Slots held for a waiting patient (an open offer, until it is answered or its hold ends) are not free – except
-  // to the patient they are held for.
   const range = londonRange(dates[0], dates.length);
-  for (const h of await heldSlots(ctx, tenantId, { from: range.from, to: range.to, practitionerIds, roomIds, exceptPatientId: q.patientId ?? null })) {
-    busy.push({ practitionerId: h.practitionerId, roomId: h.roomId, startsAt: h.startsAt, endsAt: h.endsAt });
-  }
   const limit = Math.min(200, q.limit ?? 20);
   let patientBusy: { startsAt: string; endsAt: string }[] = [];
   if (q.patientId) {
@@ -84,14 +70,37 @@ export async function findFreeSlots(ctx: DbContext, tenantId: string, q: FreeSlo
       .execute();
   }
   const filtered = prefs || patientBusy.length > 0;
-  const slots = freeSlots({
-    windows: windows.filter((w) => !fullDays.has(w.date)),
-    busy,
-    durationMinutes: duration,
-    stepMinutes: q.stepMinutes,
-    notBefore: q.notBefore ?? nowIso(ctx),
-    limit: filtered ? 500 : limit,
-  });
+  const wanted = filtered ? 500 : limit;
+  // Slots held for a waiting patient (an open offer, until it is answered or its hold ends) are not free – except
+  // to the patient they are held for. Read by practitioners and by rooms separately (D1: 100 parameters).
+  const held: BusySpan[] = [];
+  const holdQueries: { practitionerIds: string[]; roomIds: string[] }[] = [];
+  for (let i = 0; i < practitionerIds.length; i += 80) holdQueries.push({ practitionerIds: practitionerIds.slice(i, i + 80), roomIds: [] });
+  for (let i = 0; i < roomIds.length; i += 80) holdQueries.push({ practitionerIds: [], roomIds: roomIds.slice(i, i + 80) });
+  for (const hq of holdQueries) {
+    for (const h of await heldSlots(ctx, tenantId, { from: range.from, to: range.to, ...hq, exceptPatientId: q.patientId ?? null })) {
+      held.push({ practitionerId: h.practitionerId, roomId: h.roomId, startsAt: h.startsAt, endsAt: h.endsAt });
+    }
+  }
+  // The time the practitioners and rooms are taken (any site: a practitioner booked elsewhere is busy), a week of
+  // the range at a time: the busy columns only, every item of the week (no cap per day – a busy day still offers
+  // its free time). Later weeks are read only while the earliest slots are not yet found (slots come date by
+  // date, so a later week can never offer an earlier slot).
+  const slots: FreeSlot[] = [];
+  const windowDates = Array.from(new Set(windows.map((w) => w.date))).sort();
+  for (let i = 0; i < windowDates.length && slots.length < wanted; ) {
+    const weekStart = windowDates[i];
+    const weekEnd = addDays(weekStart, 7);
+    const week = windows.filter((w) => w.date >= weekStart && w.date < weekEnd);
+    while (i < windowDates.length && windowDates[i] < weekEnd) i++;
+    const span = londonRange(weekStart, 7);
+    const read = await listOccupiedSpans(ctx, tenantId, { from: span.from, to: span.to, practitionerIds, roomIds });
+    // Past the read's cap (never on a real clinic), only the dates read in full are offered.
+    const usable = read.complete ? week : week.filter((w) => read.readUntil !== null && Date.parse(londonRange(w.date, 1).to) <= Date.parse(read.readUntil));
+    const busy: BusySpan[] = [...held, ...read.spans.map((b) => ({ practitionerId: b.practitionerId, roomId: b.roomId, startsAt: b.startsAt, endsAt: b.endsAt }))];
+    slots.push(...freeSlots({ windows: usable, busy, durationMinutes: duration, stepMinutes: q.stepMinutes, notBefore: q.notBefore ?? nowIso(ctx), limit: wanted - slots.length }));
+    if (!read.complete) break;
+  }
   if (!filtered) return slots;
   return slots.filter((s) => (!prefs || slotSuits(s, prefs)) && !patientBusy.some((b) => spansOverlap(s, b))).slice(0, limit);
 }

@@ -9,9 +9,11 @@ import type { StatementEntry } from "../../../../modules/pms/billing/statements"
 import { formatUkDate } from "../../../../modules/pms/core/text";
 import { assertTenantId, num, numOrNull, type RepoContext } from "../context";
 import type { PayerRef } from "./payments";
-import { chunks } from "./shared";
+import { OPEN_INVOICE, chunks } from "./shared";
 
 const PAGE = 500;
+/** Open invoices per page of the aged-debt read (12 short columns: a round trip to D1 costs more than the rows). */
+const DEBT_PAGE = 2000;
 export const REPORT_ROW_CAP = 20_000;
 
 export interface DebtInvoiceRow extends DebtInvoice {
@@ -19,24 +21,36 @@ export interface DebtInvoiceRow extends DebtInvoice {
   patientId: string;
   payerReferrerId: string | null;
   billTo: "patient" | "payer";
+  siteId: string | null;
 }
 
-/** Issued invoices with a balance (owed, or owed back), for the aged debt report. */
-export async function debtInvoices(ctx: RepoContext, tenantId: string): Promise<{ rows: DebtInvoiceRow[]; truncated: boolean }> {
+/**
+ * Issued invoices with a balance (owed, or owed back), for the aged debt report – the OPEN invoices only (the
+ * partial index pms_invoices_open, 0212), optionally at some sites (a member limited to some sites: filtered in
+ * the query, never through a capped list).
+ */
+export async function debtInvoices(
+  ctx: RepoContext,
+  tenantId: string,
+  options: { siteIds?: ReadonlySet<string> | null; debtor?: PayerRef } = {},
+): Promise<{ rows: DebtInvoiceRow[]; truncated: boolean }> {
   assertTenantId(tenantId);
+  const sites = options.siteIds ? Array.from(options.siteIds).slice(0, 90) : null;
+  if (sites && sites.length === 0) return { rows: [], truncated: false };
   const out: DebtInvoiceRow[] = [];
   let after = "";
   for (;;) {
-    const page = await ctx.db
+    let q = ctx.db
       .selectFrom("pms_invoices")
-      .select(["id", "bill_to", "patient_id", "payer_referrer_id", "issued_on", "due_on", "number_prefix", "number_seq", "total_pence", "paid_pence", "credited_pence"])
+      .select(["id", "bill_to", "patient_id", "payer_referrer_id", "site_id", "issued_on", "due_on", "number_prefix", "number_seq", "total_pence", "paid_pence", "credited_pence"])
       .where("tenant_id", "=", tenantId)
-      .where("status", "=", "issued")
-      .where(sql<number>`total_pence - paid_pence - credited_pence`, "<>", 0)
-      .where("id", ">", after)
-      .orderBy("id")
-      .limit(PAGE)
-      .execute();
+      .where(OPEN_INVOICE)
+      .where("id", ">", after);
+    if (sites) q = q.where("site_id", "in", sites);
+    // One debtor (a statement's ages): its invoices only – the debtor key below decides, this narrows the read.
+    const d = options.debtor;
+    if (d) q = d.payerKind === "patient" ? q.where("patient_id", "=", d.patientId) : q.where("bill_to", "=", "payer").where("payer_referrer_id", "=", d.payerReferrerId);
+    const page = await q.orderBy("id").limit(DEBT_PAGE).execute();
     for (const r of page) {
       const billTo = r.bill_to as "patient" | "payer";
       out.push({
@@ -49,9 +63,10 @@ export async function debtInvoices(ctx: RepoContext, tenantId: string): Promise<
         patientId: r.patient_id,
         payerReferrerId: r.payer_referrer_id,
         billTo,
+        siteId: r.site_id,
       });
     }
-    if (page.length < PAGE) return { rows: out, truncated: false };
+    if (page.length < DEBT_PAGE) return { rows: out, truncated: false };
     if (out.length >= REPORT_ROW_CAP) return { rows: out, truncated: true };
     after = page[page.length - 1].id;
   }

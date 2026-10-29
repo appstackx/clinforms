@@ -57,8 +57,7 @@ import { RepoInputError, type RepoContext } from "../../repos/context";
 import {
   bulkCreateAuthorisations,
   bulkCreateCases,
-  updateAuthorisation,
-  updateCase,
+  closeImportedCases,
 } from "../../repos/pms/cases";
 import {
   listPractitioners,
@@ -89,9 +88,9 @@ import {
   type RowOutcome,
 } from "../../repos/pms/integration/import-batches";
 import {
+  archiveImportedPatients,
   bulkCreatePatients,
   setPatientStatus,
-  updatePatient,
 } from "../../repos/pms/patients";
 import {
   createReferrer,
@@ -952,30 +951,11 @@ async function undoPatients(
     .map((r) => r.targetId)
     .filter((x): x is string => Boolean(x));
   const used = await inUse(ctx, tenantId, "patients", ids, ports);
-  const out: RowOutcome[] = [];
-  for (const row of rows) {
-    const id = row.targetId;
-    if (!id || used.has(id)) {
-      out.push({ id: row.id, status: "kept" });
-      continue;
-    }
-    // Unchanged since the import (same revision): its import reference is released, then it is archived.
-    const released = await updatePatient(
-      ctx,
-      tenantId,
-      id,
-      row.targetRev ?? 1,
-      { importRef: null },
-      actor,
-    );
-    if (!released.ok) {
-      out.push({ id: row.id, status: "kept" });
-      continue;
-    }
-    await setPatientStatus(ctx, tenantId, id, "archived", actor);
-    out.push({ id: row.id, status: "undone" });
-  }
-  return out;
+  // Unchanged since the import (same revision): its import reference is released and it is archived – batched
+  // (one UPDATE per revision and group of 90, one audit row each), not 2 writes per row.
+  const items = rows.filter((r) => r.targetId && !used.has(r.targetId)).map((r) => ({ id: r.targetId as string, rev: r.targetRev ?? 1 }));
+  const undone = await archiveImportedPatients(ctx, tenantId, items, actor);
+  return rows.map((row) => ({ id: row.id, status: row.targetId && undone.has(row.targetId) ? "undone" : "kept" }));
 }
 
 async function undoCases(
@@ -989,38 +969,12 @@ async function undoCases(
     .map((r) => r.targetId)
     .filter((x): x is string => Boolean(x));
   const used = await inUse(ctx, tenantId, "cases", ids, ports);
-  const out: RowOutcome[] = [];
-  for (const row of rows) {
-    const id = row.targetId;
-    if (!id || used.has(id)) {
-      out.push({ id: row.id, status: "kept" });
-      continue;
-    }
-    const closed = await updateCase(
-      ctx,
-      tenantId,
-      id,
-      row.targetRev ?? 1,
-      { status: "closed", importRef: null },
-      actor,
-    );
-    if (!closed.ok) {
-      out.push({ id: row.id, status: "kept" });
-      continue;
-    }
-    const authId = row.extra?.authorisationId;
-    if (authId)
-      await updateAuthorisation(
-        ctx,
-        tenantId,
-        authId,
-        1,
-        { status: "cancelled", importRef: null },
-        actor,
-      );
-    out.push({ id: row.id, status: "undone" });
-  }
-  return out;
+  // Closed with the import reference released, and the import's authorisation cancelled – batched as for patients.
+  const items = rows
+    .filter((r) => r.targetId && !used.has(r.targetId))
+    .map((r) => ({ id: r.targetId as string, rev: r.targetRev ?? 1, authorisationId: r.extra?.authorisationId ?? null }));
+  const undone = await closeImportedCases(ctx, tenantId, items, actor);
+  return rows.map((row) => ({ id: row.id, status: row.targetId && undone.has(row.targetId) ? "undone" : "kept" }));
 }
 
 async function undoThroughPort(

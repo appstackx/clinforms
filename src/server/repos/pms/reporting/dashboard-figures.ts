@@ -76,16 +76,23 @@ export async function caseOutcomeFigures(ctx: RepoContext, tenantId: string, cas
         .where("status", "=", "recorded")
         .groupBy("case_id")
         .execute(),
+      // The cases' own visits (pms_appointments_case), counted here: with "starts_at < ?" in the query SQLite
+      // took the start-time index and read the whole clinic's history before today (M10). A case has few visits.
       ctx.db
         .selectFrom("pms_appointments")
-        .select(["case_id", sql<number>`count(*)`.as("n")])
+        .select(["case_id", "starts_at"])
         .where("tenant_id", "=", tenantId)
         .where("case_id", "in", group as string[])
         .where("kind", "=", "appointment")
         .where("status", "=", "attended")
-        .where("starts_at", "<", beforeIso)
-        .groupBy("case_id")
-        .execute(),
+        .limit(20_000)
+        .execute()
+        .then((rows) => {
+          const before = Date.parse(beforeIso);
+          const n = new Map<string, number>();
+          for (const r of rows) if (r.case_id && Date.parse(new Date(r.starts_at).toISOString()) < before) n.set(r.case_id, (n.get(r.case_id) ?? 0) + 1);
+          return Array.from(n.entries()).map(([case_id, c]) => ({ case_id, n: c }));
+        }),
     ]);
     for (const m of measures) if (m.case_id) out.set(m.case_id, { ...(out.get(m.case_id) ?? { measures: 0, attendedBefore: 0 }), measures: num(m.n) });
     for (const v of visits) if (v.case_id) out.set(v.case_id, { ...(out.get(v.case_id) ?? { measures: 0, attendedBefore: 0 }), attendedBefore: num(v.n) });

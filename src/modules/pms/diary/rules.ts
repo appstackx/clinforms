@@ -392,19 +392,36 @@ export function freeSlots(q: FreeSlotQuery): FreeSlot[] {
   const notBefore = q.notBefore ? Date.parse(q.notBefore) : -Infinity;
   const out: FreeSlot[] = [];
   const windows = q.windows.slice().sort((a, b) => (a.date === b.date ? a.startMinute - b.startMinute : a.date < b.date ? -1 : 1));
-  for (const w of windows) {
+  // Busy time by practitioner and by room, as [start, end) in ms: a slot is checked against its own
+  // practitioner's and room's items only (a 28-day search of a large clinic has thousands of items).
+  const byPractitioner = new Map<string, [number, number][]>();
+  const byRoom = new Map<string, [number, number][]>();
+  const push = (map: Map<string, [number, number][]>, key: string, span: [number, number]) => {
+    const list = map.get(key);
+    if (list) list.push(span);
+    else map.set(key, [span]);
+  };
+  for (const b of q.busy) {
+    const span: [number, number] = [Date.parse(b.startsAt), Date.parse(b.endsAt)];
+    if (b.practitionerId !== null) push(byPractitioner, b.practitionerId, span);
+    if (b.roomId !== null) push(byRoom, b.roomId, span);
+  }
+  const overlaps = (list: readonly [number, number][] | undefined, start: number, end: number) => (list ? list.some(([s, e]) => start < e && end > s) : false);
+  for (let i = 0; i < windows.length; i++) {
+    const w = windows[i];
+    // Windows come by date, and every slot of a later date starts later: once a whole date is done and the limit
+    // is reached, no later window can be among the earliest `limit`.
+    if (out.length >= limit && i > 0 && windows[i - 1].date !== w.date) break;
     const first = Math.ceil(w.startMinute / step) * step;
     for (let m = first; m + duration <= w.endMinute; m += step) {
       const start = londonToUtc(w.date, m);
       if (!start.ok) continue;
-      if (Date.parse(start.iso) < notBefore) continue;
-      const end = new Date(Date.parse(start.iso) + duration * 60_000).toISOString();
-      const span = { startsAt: start.iso, endsAt: end };
-      const blocked = q.busy.some(
-        (b) => spansOverlap(span, b) && ((b.practitionerId !== null && b.practitionerId === w.practitionerId) || (w.roomId !== null && b.roomId === w.roomId)),
-      );
-      if (blocked) continue;
-      out.push({ date: w.date, startMinute: m, startsAt: start.iso, endsAt: end, practitionerId: w.practitionerId, siteId: w.siteId, roomId: w.roomId });
+      const startMs = Date.parse(start.iso);
+      if (startMs < notBefore) continue;
+      const endMs = startMs + duration * 60_000;
+      if (overlaps(byPractitioner.get(w.practitionerId), startMs, endMs)) continue;
+      if (w.roomId !== null && overlaps(byRoom.get(w.roomId), startMs, endMs)) continue;
+      out.push({ date: w.date, startMinute: m, startsAt: start.iso, endsAt: new Date(endMs).toISOString(), practitionerId: w.practitionerId, siteId: w.siteId, roomId: w.roomId });
     }
   }
   out.sort((a, b) => (a.startsAt === b.startsAt ? (a.practitionerId < b.practitionerId ? -1 : 1) : a.startsAt < b.startsAt ? -1 : 1));

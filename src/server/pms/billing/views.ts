@@ -36,7 +36,7 @@ import type { RepoContext } from "../../repos/context";
 import { getClinicProfile } from "../../repos/clinic-profile";
 import { caseContributionOverrides, contributionModesForCases, payerContributionModes } from "../../repos/pms/billing/contribution-terms";
 import { listCreditNotesForInvoice } from "../../repos/pms/billing/credit-notes";
-import { billingFigures, billedAppointmentIds, excessBilledForCase, getInvoice, listInvoicesPage, type InvoiceListState } from "../../repos/pms/billing/invoices";
+import { billingFigures, excessBilledForCase, notOnAnInvoice, getInvoice, listInvoicesPage, type InvoiceListState } from "../../repos/pms/billing/invoices";
 import { listPaymentLinks } from "../../repos/pms/billing/payment-links";
 import { accountCredit, listAllocationsForInvoice, listPayments, openInvoicesFor, type PayerRef } from "../../repos/pms/billing/payments";
 import { debtInvoices, statementEntries } from "../../repos/pms/billing/reports";
@@ -223,29 +223,28 @@ export interface BillingHomeView {
   today: string;
 }
 
+/** How many "Attended, not invoiced" visits one list shows (the newest; the rest are counted). */
+export const UNINVOICED_LIST_MAX = 500;
+
 /**
- * Chargeable visits from the last 90 days without an invoice, in the member's sites (at most 500, the newest kept),
- * oldest first. Read a week at a time from today backwards: the source lists at most 500 visits a call, oldest
- * first, so one 90-day read of a busy clinic would be all old, already invoiced visits and miss this week's.
+ * Chargeable visits from the last 90 days without an invoice, in the member's sites: the newest
+ * UNINVOICED_LIST_MAX of them (shown oldest first) and how many there are in all. Filtered in the database
+ * (the visit source's listUninvoicedVisits with billing's own notOnAnInvoice), so a busy clinic's already
+ * invoiced visits never crowd out the ones still to invoice.
  */
-async function uninvoicedVisits(actor: BillingActor): Promise<BillableVisit[]> {
+async function uninvoicedVisits(actor: BillingActor, options: { limit?: number } = {}): Promise<{ visits: BillableVisit[]; total: number }> {
   const ctx = actor.repo();
   const source = billableVisitSource();
-  if (!source.connected) return [];
+  if (!source.connected) return { visits: [], total: 0 };
   const today = todayOf(ctx);
-  const start = addDaysIso(today, -90);
-  const out: BillableVisit[] = [];
-  for (let until = today; until >= start && out.length < 500; until = addDaysIso(until, -7)) {
-    const from = addDaysIso(until, -6) < start ? start : addDaysIso(until, -6);
-    const visits = await source.listClinicVisits(ctx, actor.tenantId, { from, until, siteIds: actor.siteIds ?? null, limit: 500 });
-    const billed = await billedAppointmentIds(
-      ctx,
-      actor.tenantId,
-      visits.map((v) => v.appointmentId),
-    );
-    out.unshift(...visits.filter((v) => !billed.has(v.appointmentId)));
-  }
-  return out.slice(-500);
+  const r = await source.listUninvoicedVisits(ctx, actor.tenantId, {
+    from: addDaysIso(today, -90),
+    until: today,
+    siteIds: actor.siteIds ?? null,
+    notBilled: notOnAnInvoice,
+    limit: Math.min(UNINVOICED_LIST_MAX, options.limit ?? UNINVOICED_LIST_MAX),
+  });
+  return { visits: r.visits.slice().reverse(), total: r.total };
 }
 
 export async function billingHomeFor(actor: BillingActor, options: BillingHomeOptions = {}): Promise<Result<BillingHomeView>> {
@@ -257,7 +256,7 @@ export async function billingHomeFor(actor: BillingActor, options: BillingHomeOp
     const [figures, list, visits] = await Promise.all([
       billingFigures(ctx, actor.tenantId, { siteIds: scope }),
       listInvoicesPage(ctx, actor.tenantId, { state: options.state ?? "all", q: options.q, siteIds: scope, limit: INVOICE_PAGE_SIZE, offset: (page - 1) * INVOICE_PAGE_SIZE }),
-      actor.can("billing.edit") ? uninvoicedVisits(actor) : Promise.resolve([] as BillableVisit[]),
+      actor.can("billing.edit") ? uninvoicedVisits(actor, { limit: 1 }) : Promise.resolve({ visits: [] as BillableVisit[], total: 0 }),
     ]);
     const today = todayOf(ctx);
     return ok({
@@ -273,7 +272,7 @@ export async function billingHomeFor(actor: BillingActor, options: BillingHomeOp
           .map(([method, pence]) => ({ method: method as PaymentMethod, label: PAYMENT_METHOD_LABELS[method as PaymentMethod] ?? method, pence }))
           .sort((a, b) => b.pence - a.pence),
         drafts: figures.drafts,
-        uninvoicedVisits: visits.length,
+        uninvoicedVisits: visits.total,
       },
       rows: await rowsFor(ctx, actor.tenantId, list.rows, today),
       total: list.total,
@@ -285,12 +284,15 @@ export async function billingHomeFor(actor: BillingActor, options: BillingHomeOp
 }
 
 /** The "Attended, not invoiced" visits (billing.edit: only members who can invoice them see them). */
-export async function uninvoicedVisitsFor(actor: BillingActor): Promise<Result<{ visits: UninvoicedVisitView[]; connected: boolean; from: string; until: string }>> {
+export async function uninvoicedVisitsFor(
+  actor: BillingActor,
+  options: { limit?: number } = {},
+): Promise<Result<{ visits: UninvoicedVisitView[]; total: number; connected: boolean; from: string; until: string }>> {
   if (!actor.can("billing.view") || !actor.can("billing.edit")) return forbidden();
   return attempt("billing.uninvoiced", async () => {
     const ctx = actor.repo();
     const today = todayOf(ctx);
-    const visits = await uninvoicedVisits(actor);
+    const { visits, total } = await uninvoicedVisits(actor, options);
     const priced = await priceVisits(ctx, actor.tenantId, visits);
     const [patients, practitioners, payers] = await Promise.all([
       patientNames(
@@ -330,7 +332,7 @@ export async function uninvoicedVisitsFor(actor: BillingActor): Promise<Result<{
         waivable: p.visit.status !== "attended",
       };
     });
-    return ok({ visits: rows, connected: billableVisitSource().connected, from: addDaysIso(today, -90), until: today });
+    return ok({ visits: rows, total, connected: billableVisitSource().connected, from: addDaysIso(today, -90), until: today });
   });
 }
 
@@ -631,14 +633,8 @@ export async function agedDebtFor(actor: BillingActor): Promise<Result<AgedDebtV
     const ctx = actor.repo();
     const t = actor.tenantId;
     const asOf = todayOf(ctx);
-    const { rows: all } = await debtInvoices(ctx, t);
-    const sitesOk = new Set<string>();
-    if (actor.siteIds) {
-      // debtInvoices has no site column: read the in-scope ids once.
-      const scoped = await listInvoicesPage(ctx, t, { state: "outstanding", siteIds: actor.siteIds, limit: 200 });
-      scoped.rows.forEach((r) => sitesOk.add(r.id));
-    }
-    const rows = actor.siteIds ? all.filter((r) => sitesOk.has(r.id)) : all;
+    // The member's sites are filtered in the query (an invoice's site), so the totals are right at any size.
+    const { rows } = await debtInvoices(ctx, t, { siteIds: actor.siteIds ?? null });
     const debt = agedDebt(rows, asOf);
     const empty = (): Record<AgeBucket, number> => ({ current: 0, d1_30: 0, d31_60: 0, d61_90: 0, d90_plus: 0 });
     const patients = { label: "Patients", buckets: empty(), totalPence: 0 };
@@ -648,9 +644,6 @@ export async function agedDebtFor(actor: BillingActor): Promise<Result<AgedDebtV
       for (const b of AGE_BUCKETS) target.buckets[b] += r.buckets[b];
       target.totalPence += r.totalPence;
     }
-    const patientIds = debt.rows.filter((r) => r.debtorKey.startsWith("patient:")).map((r) => r.debtorKey.slice(8));
-    const payerIds = debt.rows.filter((r) => r.debtorKey.startsWith("account:")).map((r) => r.debtorKey.slice(8));
-    const [pn, an] = await Promise.all([patientNames(ctx, t, patientIds), referrerNames(ctx, t, payerIds)]);
     const oldestDue = new Map<string, string>();
     for (const r of rows) {
       if (r.balancePence <= 0) continue;
@@ -658,25 +651,36 @@ export async function agedDebtFor(actor: BillingActor): Promise<Result<AgedDebtV
       const cur = oldestDue.get(r.debtorKey);
       if (!cur || due < cur) oldestDue.set(r.debtorKey, due);
     }
-    const largest = debt.rows
-      .map((r) => {
-        const isPatient = r.debtorKey.startsWith("patient:");
-        const id = r.debtorKey.slice(8);
-        const p = isPatient ? pn.get(id) : undefined;
-        const overdue = r.totalPence - r.buckets.current;
-        return {
-          key: r.debtorKey,
-          name: isPatient ? (p ? nameOf(p) : "Patient") : (an.get(id) ?? "Payer account"),
-          kind: (isPatient ? "patient" : "account") as "patient" | "account",
-          daysOverdue: Math.max(0, daysBetweenIso(oldestDue.get(r.debtorKey) ?? asOf, asOf)),
-          amountPence: overdue,
-          patientId: isPatient ? id : null,
-          payerReferrerId: isPatient ? null : id,
-        };
-      })
+    // The 8 largest overdue debtors first, then the names of those 8 only (not of every debtor).
+    const top = debt.rows
+      .map((r) => ({ key: r.debtorKey, isPatient: r.debtorKey.startsWith("patient:"), id: r.debtorKey.slice(8), amountPence: r.totalPence - r.buckets.current, daysOverdue: Math.max(0, daysBetweenIso(oldestDue.get(r.debtorKey) ?? asOf, asOf)) }))
       .filter((x) => x.amountPence > 0)
       .sort((a, b) => b.amountPence - a.amountPence || b.daysOverdue - a.daysOverdue)
       .slice(0, 8);
+    const [pn, an] = await Promise.all([
+      patientNames(
+        ctx,
+        t,
+        top.filter((x) => x.isPatient).map((x) => x.id),
+      ),
+      referrerNames(
+        ctx,
+        t,
+        top.filter((x) => !x.isPatient).map((x) => x.id),
+      ),
+    ]);
+    const largest = top.map((x) => {
+      const p = x.isPatient ? pn.get(x.id) : undefined;
+      return {
+        key: x.key,
+        name: x.isPatient ? (p ? nameOf(p) : "Patient") : (an.get(x.id) ?? "Payer account"),
+        kind: (x.isPatient ? "patient" : "account") as "patient" | "account",
+        daysOverdue: x.daysOverdue,
+        amountPence: x.amountPence,
+        patientId: x.isPatient ? x.id : null,
+        payerReferrerId: x.isPatient ? null : x.id,
+      };
+    });
     return ok({
       asOf,
       rows: [patients, accounts],
@@ -767,7 +771,7 @@ export async function statementFor(actor: BillingActor, who: StatementFor, from:
     const { entries } = await statementEntries(ctx, t, payer, until);
     const st = buildStatement(entries, from, until);
     // Age of what is owed at the end of the period (patient statements: by invoice due date).
-    const { rows: debts } = await debtInvoices(ctx, t);
+    const { rows: debts } = await debtInvoices(ctx, t, { debtor: payer });
     const key = payer.payerKind === "patient" ? `patient:${payer.patientId}` : `account:${payer.payerReferrerId}`;
     const ages = { current: 0, d31_60: 0, d61_90: 0, d90_plus: 0 };
     for (const d of debts) {

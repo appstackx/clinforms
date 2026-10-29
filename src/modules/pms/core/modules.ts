@@ -20,16 +20,17 @@ export interface PmsModuleInfo {
   postgresPrefix: "2026102400";
   /**
    * Follow-up numbers past the first ranges (M9b polish, 0180 onwards, handover §19): each number is owned by one
-   * module exactly as its own range is. Numbered in the order the follow-ups were built.
+   * module exactly as its own range is. Numbered in the order the follow-ups were built. M10 performance (0210–0219,
+   * handover §20.4, indexes only): diary 0210, records 0211, billing 0212, foundation 0213.
    */
   extra?: readonly (readonly [number, number])[];
 }
 
 export const PMS_MODULES: Readonly<Record<PmsModuleId, PmsModuleInfo>> = {
-  foundation: { id: "foundation", title: "Foundation: entitlements, shell, shared patient record", sqlite: [100, 109], postgresPrefix: "2026102400" },
-  diary: { id: "diary", title: "Multi-site diary", sqlite: [110, 119], postgresPrefix: "2026102400", extra: [[180, 181], [189, 189]] },
-  records: { id: "records", title: "Patient record screens and clinical notes", sqlite: [120, 129], postgresPrefix: "2026102400", extra: [[188, 188]] },
-  billing: { id: "billing", title: "Invoicing, insurer and MLC accounts, payments", sqlite: [130, 139], postgresPrefix: "2026102400" },
+  foundation: { id: "foundation", title: "Foundation: entitlements, shell, shared patient record", sqlite: [100, 109], postgresPrefix: "2026102400", extra: [[213, 213]] },
+  diary: { id: "diary", title: "Multi-site diary", sqlite: [110, 119], postgresPrefix: "2026102400", extra: [[180, 181], [189, 189], [210, 210]] },
+  records: { id: "records", title: "Patient record screens and clinical notes", sqlite: [120, 129], postgresPrefix: "2026102400", extra: [[188, 188], [211, 211]] },
+  billing: { id: "billing", title: "Invoicing, insurer and MLC accounts, payments", sqlite: [130, 139], postgresPrefix: "2026102400", extra: [[212, 212]] },
   comms: { id: "comms", title: "Reminders, messages, letters", sqlite: [140, 149], postgresPrefix: "2026102400" },
   portal: { id: "portal", title: "Online booking, patient portal, intake forms", sqlite: [150, 159], postgresPrefix: "2026102400", extra: [[182, 185], [190, 190]] },
   reporting: { id: "reporting", title: "Reporting, clinic set-up and administration", sqlite: [160, 169], postgresPrefix: "2026102400", extra: [[186, 187]] },

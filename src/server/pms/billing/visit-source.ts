@@ -10,6 +10,7 @@
  * clinic's charges for missed appointments.
  */
 import "server-only";
+import type { Expression, SqlBool } from "kysely";
 import type { BillableVisit } from "../../../modules/pms/billing/visits";
 import type { PmsActor } from "../../../modules/pms/core/types";
 import type { RepoContext } from "../../repos/context";
@@ -36,6 +37,24 @@ export interface ClinicVisitQuery {
   limit?: number;
 }
 
+export interface UninvoicedVisitQuery {
+  /** "YYYY-MM-DD", both included. */
+  from: string;
+  until: string;
+  /** The member's site scope (null = every site). */
+  siteIds: ReadonlySet<string> | null;
+  /**
+   * Billing's own test "this appointment is not on an invoice", given the appointment's tenant and id columns
+   * (a NOT EXISTS over billing's invoice lines): the adapter puts it in its query as it is, so the diary never
+   * names billing's tables and the list is filtered in the database, not after a capped read.
+   */
+  notBilled: (appointment: { tenantId: Expression<string>; id: Expression<string> }) => Expression<SqlBool>;
+  /** At most 500 (default 500). */
+  limit?: number;
+  /** Keyset: only visits older than this one (the last of the previous page). */
+  before?: { startsAt: string; id: string } | null;
+}
+
 export interface BillableVisitSource {
   readonly id: string;
   /** False: nothing is listed and the screen explains why. */
@@ -44,6 +63,11 @@ export interface BillableVisitSource {
   listChargeableVisits(ctx: RepoContext, tenantId: string, query: VisitQuery): Promise<BillableVisit[]>;
   /** Every patient's chargeable visits in a period (the "Attended, not invoiced" list), oldest first. */
   listClinicVisits(ctx: RepoContext, tenantId: string, query: ClinicVisitQuery): Promise<BillableVisit[]>;
+  /**
+   * The chargeable visits in a period that billing has not invoiced (notBilled), NEWEST first, a page at a time
+   * by keyset, and how many there are in all (the "and N more" of the list, the figure on Billing and Today).
+   */
+  listUninvoicedVisits(ctx: RepoContext, tenantId: string, query: UninvoicedVisitQuery): Promise<{ visits: BillableVisit[]; total: number; next: { startsAt: string; id: string } | null }>;
   /** Waives the fee of a did-not-attend or late-cancelled visit (it leaves the list). False when there was none. */
   waiveFee(ctx: RepoContext, tenantId: string, appointmentId: string, actor: PmsActor): Promise<boolean>;
 }
@@ -53,6 +77,7 @@ export const NOT_CONNECTED_SOURCE: BillableVisitSource = {
   connected: false,
   listChargeableVisits: async () => [],
   listClinicVisits: async () => [],
+  listUninvoicedVisits: async () => ({ visits: [], total: 0, next: null }),
   waiveFee: async () => false,
 };
 

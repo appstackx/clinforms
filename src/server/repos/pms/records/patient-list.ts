@@ -112,7 +112,9 @@ function filtered(ctx: RepoContext, tenantId: string, q: PatientPageQuery): Pati
         .selectFrom("pms_invoices")
         .select("pms_invoices.patient_id")
         .where("pms_invoices.tenant_id", "=", tenantId)
-        .where("pms_invoices.status", "=", "issued")
+        // Billing's OPEN invoices (issued, with a balance – the literal terms of the partial index
+        // pms_invoices_open, 0212): an invoice with no balance adds nothing to what the patient owes.
+        .where(sql<boolean>`pms_invoices.status = 'issued' and pms_invoices.total_pence - pms_invoices.paid_pence - pms_invoices.credited_pence <> 0`)
         .where("pms_invoices.bill_to", "=", "patient")
         .groupBy("pms_invoices.patient_id")
         .having(sql<number>`sum(pms_invoices.total_pence - pms_invoices.paid_pence - pms_invoices.credited_pence)`, ">", 0),

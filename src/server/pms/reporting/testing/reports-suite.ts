@@ -32,6 +32,7 @@ import { unscopedStatements } from "../../../repos/pms/testing/guarded-db";
 import { testActor } from "../../records/access";
 import { reportCsvFor, reportPageFor, type ReportView } from "../service";
 import { attendanceToday, authorisationsEndingSoon, utilisationTodayBySite } from "../today";
+import { dashboardFor } from "../dashboard";
 import { auditPatientFilter } from "../audit-patients";
 import { searchAudit } from "../../../repos/pms/reporting/audit-search";
 
@@ -496,6 +497,38 @@ export function defineReportsServiceSuite(label: string, factory: () => Promise<
       assert.deepEqual(await auditPatientFilter(owner(), null), { ids: null, matches: null });
       const noPatients = await auditPatientFilter(adminSiteA({ "patients.view": false }), "hart");
       assert.ok("error" in noPatients);
+    });
+
+    it("M10 scale: Today counts ALL of a busy day's appointments (600, not a first 500) for owners and reception, in the database", async () => {
+      const C = "scale-dash";
+      const site = (await createSite(ctx, C, { name: "Scale Road (fictional)", code: "SCA" }, SEED)).id;
+      const fu = (await createService(ctx, C, { name: "Follow-up 20 min", durationMinutes: 20 }, SEED)).id;
+      const items: Parameters<typeof bulkCreateDiaryItems>[2] = [];
+      for (let p = 0; p < 30; p++) {
+        const prac = (await createPractitioner(ctx, C, { displayName: `Scale Physio ${p + 1}`, registrationNumber: "PH-DEMO-07", defaultSiteId: site, userId: p === 0 ? "user_clin_scale" : null }, SEED)).id;
+        const patient = (await createPatient(ctx, C, { firstName: "Scale", lastName: `Patient ${p + 1}` }, SEED)).id;
+        // 20 visits of 20 minutes from 06:00: the first 10 seen (every 5th did not attend), the rest booked.
+        for (let i = 0; i < 20; i++) {
+          const startsAt = new Date(Date.parse(at(DAY, "06:00")) + i * 20 * 60_000).toISOString();
+          const status = i < 10 ? (i % 5 === 0 ? "dna" : "attended") : "booked";
+          items.push({ kind: "appointment", siteId: site, practitionerId: prac, patientId: patient, serviceId: fu, startsAt, endsAt: new Date(Date.parse(startsAt) + 20 * 60_000).toISOString(), status, source: "staff" });
+        }
+      }
+      assert.equal((await bulkCreateDiaryItems(ctx, C, items, SEED)).length, 600);
+      const clinic = (role: "owner" | "staff" | "clinician", userId: string) => ({ ...testActor(ctx, C, role, { userId, name: "Scale Member" }), organizationId: "org_scale", clinicName: "Scale (fictional)", permissions: [] }) as never;
+      const kpi = (v: Awaited<ReturnType<typeof dashboardFor>>, id: string) => v.kpis.find((k) => k.id === id);
+      const mgr = await dashboardFor(clinic("owner", "user_owner_scale"));
+      assert.equal(mgr.partial, false);
+      assert.deepEqual([kpi(mgr, "appointments")?.value, kpi(mgr, "appointments")?.sub], ["600", "240 done · 60 DNA · 1 site"]);
+      const desk = await dashboardFor(clinic("staff", "user_recep_scale"));
+      assert.equal(kpi(desk, "appointments")?.value, "600");
+      // Still to arrive at 11:45: each practitioner's 11:40, 12:00 and 12:20 visits (ends after now) = 90.
+      assert.equal(kpi(desk, "to-arrive")?.value, "90");
+      assert.match(kpi(desk, "to-arrive")?.sub ?? "", /^Next: 11:40 Scale Patient \d+$/);
+      const arrivals = desk.cards.find((c) => c.id === "arrivals");
+      assert.equal(arrivals?.items.length, 6, "the arrivals list shows the next 6");
+      const mine = await dashboardFor(clinic("clinician", "user_clin_scale"));
+      assert.deepEqual([kpi(mine, "mine")?.value, kpi(mine, "mine")?.sub], ["20", "8 done"]);
     });
 
     it("tenant-scope guard: every clinic-system statement named tenant_id", () => {

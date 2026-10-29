@@ -10,6 +10,7 @@ import fs from "node:fs";
 import { Kysely } from "kysely";
 import { D1HttpDialect } from "../../../src/server/db/dialects/d1-http";
 import type { Database } from "../../../src/server/db/schema";
+import { defineMessageSweepSuite } from "../../../src/server/pms/diary/testing/message-sweep-suite";
 import { defineDiaryServiceSuite } from "../../../src/server/pms/diary/testing/service-suite";
 import { defineDiaryRepoSuite } from "../../../src/server/repos/pms/diary/testing/diary-suite";
 import { handleRequest } from "../src/index";
@@ -54,8 +55,10 @@ const LOCAL = "D1 via the gateway (local workerd D1, wrangler-applied migrations
 
 defineDiaryRepoSuite(STAND_IN, standIn);
 defineDiaryServiceSuite(STAND_IN, standIn);
+defineMessageSweepSuite(STAND_IN, standIn);
 
 if (available) {
   defineDiaryRepoSuite(LOCAL, localD1);
   defineDiaryServiceSuite(LOCAL, localD1);
+  defineMessageSweepSuite(LOCAL, localD1);
 }

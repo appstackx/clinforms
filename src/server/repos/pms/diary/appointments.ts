@@ -921,6 +921,8 @@ export interface DiaryQuery {
   appointmentsOnly?: boolean;
   /** Cancelled and late-cancelled items too (default false). */
   includeCancelled?: boolean;
+  /** Only items with these stored statuses ("in treatment" is stored as arrived). */
+  statuses?: readonly string[];
   /** Default and maximum 500. */
   limit?: number;
 }
@@ -936,14 +938,19 @@ export async function listDiary(ctx: DbContext, tenantId: string, q: DiaryQuery)
     .where("starts_at", "<", q.to)
     .where("ends_at", ">", q.from)
     .where("starts_at", ">", new Date(Date.parse(q.from) - LOOK_BACK_MS).toISOString());
+  // D1 binds at most 100 parameters: the IN lists together stay within LIST_PARAMS (never silently cut short –
+  // a caller with more splits the read, as listOccupiedSpans does).
+  if ((q.siteIds?.length ?? 0) + (q.practitionerIds?.length ?? 0) + (q.roomIds?.length ?? 0) > LIST_PARAMS) {
+    throw new RepoInputError(`The diary can be read for at most ${LIST_PARAMS} sites, practitioners and rooms at once.`);
+  }
   if (q.siteId) query = query.where("site_id", "=", q.siteId);
   if (q.siteIds) {
     if (q.siteIds.length === 0) return { items: [], truncated: false };
-    query = query.where("site_id", "in", q.siteIds.slice(0, 90) as string[]);
+    query = query.where("site_id", "in", q.siteIds as string[]);
   }
   if (q.appointmentsOnly) query = query.where("kind", "=", "appointment");
-  const practitioners = q.practitionerIds ? q.practitionerIds.slice(0, 90) : null;
-  const rooms = q.roomIds ? q.roomIds.slice(0, 90) : null;
+  const practitioners = q.practitionerIds ?? null;
+  const rooms = q.roomIds ?? null;
   if (practitioners && rooms) {
     if (practitioners.length + rooms.length === 0) return { items: [], truncated: false };
     query = query.where((eb) =>
@@ -957,8 +964,130 @@ export async function listDiary(ctx: DbContext, tenantId: string, q: DiaryQuery)
     query = query.where("room_id", "in", rooms as string[]);
   }
   if (!q.includeCancelled) query = query.where("status", "not in", ["cancelled", "late_cancelled"]);
+  if (q.statuses) {
+    if (q.statuses.length === 0) return { items: [], truncated: false };
+    query = query.where("status", "in", q.statuses as string[]);
+  }
   const rows = await query.orderBy("starts_at").orderBy("id").limit(limit + 1).execute();
   return { items: rows.slice(0, limit).map(toItem), truncated: rows.length > limit };
+}
+
+/** Bound parameters a diary read may spend on IN lists (D1 allows 100 per statement; the rest are the range). */
+export const LIST_PARAMS = 90;
+/** Ids per busy-time read (with the range, the keyset and the clinic: < 100 parameters). */
+const BUSY_IDS = 80;
+const BUSY_PAGE = 1000;
+/** A busy-time read stops after this many rows (a range of 28 days of a 40-practitioner clinic is ~15,000). */
+export const BUSY_ROW_CAP = 60_000;
+
+export interface OccupiedSpan {
+  id: string;
+  practitionerId: string | null;
+  roomId: string | null;
+  startsAt: string;
+  endsAt: string;
+}
+
+/**
+ * The time these practitioners and rooms are taken between two instants – every appointment and blocked time that
+ * is not cancelled, at any site (a practitioner booked elsewhere is busy) – with only the four columns a free-slot
+ * search needs. One read per group of 80 practitioners or rooms, paged by (starts_at, id), never cut at a day's
+ * worth: `complete` is false only past BUSY_ROW_CAP rows, and `readUntil` is then the start of the last span read
+ * (everything before it is complete).
+ */
+export async function listOccupiedSpans(
+  ctx: DbContext,
+  tenantId: string,
+  q: { from: string; to: string; practitionerIds: readonly string[]; roomIds: readonly string[] },
+): Promise<{ spans: OccupiedSpan[]; complete: boolean; readUntil: string | null }> {
+  assertTenantId(tenantId);
+  const byId = new Map<string, OccupiedSpan>();
+  const lookBack = new Date(Date.parse(q.from) - LOOK_BACK_MS).toISOString();
+  let complete = true;
+  let readUntil: string | null = null;
+  const groups: { column: "practitioner_id" | "room_id"; ids: string[] }[] = [];
+  const practitioners = Array.from(new Set(q.practitionerIds));
+  const rooms = Array.from(new Set(q.roomIds));
+  for (let i = 0; i < practitioners.length; i += BUSY_IDS) groups.push({ column: "practitioner_id", ids: practitioners.slice(i, i + BUSY_IDS) });
+  for (let i = 0; i < rooms.length; i += BUSY_IDS) groups.push({ column: "room_id", ids: rooms.slice(i, i + BUSY_IDS) });
+  for (const g of groups) {
+    let after: { startsAt: string; id: string } | null = null;
+    let read = 0;
+    for (;;) {
+      let query = ctx.db
+        .selectFrom(T)
+        .select(["id", "practitioner_id", "room_id", "starts_at", "ends_at"])
+        .where("tenant_id", "=", tenantId)
+        .where(g.column, "in", g.ids)
+        .where("starts_at", "<", q.to)
+        .where("ends_at", ">", q.from)
+        .where("starts_at", ">", lookBack)
+        .where("status", "not in", ["cancelled", "late_cancelled"]);
+      if (after) {
+        const a: { startsAt: string; id: string } = after;
+        query = query.where((eb) => eb.or([eb("starts_at", ">", a.startsAt), eb.and([eb("starts_at", "=", a.startsAt), eb("id", ">", a.id)])]));
+      }
+      const rows = await query.orderBy("starts_at").orderBy("id").limit(BUSY_PAGE).execute();
+      for (const r of rows) {
+        if (!byId.has(r.id)) byId.set(r.id, { id: r.id, practitionerId: r.practitioner_id, roomId: r.room_id, startsAt: r.starts_at, endsAt: r.ends_at });
+      }
+      read += rows.length;
+      if (rows.length < BUSY_PAGE) break;
+      const last = rows[rows.length - 1];
+      after = { startsAt: last.starts_at, id: last.id };
+      if (read >= BUSY_ROW_CAP) {
+        complete = false;
+        if (readUntil === null || last.starts_at < readUntil) readUntil = last.starts_at;
+        break;
+      }
+    }
+  }
+  return { spans: Array.from(byId.values()), complete, readUntil };
+}
+
+export interface DiaryDayCount {
+  siteId: string;
+  practitionerId: string | null;
+  status: AppointmentStatus;
+  appointments: number;
+  /** Of them (booked ones only), ending after `now`: still to arrive. */
+  toArrive: number;
+}
+
+/**
+ * Appointments on one UK date (cancelled ones left out) counted by site, practitioner and status – the figures of
+ * the start page, added up in the database (any size of clinic; one grouped read per 90 sites).
+ */
+export async function countDiaryDay(ctx: DbContext, tenantId: string, q: { date: string; now: string; siteIds?: readonly string[] | null; practitionerId?: string | null }): Promise<DiaryDayCount[]> {
+  assertTenantId(tenantId);
+  if (!isIsoDate(q.date)) throw new RepoInputError("date must be YYYY-MM-DD.");
+  // One day of the whole clinic, grouped (a few hundred rows at most), read by pms_appointments_starts_on; the sites
+  // and the practitioner are filtered here. With "site_id IN (?…)" or "practitioner_id = ?" in the SQL, SQLite / D1
+  // (no statistics) chose the site or practitioner index and read their whole history for one day (M10).
+  const sites = q.siteIds ? new Set(q.siteIds) : null;
+  const rows = await ctx.db
+    .selectFrom(T)
+    .select(["site_id", "practitioner_id", "status", (eb) => eb.fn.countAll<number>().as("n"), (eb) => eb.fn.count<number>("treatment_started_at").as("started")])
+    .select((eb) => eb.fn.sum<number>(eb.case().when("ends_at", ">", q.now).then(1).else(0).end()).as("later"))
+    .where("tenant_id", "=", tenantId)
+    .where("starts_on", "=", q.date)
+    .where("kind", "=", "appointment")
+    .where("status", "not in", ["cancelled", "late_cancelled"])
+    .groupBy(["site_id", "practitioner_id", "status"])
+    .execute();
+  const out: DiaryDayCount[] = [];
+  for (const r of rows) {
+    if (sites && !(r.site_id && sites.has(r.site_id))) continue;
+    if (q.practitionerId && r.practitioner_id !== q.practitionerId) continue;
+    const base = { siteId: r.site_id, practitionerId: r.practitioner_id };
+    const n = num(r.n);
+    if (r.status === "arrived") {
+      const started = num(r.started);
+      if (n - started > 0) out.push({ ...base, status: "arrived", appointments: n - started, toArrive: 0 });
+      if (started > 0) out.push({ ...base, status: "in_treatment", appointments: started, toArrive: 0 });
+    } else out.push({ ...base, status: r.status as AppointmentStatus, appointments: n, toArrive: r.status === "booked" ? num(r.later) : 0 });
+  }
+  return out;
 }
 
 export interface PatientAppointmentsQuery {
