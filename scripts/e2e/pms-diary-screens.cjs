@@ -280,6 +280,31 @@ async function pickPatient(page, q, name) {
       await axe(reception, "drawer");
     });
 
+    await step("M10 #1 – the drawer is a modal dialog: aria-modal, the page behind is inert, Tab stays inside, toasts stay usable", async () => {
+      const drawer = reception.locator("aside[aria-label='Appointment details']");
+      assert((await drawer.getAttribute("role")) === "dialog" && (await drawer.getAttribute("aria-modal")) === "true", "role=dialog aria-modal=true");
+      assert(await reception.evaluate(() => Boolean(document.querySelector("main") && document.querySelector("main").closest("[inert]"))), "the page behind is inert");
+      assert(await reception.evaluate(() => !document.querySelector("[data-modal-keep][role], [data-modal-keep]").closest("[inert]")), "the toasts are not inert");
+      for (let i = 0; i < 40; i++) {
+        await reception.keyboard.press(i % 7 === 6 ? "Shift+Tab" : "Tab");
+        const inside = await reception.evaluate(() => Boolean(document.activeElement && document.activeElement.closest("aside[aria-label='Appointment details']")));
+        assert(inside, `focus left the drawer after ${i + 1} Tab presses`);
+      }
+    });
+
+    await step("M10 #18 – the drawer's History of changes (collapsible, from the audit log; reception sees what and when)", async () => {
+      const toggle = reception.locator("aside [data-testid=drawer-history] button[aria-expanded]");
+      assert((await toggle.getAttribute("aria-expanded")) === "false", "collapsed at first");
+      await toggle.click();
+      assert((await toggle.getAttribute("aria-expanded")) === "true", "expanded");
+      await reception.waitForSelector("aside [data-testid=drawer-history] li >> text=Appointment booked");
+      const text = await reception.locator("aside [data-testid=drawer-history]").innerText();
+      assert(/\d\d\/\d\d\/\d{4} \d\d:\d\d · Jess Taylor/.test(text), `DD/MM/YYYY HH:mm and who: ${text}`);
+      await shot(reception, "1440-drawer-history");
+      await axe(reception, "drawer with history");
+      await toggle.click();
+    });
+
     await step("clash: another patient at the same time is refused (Resolve clash to book, no override for a practitioner)", async () => {
       await reception.keyboard.press("Escape");
       await reception.click("main button:visible:has-text('New appointment')");
@@ -445,6 +470,62 @@ async function pickPatient(page, q, name) {
       await owner.click("text=Back to diary");
     });
 
+    await step("M10 #17 – a recurring booking shows the series icon on its block, with words for screen readers", async () => {
+      await owner.goto(`${DIARY}?date=${MON1}&site=${site}`);
+      await ready(owner);
+      const block = owner.locator(`button[data-status=booked]:has-text("Daniel Brooks"):has([data-series=true])`).first();
+      await block.waitFor();
+      const desc = await block.evaluate((el) => document.getElementById(el.getAttribute("aria-describedby")).textContent);
+      assert(/part of a recurring booking/.test(desc), desc);
+      const ib = await block.locator("[data-series=true]").boundingBox();
+      const bb = await block.boundingBox();
+      assert(ib.y >= bb.y && ib.y + ib.height <= bb.y + bb.height && ib.x + ib.width <= bb.x + bb.width + 0.5, "the icon fits inside the block");
+      await shot(owner, "1440-series-icon");
+    });
+
+    await step("M10 #16 – context menu on a block: Shift+F10 and right-click, roving focus, Esc returns focus; same actions as the drawer", async () => {
+      const block = owner.locator(`button[data-status=booked]:has-text("Daniel Brooks")`).first();
+      await block.focus();
+      await owner.keyboard.press("Shift+F10");
+      const menu = owner.locator("[role=menu][data-testid=context-menu]");
+      await menu.waitFor();
+      await owner.waitForSelector("[role=menu] [role=menuitem]:has-text('Move')");
+      const labels = (await menu.locator("[role=menuitem]").allInnerTexts()).map((t) => t.replace(/\s+/g, " ").trim());
+      for (const w of ["Open details", "Cancel…", "Move", "Open record", "Rebook"]) assert(labels.some((l) => l.startsWith(w)), `menu has ${w}: ${labels.join(" | ")}`);
+      const focused = () => owner.evaluate(() => document.activeElement && document.activeElement.getAttribute("role") === "menuitem" ? document.activeElement.textContent : null);
+      assert(/Open details/.test(await focused()), "the first item takes focus");
+      await owner.keyboard.press("ArrowDown");
+      assert(!/Open details/.test((await focused()) || "Open details"), "↓ moves focus");
+      await owner.keyboard.press("End");
+      const last = await focused();
+      await owner.keyboard.press("ArrowDown");
+      assert(/Open details/.test(await focused()), `↓ on the last (${last}) wraps to the first`);
+      await owner.keyboard.press("Home");
+      assert(/Open details/.test(await focused()), "Home");
+      await shot(owner, "1440-context-menu-keyboard");
+      await axe(owner, "context menu");
+      await owner.keyboard.press("Escape");
+      await menu.waitFor({ state: "detached" });
+      assert(await block.evaluate((el) => el === document.activeElement), "Esc returns focus to the block");
+      // Right-click opens it at the pointer; Open details opens the drawer.
+      const bb = await block.boundingBox();
+      await owner.mouse.click(bb.x + 20, bb.y + 8, { button: "right" });
+      await menu.waitFor();
+      const mb = await menu.boundingBox();
+      assert(Math.abs(mb.x - (bb.x + 20)) < 4 && Math.abs(mb.y - (bb.y + 8)) < 4, "opens at the pointer");
+      await shot(owner, "1440-context-menu-pointer");
+      await menu.locator("[role=menuitem]:has-text('Open details')").click();
+      await owner.waitForSelector("aside[aria-label='Appointment details'] >> text=Daniel Brooks");
+      await owner.keyboard.press("Escape");
+      // A menu action works like the drawer's: Cancel… opens the drawer on the cancel form.
+      await block.focus();
+      await owner.keyboard.press("Shift+F10");
+      await owner.waitForSelector("[role=menu] [role=menuitem]:has-text('Cancel…')");
+      await owner.locator("[role=menu] [role=menuitem]:has-text('Cancel…')").click();
+      await owner.waitForSelector("aside >> text=Cancel this appointment");
+      await owner.keyboard.press("Escape");
+    });
+
     await step("keyboard: Tab to Megan's block, M, ↓ ↓ shows the live hint, Enter moves it 45 minutes earlier (a clash is refused); Undo is offered", async () => {
       await reception.goto(`${DIARY}?date=${MON1}&site=${site}`);
       await ready(reception);
@@ -469,6 +550,38 @@ async function pickPatient(page, q, name) {
       for (let i = 0; i < 6; i++) await reception.keyboard.press("ArrowUp");
       await reception.keyboard.press("Enter");
       await reception.waitForSelector("[role=status] >> text=/Megan Hart moved to/");
+      // M10 #3: after the drop, focus is on the moved block (not <body>).
+      await reception.waitForFunction(() => document.activeElement && document.activeElement.getAttribute("data-status") === "booked" && /Megan Hart/.test(document.activeElement.textContent || ""), null, { timeout: 15000 });
+    });
+
+    await step("M10 #3 – keyboard move: another practitioner asks for a second Enter; out-of-hours is said in the live hint before Enter", async () => {
+      await reception.goto(`${DIARY}?date=${MON1}&site=${site}`);
+      await ready(reception);
+      const block = reception.locator(`button[data-status=booked]:has-text("Megan Hart")`).first();
+      await block.focus();
+      await reception.keyboard.press("m");
+      await reception.waitForSelector("text=/Moving Megan Hart/");
+      const data = await viewData(reception, `date=${MON1}&site=${site}`);
+      const from = data.columns.findIndex((c) => c.practitionerId === booked.practitionerId);
+      await reception.keyboard.press(from > 0 ? "ArrowLeft" : "ArrowRight");
+      const hint = reception.locator("[data-testid=move-hint]");
+      if (!/clashes|already has/.test(await hint.innerText())) {
+        await reception.keyboard.press("Enter");
+        await reception.waitForSelector("[data-testid=move-confirm]");
+        assert(/Enter again to confirm/.test(await hint.innerText()), await hint.innerText());
+        await shot(reception, "1440-keyboard-move-confirm");
+        // An arrow key takes the question back.
+        await reception.keyboard.press("ArrowDown");
+        assert((await reception.locator("[data-testid=move-confirm]").count()) === 0, "arrow cancels the confirmation");
+      }
+      await reception.keyboard.press("Escape");
+      await block.focus();
+      await reception.keyboard.press("m");
+      for (let i = 0; i < 60; i++) await reception.keyboard.press("ArrowUp");
+      await reception.waitForSelector("[data-testid=move-out-of-hours]");
+      assert(/Outside the practitioner's working hours/.test(await hint.innerText()), await hint.innerText());
+      await shot(reception, "1440-keyboard-move-out-of-hours");
+      await reception.keyboard.press("Escape");
     });
 
     await step("keyboard: Shift+↑ shortens the focused appointment by 15 minutes (Shift+↓ lengthens)", async () => {
@@ -478,6 +591,34 @@ async function pickPatient(page, q, name) {
       await block.focus();
       await reception.keyboard.press("Shift+ArrowUp");
       await reception.waitForSelector("[role=status] >> text=/now 30 min/");
+      await reception.waitForFunction(() => document.activeElement && /Megan Hart/.test(document.activeElement.textContent || ""), null, { timeout: 15000 });
+    });
+
+    await step("M10 #7 – a 15-minute block keeps its 18 px drawing at its time but has a 24 px hit area", async () => {
+      // The 30-minute block is drawn from the refreshed data (its new revision) before the next change.
+      const megan = reception.locator(`button[data-status=booked]:has-text("Megan Hart")`).first();
+      await reception.waitForFunction(() => {
+        const el = document.activeElement;
+        const m = el && /(\d\d):(\d\d)–(\d\d):(\d\d)/.exec(el.textContent || "");
+        return m && Number(m[3]) * 60 + Number(m[4]) - (Number(m[1]) * 60 + Number(m[2])) === 30;
+      }, null, { timeout: 15000 });
+      await megan.focus();
+      await reception.keyboard.press("Shift+ArrowUp");
+      await reception.waitForSelector("[role=status] >> text=/now 15 min/");
+      const data = await viewData(reception, `date=${MON1}&site=${site}`);
+      const card = data.cards.find((c) => c.patientName === "Megan Hart" && c.status === "booked" && Date.parse(c.endsAt) - Date.parse(c.startsAt) === 15 * 60e3);
+      assert(card, "Megan's 15-minute appointment");
+      const hit = reception.locator(`[data-hit-area="${card.id}"]`);
+      await hit.waitFor({ state: "attached" });
+      const hb = await hit.boundingBox();
+      const bb = await reception.locator(`button[data-status=booked]:has-text("Megan Hart")`).first().boundingBox();
+      assert(Math.round(bb.height) === 18, `drawn 18 px: ${bb.height}`);
+      assert(hb.height >= 23.5, `hit area ${hb.height} px`);
+      assert(Math.abs(hb.y + hb.height / 2 - (bb.y + bb.height / 2)) < 1.5, "centred on the block (time alignment unchanged)");
+      // A click just above the drawn block (inside the hit area) opens it.
+      await reception.mouse.click(bb.x + bb.width / 2, bb.y - 2);
+      await reception.waitForSelector("aside[aria-label='Appointment details'] >> text=Megan Hart");
+      await reception.keyboard.press("Escape");
     });
 
     await step("DNA is not offered before the appointment starts (tomorrow's demo appointment): no button, the drawer says when it opens", async () => {
@@ -576,12 +717,15 @@ async function pickPatient(page, q, name) {
       await shot(reception, "1440-drawer-in-treatment");
       await reception.click("aside button:has-text('Undo start of treatment')");
       await reception.waitForSelector(`button[data-status=arrived]:has-text("Megan Hart")`);
+      // The drawer is modal (M10 #1): close it before picking another block.
+      await reception.keyboard.press("Escape");
       await reception.locator(`button[data-status=arrived]:has-text("Megan Hart")`).first().click();
       await reception.waitForSelector("aside button:has-text('Start treatment')");
       assert((await reception.locator("aside button:has-text('Undo arrival')").count()) === 1, "Undo arrival");
       await reception.click("aside button:has-text('Start treatment')");
       await reception.waitForSelector(`button[data-status=in_treatment]:has-text("Megan Hart")`);
       assert(/\/app\/clinic\/diary/.test(reception.url()), "reception stays in the diary");
+      await reception.keyboard.press("Escape");
       await reception.locator(`button[data-status=in_treatment]:has-text("Megan Hart")`).first().click();
       await reception.waitForSelector("aside button:has-text('Completed')");
       await reception.click("aside button:has-text('Completed')");
@@ -621,6 +765,39 @@ async function pickPatient(page, q, name) {
       await owner.click("[role=switch]");
       await owner.waitForSelector("[role=status] >> text=will not be printed");
       await axe(owner, "day sheet");
+    });
+
+    await step("M10 #21 – the day sheet does not scroll sideways at 375 px", async () => {
+      await reception.setViewportSize({ width: 375, height: 812 });
+      await reception.goto(`${DIARY}/day-sheet?site=${site}&date=2026-10-27`);
+      await reception.waitForSelector("text=Day sheet –");
+      const overflow = await reception.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      assert(overflow <= 0, `scrolls sideways by ${overflow}px`);
+      await shot(reception, "375-day-sheet", true);
+      await axe(reception, "day sheet 375");
+      await reception.setViewportSize({ width: 1440, height: 1000 });
+    });
+
+    await step("M10 #20 – New appointment opens on the practitioner's first free time that day, not a clash at 09:00", async () => {
+      const DAY = "2026-10-29";
+      await owner.goto(`${DIARY}?date=${DAY}&site=${site}`);
+      await ready(owner);
+      await owner.click("main button:visible:has-text('New appointment')");
+      await owner.waitForSelector("role=dialog >> text=New appointment");
+      const pr = await owner.inputValue("#bk-pr");
+      const tm = await owner.inputValue("#bk-tm");
+      const data = await viewData(owner, `date=${DAY}&site=${site}`);
+      const starts = data.columns.filter((c) => c.practitionerId === pr).flatMap((c) => c.freeSlots.map((x) => x.startMinute));
+      assert(starts.length > 0, "the practitioner has free time that day");
+      // The diary's own free slots (the grid's slot length) decide; the minute-precise list here only bounds it.
+      const first = Math.min(...starts);
+      const [h, m] = tm.split(":").map(Number);
+      assert(h * 60 + m >= first, `opens at ${tm}, before the first free time`);
+      if (!starts.includes(9 * 60)) assert(tm !== "09:00", "not on a clash at 09:00");
+      // …and it is free for the dialog's own check too.
+      await pickPatient(owner, "Megan", "Megan Hart");
+      await owner.waitForSelector("text=Slot available");
+      await owner.keyboard.press("Escape");
     });
 
     await step("patient record → Appointments tab lists Megan's appointments", async () => {
