@@ -82,7 +82,13 @@ interface AllowEntry {
  * Example (not active):
  *   { file: "src/app/(marketing)/privacy/page.tsx", text: /^Anthropic PBC/, reason: "Owner decided to name the drafting sub-processor (DPA list)" },
  */
-const ALLOW: AllowEntry[] = [];
+const ALLOW: AllowEntry[] = [
+  {
+    file: "src/components/pms/portal/human-check.tsx",
+    text: /^https:\/\/challenges\.cloudflare\.com\/turnstile\/v0\/api\.js\?render=explicit$/,
+    reason: "The bot-check widget's script address (loaded, never shown); the widget's visible text names no vendor.",
+  },
+];
 
 export interface ExtractedString {
   text: string;
