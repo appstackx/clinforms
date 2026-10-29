@@ -12,7 +12,7 @@
  * the package or the permission is missing. The actor also carries the member's site scope (`siteIds`).
  */
 import "server-only";
-import { cache } from "react";
+import * as React from "react";
 import { notFound } from "next/navigation";
 import type { GrantedPermission, PmsPermission } from "../../modules/pms/core/permissions";
 import type { PmsActor } from "../../modules/pms/core/types";
@@ -71,7 +71,9 @@ async function toActor(ctx: AppContext): Promise<ClinicActor> {
  * The member, read once per request (React's request cache): a page's generateMetadata, its layouts and the page
  * itself share one read, so the permission can be checked in generateMetadata (see ./page-gate.ts) at no extra cost.
  */
-const clinicActorForRequest = cache(async (): Promise<ClinicActor> => toActor(await requireEntitlement("clinic")));
+// React's request cache exists only in the server-component build; elsewhere (node tests) each call reads again.
+const requestCache: <T extends (...args: never[]) => unknown>(fn: T) => T = (React as { cache?: <T>(fn: T) => T }).cache ?? ((fn) => fn);
+const clinicActorForRequest = requestCache(async (): Promise<ClinicActor> => toActor(await requireEntitlement("clinic")));
 
 /** For pages and layouts under /app/clinic. */
 export async function requireClinicActor(options: { permission?: PmsPermission } = {}): Promise<ClinicActor> {
