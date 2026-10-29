@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { DemoClinicBanner } from "@/components/account/demo-clinic-banner";
 import { TrialBannerBar } from "@/components/account/trial-banner";
+import { ProductSwitchBar } from "@/components/pms/shell/product-switch";
+import { CLINIC_SYSTEM_NAME } from "@/lib/brand";
 import { StudioShell } from "@/modules/medreport/ui/components/shared/studio-shell";
 import { getAuth } from "@/server/auth/auth";
 import { currentPath, requestHeaders } from "@/server/auth/session";
@@ -24,6 +26,8 @@ export const metadata: Metadata = {
  * active clinic → /app/select-clinic; Reports package switched off → the 404 page. The Edge middleware only
  * redirects requests without a session cookie.
  * A demo clinic (made-up data only, set by ClinForms staff) shows the demo banner above the Studio on every page.
+ * A clinic that also has the clinic system (10/2026) gets the product switch above the Studio; nothing changes for any
+ * other clinic.
  */
 export default async function TenantStudioLayout({ children }: { children: React.ReactNode }) {
   const access = await resolveStudioAccess({ auth: getAuth(), db: getDb(), headers: requestHeaders(), path: currentPath() });
@@ -31,8 +35,10 @@ export default async function TenantStudioLayout({ children }: { children: React
   const { context } = access;
   // A clinic with the Reports package switched off (a clinic-system-only clinic) has no Studio.
   if (!(await hasPackage(context.tenantId, "reports"))) notFound();
+  const clinicSystem = await hasPackage(context.tenantId, "clinic");
   return (
     <>
+      {clinicSystem ? <ProductSwitchBar clinicSystemName={CLINIC_SYSTEM_NAME} clinicHref="/app/clinic" /> : null}
       {/* A demo clinic (made-up data only; clinic_plan.demo_clinic read on the server): the banner, and the header pill. */}
       <DemoClinicBanner on={context.demoClinic} />
       <TrialBannerBar access={context.trial} />

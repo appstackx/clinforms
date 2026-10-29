@@ -23,6 +23,7 @@ import { assertDemoClinic, seedDemoClinic } from "./seed-lib";
 import { seedBilling } from "./seed-billing";
 import { seedComms } from "./seed-comms";
 import { seedPortal } from "./seed-portal";
+import { seedIntegration } from "./seed-integration";
 import { seedRecords } from "./seed-records";
 import { createClinic } from "../../src/server/auth/platform";
 import { getDataCipher } from "../../src/server/crypto";
@@ -86,5 +87,6 @@ void runCli(async () => {
   await seedBilling({ db, cipher: getDataCipher() }, slug, { log: (line) => console.log(`  ${line}`) });
   await seedComms({ db, cipher: getDataCipher() }, slug, { log: (line) => console.log(`  ${line}`) });
   await seedPortal({ db, cipher: getDataCipher(), now: pmsNow }, slug, { log: (line) => console.log(`  ${line}`) });
+  await seedIntegration({ db, cipher: getDataCipher(), now: pmsNow }, slug, { log: (line) => console.log(`  ${line}`) });
   console.log(`Done: ${summary.patients} patients, ${summary.cases} cases, ${summary.authorisations} authorisations in ${slug} (fictional data). The clinic system is on for this clinic.`);
 });
