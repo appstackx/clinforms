@@ -1,5 +1,11 @@
 # K2 clinic system – handover
 
+> **Update 29/10/2026 (latest – read §19 first):** M9b polish DONE – waiting-list offers hold their slot, diary blocks
+> at every height, closure notice, Send message from the drawer, message-sync sweep, share a document with the patient,
+> form on a clinic device verified by staff, signed-copy PDF, Preview as patient, portal audit write ids, New and returning
+> patients report, utilisation never over 100 %, audit search by patient name, demo seed history; merged into
+> `feat/clinic-system` `842bb02` (after M9 `d2b3d59`). See §19.
+
 > **Update 29/10/2026 (latest – read §18 first):** M9 integration DONE – native ClinForms connector + "Complete
 > referrer form" (filed back to the case and Forms tab), import from the previous system under Set-up, letters Word/PDF +
 > discharge letter + `{{latest_outcomes}}`, insurer claims screen; merged into `feat/clinic-system` `d2b3d59`.
@@ -1167,7 +1173,7 @@ Runner: scratchpad `run-e2e-m9.sh <script> <port> <out> [dev] [ENV=…]`; forms 
 6. 50,000-row PGlite run kept out of the everyday chain (8 min); SQLite 50,000 stays in.
 7. `"native"` kept in ClinForms' enum with the guard exception rather than a new connector-id mechanism.
 
-## 19. M9b polish (28–29/10/2026) – IN PROGRESS (midpoint)
+## 19. M9b polish (28–29/10/2026) – DONE, merged into `feat/clinic-system`
 
 **Branches (`main` untouched):** `feat/cs-polish` from `feat/clinic-system` `9b97f96`, worktree
 `/Users/khuram/Projects/Appstackx/clinforms-wt/cs-polish` (npm ci done incl. workers/data-gateway, `.env.local` from
@@ -1193,3 +1199,109 @@ server check in `setAppointmentStatus`, drawer, note screen's "Mark appointment 
 **Not yet done at midpoint:** merging the helper branches, e2e `scripts/e2e/pms-polish.cjs` + re-runs, full chain,
 merge into `feat/clinic-system`, requirement statuses. If you pick this up: `git -C …/cs-polish log`, then check the
 two helper branches on origin.
+
+### 19.1 Final heads (all pushed; `main` untouched)
+`feat/cs-polish` **`be0c412`** · `feat/clinic-system` **`842bb02`** (merge of `feat/cs-polish`, tree identical; M9
+`d2b3d59` was merged into `feat/cs-polish` first – `8444c1d`, one conflict in the record Forms tab: kept M9's filed
+referrer forms and the clinic-device button). Helper branches (merged into `feat/cs-polish`, kept on origin):
+`feat/cs-polish-rep` `bc8d8ab`, `feat/cs-polish-portal` `5d3eb10`.
+
+| Commit on `feat/cs-polish` | What |
+|---|---|
+| `0d60865` | Contract: follow-up migration ranges (`extra` in `core/modules.ts`, contract §3, contract test) |
+| `715dc2a` `1256ea1` `0cea140` `3d768ac` | Diary items (midpoint table above) + e2e `pms-polish.cjs`; the diary hold's visible words are its accessible name |
+| `ce2cf33` | merge `feat/cs-polish-rep` (`3ba66f3` reports, `4235a92` seed history + billing fix, `bc8d8ab` e2e + reporting.md) |
+| `f3b5554` | merge `feat/cs-polish-portal` (`1a29cae` data 0182–0185, `bfae6ef` FORM-007 device, `9148664` PORTAL-004 share, `64db97d` PDF + preview, `5d3eb10` e2e + portal.md) |
+| `8444c1d` | merge `feat/clinic-system` `d2b3d59` (M9) |
+| last two | e2e: Send now contrast wait; **pms-setup-reports 375 px step waits for each page's content, not `networkidle`** (it timed out on a production build – now 13/13 in production and dev) |
+
+Migrations: diary **0180** `hold_until`, **0181** hold triggers, **0189** `pms_diary_message_sweeps`; portal **0182**
+`pms_intake_handoffs` + `pms_portal_share_files`, **0183–0185** `write_id` on intake responses, shares, sessions. Each
+with its Postgres twin. Reporting/records follow-up numbers 0186–0188 unused.
+
+### 19.2 What is built (by scope item)
+1. **Seen statuses for future appointments** – already built in M5 (`statusAllowedAt`: arrived / in treatment /
+   completed only from 60 min before the start, DNA only after it; server check in `setAppointmentStatus`, drawer, note
+   screen's "Mark appointment as completed", dashboard Arrived). Verified by e2e.
+2. **Diary blocks at every height** – `blockLines(heightPx)` (one line < 34 px, two < 56 px, three from 56 px); alert and
+   online icons join the Double-booked marker in the top line (nothing absolute over the text); the status word truncates
+   first. Kit test for every height + e2e measuring 30- and 15-minute double-booked blocks.
+3. **Record Book → booking form with the patient** – already built in M5 (`?patient=`); verified by e2e.
+4. **Offer slot holds the slot** – see midpoint table; database-enforced on SQLite/D1/Postgres; hold length 30 min – 1 day
+   (default 2 h, never past the start); a text held for quiet hours moves the hold on (`pms.waiting_list.offer_hold`);
+   visible to reception in the diary ("Held for … until 14:20", links to the waiting list) and on the waiting list (Book
+   offered slot / Patient declined / Withdraw offer); left out of free slots and online booking.
+5. **Send message from the drawer** (COMMS-011) – comms' own send form + templates in a dialog (`messages.send`).
+6. **Share a document with the patient** (PORTAL-004) – record Attachments tab (clinical.view + clinical.write);
+   optional email through comms' portal sign-in email (does not name the document); withdraw; portal download route
+   checks the fingerprint, always a download, audited. Shares point at the record's file (no copy).
+7. **Form completed in the clinic, verified by staff** (FORM-007) – Forms tab "Complete in the clinic" (patients.edit):
+   30-min hand-off, device cookie scoped to `/clinics/<clinic>/device`, page shows only the form; patient submits
+   (stored unverified), device locks "Please hand the device back"; staff verify at `/app/clinic/intake/device/<id>` with
+   **their own password** (5 tries / 15 min) → "Completed in the clinic, verified by <member>" on the signed copy, PDF and
+   audit; consent recorded at verification.
+8. **Signed copy PDF** (pdf-lib, already a dependency – same visibility rules as the screen) and **Preview as patient**
+   in the builder (a dialog, shows unsaved edits, cannot send).
+9. **M8 leftovers** – REP-004 "New and returning patients" (seventh report, `/app/clinic/reports/patients`); utilisation =
+   booked minutes within available minutes, available = rota/hours ∪ booked time − leave/blocked time (never > 100 %;
+   Bletchley with hours cut now 96 %, was 275 %), applied to the report, by-site table and dashboard tile; diary
+   "Closed – <reason>" notice; audit search by patient name/number/DOB via the existing patient search (≤ 20 matches,
+   needs "View patients", nothing new stored); demo seed with ~8 weeks of history (≈1,300 visits, invoices, payments,
+   leave and meetings), deterministic, follows the test clock.
+10. **Portal audit write ids** – conditional audit rows key on a per-write `write_id` (submit, cancel, review, apply,
+    score, share view/withdraw, sign-out, hand-offs); a same-millisecond repeat audits once (suite on 4 databases).
+11. **Diary write + message sync** – the message run reconciles (no new cron): `reconcileDiaryMessages` before each run
+    (cron + "Send due messages now"), re-syncs appointments changed since the last sweep (≤ 1 day back, 300 a run);
+    re-plans reminders, the confirmation asked for, cancellation / DNA notices; `syncAppointmentMessages` now keeps a
+    pending notice that is still true. A lost "moved" notice is not re-created.
+- Also: billing "Attended, not invoiced" read the 500 OLDEST visits of 90 days (this week's went missing once a clinic
+  has history) – now a week at a time from today (`src/server/pms/billing/views.ts`).
+
+### 19.3 Results (on `be0c412` = `842bb02`)
+Full chain: typecheck, lint green; **test:pms 685/685**; test:medreport 1777/0/3; **test:db 1085/0/3**; test:auth 134/0;
+test:site 126/0; **test:gateway 622/0/2**; build green. (A medreport timing test, "R2-SEC-2 … under a second", is flaky
+only under heavy parallel load; it passed in this run.)
+E2E, each on a fresh `pms:seed-demo -- --fresh` scratch SQLite, ports 3170–3173, servers stopped. Production build:
+**pms-polish-portal 9/9**, pms-portal-screens 15/15, pms-records-screens 17/17, pms-prototype-b 6/6, **pms-setup-reports
+13/13** (the 375 px fix), pms-integration 14/14. `next dev` with the TEST clock at **Wed 28/10/2026 10:30** London
+(`E2E_DAY=2026-10-28`): **pms-polish 8/8**, **pms-polish-reports 8/8**, pms-diary-screens 24/24, pms-prototype-a 10/10,
+pms-messages-screens 18/18, pms-setup-reports 13/13. Note: pms-diary-screens and pms-messages-screens hard-code dates of
+the demo week (e.g. 28/10) – with the clock on Thursday 29/10 three of their steps fail; pin the clock to 28/10.
+Runners (session scratchpad): `m9b-main-e2e.sh <script> <port> <out> [dev]` (+ `E2E_DAY=`), `m9b-int-e2e.sh` (demo flag
+for pms-integration).
+Screenshots: `/private/tmp/claude-501/-Users-khuram-Projects-Appstackx-bh2-handover/ef471414-85b1-422d-bf98-018c56c69aec/scratchpad/k2design/out-polish/`
+(`final2/` – every script on the merged tree; `polish/`, `portal/`, `reports/` – the three new scripts' 1440 / 820 / 375 px
+shots incl. held offer, diary hold, short double-booked blocks, closure notice, send-message dialog, share + portal
+download, clinic device + hand-back + verify, signed-copy PDFs, preview, the seventh report, utilisation with hours cut,
+audit by patient).
+
+### 19.4 Decisions taken (defaults – change any)
+1. Offer holds: default 2 hours, choices 30 min / 1 h / 2 h / 4 h / 1 day, never past the slot's start; the held patient
+   may still book it; a hold is never overridable ("Override clashes" is for appointments); blocked time cannot be put
+   over a hold; offers before 0180 hold nothing.
+2. Expiry by comparison with the writing row's time (no job); expired offers stay "open" (shown "hold has ended").
+3. Message sweep keeps a pending confirmation / moved notice for the current start and cancellation / DNA notices while
+   still true (behaviour change for every sync, comms-owned `schedule.ts`).
+4. Send message from the drawer sends now (no appointment-specific merge fields beyond the patient's).
+5. Sharing needs clinical.view + clinical.write; email on by default; no copy of the file.
+6. Clinic-device verification by the member's own password; device-completed forms stored unverified until then;
+   hand-offs 30 min; outcome questionnaires not on a device.
+7. New and returning: "new" = first attended appointment ever, counted for its practitioner/site; weekly table counts
+   visits, figures count patients.
+8. Utilisation: every kind of practitioner block counts at any site; room-only blocks do not reduce practitioner time.
+9. Audit search by name: ≤ 20 patients, needs "View patients".
+10. Seed history only on a clinic's first seed run.
+
+### 19.5 Open items
+1. Five more portal tables still key audit rows on rev + time (booking settings, booking sites, intake templates,
+   online-booking review, portal account status) – staff-only screens; ~5 more migration numbers to close.
+2. Clinic device: if a staff PC is used, the browser may still hold a staff session – use the device's kiosk / guided
+   access (in `portal.md`).
+3. Records-owned Attachments header text fails axe colour contrast (grey on grey).
+4. The diary's visit adapter (`billing-visits.ts`) still caps at 500 visits per read.
+5. Audit rows about an appointment whose detail lacks the patient id are not found by name (record-id search still works).
+6. Reports nav label "New and returning patie…" is truncated at 1440 px – a shorter nav label would fix it.
+7. The phone diary (375 px) shows neither holds nor the closure notice; a "moved" notice lost to a failed sync is not
+   re-created; two simultaneous OFFERS of the same slot are checked by the server only (bookings over a hold are
+   database-enforced).
+8. pms-diary-screens / pms-messages-screens hard-code demo-week dates – make them relative to the clock.

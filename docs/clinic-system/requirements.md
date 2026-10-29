@@ -167,7 +167,7 @@ model, server actions and API routes – **but no `page.tsx`** under `src/app/ap
 - **K2-DIARY-010** · MVP · back end done, screen pending · diary · FC 2.1-14, 2.1-15 — Statuses booked, arrived, attended, did not attend, cancelled, late cancellation (with fee flag), reinstate and undo. AC: repository done; DNA/late-cancel flag reaches billing as a charge suggestion (K2-BILL-001).
 - **K2-DIARY-011** · MVP · done · diary · FC 2.2-08 — Marking attended updates the patient's last-seen date (retention) and uses one authorisation session; undo gives it back. AC: suite covers usage and give-back ordering.
 - **K2-DIARY-012** · MVP · back end done, screen pending · diary · FC 2.1-08 — Blocked time (meeting, holiday, other) that stops booking. AC: repository done; block dialog uncommitted.
-- **K2-DIARY-013** · MVP · back end done, screen pending · diary · FC 2.1-16 — Waiting list per clinic with preferred practitioner/site/times; book from an entry atomically. AC: repository done; screen missing; no automatic offers.
+- **K2-DIARY-013** · MVP · done · diary · FC 2.1-16 — Waiting list per clinic with preferred practitioner/site/times; book from an entry atomically. AC: done – waiting list screen (M3/M4), offers by text (M6); M9b an offered slot is HELD (database-enforced, expiry, decline/withdraw release, visible in the diary and the list).
 - **K2-DIARY-014** · MVP · done · diary · FC 2.1-17 — Two users editing the same appointment: optimistic revision check; the second save gets "changed by someone else". AC: suite covers `rev` conflicts.
 - **K2-DIARY-015** · MVP · done · diary · FC none — Times are Europe/London including both clock changes. AC: domain tests for the March and October changes.
 - **K2-DIARY-016** · MVP · back end done, screen pending · diary · FC 2.1-18 — Quick patient search from the diary (name, number, phone, DOB). AC: results in < 1 s on 10,000 patients; never decrypts.
@@ -259,14 +259,14 @@ e-signature, sealing trigger, builder, record Forms tab, signed copy, outcome qu
 - **K2-FORM-004** · MVP · done · portal · FC 2.2-21 — Verified vs unverified submissions: consent recorded on the record only when verified; staff apply other answers to the record. AC: done M7 – signed copy page: Mark checked, Copy to the record.
 - **K2-FORM-005** · MVP · done · portal · FC none — Health answers visible to clinicians only. AC: done M7 – questions marked clinical are hidden without `clinical.view` on the Forms tab and signed copy; outcome questionnaires clinical as a whole; e2e as reception.
 - **K2-FORM-006** · MVP · done · portal · FC 2.3-05 — Forms tab on the patient record (`/app/clinic/patients/[patientId]/forms`) and intake screen (`/app/clinic/intake`). AC: done M7 – list, view (sealed copy, fingerprint), apply answers; Overview Forms card.
-- **K2-FORM-007** · Later · partial · portal · FC 2.2-22 — Form builder with field-to-record mapping, file uploads, clinic-tablet mode. AC: builder with Mark clinical and field-to-record mapping done M7 (`/app/clinic/intake/[form]`); file uploads and clinic-tablet mode missing.
+- **K2-FORM-007** · Later · partial · portal · FC 2.2-22 — Form builder with field-to-record mapping, file uploads, clinic-tablet mode. AC: builder with Mark clinical and mapping (M7); M9b clinic-device mode ("Complete in the clinic": 30-min hand-off, device page shows only the form, staff verify with their own password, "Completed in the clinic, verified by …"), Preview as patient, signed copy PDF; file uploads still missing.
 
 ### 3.9 PORTAL – patient portal
 
 - **K2-PORTAL-001** · MVP · done · portal · FC 2.1-31 — Magic-link sign-in; patient accounts separate from staff accounts; secrets stored as hashes; sessions expire. AC: done M7 – email-only request, one-time 15-minute link through comms, same answer for everyone, rate-limited; links reach patients only once email is live (K2-COMMS-005).
 - **K2-PORTAL-002** · MVP · done · portal · FC 2.1-30, 2.1-29 — Portal shows upcoming appointments with cancel/rebook within policy. AC: done M7 – late warning with the fee, cancel, move, book again.
 - **K2-PORTAL-003** · MVP · done · portal · FC 2.1-30 — Forms to complete. AC: done M7 – intake forms (typed signature) and outcome questionnaires (scored into the record's Outcomes).
-- **K2-PORTAL-004** · MVP · partial · portal · FC 2.1-30 — Documents explicitly shared by staff (letters, exercise sheets); no clinical notes unless shared. AC: portal pages done M7 (shared documents + the patient's signed copies); a staff screen to share a document is missing.
+- **K2-PORTAL-004** · MVP · done · portal · FC 2.1-30 — Documents explicitly shared by staff (letters, exercise sheets); no clinical notes unless shared. AC: done M9b – record Attachments tab "Share with the patient" (clinical.view + clinical.write, audited, optional emailed link through comms, withdraw); portal "Shared with you" download (fingerprint checked, audited); e2e pms-polish-portal.
 - **K2-PORTAL-005** · MVP · done · portal · FC none — Strict tenant and patient scoping; a patient can never reach another patient's or clinic's data or any staff route. AC: suite with two clinics and two patients.
 - **K2-PORTAL-006** · MVP · done · portal · FC 2.1-32 — Works as mobile web at 375 px. AC: done M7 – e2e at 375 px with axe.
 - **K2-PORTAL-007** · Later · missing · portal · FC 2.1-30 — View and pay invoices in the portal.
@@ -289,7 +289,7 @@ Providers: outbox / test only. See `comms.md` and HANDOVER §15.
 - **K2-COMMS-008** · Later · partial · comms · FC 2.5-05 — Two-way SMS: YES/NO/STOP replies via a provider webhook confirm or cancel the appointment. AC: replies inbox, thread and answer (M6); C / NO / YES / STOP read; the test webhook is signed and live only with the test provider; a live provider is K2-COMMS-006.
 - **K2-COMMS-009** · MVP · done · comms · FC 2.5-07, 2.2-02 — PECR: marketing only with recorded opt-in; signed unsubscribe links; consent events log. AC: engine + signed stop-emails route (GET page, POST / one-click); STOP stops texts with one confirmation text; consent events on the record (M6, e2e).
 - **K2-COMMS-010** · MVP · done · comms · FC 2.5-08, 2.3-05 — Message log per patient (record tab) and an outbox screen (`/app/clinic/messages`). AC: outbox `/app/clinic/messages` (planned / held / sent / failed + Retry / not sent) and the record's Messages tab (M6, e2e).
-- **K2-COMMS-011** · MVP · partial · comms · FC 2.5-06 — One-off message from a record or an appointment. AC: "Send a message" on Messages and from the record (M6, e2e); from the diary's appointment drawer: missing.
+- **K2-COMMS-011** · MVP · done · comms · FC 2.5-06 — One-off message from a record or an appointment. AC: done – M6 Messages and record; M9b the diary appointment drawer ("Send message" opens comms' send form with templates, outbox only; e2e pms-polish).
 - **K2-COMMS-012** · Later · missing · comms · FC 2.5-09, 2.5-10, 2.5-11, 2.5-12, 2.5-13 — Bulk messages, recalls, automations, multi-step journeys, feedback surveys.
 
 ### 3.11 BILL – billing and invoicing (incl. insurer and medico-legal accounts)
@@ -342,7 +342,7 @@ revenue, utilisation, export route), migration `0160`, D1 stack test.
 - **K2-REP-001** · MVP · done · reporting · FC 2.6-01 — Dashboard: today's appointments, utilisation, DNA rate, revenue, outstanding, expiring authorisations. AC: figures match the seeded data's hand-calculated values (`fact-checks.ts`).
 - **K2-REP-002** · MVP · done · reporting · FC 2.6-02 — Utilisation by practitioner, site and room for a period. AC: booked minutes ÷ rota minutes; excludes blocks.
 - **K2-REP-003** · MVP · done · reporting · FC 2.6-03 — DNA and late-cancellation rates by practitioner and site. AC: matches diary statuses.
-- **K2-REP-004** · MVP · partial · reporting · FC 2.6-04 — New vs returning patients. AC: definition stated on screen.
+- **K2-REP-004** · MVP · done · reporting · FC 2.6-04 — New vs returning patients. AC: done M9b – seventh report "New and returning patients" (/app/clinic/reports/patients), definition on screen, CSV without names; e2e pms-polish-reports.
 - **K2-REP-005** · MVP · done · reporting · FC 2.6-05 — Revenue (invoiced, paid) and outstanding debt by payer type. AC: equals billing's totals.
 - **K2-REP-006** · MVP · done · reporting · FC 2.6-06 — Caseload and a fixed report library with CSV export of every report (`reports.export`, audited, formula-injection guard). AC: each report downloads as CSV.
 - **K2-REP-007** · Later · missing · reporting · FC 2.6-07, 2.6-08, 2.6-09 — Clinical reports, outcome exports (national datasets), custom reports.
@@ -726,7 +726,7 @@ Generated from the requirement lines above (§3, §5). "FC" = feature-comparison
 | K2-DIARY-010 | MVP | back end done, screen pending | feat/cs-diary | 2.1-14, 2.1-15 | Statuses booked, arrived, attended, did not attend, cancelled, late cancellation (with … |
 | K2-DIARY-011 | MVP | done | feat/cs-diary | 2.2-08 | Marking attended updates the patient's last-seen date (retention) and uses one … |
 | K2-DIARY-012 | MVP | back end done, screen pending | feat/cs-diary | 2.1-08 | Blocked time (meeting, holiday, other) that stops booking |
-| K2-DIARY-013 | MVP | back end done, screen pending | feat/cs-diary | 2.1-16 | Waiting list per clinic with preferred practitioner/site/times; book from an entry … |
+| K2-DIARY-013 | MVP | done | feat/clinic-system (M9b) | 2.1-16 | Waiting list per clinic with preferred practitioner/site/times; book from an entry … |
 | K2-DIARY-014 | MVP | done | feat/cs-diary | 2.1-17 | Two users editing the same appointment: optimistic revision check; the second save gets … |
 | K2-DIARY-015 | MVP | done | feat/cs-diary | – | Times are Europe/London including both clock changes |
 | K2-DIARY-016 | MVP | back end done, screen pending | feat/cs-diary | 2.1-18 | Quick patient search from the diary (name, number, phone, DOB) |
@@ -784,11 +784,11 @@ Generated from the requirement lines above (§3, §5). "FC" = feature-comparison
 | K2-FORM-004 | MVP | done | feat/cs-portal | 2.2-21 | Verified vs unverified submissions: consent recorded on the record only when verified; … |
 | K2-FORM-005 | MVP | done | feat/cs-portal | – | Health answers visible to clinicians only |
 | K2-FORM-006 | MVP | done | feat/cs-portal | 2.3-05 | Forms tab on the patient record (`/app/clinic/patients/[patientId]/forms`) and intake … |
-| K2-FORM-007 | Later | partial | feat/cs-portal | 2.2-22 | Form builder with field-to-record mapping, file uploads, clinic-tablet mode |
+| K2-FORM-007 | Later | partial | feat/clinic-system (M9b) | 2.2-22 | Form builder with mapping, clinic-device mode verified by staff, preview as patient (M9b); file uploads missing |
 | K2-PORTAL-001 | MVP | done | feat/cs-portal | 2.1-31 | Magic-link sign-in; patient accounts separate from staff accounts; secrets stored as … |
 | K2-PORTAL-002 | MVP | done | feat/cs-portal | 2.1-30, 2.1-29 | Portal shows upcoming appointments with cancel/rebook within policy |
 | K2-PORTAL-003 | MVP | done | feat/cs-portal | 2.1-30 | Forms to complete |
-| K2-PORTAL-004 | MVP | partial | feat/cs-portal | 2.1-30 | Documents explicitly shared by staff (letters, exercise sheets); no clinical notes unless … |
+| K2-PORTAL-004 | MVP | done | feat/clinic-system (M9b) | 2.1-30 | Documents explicitly shared by staff (letters, exercise sheets); no clinical notes unless … |
 | K2-PORTAL-005 | MVP | done | feat/cs-portal | – | Strict tenant and patient scoping; a patient can never reach another patient's or … |
 | K2-PORTAL-006 | MVP | done | feat/cs-portal | 2.1-32 | Works as mobile web at 375 px |
 | K2-PORTAL-007 | Later | missing | feat/cs-portal | 2.1-30 | View and pay invoices in the portal |
@@ -802,7 +802,7 @@ Generated from the requirement lines above (§3, §5). "FC" = feature-comparison
 | K2-COMMS-008 | Later | partial | feat/cs-comms | 2.5-05 | Two-way SMS: YES/NO/STOP replies via a provider webhook confirm or cancel the appointment |
 | K2-COMMS-009 | MVP | done | feat/cs-comms | 2.5-07, 2.2-02 | PECR: marketing only with recorded opt-in; signed unsubscribe links; consent events log |
 | K2-COMMS-010 | MVP | done | feat/cs-comms | 2.5-08, 2.3-05 | Message log per patient (record tab) and an outbox screen (`/app/clinic/messages`) |
-| K2-COMMS-011 | MVP | partial | feat/cs-comms | 2.5-06 | One-off message from a record or an appointment |
+| K2-COMMS-011 | MVP | done | feat/clinic-system (M9b) | 2.5-06 | One-off message from a record or an appointment |
 | K2-COMMS-012 | Later | missing | feat/cs-comms | 2.5-09, 2.5-10, 2.5-11, 2.5-12, 2.5-13 | Bulk messages, recalls, automations, multi-step journeys, feedback surveys |
 | K2-BILL-001 | MVP | done | feat/cs-billing | 2.4-01, 2.1-15 | Invoice from attended appointments (and DNA/late-cancellation charges), priced from the … |
 | K2-BILL-002 | MVP | done | feat/cs-billing | 2.4-03 | Bill-to self-pay, insurer on account, medico-legal company/solicitor on account, … |
@@ -835,7 +835,7 @@ Generated from the requirement lines above (§3, §5). "FC" = feature-comparison
 | K2-REP-001 | MVP | done | feat/clinic-system | 2.6-01 | Dashboard "Today" per role (owner/admin, clinician, reception; 1440 + 375 px) – replaces the Overview (M8) |
 | K2-REP-002 | MVP | done | feat/clinic-system | 2.6-02 | Utilisation by practitioner, site and room for a period |
 | K2-REP-003 | MVP | done | feat/clinic-system | 2.6-03 | DNA and late-cancellation rates by practitioner and site |
-| K2-REP-004 | MVP | partial | feat/clinic-system | 2.6-04 | New vs returning patients – loader and tests kept, no page in M8 (dropped from the six-report library; decision for Khuram) |
+| K2-REP-004 | MVP | done | feat/clinic-system (M9b) | 2.6-04 | New vs returning patients – seventh report (M9b) |
 | K2-REP-005 | MVP | done | feat/clinic-system | 2.6-05 | Revenue (invoiced, paid) and outstanding debt by payer type |
 | K2-REP-006 | MVP | done | feat/clinic-system | 2.6-06 | Caseload and the fixed report library (Attendance and DNA, Utilisation, Caseload, Revenue, Debtors, Authorisations) with CSV of every report (`reports.export`, audited, formula-safe); clinicians own caseload (`reports.own`) |
 | K2-REP-007 | Later | missing | feat/cs-reporting | 2.6-07, 2.6-08, 2.6-09 | Clinical reports, outcome exports (national datasets), custom reports |
@@ -865,7 +865,7 @@ Generated from the requirement lines above (§3, §5). "FC" = feature-comparison
 | K2-ADM-008 | Later | missing | feat/cs-reporting | 2.6-14 | Tasks and teams |
 | K2-AUD-001 | MVP | done | feat/clinic-system | 2.6-13 | Every write is audited through the repositories in the same atomic batch; codes … |
 | K2-AUD-002 | MVP | done | feat/clinic-system | 2.6-13 | "Clinic system" filter group on `/app/settings/activity` with CSV, only for clinics with … |
-| K2-AUD-003 | MVP | done | feat/clinic-system | 2.6-13 | Audit search by user, patient (record id), action, record type and date with CSV (Set-up → Audit trail, M8) |
+| K2-AUD-003 | MVP | done | feat/clinic-system (M9b) | 2.6-13 | Audit search by user, patient (name, number or DOB through the encrypted patient search, or record id), action, record type and date with CSV (M8, name search M9b) |
 | K2-AUD-004 | MVP | done | feat/clinic-system | – | Platform actions on a clinic (package changes) appear in the clinic's own trail as … |
 | K2-AUD-005 | Later | missing | feat/cs-records | 2.6-13 | Record views (who opened a patient's clinical notes) are logged |
 | K2-NFR-001 | MVP | done | feat/clinic-system | – | Every page/layout under `/app/clinic` calls `requireClinicActor` first; every action … |
