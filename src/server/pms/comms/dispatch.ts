@@ -434,7 +434,23 @@ const NEEDS_BOOKED: ReadonlySet<string> = new Set(["confirmation", "reminder", "
  * ends as sent (with its message), skipped (with the reason) or failed – in batches of 20 rows with one audit row
  * per batch ("pms.message.bulk_send": counts only).
  */
-export async function runDueMessages(ctx: RepoContext, tenantId: string, deps: DispatchDeps, options: { limit?: number; actor?: PmsActor } = {}): Promise<RunSummary> {
+/**
+ * What a message run reads once and every round of it reuses (the clinic's settings, directory, rules, contact
+ * details and templates do not change between rounds a few seconds apart): runAllDueMessages passes one.
+ */
+export type RunCache = Map<string, Promise<unknown>>;
+
+function cached<T>(cache: RunCache | undefined, key: string, load: () => Promise<T>): Promise<T> {
+  if (!cache) return load();
+  let p = cache.get(key) as Promise<T> | undefined;
+  if (!p) cache.set(key, (p = load()));
+  return p;
+}
+
+/** Schedule rows (with their messages) written per batch: 2 statements each + 1 audit row stay under 100. */
+const SEND_WRITE_CHUNK = 45;
+
+export async function runDueMessages(ctx: RepoContext, tenantId: string, deps: DispatchDeps, options: { limit?: number; actor?: PmsActor; cache?: RunCache } = {}): Promise<RunSummary> {
   const actor = options.actor ?? SYSTEM_ACTOR;
   const summary = emptySummary();
   const held = await releaseHeldMessages(ctx, tenantId, deps, { actor });
@@ -448,21 +464,21 @@ export async function runDueMessages(ctx: RepoContext, tenantId: string, deps: D
   if (rows.length === 0) return summary;
   const now = ctx.now ? ctx.now() : pmsNow();
   const nowText = now.toISOString();
+  const cache = options.cache;
+  const templates: RunCache = cache ?? new Map();
   const [settings, directory, contacts, rules, statuses] = await Promise.all([
-    getCommsSettings(ctx, tenantId),
-    loadDirectory(ctx, tenantId),
+    cached(cache, "settings", () => getCommsSettings(ctx, tenantId)),
+    cached(cache, "directory", () => loadDirectory(ctx, tenantId)),
     getMessagingContacts(ctx, tenantId, rows.map((r) => r.patientId)),
-    listReminderRules(ctx, tenantId),
+    cached(cache, "rules", () => listReminderRules(ctx, tenantId)),
     deps.appointmentStatus ? deps.appointmentStatus(ctx, tenantId, rows.map((r) => r.appointmentId)) : Promise.resolve(null),
   ]);
-  const clinic = await clinicContact(ctx, tenantId, settings);
+  const clinic = await cached(cache, "clinic", () => clinicContact(ctx, tenantId, settings));
   const ruleTemplate = new Map(rules.map((r) => [r.id, r.templateId]));
-  const templates = new Map<string, Awaited<ReturnType<typeof resolveTemplate>>>();
   const templateFor = async (row: ScheduledMessage) => {
     const preferred = row.ruleId ? (ruleTemplate.get(row.ruleId) ?? null) : null;
     const key = `${row.kind}:${row.channel}:${preferred ?? "-"}`;
-    if (!templates.has(key)) templates.set(key, await resolveTemplate(ctx, tenantId, row.kind, row.channel, preferred));
-    return templates.get(key) ?? null;
+    return (await cached(templates, `template:${key}`, () => resolveTemplate(ctx, tenantId, row.kind, row.channel, preferred))) ?? null;
   };
 
   type Planned = { row: ScheduledMessage; queries: BatchQuery[]; send?: { id: string; address: string; composed: Composed } };
@@ -535,8 +551,8 @@ export async function runDueMessages(ctx: RepoContext, tenantId: string, deps: D
       targetId: chunk[0].row.id,
       detail: { count: chunk.length, messages: chunk.filter((p) => p.queries.length === 2).length, skipped: chunk.filter((p) => p.queries.length === 1).length },
     });
-  for (let i = 0; i < planned.length; i += 20) {
-    const chunk = planned.slice(i, i + 20);
+  for (let i = 0; i < planned.length; i += SEND_WRITE_CHUNK) {
+    const chunk = planned.slice(i, i + SEND_WRITE_CHUNK);
     try {
       await writeWithAudit(ctx, [...chunk.flatMap((p) => p.queries), audit(chunk)]);
       for (const p of chunk) if (p.send) toSend.push(p.send);
@@ -625,8 +641,9 @@ export async function releaseHeldMessages(
 export async function runAllDueMessages(ctx: RepoContext, tenantId: string, deps: DispatchDeps, options: { budgetMs?: number; actor?: PmsActor } = {}): Promise<RunSummary> {
   const total = emptySummary();
   const started = pmsNowMs();
+  const cache: RunCache = new Map();
   for (let round = 0; round < 50; round++) {
-    const r = await runDueMessages(ctx, tenantId, deps, { actor: options.actor });
+    const r = await runDueMessages(ctx, tenantId, deps, { actor: options.actor, cache });
     total.claimed += r.claimed;
     total.released += r.released;
     total.sent += r.sent;
