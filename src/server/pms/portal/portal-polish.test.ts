@@ -17,8 +17,8 @@ import { createGuardedPgliteDb, createGuardedSqliteDb, unscopedStatements, type 
 import { STARTER_FORMS } from "../../../modules/pms/portal/starters";
 import type { ClinicActor } from "../actor";
 import { testActor } from "../records/access";
-import { endHandoffFor, handoffStaffViewFor, startHandoffFor, verifyHandoffFor, type PasswordCheck } from "./clinic-device";
-import { deviceState, submitOnDevice } from "./device-flow";
+import { endHandoffFor, handoffStaffViewFor, newPairingCodeFor, startHandoffFor, verifyHandoffFor, type PasswordCheck } from "./clinic-device";
+import { PAIR_REFUSED, deviceState, pairDeviceWithCode, submitOnDevice } from "./device-flow";
 import { signedCopyPdfFor, signedVia } from "./signed-copy";
 import { patientResponseFor } from "./staff";
 import { attachmentSharesFor, shareAttachmentFor, withdrawShareFor } from "./staff-shares";
@@ -96,21 +96,80 @@ function suite(label: string, factory: () => Promise<GuardedDb>) {
       assert.ok((await attachmentSharesFor(clinician, ids.pat))?.byAttachment[ids.file][0].withdrawnAt);
     });
 
+    /** M10 H3: staff ask for a code on their own screen; the (signed-out) device enters it and gets its secret. */
+    let ipSeq = 10;
+    const pairedSecret = async (handoffId: string): Promise<string> => {
+      const code = await newPairingCodeFor(reception, handoffId);
+      assert.ok(code.ok, JSON.stringify(code));
+      if (!code.ok) throw new Error("no code");
+      const paired = await pairDeviceWithCode(ctx, A, code.value.code.toLowerCase(), { clientIp: `203.0.113.${ipSeq++}` });
+      assert.ok(paired.ok, JSON.stringify(paired));
+      if (!paired.ok) throw new Error("not paired");
+      return paired.secret;
+    };
+
+    it("M10 H3: the clinic device is paired by a short code from the staff screen – never a staff browser", async () => {
+      const copy = (await requestIntakeForm(ctx, A, { templateId: ids.form_consent, patientId: ids.pat }, reception.actor)).response;
+      const started = await startHandoffFor(reception, ids.pat, copy.id);
+      assert.ok(started.ok, JSON.stringify(started));
+      if (!started.ok) return;
+      assert.equal(started.value.path, `/app/clinic/intake/device/${started.value.handoffId}`, "staff go to their own hand-off page");
+      assert.deepEqual(Object.keys(started.value).sort(), ["handoffId", "path"], "nothing for a device in the staff browser");
+      const ip = { clientIp: "198.51.100.20" };
+      assert.deepEqual(await pairDeviceWithCode(ctx, A, "ABCD-EFGH", ip), { ok: false, error: PAIR_REFUSED }, "no code asked for yet");
+      const first = await newPairingCodeFor(reception, started.value.handoffId);
+      assert.ok(first.ok);
+      if (!first.ok) return;
+      assert.match(first.value.code, /^[A-Z2-9]{4}-[A-Z2-9]{4}$/);
+      assert.equal(first.value.devicePath, `/clinics/${A}/device`);
+      assert.ok(Date.parse(first.value.expiresAt) - clock <= 10 * 60_000 + 5, "valid 10 minutes");
+      assert.equal((await newPairingCodeFor(otherClinic, started.value.handoffId)).ok, false, "another clinic cannot");
+      const second = await newPairingCodeFor(reception, started.value.handoffId);
+      assert.ok(second.ok && second.value.code !== first.value.code);
+      if (!second.ok) return;
+      assert.deepEqual(await pairDeviceWithCode(ctx, A, first.value.code, ip), { ok: false, error: PAIR_REFUSED }, "a replaced code stops working");
+      assert.deepEqual(await pairDeviceWithCode(ctx, B, second.value.code, ip), { ok: false, error: PAIR_REFUSED }, "a code means nothing in another clinic");
+      const paired = await pairDeviceWithCode(ctx, A, ` ${second.value.code.replace("-", " ")} `, ip);
+      assert.ok(paired.ok, JSON.stringify(paired));
+      if (!paired.ok) return;
+      assert.equal((await deviceState(ctx, A, paired.secret)).state, "open");
+      assert.deepEqual(await pairDeviceWithCode(ctx, A, second.value.code, ip), { ok: false, error: PAIR_REFUSED }, "a code works once");
+      assert.equal((await newPairingCodeFor(reception, started.value.handoffId)).ok, false, "no new code once a device is paired");
+      const view = await handoffStaffViewFor(reception, started.value.handoffId);
+      assert.ok(view.ok && view.value.pairing?.pairedAt);
+      const audit = (await listAudit(ctx, A, { limit: 500 })).filter((e) => e.targetId === started.value.handoffId);
+      assert.deepEqual(audit.map((e) => e.action).sort(), ["pms.intake_handoff.pair_code", "pms.intake_handoff.pair_code", "pms.intake_handoff.paired"]);
+      assert.ok(!JSON.stringify(audit).includes(second.value.code.replace("-", "")), "the code is not in the audit");
+      // An expired code is refused.
+      const other = (await requestIntakeForm(ctx, A, { templateId: ids.form_health, patientId: ids.pat }, reception.actor)).response;
+      const s2 = await startHandoffFor(reception, ids.pat, other.id);
+      if (!s2.ok) return assert.fail("start");
+      const c2 = await newPairingCodeFor(reception, s2.value.handoffId);
+      if (!c2.ok) return assert.fail("code");
+      clock += 11 * 60_000;
+      assert.deepEqual(await pairDeviceWithCode(ctx, A, c2.value.code, ip), { ok: false, error: PAIR_REFUSED }, "expired after 10 minutes");
+      assert.equal((await endHandoffFor(reception, s2.value.handoffId)).ok, true);
+      assert.equal((await endHandoffFor(reception, started.value.handoffId)).ok, true);
+      // Guessing is limited per address.
+      let last: Awaited<ReturnType<typeof pairDeviceWithCode>> = { ok: true, secret: "", expiresAt: "" };
+      for (let i = 0; i < 11; i++) last = await pairDeviceWithCode(ctx, A, "ZZZZ-ZZZZ", { clientIp: "198.51.100.99" });
+      assert.ok(!last.ok && /Too many attempts/.test(last.error));
+    });
+
     it("a form completed on a clinic device: only that copy, then staff verify with THEIR password", async () => {
       const copy = (await requestIntakeForm(ctx, A, { templateId: ids.form_consent, patientId: ids.pat }, reception.actor)).response;
       const started = await startHandoffFor(reception, ids.pat, copy.id);
       assert.ok(started.ok, JSON.stringify(started));
       if (!started.ok) return;
-      assert.equal(started.value.path, `/clinics/${A}/device`);
-      assert.equal(started.value.cookiePath, started.value.path, "the device's cookie is limited to the device page");
-      const device = await deviceState(ctx, A, started.value.secret);
+      const secret1 = await pairedSecret(started.value.handoffId);
+      const device = await deviceState(ctx, A, secret1);
       assert.equal(device.state, "open");
       if (device.state !== "open") return;
       const form = new FormData();
       for (const k of ["consent_treatment", "consent_records", "cancellations"]) form.set(`q_${k}`, "on");
       form.set("q_share_gp", "no");
       form.set("signature", "Robin Fixture");
-      assert.deepEqual(await submitOnDevice(ctx, A, started.value.secret, device.response.rev, form), { ok: true });
+      assert.deepEqual(await submitOnDevice(ctx, A, secret1, device.response.rev, form), { ok: true });
       const handoffId = device.handoff.id;
       assert.equal((await handoffStaffViewFor(otherClinic, handoffId)).ok, false, "another clinic cannot open it");
       assert.deepEqual(await verifyHandoffFor(reception, handoffId, "", passwordOk), { ok: false, error: "Enter your password to confirm." });
@@ -127,7 +186,7 @@ function suite(label: string, factory: () => Promise<GuardedDb>) {
       if (!after.ok) return;
       assert.match(after.value.inClinic?.words ?? "", /^Completed in the clinic, verified by Jess Taylor on /);
       assert.match(signedVia(after.value.response.trust, after.value.inClinic?.words ?? null), /verified by Jess Taylor/);
-      assert.equal((await deviceState(ctx, A, started.value.secret)).state, "finished");
+      assert.equal((await deviceState(ctx, A, secret1)).state, "finished");
       const audit = await listAudit(ctx, A, { limit: 500 });
       const verify = audit.filter((e) => e.action === "pms.intake_response.verify" && e.targetId === copy.id);
       assert.deepEqual([verify.length, verify[0]?.userId], [1, "user_rec_01"]);
@@ -136,11 +195,12 @@ function suite(label: string, factory: () => Promise<GuardedDb>) {
       const s2 = await startHandoffFor(reception, ids.pat, second.id);
       assert.ok(s2.ok);
       if (!s2.ok) return;
-      const st = await deviceState(ctx, A, s2.value.secret);
+      const secret2 = await pairedSecret(s2.value.handoffId);
+      const st = await deviceState(ctx, A, secret2);
       assert.ok(st.state === "open");
       if (st.state !== "open") return;
       assert.equal((await endHandoffFor(reception, st.handoff.id)).ok, true);
-      assert.equal((await deviceState(ctx, A, s2.value.secret)).state, "finished");
+      assert.equal((await deviceState(ctx, A, secret2)).state, "finished");
       assert.equal((await getIntakeResponse(ctx, A, second.id))?.status, "requested", "ending a hand-off leaves the copy waiting");
       assert.equal((await startHandoffFor(reception, ids.pat, copy.id)).ok, false, "a completed copy cannot be handed out again");
     });
@@ -150,7 +210,8 @@ function suite(label: string, factory: () => Promise<GuardedDb>) {
       const started = await startHandoffFor(reception, ids.pat, copy.id);
       assert.ok(started.ok);
       if (!started.ok) return;
-      const st = await deviceState(ctx, A, started.value.secret);
+      const secret3 = await pairedSecret(started.value.handoffId);
+      const st = await deviceState(ctx, A, secret3);
       if (st.state !== "open") return assert.fail("open");
       const form = new FormData();
       for (const f of st.response.form.fields) {
@@ -161,7 +222,7 @@ function suite(label: string, factory: () => Promise<GuardedDb>) {
         else if (f.type === "date") form.set(`q_${f.id}`, "2026-10-01");
         else form.set(`q_${f.id}`, "Fictional sore shoulder");
       }
-      const sent = await submitOnDevice(ctx, A, started.value.secret, st.response.rev, form);
+      const sent = await submitOnDevice(ctx, A, secret3, st.response.rev, form);
       assert.ok(sent.ok, JSON.stringify(sent));
       const forClinician = await signedCopyPdfFor(clinician, ids.pat, copy.id);
       const forReception = await signedCopyPdfFor(reception, ids.pat, copy.id);

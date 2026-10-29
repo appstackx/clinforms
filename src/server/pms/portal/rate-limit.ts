@@ -18,6 +18,9 @@ export const PUBLIC_LIMITS = {
   signInPerEmail: { max: 5, windowMs: 60 * 60_000 },
   linkPerClient: { max: 30, windowMs: 60 * 60_000 },
   patientWritesPerClient: { max: 60, windowMs: 60 * 60_000 },
+  /** Pairing a clinic device with a code (M10 H3): ~10^11 codes, each valid 10 minutes. */
+  devicePairPerClient: { max: 10, windowMs: 10 * 60_000 },
+  devicePairPerClinic: { max: 60, windowMs: 10 * 60_000 },
 } as const;
 
 export type PublicLimit = keyof typeof PUBLIC_LIMITS;

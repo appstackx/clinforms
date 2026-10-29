@@ -214,6 +214,21 @@ export interface PmsIntakeHandoffsTable {
   updated_at: IsoTimestamp;
 }
 
+/**
+ * A clinic device paired with a hand-off by a short code (0190, M10 H3): the member of staff gets the code on their
+ * own screen; the device (not signed in) enters it and only then gets its one-time secret. Only the code's SHA-256.
+ */
+export interface PmsIntakeDevicePairingsTable {
+  tenant_id: string;
+  handoff_id: string;
+  code_hash: string;
+  expires_at: IsoTimestamp;
+  paired_at: IsoTimestamp | null;
+  write_id: ColumnType<string | null, string | null | undefined, string | null>;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
 export interface PortalTables {
   pms_booking_settings: PmsBookingSettingsTable;
   pms_booking_sites: PmsBookingSitesTable;
@@ -226,6 +241,7 @@ export interface PortalTables {
   pms_intake_templates: PmsIntakeTemplatesTable;
   pms_intake_responses: PmsIntakeResponsesTable;
   pms_intake_handoffs: PmsIntakeHandoffsTable;
+  pms_intake_device_pairings: PmsIntakeDevicePairingsTable;
 }
 
 /** Foreign-key order (parents first). */
@@ -241,6 +257,7 @@ export const PORTAL_TABLES = [
   "pms_intake_templates",
   "pms_intake_responses",
   "pms_intake_handoffs",
+  "pms_intake_device_pairings",
 ] as const satisfies readonly (keyof PortalTables)[];
 
 export const PORTAL_PRIMARY_KEYS: { readonly [T in (typeof PORTAL_TABLES)[number]]: readonly (keyof PortalTables[T] & string)[] } = {
@@ -255,6 +272,7 @@ export const PORTAL_PRIMARY_KEYS: { readonly [T in (typeof PORTAL_TABLES)[number
   pms_intake_templates: ["tenant_id", "id"],
   pms_intake_responses: ["tenant_id", "id"],
   pms_intake_handoffs: ["tenant_id", "id"],
+  pms_intake_device_pairings: ["tenant_id", "handoff_id"],
 };
 
 /** Timestamp columns beyond created_at / updated_at (the D1 → Postgres copy compares them as ISO instants). */
@@ -277,6 +295,7 @@ export const PORTAL_TIMESTAMP_COLUMNS: readonly string[] = [
   "completed_at",
   "verified_at",
   "ended_at",
+  "paired_at",
 ];
 
 /** Every portal table holds one clinic's data (offboarding exports and deletes them all). */

@@ -30,7 +30,9 @@ describe("migration ranges (contract §3)", () => {
     for (const a of all) for (const b of all) if (a !== b) assert.ok(a.r[1] < b.r[0] || b.r[1] < a.r[0], `${a.id} ${a.r} overlaps ${b.id} ${b.r}`);
     assert.equal(moduleForMigration(180), "diary");
     assert.equal(moduleForMigration(182), "portal");
-    assert.equal(moduleForMigration(190), null);
+    // M10 security fixes (handover §20): 0190 portal (clinic-device pairing); numbers up to 0199 reserved for M10.
+    assert.equal(moduleForMigration(190), "portal");
+    assert.equal(moduleForMigration(199), null);
     assert.equal(postgresTwinName("0110_diary_core.sql"), "20261024000110_diary_core.sql");
   });
 

@@ -1,19 +1,21 @@
 /**
- * A form completed IN THE CLINIC on a clinic device, verified by staff (FORM-007 "tablet mode"):
+ * A form completed IN THE CLINIC on a clinic device, verified by staff (FORM-007 "tablet mode"), with the device
+ * PAIRED by a short code (M10 H3 – the device is never a browser signed in as staff):
  *
  * 1. Staff (patients.edit) press "Complete in the clinic" on a waiting copy (record → Forms). A hand-off starts
- *    (src/server/repos/pms/portal/handoffs.ts): the device gets a one-time secret in an httpOnly, SameSite=Strict
- *    cookie limited to the clinic's device page (`/clinics/<clinic>/device`) and goes there.
- * 2. The device page shows ONLY that form (the clinic's public header, no staff navigation, no other patient data –
- *    not even the patient's name). The patient fills it in and signs; the copy is sealed exactly as from the portal
- *    (the same submit), stored "unverified", and the hand-off is marked completed in the same batch.
- * 3. The device shows "Please hand the device back to a member of staff". Staff open the hand-off page (their own
- *    session; patients.edit) and confirm with THEIR PASSWORD – the patient holding the device cannot. The hand-off
- *    records who verified it and when; the audit row says so; a signed consent form then records consent on the
- *    record under that member. The signed copy (screen and PDF) shows "Completed in the clinic, verified by …".
- *
- * The device's browser may still hold a staff session (a reception PC): the device page itself links nowhere but
- * the hand-back step, which needs the password. Use the device's own guided-access / kiosk lock as well.
+ *    (src/server/repos/pms/portal/handoffs.ts) and the STAFF member's own screen opens the hand-off page
+ *    (/app/clinic/intake/device/<id>), which shows a pairing code (8 characters, valid 10 minutes, works once –
+ *    "New code" replaces it). Nothing is placed in the staff browser for the device.
+ * 2. On the clinic device – a separate browser that is NOT signed in – the patient (or staff) opens
+ *    /clinics/<clinic>/device and types the code (./device-flow.ts: attempts limited per address and per clinic).
+ *    Only then does the device get its own one-time secret, in an httpOnly, SameSite=Strict cookie limited to the
+ *    device page. The page shows ONLY that form (no staff navigation, no link into /app, no other patient data – not
+ *    even the patient's name). The copy is sealed exactly as from the portal, stored "unverified", and the hand-off is
+ *    marked completed in the same batch.
+ * 3. The device shows "Please hand the device back to a member of staff". Staff verify on THEIR OWN screen (the
+ *    hand-off page) with THEIR PASSWORD. The hand-off records who verified it and when; the audit row says so; a
+ *    signed consent form then records consent on the record under that member. The signed copy (screen and PDF) shows
+ *    "Completed in the clinic, verified by …".
  */
 import "server-only";
 import { PORTAL_TIMINGS } from "../../../modules/pms/portal/policy";
@@ -21,6 +23,9 @@ import { clinicPublicPaths, STAFF_PORTAL_PATHS } from "../../../modules/pms/port
 import type { RepoContext } from "../../repos/context";
 import { RepoInputError } from "../../repos/context";
 import { getPatient } from "../../repos/pms/patients";
+import { getPairing, setPairingCode, type DevicePairing } from "../../repos/pms/portal/pairings";
+import { formatPairingCode, pairingCodeFrom } from "../../../modules/pms/portal/pairing-code";
+import { randomBytes } from "node:crypto";
 import { endHandoff, getHandoff, handoffForResponse, handoffUsable, startHandoff, verifyHandoff, type IntakeHandoff } from "../../repos/pms/portal/handoffs";
 import { getIntakeResponse } from "../../repos/pms/portal/intake";
 import { getAuth } from "../../auth/auth";
@@ -30,6 +35,7 @@ import { recordVerifiedConsent } from "./intake-service";
 import { memberNames } from "./staff-names";
 import { patientVisible } from "./staff-scope";
 import { hashSecret, newSecret } from "./tokens";
+import { pairingCodeHash } from "./device-flow";
 import { pmsNowMs } from "../../../modules/pms/core/clock";
 
 export { DEVICE_COOKIE } from "./device-flow";
@@ -46,8 +52,11 @@ const GONE = "This form no longer exists in this clinic.";
  * Staff: start, read, verify, end
  * ----------------------------------------------------------------------------------------------*/
 
-/** Starts a hand-off; answers the device's secret (for the cookie) and where the device goes. */
-export async function startHandoffFor(actor: ClinicActor, patientId: string, responseId: string): Promise<DeviceResult<{ secret: string; expiresAt: string; path: string; cookiePath: string }>> {
+/**
+ * Starts a hand-off; answers its id and the STAFF page that pairs the device (M10 H3: no secret for the device here –
+ * the hand-off's token is a random value nobody holds until a device is paired with a code).
+ */
+export async function startHandoffFor(actor: ClinicActor, patientId: string, responseId: string): Promise<DeviceResult<{ handoffId: string; path: string }>> {
   if (!actor.can("patients.edit")) return { ok: false, error: FORBIDDEN };
   if (!(await patientVisible(actor, patientId))) return { ok: false, error: GONE };
   const ctx = actor.repo();
@@ -55,16 +64,37 @@ export async function startHandoffFor(actor: ClinicActor, patientId: string, res
   if (!r || r.patientId !== patientId) return { ok: false, error: GONE };
   if (r.kind === "outcome") return { ok: false, error: "Questionnaires are answered in the patient's portal." };
   if (r.status !== "requested") return { ok: false, error: "This form has already been completed or withdrawn." };
-  const secret = newSecret();
   const expiresAt = new Date(nowMsOf(ctx) + PORTAL_TIMINGS.handoffMinutes * 60_000).toISOString();
   try {
-    await startHandoff(ctx, actor.tenantId, { responseId: r.id, patientId, tokenHash: hashSecret(secret), expiresAt }, actor.actor);
+    const h = await startHandoff(ctx, actor.tenantId, { responseId: r.id, patientId, tokenHash: hashSecret(newSecret()), expiresAt }, actor.actor);
+    return { ok: true, value: { handoffId: h.id, path: STAFF_PORTAL_PATHS.handoff(h.id) } };
   } catch (err) {
     if (err instanceof RepoInputError) return { ok: false, error: err.message };
     throw err;
   }
-  const paths = clinicPublicPaths(actor.tenantId);
-  return { ok: true, value: { secret, expiresAt, path: paths.device, cookiePath: paths.device } };
+}
+
+/**
+ * A new pairing code for the device (shown once, on the staff member's own screen): 8 characters, valid
+ * PORTAL_TIMINGS.pairCodeMinutes, works once; the earlier code stops working. Only while no device is paired.
+ */
+export async function newPairingCodeFor(actor: ClinicActor, handoffId: string): Promise<DeviceResult<{ code: string; expiresAt: string; devicePath: string }>> {
+  const view = await handoffStaffViewFor(actor, handoffId);
+  if (!view.ok) return view;
+  const h = view.value.handoff;
+  if (!view.value.usable) return { ok: false, error: "This hand-off has ended. Start it again from the patient's Forms tab." };
+  if (view.value.pairing?.pairedAt) return { ok: false, error: "A device is already showing this form." };
+  const ctx = actor.repo();
+  const code = pairingCodeFrom((n) => randomBytes(n));
+  const expiresAt = new Date(Math.min(nowMsOf(ctx) + PORTAL_TIMINGS.pairCodeMinutes * 60_000, Date.parse(h.expiresAt))).toISOString();
+  try {
+    const done = await setPairingCode(ctx, actor.tenantId, h.id, pairingCodeHash(actor.tenantId, code), expiresAt, actor.actor);
+    if (!done) return { ok: false, error: "A device is already showing this form, or the hand-off has ended." };
+  } catch (err) {
+    if (err instanceof RepoInputError) return { ok: false, error: err.message };
+    throw err;
+  }
+  return { ok: true, value: { code: formatPairingCode(code), expiresAt, devicePath: clinicPublicPaths(actor.tenantId).device } };
 }
 
 export interface HandoffStaffView {
@@ -74,6 +104,10 @@ export interface HandoffStaffView {
   formName: string;
   verifiedByName: string | null;
   usable: boolean;
+  /** The device pairing (null: no code asked for yet). */
+  pairing: DevicePairing | null;
+  /** The clinic's device page (the address the device opens). */
+  devicePath: string;
 }
 
 /** The staff page of a hand-off (patients.edit; the patient must be in the member's sites). */
@@ -83,7 +117,7 @@ export async function handoffStaffViewFor(actor: ClinicActor, handoffId: string)
   const ctx = actor.repo();
   const h = await getHandoff(ctx, actor.tenantId, handoffId);
   if (!h || !(await patientVisible(actor, h.patientId))) return { ok: false, error: GONE };
-  const [patient, response] = await Promise.all([getPatient(ctx, actor.tenantId, h.patientId), getIntakeResponse(ctx, actor.tenantId, h.responseId)]);
+  const [patient, response, pairing] = await Promise.all([getPatient(ctx, actor.tenantId, h.patientId), getIntakeResponse(ctx, actor.tenantId, h.responseId), getPairing(ctx, actor.tenantId, h.id)]);
   if (!patient || !response) return { ok: false, error: GONE };
   const names = h.verifiedBy ? await memberNames(ctx, actor.tenantId, [h.verifiedBy]) : new Map<string, string>();
   return {
@@ -95,6 +129,8 @@ export async function handoffStaffViewFor(actor: ClinicActor, handoffId: string)
       formName: response.name,
       verifiedByName: h.verifiedBy ? (names.get(h.verifiedBy) ?? "a former member of staff") : null,
       usable: handoffUsable(h, nowMsOf(ctx)),
+      pairing,
+      devicePath: clinicPublicPaths(actor.tenantId).device,
     },
   };
 }
