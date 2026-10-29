@@ -27,6 +27,7 @@ export const COMMS_AUDIT_LABELS: Readonly<Record<string, string>> = {
   "pms.letter.finalise": "Letter finalised",
   "pms.letter.sent": "Letter marked as sent",
   "pms.letter.void": "Letter withdrawn",
+  "pms.letter.download": "Letter downloaded (Word or PDF)",
   "pms.comms_demo.seed": "Demonstration messages and letters loaded",
 };
 

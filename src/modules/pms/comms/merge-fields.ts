@@ -24,7 +24,9 @@ export type MergeContext = "appointment" | "general" | "marketing" | "billing" |
 export interface MergeField {
   key: string;
   label: string;
-  group: "Patient" | "Appointment" | "Site" | "Clinic" | "Replies and links" | "Billing" | "GP" | "Case" | "Author" | "Recipient" | "Letter";
+  group: "Patient" | "Appointment" | "Site" | "Clinic" | "Replies and links" | "Billing" | "GP" | "Case" | "Clinical" | "Author" | "Recipient" | "Letter";
+  /** Clinical detail (outcome scores): letters only, and only members who may create clinical letters see it. */
+  clinical?: boolean;
   contexts: readonly MergeContext[];
   /** Only for this channel (messages); undefined = any. */
   channel?: MessageChannel;
@@ -96,6 +98,8 @@ export const MERGE_FIELDS: readonly MergeField[] = [
   { key: "case.first_visit", label: "First visit", group: "Case", contexts: LETTER, example: "18/03/2026" },
   { key: "case.last_visit", label: "Latest visit", group: "Case", contexts: LETTER, example: "21/10/2026" },
   { key: "case.sessions", label: "Sessions attended", group: "Case", contexts: LETTER, example: "6" },
+  { key: "case.discharge_date", label: "Discharge date", group: "Case", contexts: LETTER, example: "21/10/2026" },
+  { key: "latest_outcomes", label: "Latest outcome scores (first → latest)", group: "Clinical", contexts: LETTER, clinical: true, example: "NPRS 7/10 → 2/10 · ODI 46% → 12%" },
   { key: "appointments.upcoming", label: "Next appointments (date, time, with)", group: "Letter", contexts: LETTER, example: "Wed 28/10/2026  11:30  Sarah Reid" },
   { key: "appointments.attended", label: "Appointments attended (dates)", group: "Letter", contexts: LETTER, example: "18/03/2026, 25/03/2026" },
   { key: "author.name", label: "Author's name", group: "Author", contexts: LETTER, example: "Sarah Reid" },

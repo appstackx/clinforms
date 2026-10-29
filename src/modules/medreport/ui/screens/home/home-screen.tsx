@@ -444,7 +444,8 @@ function Hero() {
   );
 }
 
-const TILE_FALLBACK: Record<ConnectorInfo["id"], { title: string; status: string; note: string }> = {
+/** The public demo's connection tiles ("native" – a clinic's own record – is never a tile). */
+const TILE_FALLBACK: Record<Exclude<ConnectorInfo["id"], "native">, { title: string; status: string; note: string }> = {
   "tm3-sim": { title: "Simulated TM3", status: "Connected", note: "Simulated TM3 sandbox – demo data, not affiliated with TM3." },
   "file-import": { title: "Notes upload", status: "Available now", note: "Upload the patient's notes as your clinic system prints or exports them – a PDF, a Word document, a CSV export or text – and check what was read before it is used." },
   tm3: { title: "Direct TM3 connection", status: "Subject to TM3", note: "A direct connection, subject to TM3 providing access." },
@@ -476,7 +477,7 @@ function ConnectorTiles({
 
   const byId = (id: ConnectorInfo["id"]) => connectors?.find((c) => c.id === id);
   // The public demo only: a clinic's Studio shows no connection tiles (its home is the work queue).
-  const order: ConnectorInfo["id"][] = ["tm3-sim", "file-import", "tm3"];
+  const order: Exclude<ConnectorInfo["id"], "native">[] = ["tm3-sim", "file-import", "tm3"];
   const icons = { "tm3-sim": PlugZap, "file-import": FileUp, tm3: Lock } as const;
   const hrefs = { "tm3-sim": "/pms-sandbox", "file-import": paths.newReport, tm3: null } as const;
 

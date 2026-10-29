@@ -6,6 +6,7 @@
 import { revalidatePath } from "next/cache";
 import { CLINIC_BASE_PATH } from "@/modules/pms/core/modules";
 import { actorErrorMessage, clinicActionActor } from "@/server/pms/actor";
+import { startDischargeLetterFor } from "@/server/pms/comms/letter-files";
 import { saveLetterFor, signLetterFor, startLetterFor, voidLetterFor, type SentAnswer } from "@/server/pms/comms/writes";
 
 export type LetterActionResult<T = unknown> = ({ ok: true } & T) | { ok: false; error: string; fieldErrors?: Record<string, string> };
@@ -52,4 +53,14 @@ export async function voidLetterAction(id: string): Promise<LetterActionResult> 
   if (!r.ok) return { ok: false, error: r.error };
   refresh(id);
   return { ok: true };
+}
+
+/** "Write discharge letter" on a signed discharge note: the letter to the GP, filled from the note (opens the editor). */
+export async function startDischargeLetterAction(input: { patientId: string; noteId: string }): Promise<LetterActionResult<{ id: string }>> {
+  const actor = await clinicActionActor({ permission: "messages.letters" });
+  if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
+  const r = await startDischargeLetterFor(actor, input);
+  if (!r.ok) return { ok: false, error: r.error };
+  refresh(undefined, input.patientId);
+  return { ok: true, id: r.value.id };
 }

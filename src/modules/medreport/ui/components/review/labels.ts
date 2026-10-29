@@ -105,7 +105,8 @@ export function generationSummary(generation: readonly GenerationMeta[]): Genera
 export function originLabel(origin: ParagraphOrigin, connectorId: ConnectorId, approved = false): string {
   switch (origin) {
     case "from_records":
-      return connectorId === "file-import" ? "From clinic records" : "From TM3 records";
+      // 10/2026: "native" = the clinic system's own record (never a vendor's name).
+      return connectorId === "file-import" || connectorId === "native" ? "From clinic records" : "From TM3 records";
     case "ai":
       return approved ? WORDING.origin.draftedApproved : WORDING.origin.drafted;
     case "edited":

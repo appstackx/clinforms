@@ -507,7 +507,7 @@ function QuestionCardImpl(props: QuestionCardProps) {
   const approverOnlyFor = props.approverOnlyFor ?? (() => null);
   const notApplicableBecause = props.notApplicableBecause ?? null;
   const tenant = useStudioMode() === "tenant";
-  const sourceLabels = useFillSourceLabels();
+  const sourceLabels = useFillSourceLabels(connectorId);
   const section = q.section;
   const [focusId, setFocusId] = useState<string | null>(null);
   const clearFocus = useRef(() => setFocusId(null)).current;
@@ -564,7 +564,9 @@ function QuestionCardImpl(props: QuestionCardProps) {
       : section
         ? section.kind === "from_records"
           ? tenant
-            ? TENANT_COPY.sources.registrationLong
+            ? connectorId === "native"
+              ? TENANT_COPY.sources.registrationLongNative
+              : TENANT_COPY.sources.registrationLong
             : "From records – filled by code"
           : section.kind === "declaration"
             ? "Declaration – fixed wording"
@@ -1117,7 +1119,7 @@ function LockedRecordsAnswer({
         {sourceIds.map((id) => (
           <CitationChip key={id} id={id} bundle={bundle} onOpen={onOpenSource} active={activeSourceId === id} />
         ))}
-        <span className="text-[11px] text-slate-500">{tenant ? TENANT_COPY.sources.lockedFromRecords : WORDING.byCode.lockedFromRecords}</span>
+        <span className="text-[11px] text-slate-500">{tenant ? (connectorId === "native" ? TENANT_COPY.sources.lockedFromRecordsNative : TENANT_COPY.sources.lockedFromRecords) : WORDING.byCode.lockedFromRecords}</span>
       </div>
     </div>
   );
