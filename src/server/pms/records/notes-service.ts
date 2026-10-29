@@ -220,8 +220,7 @@ export interface LastNoteCopy {
  * clinical.view.
  */
 export async function lastNoteForCopyFor(actor: RecordsActor, patientId: string, excludeNoteId?: string): Promise<Result<LastNoteCopy | null>> {
-  // M10 L1: this reads a signed note's text – clinical.view as well as clinical.write (they can be granted apart).
-  const denied = guard(actor, "clinical.write", "clinical.view");
+  const denied = guard(actor, "clinical.write", "clinical.view"); // M10 L1: it reads a signed note's text too
   if (denied) return denied;
   return attempt("copy_last_note", async () => {
     const patient = await patientInClinic(actor, patientId);
