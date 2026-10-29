@@ -7,6 +7,7 @@
  * and patients they can open. A site they work at is always visible. With no stored access (the default) or "can
  * see all sites", a member sees every site. The OWNER always sees every site (they cannot lock themselves out).
  */
+import { safeCsvText } from "./csv-safe";
 import { z } from "zod";
 import {
   ACCESS_PERMISSION_DEFS,
@@ -210,10 +211,7 @@ export function memberLead(first: string, role: PmsRole, worksAtNames: readonly 
 
 /** The change history as CSV rows (Export log): when, who, what. No patient data is ever in it. */
 export function historyCsv(changes: readonly AccessChange[], nameOf: (userId: string | null) => string, formatWhen: (iso: string) => string): string {
-  const esc = (v: string) => {
-    const safe = /^[=+\-@\t\r]/.test(v) ? `'${v}` : v;
-    return /[",\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
-  };
+  const esc = (v: string) => safeCsvText(v);
   const lines = ["When,Who,What,Change"];
   for (const c of changes) {
     for (const item of c.items) lines.push([formatWhen(c.at), nameOf(c.byUserId), c.kind === "role" ? "Roles and permissions" : `Member access: ${nameOf(c.subjectUserId)}`, describeChangeItem(item)].map(esc).join(","));
