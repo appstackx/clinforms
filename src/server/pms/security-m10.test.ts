@@ -19,6 +19,8 @@ import { clearTestOutbox, testOutbox } from "./comms/providers/test";
 import { sendSignInLink } from "./portal/portal-auth";
 import { clinicalAccessFrom } from "./native-report-access";
 import { saveRolePermissions } from "../repos/pms/access";
+import { readOnlyReason, roleGridRefusal, saveRolesFor } from "./access-screens";
+import { lockOf } from "../../modules/pms/core/permissions";
 import { testActor, type RecordsActor, type Result } from "./records/access";
 
 const A = "riverside-a";
@@ -104,6 +106,37 @@ describe("M10 security", () => {
       assert.ok(!hasSecretLink(shown) && !TOKEN_RUN.test(shown) && shown.includes(HIDDEN_LINK) && shown.endsWith("footer"));
       assert.ok(!TOKEN_RUN.test(redactSecretLinks("Manage: /clinics/riverside-a/booking/AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-abcde")));
       assert.equal(redactSecretLinks("Stop emails: https://x.example/api/clinic-messages/unsubscribe?t=v1.a.b"), "Stop emails: https://x.example/api/clinic-messages/unsubscribe?t=v1.a.b", "other links unchanged");
+    });
+  });
+
+  describe("H4: no self-escalation through the role grid", () => {
+    const screen = (role: "owner" | "admin" | "clinician" | "staff", exceptions: Record<string, boolean> = {}) => {
+      const a = testActor(ctx, A, role, { userId: `user_${role}_mgr`, name: `${role} (fictional)` }, { exceptions });
+      return { ...a, role, organizationId: "org_a" };
+    };
+    it("'Manage members and permissions' is locked off for clinicians and reception, whatever the clinic grants", async () => {
+      assert.deepEqual(lockOf("clinician", "settings.members")?.value, false);
+      assert.deepEqual(lockOf("staff", "settings.members")?.value, false);
+      assert.equal(lockOf("admin", "settings.members"), null);
+      assert.equal(screen("clinician", { "settings.members": true }).can("settings.members"), false);
+      const r = await saveRolePermissions(ctx, A, [{ role: "clinician", permission: "settings.members", allowed: true }], OWNER);
+      assert.equal(r.ok, false, "the grid refuses the locked cell");
+    });
+    it("an administrator cannot change the administrators' row; the owner can; another role's row is fine", async () => {
+      const admin = screen("admin");
+      const own = await saveRolesFor(admin, [{ role: "admin", permission: "reports.export", allowed: true }]);
+      assert.equal(own.ok, false);
+      assert.equal(!own.ok && own.code, "forbidden");
+      assert.equal(admin.can("reports.export"), false, "unchanged");
+      assert.equal((await saveRolesFor(admin, [{ role: "clinician", permission: "reports.export", allowed: true }])).ok, true);
+      assert.equal((await saveRolesFor(screen("owner"), [{ role: "admin", permission: "reports.export", allowed: true }])).ok, true);
+      assert.equal(roleGridRefusal({ role: "clinician" }, [{ role: "admin" }]) !== null, true, "a non-admin manager never changes administrators");
+    });
+    it("a manager who is not an administrator cannot edit an administrator's own access", () => {
+      const adminMember = { memberId: "m1", userId: "user_x", name: "X", email: "x@example.com", role: "admin" as const, twoStep: true };
+      assert.notEqual(readOnlyReason({ userId: "user_c", role: "clinician" }, adminMember), null);
+      assert.equal(readOnlyReason({ userId: "user_a", role: "admin" }, adminMember), null);
+      assert.equal(readOnlyReason({ userId: "user_o", role: "owner" }, adminMember), null);
     });
   });
 
