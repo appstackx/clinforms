@@ -10,7 +10,7 @@ import * as React from "react";
 // element read here is still the opener. On the server there is nothing to read.
 const useBeforeFocusMoves = typeof window === "undefined" ? React.useEffect : React.useLayoutEffect;
 
-export function useReturnFocus(open: boolean): { onCloseAutoFocus: (e: Event) => void } {
+export function useReturnFocus(open: boolean, fallback?: React.RefObject<HTMLElement | null>): { onCloseAutoFocus: (e: Event) => void } {
   const opener = React.useRef<HTMLElement | null>(null);
   useBeforeFocusMoves(() => {
     if (open && typeof document !== "undefined") {
@@ -19,11 +19,12 @@ export function useReturnFocus(open: boolean): { onCloseAutoFocus: (e: Event) =>
     }
   }, [open]);
   const onCloseAutoFocus = React.useCallback((e: Event) => {
-    const el = opener.current;
+    // The opener may have gone (a link that navigated, a row that re-rendered) – then the fallback, if given.
+    const el = opener.current && opener.current.isConnected ? opener.current : (fallback?.current ?? null);
     if (el && el.isConnected) {
       e.preventDefault();
       el.focus();
     }
-  }, []);
+  }, [fallback]);
   return { onCloseAutoFocus };
 }

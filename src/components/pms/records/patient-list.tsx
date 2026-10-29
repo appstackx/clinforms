@@ -22,6 +22,7 @@ import { ClearFilters, EmptyState, ErrorState, FilterAddButton, FilterChip, Pagi
 import type { RecordsAction } from "./form";
 import { whenLabel } from "./format";
 import { NewPatientDrawer } from "./new-patient-drawer";
+import { ScrollRegion } from "@/components/pms/ui/scroll-region";
 
 export interface PatientListRowView {
   id: string;
@@ -298,7 +299,7 @@ export function PatientList(props: PatientListProps) {
   } else {
     body = (
       <>
-        <div className="relative hidden overflow-x-auto md:block">
+        <ScrollRegion label="Patients" className="relative hidden overflow-x-auto md:block">
           <table className="w-full min-w-[860px] border-collapse text-sm">
             <caption className="sr-only">Patients</caption>
             <thead>
@@ -369,7 +370,7 @@ export function PatientList(props: PatientListProps) {
               ))}
             </tbody>
           </table>
-        </div>
+        </ScrollRegion>
         <ul className="flex flex-col gap-2 p-4 md:hidden" aria-label="Patients">
           {rows.map((r) => (
             <li key={r.id}>

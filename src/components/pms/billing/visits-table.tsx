@@ -15,6 +15,7 @@ import type { UninvoicedVisitView } from "@/modules/pms/billing/view";
 import { cn } from "@/lib/utils";
 import { PmsButton, PmsNotice, StatusPill, pmsButtonVariants, useToast } from "@/components/pms/ui";
 import { BILLING_PATH, date, focusRing, money } from "./format";
+import { ScrollRegion } from "@/components/pms/ui/scroll-region";
 
 const OUTCOME_STATUS: Record<VisitStatus, string> = { attended: "attended", did_not_attend: "dna", late_cancellation: "late_cancelled" };
 const OUTCOME_FILTERS: { key: VisitStatus; label: string }[] = [
@@ -149,7 +150,7 @@ export function VisitsTable({ visits, mode, today, from, until }: { visits: Unin
           {shown.length === 0 ? (
             <p className="px-4 py-6 text-sm text-[#475569]">Every chargeable visit has an invoice.</p>
           ) : (
-            <div className="overflow-x-auto">
+            <ScrollRegion label="Attended visits" className="relative overflow-x-auto">
               <table className="w-full min-w-[860px] text-sm" data-testid="visits-table">
                 <caption className="sr-only">Visits without an invoice</caption>
                 <thead className="bg-[#F8FAFC] text-left text-xs font-semibold text-[#334155]">
@@ -214,7 +215,7 @@ export function VisitsTable({ visits, mode, today, from, until }: { visits: Unin
                   ))}
                 </tbody>
               </table>
-            </div>
+            </ScrollRegion>
           )}
           <div className="flex flex-wrap items-center gap-3 border-t border-border px-4 py-3">
             <span className="text-sm text-[#334155]" role="status" data-testid="visits-summary">

@@ -5,6 +5,7 @@ import { LETTERS_PATH } from "@/components/pms/comms/format";
 import { LETTER_PRINT_CSS, LetterSheet } from "@/components/pms/comms/letter-sheet";
 import { requireClinicActor } from "@/server/pms/actor";
 import { letterFor } from "@/server/pms/comms/views";
+import { ScrollRegion } from "@/components/pms/ui/scroll-region";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Print letter" };
@@ -19,7 +20,7 @@ export default async function PrintLetterPage({ params }: { params: { letterId: 
     <div className="flex flex-col gap-4">
       <style>{LETTER_PRINT_CSS}</style>
       <PrintToolbar backHref={`${LETTERS_PATH}/${l.id}`} backLabel="Back to the letter" />
-      <div className="letter-print-root overflow-x-auto">
+      <ScrollRegion label="Letter" className="letter-print-root overflow-x-auto">
         <LetterSheet
           clinic={clinic}
           letterOn={l.letterOn}
@@ -30,7 +31,7 @@ export default async function PrintLetterPage({ params }: { params: { letterId: 
           draft={l.status === "draft"}
           withdrawn={l.status === "void"}
         />
-      </div>
+      </ScrollRegion>
     </div>
   );
 }

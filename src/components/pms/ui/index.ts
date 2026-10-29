@@ -28,3 +28,4 @@ export { PmsAvatar, type PmsAvatarProps, type AvatarSize } from "./pms-avatar";
 export { avatarColour, initialsOf, AVATAR_COLOURS, type AvatarColour } from "./avatar-colour";
 export { Kbd, KeyboardHint, ShortcutsSheet, type ShortcutsSheetProps } from "./keyboard-hint";
 export { GLOBAL_SHORTCUTS, DIARY_SHORTCUTS, isTypingTarget, isPlainKey, type Shortcut, type ShortcutGroup } from "./shortcuts";
+export { ScrollRegion, type ScrollRegionProps } from "./scroll-region";

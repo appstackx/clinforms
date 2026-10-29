@@ -4,6 +4,7 @@ import { ArrowUpDown, ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Pagination, type PaginationProps } from "./pagination";
 import { SkeletonBar } from "./skeleton";
+import { ScrollRegion } from "./scroll-region";
 
 export type SortDirection = "asc" | "desc";
 
@@ -105,7 +106,7 @@ export function DataTable<T>({
       {showRows ? (
         <>
           {/* md and up: the table, scrolling inside its own box when narrower than minWidth. */}
-          <div className="hidden overflow-x-auto md:block">
+          <ScrollRegion label={label} className="relative hidden overflow-x-auto md:block">
             <table className="w-full border-collapse text-sm" style={{ minWidth }}>
               <caption className="sr-only">{label}</caption>
               <thead>
@@ -158,7 +159,7 @@ export function DataTable<T>({
                 ))}
               </tbody>
             </table>
-          </div>
+          </ScrollRegion>
           {/* Phones: one card per row. */}
           <ul className="flex flex-col gap-3 p-4 md:hidden" aria-label={label}>
             {rows.map((row) => (

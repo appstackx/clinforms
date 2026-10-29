@@ -52,7 +52,7 @@ export interface SetupListItem {
 
 export function SetupList({ items, label, empty, testId }: { items: SetupListItem[]; label: string; empty?: string; testId?: string }) {
   return (
-    <nav aria-label={label} className="overflow-hidden rounded-2xl border border-border bg-white">
+    <nav aria-label={label} className="relative overflow-hidden rounded-2xl border border-border bg-white">
       {items.length === 0 ? <p className="px-3.5 py-3 text-sm text-[#475569]">{empty ?? "Nothing yet."}</p> : null}
       <ul>
         {items.map((x) => (
@@ -83,7 +83,7 @@ export function SetupList({ items, label, empty, testId }: { items: SetupListIte
 export function SetupCard({ title, action, children, className, padded = true, id }: { title?: string; action?: React.ReactNode; children: React.ReactNode; className?: string; padded?: boolean; id?: string }) {
   const headingId = React.useId();
   return (
-    <section aria-labelledby={title ? headingId : undefined} id={id} className={cn("overflow-hidden rounded-2xl border border-border bg-white", className)}>
+    <section aria-labelledby={title ? headingId : undefined} id={id} className={cn("relative overflow-hidden rounded-2xl border border-border bg-white", className)}>
       {title ? (
         <div className="flex items-center gap-2 border-b border-border px-5 py-3">
           <h2 id={headingId} className="m-0 flex-1 text-[15px] font-semibold">

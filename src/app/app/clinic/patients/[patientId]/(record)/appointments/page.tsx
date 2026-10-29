@@ -9,6 +9,7 @@ import type { PatientAppointmentRow } from "@/modules/pms/diary/view";
 import { requireClinicActor } from "@/server/pms/actor";
 import { diaryCallerOf } from "@/server/pms/diary/caller";
 import { loadPatientAppointments } from "@/server/pms/diary/reads";
+import { ScrollRegion } from "@/components/pms/ui/scroll-region";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Appointments" };
@@ -55,7 +56,7 @@ function Table({ caption, rows, empty }: { caption: string; rows: PatientAppoint
       {rows.length === 0 ? (
         <p className="text-sm text-[#475569]">{empty}</p>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-border bg-white">
+        <ScrollRegion label="Appointments" className="relative overflow-x-auto rounded-xl border border-border bg-white">
           <table className="w-full min-w-[640px] text-sm">
             <caption className="sr-only">{caption}</caption>
             <thead className="bg-[#F8FAFC] text-left text-xs text-[#475569]">
@@ -89,7 +90,7 @@ function Table({ caption, rows, empty }: { caption: string; rows: PatientAppoint
               ))}
             </tbody>
           </table>
-        </div>
+        </ScrollRegion>
       )}
     </section>
   );
