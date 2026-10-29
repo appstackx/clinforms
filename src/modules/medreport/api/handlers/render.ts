@@ -78,6 +78,7 @@ import type { DecodedFormFile } from "../../forms/file";
 import { CONTENT_TYPES, HEADERS, RenderQuerySchema, RenderRequestSchema, type RenderFormat } from "../contract";
 import type { MedreportDeps } from "../deps";
 import { fileResponse, logEvent, parseBody, parseQuery, problem, type MedreportHandler } from "../http";
+import { reportReadable } from "./store-actor";
 import { resolveTemplate } from "../resolve-template";
 import { formFileForRequest } from "./store-form-file";
 import { acknowledgementsSha256, bindsIssuedDocument, finalCopyAnswers, issuedContentSha256, issuedDocument } from "./sign/receipt";
@@ -279,6 +280,8 @@ export const handleRender: MedreportHandler = async (req, _ctx, deps) => {
   assertActorTenant(actor, report.tenantId, "report");
   if (form) assertActorTenant(actor, form.tenantId, "form");
   if (receipt) assertActorTenant(actor, receipt.tenantId, "approval");
+  // M10 H2: a report the host keeps from this member (MedreportDeps.mayReadReport) is not rendered either.
+  if (!(await reportReadable(actor, deps, report))) return problem(404, "Report not found", { code: "NOT_FOUND", detail: "This report is not in the clinic's records." });
 
   const resolved = resolveTemplate({ templateId: report.templateId, form, reportForm: report.form, path: "report.templateId" });
   if (!resolved.ok) return resolved.response;

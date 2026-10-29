@@ -197,6 +197,28 @@ export function defineIntegrationSuite(label: string, factory: () => Promise<Int
       ids.patientsBatch = id;
     });
 
+    it("M10 L3: two imports of the same kind never write at the same time (neither adopts the other's records)", async () => {
+      const x = await uploadBatch(ctx, A, "patients", patientsCsv(40, 5000), OWNER);
+      const y = await uploadBatch(ctx, A, "patients", patientsCsv(40, 6000), OWNER);
+      for (const id of [x, y]) {
+        await untilDone(() => runCheckPage(ctx, A, id, OWNER, PORTS));
+        const b = await getImportBatch(ctx, A, id);
+        assert.equal(await approveImportBatch(ctx, A, id, b?.rev ?? 0, OWNER, { sample: 0, leftOut: 0 }), true);
+      }
+      const first = await runImportPage(ctx, A, x, OWNER, PORTS, 10);
+      assert.equal(first.done, false);
+      assert.equal((await getImportBatch(ctx, A, x))?.status, "importing");
+      const held = await runImportPage(ctx, A, y, OWNER, PORTS, 10);
+      assert.equal(held.done, false);
+      assert.equal((await getImportBatch(ctx, A, y))?.status, "approved", "held off while the other import writes");
+      assert.equal((await untilDone(() => runImportPage(ctx, A, x, OWNER, PORTS, 10))).counts?.imported, 40);
+      assert.equal((await untilDone(() => runImportPage(ctx, A, y, OWNER, PORTS, 10))).counts?.imported, 40, "then the second one runs");
+      const xRows = await listImportRows(ctx, A, x, { statuses: ["imported"], limit: 100 });
+      const yRows = await listImportRows(ctx, A, y, { statuses: ["imported"], limit: 100 });
+      const xIds = new Set(xRows.map((r) => r.targetId));
+      assert.ok(yRows.every((r) => !xIds.has(r.targetId)), "no record claimed by both imports");
+    });
+
     it("tenant scope: clinic B never sees or changes clinic A's imports", async () => {
       assert.equal(await getImportBatch(ctx, B, ids.patientsBatch), null);
       assert.equal((await listImportBatches(ctx, B)).length, 0);

@@ -1,7 +1,7 @@
 /**
  * The import screens' server layer (K2-IMP-001…006, design round 2c "Import from previous system"): what the
  * /app/clinic/import pages and their server actions call. Every function checks `settings.import` FIRST (owners and
- * administrators by default – never reception), reads the batch from the member's OWN clinic only, validates the
+ * administrators by default – never reception) and that the member sees every site (M10 M2), reads the batch from the member's OWN clinic only, validates the
  * input and answers a Result with a plain message (no values from the file, no database message).
  *
  *   upload    startImportFor → addRowsFor (parts of ≤ 1,000 rows, in order) → finishUploadFor (suggested columns)
@@ -40,7 +40,7 @@ import { runCheckPage, runImportPage, runUndoPage, undoBlocker, type StepProgres
 import { importTargetAvailable, importTargetMissingMessage } from "./ports";
 import { integrationPorts } from "./wiring";
 
-export type ImportActor = Pick<ClinicActor, "tenantId" | "userId" | "can" | "actor" | "repo">;
+export type ImportActor = Pick<ClinicActor, "tenantId" | "userId" | "can" | "actor" | "repo"> & Partial<Pick<ClinicActor, "siteIds">>;
 
 export type { ImportFieldChoice, ImportIssueRow, ImportView } from "../../../modules/pms/integration/import-view";
 import type { ImportIssueRow, ImportView } from "../../../modules/pms/integration/import-view";
@@ -49,6 +49,18 @@ export type Result<T> = { ok: true; value: T } | { ok: false; code: "forbidden" 
 
 const FORBIDDEN = "You do not have permission to import data.";
 const NOT_FOUND = "That import does not exist in this clinic.";
+
+/** M10 M2: an import writes patients, cases and appointments at any site – only for a member who sees every site. */
+export const SITE_SCOPED_MESSAGE = "Importing data needs access to every site. Ask the clinic owner or an administrator.";
+
+export const ANOTHER_RUNNING = "Another import of this kind is still running. Let it finish, then import this file.";
+
+/** settings.import AND every site (actor.siteIds === null), else the refusal. */
+function importDenied<T>(actor: ImportActor): Result<T> | null {
+  if (!actor.can("settings.import")) return fail("forbidden", FORBIDDEN);
+  if ((actor.siteIds ?? null) !== null) return fail("forbidden", SITE_SCOPED_MESSAGE);
+  return null;
+}
 
 function fail<T>(code: "forbidden" | "not_found" | "invalid" | "conflict" | "error", error: string): Result<T> {
   return { ok: false, code, error };
@@ -86,7 +98,8 @@ export interface ImportListRow {
 }
 
 export async function listImportsFor(actor: ImportActor): Promise<Result<ImportListRow[]>> {
-  if (!actor.can("settings.import")) return fail("forbidden", FORBIDDEN);
+  const denied = importDenied<never>(actor);
+  if (denied) return denied;
   const rows = await listImportBatches(actor.repo(), actor.tenantId, { limit: 50 });
   return {
     ok: true,
@@ -105,7 +118,8 @@ export async function listImportsFor(actor: ImportActor): Promise<Result<ImportL
 }
 
 export async function importViewFor(actor: ImportActor, batchId: unknown): Promise<Result<ImportView>> {
-  if (!actor.can("settings.import")) return fail("forbidden", FORBIDDEN);
+  const denied = importDenied<never>(actor);
+  if (denied) return denied;
   return attempt("view", async () => {
     const b = await batchOf(actor, batchId);
     if (!b) return fail("not_found", NOT_FOUND);
@@ -146,7 +160,8 @@ export async function importViewFor(actor: ImportActor, batchId: unknown): Promi
 
 /** Rows with issues (errors first in each page is not needed – by row number), 100 at a time after `afterRowNo`. No values. */
 export async function importIssuesFor(actor: ImportActor, batchId: unknown, afterRowNo = 0): Promise<Result<{ rows: ImportIssueRow[]; more: boolean }>> {
-  if (!actor.can("settings.import")) return fail("forbidden", FORBIDDEN);
+  const denied = importDenied<never>(actor);
+  if (denied) return denied;
   return attempt("issues", async () => {
     const b = await batchOf(actor, batchId);
     if (!b) return fail("not_found", NOT_FOUND);
@@ -178,7 +193,8 @@ export interface StartImportInput {
 }
 
 export async function startImportFor(actor: ImportActor, input: StartImportInput): Promise<Result<{ id: string }>> {
-  if (!actor.can("settings.import")) return fail("forbidden", FORBIDDEN);
+  const denied = importDenied<never>(actor);
+  if (denied) return denied;
   if (!isImportKind(input?.kind)) return fail("invalid", "Choose what you are importing.");
   return attempt("start", async () => {
     const b = await createImportBatch(
@@ -192,7 +208,8 @@ export async function startImportFor(actor: ImportActor, input: StartImportInput
 }
 
 export async function addRowsFor(actor: ImportActor, batchId: unknown, part: { firstRowNo: number; rows: string[][] }): Promise<Result<{ rowCount: number }>> {
-  if (!actor.can("settings.import")) return fail("forbidden", FORBIDDEN);
+  const denied = importDenied<never>(actor);
+  if (denied) return denied;
   return attempt("rows", async () => {
     const b = await batchOf(actor, batchId);
     if (!b) return fail("not_found", NOT_FOUND);
@@ -202,7 +219,8 @@ export async function addRowsFor(actor: ImportActor, batchId: unknown, part: { f
 }
 
 export async function finishUploadFor(actor: ImportActor, batchId: unknown): Promise<Result<{ status: BatchStatus }>> {
-  if (!actor.can("settings.import")) return fail("forbidden", FORBIDDEN);
+  const denied = importDenied<never>(actor);
+  if (denied) return denied;
   return attempt("finish", async () => {
     const b = await batchOf(actor, batchId);
     if (!b) return fail("not_found", NOT_FOUND);
@@ -218,7 +236,8 @@ export async function finishUploadFor(actor: ImportActor, batchId: unknown): Pro
  * ----------------------------------------------------------------------------------------------*/
 
 export async function saveMappingFor(actor: ImportActor, batchId: unknown, expectedRev: number, mapping: unknown): Promise<Result<{ rev: number }>> {
-  if (!actor.can("settings.import")) return fail("forbidden", FORBIDDEN);
+  const denied = importDenied<never>(actor);
+  if (denied) return denied;
   return attempt("map", async () => {
     const b = await batchOf(actor, batchId);
     if (!b) return fail("not_found", NOT_FOUND);
@@ -233,7 +252,8 @@ export async function saveMappingFor(actor: ImportActor, batchId: unknown, expec
 }
 
 export async function checkStepFor(actor: ImportActor, batchId: unknown): Promise<Result<StepProgress>> {
-  if (!actor.can("settings.import")) return fail("forbidden", FORBIDDEN);
+  const denied = importDenied<never>(actor);
+  if (denied) return denied;
   return attempt("check", async () => {
     const b = await batchOf(actor, batchId);
     if (!b) return fail("not_found", NOT_FOUND);
@@ -243,13 +263,17 @@ export async function checkStepFor(actor: ImportActor, batchId: unknown): Promis
 
 /** "Import N patients": the person confirms they looked at the issues; the batch may then run. */
 export async function approveFor(actor: ImportActor, batchId: unknown, expectedRev: number, confirmed: boolean): Promise<Result<{ ok: true }>> {
-  if (!actor.can("settings.import")) return fail("forbidden", FORBIDDEN);
+  const denied = importDenied<never>(actor);
+  if (denied) return denied;
   if (confirmed !== true) return fail("invalid", "Tick that you have looked at the issues first.");
   return attempt("approve", async () => {
     const b = await batchOf(actor, batchId);
     if (!b) return fail("not_found", NOT_FOUND);
     if (b.status === "approved" || b.status === "importing") return { ok: true, value: { ok: true } };
     if (b.counts.ready === 0) return fail("invalid", "There is nothing ready to import in this file.");
+    // M10 L3: one import of a kind at a time (an import adopts what it wrote in an interrupted call).
+    const running = (await listImportBatches(actor.repo(), actor.tenantId, { kind: b.kind, limit: 200 })).filter((o) => o.id !== b.id && (o.status === "approved" || o.status === "importing"));
+    if (running.length) return fail("conflict", ANOTHER_RUNNING);
     if ((b.kind === "appointments" || b.kind === "invoices") && !importTargetAvailable(b.kind, integrationPorts())) return fail("invalid", importTargetMissingMessage(b.kind));
     const changed = await approveImportBatch(actor.repo(), actor.tenantId, b.id, expectedRev, actor.actor, { sample: 0, leftOut: b.counts.errors + b.counts.duplicates });
     return changed ? { ok: true, value: { ok: true } } : fail("conflict", "This import changed in another tab. Reload the page.");
@@ -257,7 +281,8 @@ export async function approveFor(actor: ImportActor, batchId: unknown, expectedR
 }
 
 export async function importStepFor(actor: ImportActor, batchId: unknown): Promise<Result<StepProgress>> {
-  if (!actor.can("settings.import")) return fail("forbidden", FORBIDDEN);
+  const denied = importDenied<never>(actor);
+  if (denied) return denied;
   return attempt("import", async () => {
     const b = await batchOf(actor, batchId);
     if (!b) return fail("not_found", NOT_FOUND);
@@ -266,7 +291,8 @@ export async function importStepFor(actor: ImportActor, batchId: unknown): Promi
 }
 
 export async function undoStepFor(actor: ImportActor, batchId: unknown): Promise<Result<StepProgress>> {
-  if (!actor.can("settings.import")) return fail("forbidden", FORBIDDEN);
+  const denied = importDenied<never>(actor);
+  if (denied) return denied;
   return attempt("undo", async () => {
     const b = await batchOf(actor, batchId);
     if (!b) return fail("not_found", NOT_FOUND);
@@ -275,7 +301,8 @@ export async function undoStepFor(actor: ImportActor, batchId: unknown): Promise
 }
 
 export async function cancelImportFor(actor: ImportActor, batchId: unknown): Promise<Result<{ ok: true }>> {
-  if (!actor.can("settings.import")) return fail("forbidden", FORBIDDEN);
+  const denied = importDenied<never>(actor);
+  if (denied) return denied;
   return attempt("cancel", async () => {
     const b = await batchOf(actor, batchId);
     if (!b) return fail("not_found", NOT_FOUND);

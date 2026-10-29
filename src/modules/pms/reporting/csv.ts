@@ -3,18 +3,15 @@
  * spreadsheet programs read accents correctly. Text cells that a spreadsheet would run as a formula (starting
  * with =, +, -, @, tab or carriage return) get a leading apostrophe; numbers are written as numbers.
  */
+import { safeCsvText } from "../core/csv-safe";
 
 export type CsvValue = string | number | boolean | null | undefined;
-
-const FORMULA_START = /^[=+\-@\t\r]/;
 
 export function csvCell(value: CsvValue): string {
   if (value === null || value === undefined) return "";
   if (typeof value === "number") return Number.isFinite(value) ? String(value) : "";
   if (typeof value === "boolean") return value ? "yes" : "no";
-  let text = String(value);
-  if (FORMULA_START.test(text)) text = `'${text}`;
-  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  return safeCsvText(String(value));
 }
 
 export const CSV_BOM = "﻿";

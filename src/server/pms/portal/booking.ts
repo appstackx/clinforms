@@ -33,7 +33,8 @@ import { diaryDispatchDeps } from "../diary/message-sync";
 import { runDueMessages } from "../comms/dispatch";
 import { bookingCatalogue, findSlots, pickSlot } from "./availability";
 import { portalDiary, type PortalAppointment, type PortalSlot } from "./diary-port";
-import { verifyHumanCheck } from "./human-check";
+import { bookingNeedsHumanCheck, verifyHumanCheck } from "./human-check";
+import { paddedMs } from "./timing";
 import type { PublicClinic } from "./public-clinic";
 import { publicLimits, tooManyMessage, type PublicLimit } from "./rate-limit";
 import { hashSecret, newSecret } from "./tokens";
@@ -54,6 +55,13 @@ export interface FlowDeps {
   limitSecret?: string;
   /** Tests: skip the immediate message run. */
   skipMessageRun?: boolean;
+  /**
+   * M10 M4: a public booking answers no sooner than this (ms, real time) – a booking matched to an existing record
+   * and one that creates a record take the same time. The app sets it (public-page.ts flowDeps); tests leave it 0.
+   */
+  minResponseMs?: number;
+  /** Environment for the production rules (tests pass one; default process.env). */
+  env?: Readonly<Record<string, string | undefined>>;
 }
 
 const GENERIC = "We could not take this booking. Please try again or contact the clinic.";
@@ -118,7 +126,10 @@ async function bookSlot(
   actor: PmsActor,
   extras: { manageTokenHash: string | null; manageExpiresAt: string | null; notes: string | null },
 ): Promise<BookedVisit | null> {
-  const forms = await formsToSendWithBooking(deps.ctx, tenantId, patient.match === "new");
+  // M10 M4: every booking from the public page gets the same forms, whether it matched an existing record or made a
+  // new one – what the page shows must not tell anyone whether someone is already a patient. The portal (a signed-in
+  // patient) gets the every-booking forms only.
+  const forms = await formsToSendWithBooking(deps.ctx, tenantId, patient.match !== "portal");
   for (let attempt = 0; attempt < 2; attempt++) {
     let reference = "";
     const formIds: string[] = [];
@@ -160,12 +171,26 @@ export type PublicBookingOutcome =
   | { ok: true; visit: BookedVisit; manageUrl: string; managePath: string }
   | { ok: false; error: string; fieldErrors?: Record<string, string>; slotGone?: boolean };
 
-/** A booking from the public booking page. */
+/**
+ * A booking from the public booking page. The answer never tells whether the details matched an existing patient
+ * (M10 M4): the same forms either way, and no sooner than `deps.minResponseMs`.
+ */
 export async function bookFromPublicPage(clinic: PublicClinic, raw: Record<string, unknown>, deps: FlowDeps): Promise<PublicBookingOutcome> {
+  const started = Date.now();
+  const outcome = await bookFromPublicPageOnce(clinic, raw, deps);
+  const elapsed = Date.now() - started;
+  const wait = deps.minResponseMs ? paddedMs(deps.minResponseMs, elapsed) - elapsed : 0;
+  if (wait > 0) await new Promise((r) => setTimeout(r, wait + Math.floor(Math.random() * 150)));
+  return outcome;
+}
+
+async function bookFromPublicPageOnce(clinic: PublicClinic, raw: Record<string, unknown>, deps: FlowDeps): Promise<PublicBookingOutcome> {
   const { ctx, now } = deps;
   const tenantId = clinic.tenantId;
   if (!clinic.settings.onlineBooking) return { ok: false, error: CLOSED };
   if (!clinic.settings.newPatients) return { ok: false, error: "Please sign in to your patient portal to book online." };
+  // M10 M6: production refuses public bookings without the bot check (switching booking on needs it too).
+  if (bookingNeedsHumanCheck(deps.env ?? process.env)) return { ok: false, error: CLOSED };
   if (typeof raw.website === "string" && raw.website.trim() !== "") return { ok: false, error: GENERIC };
   const parsed = publicBookingSchema(ukToday(now)).safeParse(raw);
   if (!parsed.success) return { ok: false, error: "Please check the answers marked below.", fieldErrors: fieldErrors(parsed.error) };
@@ -181,6 +206,10 @@ export async function bookFromPublicPage(clinic: PublicClinic, raw: Record<strin
   const slot = pickSlot(slots, d.startsAt, d.practitionerId);
   if (!slot || !service) return { ok: false, error: SLOT_GONE, slotGone: true };
 
+  // M10 M6: at most PUBLIC_LIMITS.recordsPerClinic bookings an hour reach the patient step (each may create a record) –
+  // counted before the match, so the answer is the same whether or not a record matched.
+  const capped = await publicLimits(ctx, tenantId, [["recordsPerClinic", null]], deps.limitSecret);
+  if (!capped.ok) return { ok: false, error: tooManyMessage(capped.retryAfterSeconds) };
   const actor = patientActor();
   const existing = await findPatientForBooking(ctx, tenantId, d);
   let patient: { id: string; match: "new" | "existing" };

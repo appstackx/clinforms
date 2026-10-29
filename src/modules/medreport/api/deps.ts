@@ -9,7 +9,8 @@ import "server-only";
  * Shared contract (orchestrator-owned): additive optional members only.
  */
 import type { ConnectorContext, ConnectorRegistry } from "../connectors/types";
-import type { ConnectorId, TenantId, TokenUsage } from "../core/types";
+import type { ConnectorId, Report, TenantId, TokenUsage } from "../core/types";
+import type { Actor } from "../auth/actor";
 import type { TenantStore } from "./store-port";
 
 /** A clinic member's role (docs/production-architecture.md §3). */
@@ -181,4 +182,16 @@ export interface MedreportDeps {
    * public demo – through api/usage.ts recordUsage(), which never fails or blocks the request (errors are logged).
    */
   usage?: UsageRecorder;
+  /**
+   * M10 H2 (10/2026): whether this member may read a stored report. The host answers it for reports drafted from its
+   * own clinic-system record (connector "native" – src/server/pms/native-report-access.ts); every other report is
+   * readable as before. Absent → every report the clinic holds is readable by its members (ClinForms unchanged).
+   * A refused report is answered exactly like a missing one (404).
+   */
+  mayReadReport?(actor: Actor, report: Report): Promise<boolean>;
+  /**
+   * M10 H2: whether `mayReadReport` can refuse anything at this clinic (the host: the clinic has the clinic-system
+   * package). False → no extra read of the stored copy before a write (ClinForms-only clinics unchanged).
+   */
+  restrictsReports?(tenantId: TenantId): Promise<boolean>;
 }

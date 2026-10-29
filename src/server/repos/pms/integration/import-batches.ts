@@ -1044,6 +1044,23 @@ export async function claimImportStep(
     .where((eb) =>
       eb.or([eb("lease_until", "is", null), eb("lease_until", "<", at)]),
     )
+    // M10 L3: one import of a kind writes at a time – another batch of the same kind still importing holds it off
+    // (an import adopts records it wrote in an interrupted call; overlapping imports could adopt each other's).
+    .$if(to === "importing", (q) =>
+      q.where((eb) =>
+        eb.not(
+          eb.exists(
+            ctx.db
+              .selectFrom(`${B} as other`)
+              .select("other.id")
+              .where("other.tenant_id", "=", tenantId)
+              .where("other.id", "!=", batchId)
+              .where("other.status", "=", "importing")
+              .whereRef("other.kind", "=", `${B}.kind` as never),
+          ),
+        ),
+      ),
+    )
     .executeTakeFirst();
   if (Number(result.numUpdatedRows) === 0) return null;
   return getImportBatch(ctx, tenantId, batchId);

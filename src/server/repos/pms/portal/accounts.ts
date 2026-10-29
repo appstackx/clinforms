@@ -13,6 +13,7 @@ import { PORTAL_ID_PREFIXES as P } from "../../../../modules/pms/portal/ids";
 import type { PortalAccount, PortalSession } from "../../../../modules/pms/portal/types";
 import type { PmsActor } from "../../../../modules/pms/core/types";
 import { runBatch } from "../../../db/batch";
+import { auditInsertWhenExists } from "../../audit";
 import type { PmsPortalAccountsTable, PmsPortalSessionsTable } from "../../../db/pms-schema/portal";
 import { RepoInputError, assertId, assertTenantId, nowIso, pmsAuditQuery, pmsId, translateDbError, writeWithAudit, type DbContext } from "../context";
 import { changeWithAudit, newPortalWriteId, portalAuditWhen, portalAuditWhenWritten } from "./shared";
@@ -139,31 +140,45 @@ export async function signInWithLink(ctx: DbContext, tenantId: string, linkToken
   if (!HASH.test(linkTokenHash)) return { ok: false, reason: "invalid" };
   checkHash(sessionTokenHash, "sessionTokenHash");
   const at = nowIso(ctx);
-  const claim = await ctx.db
-    .updateTable("pms_portal_links")
-    .set({ used_at: at })
+  const link = await ctx.db
+    .selectFrom("pms_portal_links")
+    .select(["id", "account_id"])
     .where("tenant_id", "=", tenantId)
     .where("token_hash", "=", linkTokenHash)
     .where("used_at", "is", null)
     .where("expires_at", ">", at)
     .executeTakeFirst();
-  if (Number(claim.numUpdatedRows) === 0) return { ok: false, reason: "invalid" };
-  const link = await ctx.db.selectFrom("pms_portal_links").select(["id", "account_id"]).where("tenant_id", "=", tenantId).where("token_hash", "=", linkTokenHash).executeTakeFirst();
   if (!link) return { ok: false, reason: "invalid" };
   const account = await getPortalAccount(ctx, tenantId, link.account_id);
   if (!account || account.status !== "active") return { ok: false, reason: "invalid" };
   const id = pmsId(P.session, ctx);
   const actor: PmsActor = { userId: null, sessionId: id };
+  // M10 L7: the link is used up IN the batch that opens the session – the session row, the account's last sign-in and
+  // the audit row are written only while this batch's claim holds (the link marked used now, the account still active).
+  const claimed = ctx.db
+    .selectFrom("pms_portal_links")
+    .select("id")
+    .where("tenant_id", "=", tenantId)
+    .where("id", "=", link.id)
+    .where("used_at", "=", at)
+    .where((eb) => eb.exists(ctx.db.selectFrom("pms_portal_accounts").select("id").where("tenant_id", "=", tenantId).where("id", "=", account.id).where("status", "=", "active")));
+  const row = { tenant_id: tenantId, id, account_id: account.id, token_hash: sessionTokenHash, expires_at: sessionExpiresAt, last_seen_at: at, revoked_at: null, created_at: at };
+  const columns = Object.keys(row) as (keyof typeof row)[];
   try {
     await runBatch(ctx.db, [
-      ctx.db.insertInto("pms_portal_sessions").values({ tenant_id: tenantId, id, account_id: account.id, token_hash: sessionTokenHash, expires_at: sessionExpiresAt, last_seen_at: at, revoked_at: null, created_at: at }),
-      ctx.db.updateTable("pms_portal_accounts").set({ last_sign_in_at: at, updated_at: at }).where("tenant_id", "=", tenantId).where("id", "=", account.id),
-      pmsAuditQuery(ctx, tenantId, actor, { action: "pms.portal_session.create", targetType: "pms_portal_account", targetId: account.id, detail: { via: "patient", link: link.id } }),
+      ctx.db.updateTable("pms_portal_links").set({ used_at: at }).where("tenant_id", "=", tenantId).where("id", "=", link.id).where("used_at", "is", null).where("expires_at", ">", at),
+      ctx.db
+        .insertInto("pms_portal_sessions")
+        .columns(columns)
+        .expression(ctx.db.selectNoFrom((eb) => columns.map((c) => eb.val(row[c]).as(c)) as never).where((eb) => eb.exists(claimed)) as never),
+      ctx.db.updateTable("pms_portal_accounts").set({ last_sign_in_at: at, updated_at: at }).where("tenant_id", "=", tenantId).where("id", "=", account.id).where((eb) => eb.exists(ctx.db.selectFrom("pms_portal_sessions").select("id").where("tenant_id", "=", tenantId).where("id", "=", id))),
+      auditInsertWhenExists(ctx, tenantId, { action: "pms.portal_session.create", targetType: "pms_portal_account", targetId: account.id, detail: { via: "patient", link: link.id }, userId: null, sessionId: id }, ctx.db.selectFrom("pms_portal_sessions").select("id").where("tenant_id", "=", tenantId).where("id", "=", id)).query,
     ]);
   } catch (err) {
     throw translateDbError(err);
   }
-  const session = (await getPortalSession(ctx, tenantId, id)) as PortalSession;
+  const session = await getPortalSession(ctx, tenantId, id);
+  if (!session) return { ok: false, reason: "invalid" };
   return { ok: true, session, account: { ...account, lastSignInAt: at } };
 }
 
@@ -226,4 +241,24 @@ export async function countRecentSignInLinks(ctx: DbContext, tenantId: string, a
     .where("created_at", ">=", sinceIso)
     .executeTakeFirst();
   return Number(row?.n ?? 0);
+}
+
+/**
+ * M10 L7: the patient's email address on the record changed (staff edited it) – every portal session of the patient
+ * ends and every unused sign-in link stops working, so whoever held the old address is signed out. Audited when
+ * anything was ended. Answers how many sessions ended.
+ */
+export async function endPortalAccessForEmailChange(ctx: DbContext, tenantId: string, patientId: string, actor: PmsActor): Promise<number> {
+  assertTenantId(tenantId);
+  assertId(patientId, "patient id");
+  const account = await ctx.db.selectFrom("pms_portal_accounts").select("id").where("tenant_id", "=", tenantId).where("patient_id", "=", patientId).executeTakeFirst();
+  if (!account) return 0;
+  const at = nowIso(ctx);
+  const results = await runBatch(ctx.db, [
+    ctx.db.updateTable("pms_portal_sessions").set({ revoked_at: at }).where("tenant_id", "=", tenantId).where("account_id", "=", account.id).where("revoked_at", "is", null),
+    ctx.db.updateTable("pms_portal_links").set({ used_at: at }).where("tenant_id", "=", tenantId).where("account_id", "=", account.id).where("used_at", "is", null),
+    pmsAuditQuery(ctx, tenantId, actor, { action: "pms.portal_account.signed_out", targetType: "pms_portal_account", targetId: account.id, detail: { reason: "email_changed" } }),
+  ]);
+  const r = results[0] as { numAffectedRows?: bigint; numUpdatedRows?: bigint } | undefined;
+  return r ? Number(r.numAffectedRows ?? r.numUpdatedRows ?? 0) : 0;
 }

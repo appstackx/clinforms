@@ -22,6 +22,7 @@ import { getWaitingListEntry, listWaitingList, listWaitingListOffers } from "../
 import { getSite, listPractitioners, listRooms, listServices, listSites } from "../../repos/pms/directory";
 import { getPatientSummaries, searchPatients } from "../../repos/pms/patients";
 import { inScope, scopeList, type DiaryCaller } from "./caller";
+import { patientVisibleInScope } from "../access";
 import { payerLabelsForCases } from "./payers";
 import { getDiarySettings } from "../../repos/pms/diary/settings";
 import { patientDisplayName } from "./view";
@@ -434,12 +435,17 @@ export interface DiaryBookingOptions {
   authorisations: { id: string; caseId: string; code: string; sessionsLeft: number | null; expiresOn: string | null }[];
 }
 
-/** What the booking form offers for a patient: open cases and active authorisations with the sessions left. */
+/** What the booking form offers for a patient: open cases and active authorisations with the sessions left (in the member's sites). */
 export async function loadBookingOptions(caller: DiaryCaller, patientId: string): Promise<DiaryRead<DiaryBookingOptions>> {
   if (!caller.can("diary.book") || !caller.can("patients.view")) return FORBIDDEN;
   if (!PMS_ID_PATTERN.test(patientId)) return { ok: true, data: { cases: [], authorisations: [] } };
   const { ctx, tenantId } = caller;
-  const [cases, auths] = await Promise.all([listCasesForPatient(ctx, tenantId, patientId), listAuthorisations(ctx, tenantId, { patientId })]);
+  // M10 L2: a patient outside the member's sites answers like no patient; cases at other sites are left out.
+  if (caller.siteIds !== null && !(await patientVisibleInScope(ctx, tenantId, patientId, caller.siteIds))) return { ok: true, data: { cases: [], authorisations: [] } };
+  const [allCases, allAuths] = await Promise.all([listCasesForPatient(ctx, tenantId, patientId), listAuthorisations(ctx, tenantId, { patientId })]);
+  const cases = allCases.filter((c) => c.siteId === null || inScope(caller, c.siteId));
+  const shownCases = new Set(cases.map((c) => c.id));
+  const auths = allAuths.filter((a) => shownCases.has(a.caseId));
   const payers = await payerLabelsForCases(ctx, tenantId, cases.map((c) => c.id));
   return {
     ok: true,

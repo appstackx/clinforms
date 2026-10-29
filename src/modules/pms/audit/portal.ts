@@ -30,6 +30,9 @@ export const PORTAL_AUDIT_LABELS: Readonly<Record<string, string>> = {
   "pms.intake_response.pdf": "Signed form downloaded as a PDF",
   "pms.intake_handoff.start": "Form handed to the patient on a clinic device",
   "pms.intake_handoff.end": "Clinic device hand-off ended",
+  "pms.intake_handoff.pair_code": "Code for a clinic device shown to staff",
+  "pms.intake_handoff.paired": "Clinic device paired with a hand-off",
+  "pms.portal_account.signed_out": "Patient portal signed out (email address changed)",
 };
 
 /** Names of the record types its audit rows point at (target_type → label). */
@@ -41,4 +44,5 @@ export const PORTAL_AUDIT_TARGETS: Readonly<Record<string, string>> = {
   pms_portal_share: "Shared document",
   pms_intake_form: "Patient form",
   pms_intake_response: "Patient's form",
+  pms_intake_handoff: "Clinic device hand-off",
 };

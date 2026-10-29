@@ -1,9 +1,14 @@
 "use client";
 
 /**
- * The device was handed back (FORM-007): the member of staff sees whose form it was, checks it is the right patient,
- * and confirms with THEIR password – "Completed in the clinic, verified by <member>" on the signed copy and in the
- * audit. Or they end the hand-off (the device stops showing the form; a completed copy stays unverified).
+ * A form handed to the patient on a clinic device (FORM-007), on the STAFF member's own screen:
+ *
+ * - open, no device yet: "Show a code for the device" – 8 characters, valid 10 minutes, works once (M10 H3). The
+ *   device – a separate browser that is not signed in – opens the clinic's device page and types it;
+ * - open, paired: the patient is filling it in (the page refreshes itself);
+ * - completed: the member checks it is the right patient and confirms with THEIR password – "Completed in the clinic,
+ *   verified by <member>" on the signed copy and in the audit. Or they end the hand-off (the device stops showing the
+ *   form; a completed copy stays unverified).
  */
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -25,14 +30,39 @@ export interface HandoffVerifyProps {
   memberName: string;
   verify: (password: string) => Promise<Answer>;
   end: () => Promise<Answer>;
+  /** A device is paired with this hand-off. */
+  paired: boolean;
+  /** The clinic's device page (path). */
+  devicePath: string;
+  newCode: () => Promise<{ ok: true; code: string; expiresAt: string } | { ok: false; error: string }>;
 }
 
 export function HandoffVerify(p: HandoffVerifyProps) {
   const router = useRouter();
   const toast = useToast();
   const [password, setPassword] = React.useState("");
-  const [busy, setBusy] = React.useState<"verify" | "end" | null>(null);
+  const [busy, setBusy] = React.useState<"verify" | "end" | "code" | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  const [code, setCode] = React.useState<{ code: string; until: string } | null>(null);
+  const [origin, setOrigin] = React.useState("");
+  React.useEffect(() => setOrigin(window.location.origin), []);
+  // While the device has the form, this page follows it (paired → completed) without the member reloading.
+  React.useEffect(() => {
+    if (p.state !== "open") return;
+    const t = window.setInterval(() => router.refresh(), 5000);
+    return () => window.clearInterval(t);
+  }, [p.state, router]);
+  const showCode = async () => {
+    setBusy("code");
+    setError(null);
+    const r = await p.newCode();
+    setBusy(null);
+    if (!r.ok) {
+      setError(r.error);
+      return;
+    }
+    setCode({ code: r.code, until: new Date(r.expiresAt).toLocaleTimeString("en-GB", { timeZone: "Europe/London", hour: "2-digit", minute: "2-digit" }) });
+  };
   const run = async (key: "verify" | "end", fn: () => Promise<Answer>) => {
     setBusy(key);
     setError(null);
@@ -100,9 +130,34 @@ export function HandoffVerify(p: HandoffVerifyProps) {
               </PmsButton>
             </div>
           </form>
+        ) : p.state === "open" && !p.paired ? (
+          <div className="mt-4 space-y-3">
+            <PmsNotice tone="info" title="Pair the clinic device">
+              On the clinic device – a browser that is not signed in to the clinic system – open <span className="font-mono">{origin}{p.devicePath}</span> and enter the code. Never hand over a device or browser signed in as staff.
+            </PmsNotice>
+            {code ? (
+              <div className="rounded-[10px] border border-border bg-[#F8FAFC] p-4 text-center">
+                <p className="text-sm text-[#475569]">Code for the device</p>
+                <p data-testid="pairing-code" className="mt-1 font-mono text-[32px] font-bold tracking-[0.15em] text-foreground">
+                  {code.code}
+                </p>
+                <p className="text-sm text-[#475569]">Works once, until {code.until}.</p>
+              </div>
+            ) : null}
+            <div className="flex flex-wrap gap-2">
+              <PmsButton loading={busy === "code"} onClick={() => void showCode()}>
+                {code ? "New code" : "Show a code for the device"}
+              </PmsButton>
+              <PmsButton variant="secondary" loading={busy === "end"} onClick={() => void run("end", p.end)}>
+                End the hand-off
+              </PmsButton>
+            </div>
+          </div>
         ) : p.state === "open" ? (
           <div className="mt-4 space-y-3">
-            <p className="text-sm text-[#334155]">The patient has not sent the form yet. Ending the hand-off stops the device showing it.</p>
+            <p className="text-sm text-[#334155]" role="status">
+              The device is showing the form. The patient has not sent it yet. Ending the hand-off stops the device showing it.
+            </p>
             <PmsButton variant="secondary" loading={busy === "end"} onClick={() => void run("end", p.end)}>
               End the hand-off
             </PmsButton>

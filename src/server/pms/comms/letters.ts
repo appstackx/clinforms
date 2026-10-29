@@ -62,6 +62,11 @@ export interface StartLetterInput {
   letterOn?: string;
   /** Applied to the merged body before the letter is saved (the discharge letter writes the note's summary into its gaps). */
   bodyFill?: (body: string) => string;
+  /**
+   * The member may see clinical content (clinical.view): only then is `{{latest_outcomes}}` filled in – otherwise it
+   * stays a gap to write (M10 M3). Default false.
+   */
+  clinical?: boolean;
 }
 
 const lines = (...parts: (string[] | string | null | undefined)[]) =>
@@ -100,7 +105,8 @@ async function appointmentFacts(ctx: RepoContext, tenantId: string, patientId: s
 
 /**
  * `{{latest_outcomes}}`: first → latest score per measure of the case (when the case has any), else of the patient.
- * Clinical: only ever read for a letter (letters need messages.letters – never reception).
+ * Clinical: only ever read for a letter (letters need messages.letters – never reception) by a member with
+ * clinical.view (M10 M3 – messages.letters can be granted without it).
  */
 export async function latestOutcomesText(ctx: RepoContext, tenantId: string, patientId: string, caseId: string | null): Promise<string> {
   const all = await listOutcomesForPatient(ctx, tenantId, patientId);
@@ -116,15 +122,18 @@ interface LetterFacts {
   payer: Awaited<ReturnType<typeof getReferrer>> | null;
   recipient: { name: string | null; address: string[] | null; postcode: string | null; salutation?: string | null };
   letterOn: string;
+  /** clinical.view: fill the outcome scores (M10 M3). */
+  clinical: boolean;
 }
 
 /** Every letter merge value for a patient, case, author and recipient. */
 async function letterValues(ctx: RepoContext, tenantId: string, f: LetterFacts, fallbackClinicName?: string): Promise<Record<string, string | null>> {
-  const { patient, theCase, practitioner, site, payer, recipient, letterOn } = f;
+  const { patient, theCase, practitioner, site, payer, recipient, letterOn, clinical } = f;
   const settings = await getCommsSettings(ctx, tenantId);
   const clinic = await clinicContact(ctx, tenantId, settings, fallbackClinicName);
   const visits = await appointmentFacts(ctx, tenantId, patient.id, theCase?.id ?? null);
-  const outcomes = await latestOutcomesText(ctx, tenantId, patient.id, theCase?.id ?? null);
+  // Outcome scores are clinical: read only for a member with clinical.view (M10 M3); otherwise the field stays a gap.
+  const outcomes = clinical ? await latestOutcomesText(ctx, tenantId, patient.id, theCase?.id ?? null) : "";
   const fullName = [patient.title, patient.firstName, patient.lastName].filter(Boolean).join(" ");
   return {
     ...clinicValues(clinic),
@@ -166,7 +175,7 @@ async function letterValues(ctx: RepoContext, tenantId: string, f: LetterFacts, 
  * Fills merge fields typed into a draft after it started (the editor's "Merge fields"): the letter's own patient,
  * case, author and recipient; a value not recorded becomes "[not recorded: …]" (still to fill before signing).
  */
-export async function fillLetterFields(ctx: RepoContext, tenantId: string, letter: Letter, text: { subject: string; body: string }): Promise<{ subject: string; body: string }> {
+export async function fillLetterFields(ctx: RepoContext, tenantId: string, letter: Letter, text: { subject: string; body: string }, clinical = false): Promise<{ subject: string; body: string }> {
   if (!/\{\{/.test(text.subject) && !/\{\{/.test(text.body)) return text;
   const patient = await getPatient(ctx, tenantId, letter.patientId);
   if (!patient) return text;
@@ -174,7 +183,7 @@ export async function fillLetterFields(ctx: RepoContext, tenantId: string, lette
   const practitioner = letter.practitionerId ? await getPractitioner(ctx, tenantId, letter.practitionerId) : null;
   const site = theCase?.siteId ? await getSite(ctx, tenantId, theCase.siteId) : null;
   const payer = theCase?.payerReferrerId ? await getReferrer(ctx, tenantId, theCase.payerReferrerId) : null;
-  const values = await letterValues(ctx, tenantId, { patient, theCase, practitioner, site, payer, recipient: { name: letter.recipientName, address: letter.recipientAddress, postcode: letter.recipientPostcode }, letterOn: letter.letterOn });
+  const values = await letterValues(ctx, tenantId, { patient, theCase, practitioner, site, payer, recipient: { name: letter.recipientName, address: letter.recipientAddress, postcode: letter.recipientPostcode }, letterOn: letter.letterOn, clinical });
   return {
     subject: renderTemplate(text.subject, values, { missing: "marker" }).text.replace(/\s+/g, " ").trim().slice(0, 200),
     body: renderTemplate(text.body, values, { missing: "marker" }).text,
@@ -214,7 +223,7 @@ export async function startLetter(ctx: RepoContext, tenantId: string, input: Sta
   }
 
   const letterOn = input.letterOn ?? ukToday(ctx.now ? ctx.now() : pmsNow());
-  const values = await letterValues(ctx, tenantId, { patient, theCase, practitioner, site, payer, recipient, letterOn }, fallbackClinicName);
+  const values = await letterValues(ctx, tenantId, { patient, theCase, practitioner, site, payer, recipient, letterOn, clinical: input.clinical === true }, fallbackClinicName);
   const subject = renderTemplate(template.subject, values, { missing: "marker" }).text.replace(/\s+/g, " ").trim();
   const merged = renderTemplate(template.body, values, { missing: "marker" }).text;
   const body = input.bodyFill ? input.bodyFill(merged) : merged;

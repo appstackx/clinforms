@@ -32,9 +32,12 @@ import { getPortalShare, listSharesForPatient, markShareViewed, recordShareDownl
 import { endHandoff, findHandoffByToken, getHandoff, handoffForResponse, startHandoff, verifyHandoff } from "../handoffs";
 import { putAttachment, withdrawAttachment } from "../../records/attachments";
 import { deviceState, submitOnDevice } from "../../../../pms/portal/device-flow";
-import { patientShare, portalHome } from "../../../../pms/portal/portal-views";
+import { manageFormView, patientShare, portalHome } from "../../../../pms/portal/portal-views";
+import { publicLimit } from "../../../../pms/portal/rate-limit";
 import { recordVerifiedConsent } from "../../../../pms/portal/intake-service";
 import { newSecret } from "../../../../pms/portal/tokens";
+import { HIDDEN_LINK, hasSecretLink } from "../../../../../modules/pms/comms/secret-links";
+import { clearTestOutbox, testOutbox } from "../../../../pms/comms/providers/test";
 import {
   cancelIntakeResponse,
   countResponsesByTemplate,
@@ -96,12 +99,19 @@ export function definePortalSuite(label: string, factory: () => Promise<PortalSu
     const ids: Record<string, string> = {};
     let clinicA: PublicClinic;
     const deps = (over: Partial<FlowDeps> = {}): FlowDeps => ({ ctx, now: now(), origin: ORIGIN, clientIp: "203.0.113.7", limitSecret: SECRET, ...over });
-    /** The secret of the newest portal sign-in email for a patient (comms' message log). */
-    const latestLinkToken = async (patientId: string): Promise<string> => {
+    /**
+     * The secret of the newest portal sign-in email for a patient: from what the (test) email provider was handed –
+     * the message log keeps the email with the link hidden (M10 C1), so nobody at the clinic can sign in with it.
+     */
+    const latestLinkToken = async (patientId: string, address: string): Promise<string> => {
       const message = (await listMessages(ctx, A, { patientId, kind: "portal_link", limit: 50 }))[0];
-      const body = message ? (await getMessage(ctx, A, message.id))?.body : null;
-      const token = body ? /\/portal\/link\/([A-Za-z0-9_-]{43})/.exec(body)?.[1] : null;
-      assert.ok(token, "a sign-in link in the outbox");
+      const stored = message ? await getMessage(ctx, A, message.id) : null;
+      assert.ok(stored, "a sign-in email in the message log");
+      assert.ok(stored.body.includes(HIDDEN_LINK) && !hasSecretLink(stored.body) && !/[A-Za-z0-9_-]{43}/.test(stored.body), "the stored copy has no sign-in secret");
+      const sent = testOutbox.email.filter((e) => e.to.toLowerCase() === address.toLowerCase() && e.messageId === stored.id).pop();
+      const token = sent ? /\/portal\/link\/([A-Za-z0-9_-]{43})/.exec(sent.text)?.[1] : null;
+      assert.ok(token, "the provider got the email with the link");
+      assert.ok(sent && sent.html.includes(token as string), "and in the HTML");
       return token as string;
     };
     const ellie = { firstName: "Ellie", lastName: "Sample", dateOfBirth: "1990-04-02", email: "ellie.sample@example.com", phoneMobile: "07700 900205", reminders: true, paying: "self" };
@@ -288,7 +298,9 @@ export function definePortalSuite(label: string, factory: () => Promise<PortalSu
       assert.equal(a1?.patientId, ids.megan, "matched to Megan's record");
       assert.notEqual(a2?.patientId, ids.megan, "a different date of birth makes a new record (staff merge it)");
       assert.equal((await getPatient(ctx, A, ids.megan))?.phoneMobile, "07700 900123", "a match never changes the record");
-      assert.equal(existing.visit.formIds.length, 0, "the new-patient forms only go to new patients");
+      // M10 M4: the same forms whether or not the details matched a record – the answer never tells who is a patient.
+      assert.equal(existing.visit.formIds.length, typo.visit.formIds.length, "the same forms for a matched and a new record");
+      assert.equal(existing.visit.formIds.length, 3);
       assert.equal((await getOnlineBookingForAppointment(ctx, A, existing.visit.appointmentId))?.patientMatch, "existing");
     });
 
@@ -335,11 +347,15 @@ export function definePortalSuite(label: string, factory: () => Promise<PortalSu
     });
 
     it("portal sign-in: same answer for everyone; a one-time link through comms to the address on the record; sessions expire", async () => {
-      const unknown = await requestSignInLink(clinicA, { email: "nobody@example.com" }, deps());
+      const provider = process.env.CLINIC_EMAIL_PROVIDER;
+      process.env.CLINIC_EMAIL_PROVIDER = "test";
+      clearTestOutbox();
+      try {
+        const unknown = await requestSignInLink(clinicA, { email: "nobody@example.com" }, deps());
       const known = await requestSignInLink(clinicA, { email: "MEGAN.HART@example.com" }, deps());
       assert.deepEqual(unknown, { ok: true });
       assert.deepEqual(known, unknown, "no patient-existence leak");
-      const token = await latestLinkToken(ids.megan);
+      const token = await latestLinkToken(ids.megan, "megan.hart@example.com");
       assert.equal((await listMessages(ctx, A, { kind: "portal_link", limit: 50 })).length, 2, "Megan's record and the typo record share the address – one link each, none for the unknown address");
       const raw = await ctx.db.selectFrom("pms_portal_links").select("token_hash").where("tenant_id", "=", A).execute();
       assert.ok(raw.every((l) => l.token_hash !== token) && raw.some((l) => l.token_hash === hashSecret(token)), "only the hash is stored");
@@ -366,6 +382,10 @@ export function definePortalSuite(label: string, factory: () => Promise<PortalSu
       assert.equal(await setPortalAccountStatus(ctx, A, account.id, "disabled", STAFF), true);
       assert.equal(await setPortalAccountStatus(ctx, A, account.id, "disabled", STAFF), false);
       assert.equal(await setPortalAccountStatus(ctx, A, account.id, "active", STAFF), true);
+      } finally {
+        if (provider === undefined) delete process.env.CLINIC_EMAIL_PROVIDER;
+        else process.env.CLINIC_EMAIL_PROVIDER = provider;
+      }
     });
 
     it("portal booking: the signed-in patient's own record; staff check the online bookings", async () => {
@@ -623,6 +643,33 @@ export function definePortalSuite(label: string, factory: () => Promise<PortalSu
       assert.equal(audit.filter((e) => e.action === "pms.intake_handoff.end" && e.targetId === copy.id).length, 1, "the replaced hand-off");
       assert.equal(audit.filter((e) => e.action === "pms.intake_handoff.end" && e.targetId === other.id).length, 1);
       assert.ok(!JSON.stringify(audit.filter((e) => e.action.startsWith("pms.intake_")).map((e) => e.detail)).includes("Sam"));
+    });
+
+    it("M10 M5: a manage link shows a sent form as 'Sent' – never its answers", async () => {
+      const sent = (await listResponsesForPatient(ctx, A, ids.ellie, { status: "submitted" })).find((c) => c.appointmentId === ids.ellieAppt);
+      assert.ok(sent, "a form of the booking already sent");
+      const v = await manageFormView(ctx, clinicA, ids.ellieManage, sent!.id, now());
+      assert.equal(v?.state, "sent");
+      const text = JSON.stringify(v && v.state === "sent" ? { name: v.name, state: v.state } : v);
+      assert.ok(!/Ellie Sample|"answers"|share_gp|signatureName/.test(text), "no answers, no signature");
+      assert.equal(v && "response" in v, false, "the copy itself is not handed to the page");
+      const open = (await listResponsesForPatient(ctx, A, ids.ellie, { status: "requested" })).find((c) => c.appointmentId === ids.ellieAppt);
+      if (open) assert.equal((await manageFormView(ctx, clinicA, ids.ellieManage, open.id, now()))?.state, "fill");
+      assert.equal(await manageFormView(ctx, clinicA, "x".repeat(43), sent!.id, now()), null, "a wrong link opens nothing");
+    });
+
+    it("M10 M6: production refuses public booking without the bot check; at most 40 bookings an hour reach the patient step", async () => {
+      const cat = await bookingCatalogue(ctx, A, now());
+      const slots = (await findSlots(ctx, A, clinicA.settings, cat, { siteId: ids.site, serviceId: ids.ia, practitionerId: ids.james, fromDate: "2026-11-03", days: 14, now: now() })).slots;
+      assert.ok(slots.length > 0, "a free slot");
+      const input = { siteId: ids.site, serviceId: ids.ia, practitionerId: ids.james, startsAt: slots[slots.length - 1].startsAt, firstName: "Cap", lastName: "Test", dateOfBirth: "1985-05-05", email: "cap.test@example.com", phoneMobile: "07700 900777" };
+      const prod = await bookFromPublicPage(clinicA, input, deps({ env: { VERCEL_ENV: "production" } }));
+      assert.deepEqual(prod, { ok: false, error: "Online booking is closed at the moment. Please contact the clinic." });
+      for (let i = 0; i < 40; i++) await publicLimit(ctx, A, "recordsPerClinic", null, SECRET);
+      const before = await countPmsRows(ctx.db, A);
+      const capped = await bookFromPublicPage(clinicA, input, deps({ clientIp: "203.0.113.77" }));
+      assert.ok(!capped.ok && /Too many attempts/.test(capped.error), JSON.stringify(capped));
+      assert.deepEqual(await countPmsRows(ctx.db, A), before, "no record made");
     });
 
     it("every write was audited under its own clinic – ids and counts only", async () => {

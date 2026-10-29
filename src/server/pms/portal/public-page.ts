@@ -13,12 +13,13 @@ import { clinicPublicPaths } from "../../../modules/pms/portal/paths";
 import { getDataCipher } from "../../crypto";
 import { getDb } from "../../db";
 import type { RepoContext } from "../../repos/context";
-import { clientIp } from "../../auth/session";
+import { trustedClientIp } from "./human-check";
+import { paddedMs } from "./timing";
 import { commsLinkOrigin } from "../comms/links";
 import type { FlowDeps } from "./booking";
 import { PORTAL_COOKIE, readPortalSession, type PortalViewer } from "./portal-auth";
 import { loadPublicClinic, type PublicClinic } from "./public-clinic";
-import { pmsNow, pmsNowMs } from "../../../modules/pms/core/clock";
+import { pmsNow } from "../../../modules/pms/core/clock";
 
 export function publicCtx(): RepoContext {
   return { db: getDb(), cipher: getDataCipher(), now: pmsNow };
@@ -47,8 +48,9 @@ export async function publicClinicFor(clinicId: unknown): Promise<PublicClinic |
 }
 
 export function flowDeps(over: Partial<FlowDeps> = {}): FlowDeps {
-  const ip = clientIp(headers());
-  return { ctx: publicCtx(), now: pmsNow(), origin: commsLinkOrigin(), clientIp: ip === "local" ? "local" : ip, ...over };
+  const ip = trustedClientIp(headers());
+  // minResponseMs (M10 M4): a public booking takes the same time whether or not it matched an existing patient.
+  return { ctx: publicCtx(), now: pmsNow(), origin: commsLinkOrigin(), clientIp: ip === "local" ? "local" : ip, minResponseMs: 1500, ...over };
 }
 
 /** The signed-in patient of this clinic, or null. */
@@ -85,9 +87,30 @@ export function safePortalNext(clinic: PublicClinic, next: unknown): string {
  * an email) and one that did not take about the same time – no existence leak by timing.
  */
 export async function evenTiming<T>(minMs: number, work: () => Promise<T>): Promise<T> {
-  const started = pmsNowMs();
+  const started = Date.now();
   const result = await work();
-  const left = minMs - (pmsNowMs() - started);
+  const left = paddedMs(minMs, Date.now() - started) - (Date.now() - started);
   if (left > 0) await new Promise((r) => setTimeout(r, left));
   return result;
+}
+
+/**
+ * M10 L7: the "manage this booking" secret, once its link has been opened, lives in this cookie (httpOnly,
+ * SameSite=Lax, limited to /clinics/<clinic>/booking, until the link would expire) – not in the address bar.
+ */
+export const MANAGE_COOKIE = "clinic_manage";
+
+export function setManageCookie(clinic: Pick<PublicClinic, "tenantId">, token: string, expiresAt: string | null): void {
+  cookies().set(MANAGE_COOKIE, token, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: clinicPublicPaths(clinic.tenantId).manageCookiePath,
+    ...(expiresAt ? { expires: new Date(expiresAt) } : {}),
+  });
+}
+
+/** The manage secret this browser holds for the clinic, or null. */
+export function manageTokenFromCookie(): string | null {
+  return cookies().get(MANAGE_COOKIE)?.value ?? null;
 }

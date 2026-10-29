@@ -28,7 +28,8 @@ export type SimpleAnswer = { ok: true; message?: string } | { ok: false; error: 
 export async function requestLinkAction(clinicId: string, input: { email: string; website?: string }): Promise<SimpleAnswer> {
   const clinic = await publicClinicFor(clinicId);
   if (!clinic || !clinic.settings.portal) return { ok: false, error: "The patient portal is not open at the moment. Please contact the clinic." };
-  const r = await evenTiming(700, () => requestSignInLink(clinic, input, flowDeps()));
+  // M10 L7: 2.5 s covers a matched request on D1 (account, link, email through comms) – slower ones round up.
+  const r = await evenTiming(2500, () => requestSignInLink(clinic, input, flowDeps()));
   return r.ok ? { ok: true, message: SIGN_IN_SENT } : r;
 }
 

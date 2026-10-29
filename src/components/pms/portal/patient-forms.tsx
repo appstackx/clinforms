@@ -87,8 +87,8 @@ export function PatientForms({
       setError(r.error);
       return;
     }
-    // This device now shows only the form – the record page is replaced in the history.
-    window.location.replace(r.path);
+    // M10 H3: the member's own hand-off page – it shows the code that pairs the clinic device (a separate browser).
+    router.push(r.path);
   };
 
   return (

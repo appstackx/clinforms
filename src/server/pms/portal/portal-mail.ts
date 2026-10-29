@@ -26,7 +26,7 @@ export async function sendPortalLinkEmail(ctx: RepoContext, tenantId: string, pa
     const r = await sendDocumentMessage(
       ctx,
       tenantId,
-      { kind: "portal_link", channel: "email", patientId, to: { kind: "patient" }, values: { "portal.link": link, "portal.expires": expiryWords(now, expiresAt) }, documentType: null, documentId: null },
+      { kind: "portal_link", channel: "email", patientId, to: { kind: "patient" }, values: { "portal.link": link, "portal.expires": expiryWords(now, expiresAt) }, documentType: null, documentId: null, secretFields: ["portal.link"] },
       actor,
       dispatchDepsFromEnv(process.env),
     );

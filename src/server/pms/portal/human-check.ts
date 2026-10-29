@@ -17,6 +17,37 @@ export function humanCheckSiteKey(env: Env = process.env): string | null {
   return site && secret ? site : null;
 }
 
+/**
+ * M10 M6: on a production deployment (VERCEL_ENV=production) online booking for new patients needs the bot check –
+ * without it booking cannot be switched on, and the public booking page refuses bookings. Local and preview
+ * deployments keep working without it (the honeypot and the rate limits).
+ */
+export function humanCheckRequired(env: Env = process.env): boolean {
+  return env.VERCEL_ENV === "production";
+}
+
+/** Why public online booking may not run here, or null. */
+export function bookingNeedsHumanCheck(env: Env = process.env): string | null {
+  return humanCheckRequired(env) && !humanCheckSiteKey(env) ? "Online booking needs the bot check (Cloudflare Turnstile) set up on this deployment first. Ask ClinForms support." : null;
+}
+
+/**
+ * The client's address for the public pages' rate limits (M10 M6), from the header the platform sets – never the
+ * first, client-written value of x-forwarded-for. On Vercel: x-real-ip (set by Vercel), else the LAST hop of
+ * x-forwarded-for (the one Vercel's edge appended). Locally: the last hop too, else "local". The ClinForms sign-in
+ * flows keep src/server/auth/session.ts clientIp unchanged.
+ */
+export function trustedClientIp(h: Pick<Headers, "get">, env: Env = process.env): string {
+  const real = h.get("x-real-ip")?.trim();
+  const hops = (h.get("x-forwarded-for") ?? "")
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+  const last = hops[hops.length - 1];
+  const ip = env.VERCEL === "1" || env.VERCEL_ENV ? (real || last) : (last || real);
+  return (ip || "local").slice(0, 64);
+}
+
 export async function verifyHumanCheck(
   token: string | null | undefined,
   clientIp: string | null,

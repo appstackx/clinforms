@@ -1664,6 +1664,11 @@ export const LaunchClaimsSchema = z.object({
   exp: z.number().int(),
   /** Unique token ID: POST /launch/verify accepts each launch token once (replays are refused). */
   jti: z.string().min(8).max(64).optional(),
+  /**
+   * M10 L7 (10/2026): the clinic member the launch was issued for (the host's in-app launch, e.g. the clinic system's
+   * "Complete referrer form"). When set, only that signed-in member can redeem it. Partner launches leave it out.
+   */
+  forUserId: z.string().min(1).max(128).optional(),
 });
 
 /**

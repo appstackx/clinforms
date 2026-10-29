@@ -76,7 +76,8 @@ record tabs, audit labels, schema). Everything else is read-only; ask the orches
 | **integration** | Data import (CSV exports of an earlier system: patients, cases, appointments, balances), native connector to ClinForms, public API | `0170`–`0179` | `…0170`–`…0179` | 70–79 |
 
 Follow-up numbers (M9b polish, handover §19), owned exactly like the ranges above: diary `0180`–`0181` and `0189`, portal
-`0182`–`0185`, reporting `0186`–`0187`, records `0188` (`extra` in `src/modules/pms/core/modules.ts`).
+`0182`–`0185`, reporting `0186`–`0187`, records `0188` (`extra` in `src/modules/pms/core/modules.ts`). M10 security
+fixes (handover §20): portal `0190` (clinic-device pairing).
 
 Postgres twin of `0NNN_name.sql` = `supabase/migrations/20261024000NNN_name.sql` (`2026102400` + the 4 digits + same
 name). Single source: `src/modules/pms/core/modules.ts`; `scripts/pms/contract.test.ts` fails on a number outside a
