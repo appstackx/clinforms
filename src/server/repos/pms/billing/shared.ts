@@ -12,7 +12,7 @@
  * - on Postgres the first statement of a batch updates the row everything else depends on (a row lock), so a
  *   concurrent batch on the same invoice or payment waits and then sees the committed result.
  */
-import type { Expression, Selectable } from "kysely";
+import { sql, type Expression, type Selectable, type SqlBool } from "kysely";
 import { auditInsertWhenExists } from "../../audit";
 import { formatDocumentNumber } from "../../../../modules/pms/billing/numbers";
 import { balanceOf } from "../../../../modules/pms/billing/status";
@@ -34,6 +34,14 @@ export const PAY = "pms_payments";
 export const ALLOC = "pms_payment_allocations";
 
 /** Today in the UK ("YYYY-MM-DD") on the repository's clock. */
+/**
+ * An OPEN invoice: issued, with a balance either way (owed, or owed back). Literal SQL on purpose – it is the
+ * WHERE of the partial index pms_invoices_open (0212), and SQLite / D1 only use a partial index when the query
+ * repeats its terms with the same constants (a bound parameter would not match). Paid, credited and draft
+ * invoices – most of a clinic's history – are not in that index.
+ */
+export const OPEN_INVOICE = sql<SqlBool>`status = 'issued' and total_pence - paid_pence - credited_pence <> 0`;
+
 export function todayOf(ctx: DbContext): string {
   return ukToday(ctx.now ? ctx.now() : pmsNow());
 }

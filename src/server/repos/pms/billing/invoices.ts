@@ -15,7 +15,7 @@
  * - Numbers are given when the invoice is issued, by the database, in the issuing statement (gap-free).
  * - Line descriptions, the diagnosis code, notes and the bill-to snapshot are encrypted; lists never decrypt.
  */
-import { sql, type RawBuilder, type Selectable } from "kysely";
+import { sql, type Expression, type RawBuilder, type Selectable, type SqlBool } from "kysely";
 import { CONTRIBUTION_DEDUCTION_TEXT, EXCESS_DEDUCTION_TEXT, EXCESS_LINE_TEXT, contributionLineText, fullyCoveredText, patientShares, type ContributionMode } from "../../../../modules/pms/billing/excess";
 import { BILLING_ID_PREFIXES as P } from "../../../../modules/pms/billing/ids";
 import { parseDocumentNumber } from "../../../../modules/pms/billing/numbers";
@@ -39,7 +39,7 @@ import { recordAuthorisationUsage } from "../cases";
 import { RepoInputError, assertId, assertTenantId, decryptField, encryptField, nowIso, num, numOrNull, parseInput, parseLines, pmsAudit, pmsAuditQuery, pmsId, translateDbError, type RepoContext } from "../context";
 import { contributionModeForCase } from "./contribution-terms";
 import { ensureSettingsQuery, getBillingSettings } from "./settings";
-import { INV, LINES, PAY, SUMMARY_COLUMNS, affected, billingAuditWhen, billingBatch, chunks, editToken, isUniqueRefusal, todayOf, toInvoiceLine, toInvoiceSummary } from "./shared";
+import { INV, LINES, OPEN_INVOICE, PAY, SUMMARY_COLUMNS, affected, billingAuditWhen, billingBatch, chunks, editToken, isUniqueRefusal, todayOf, toInvoiceLine, toInvoiceSummary } from "./shared";
 
 const MESSAGES = {
   unique: "An appointment on this invoice is already on another invoice (or the import reference is taken).",
@@ -203,6 +203,15 @@ function lineInsert(ctx: RepoContext, tenantId: string, invoiceId: string | RawB
 }
 
 /** Appointment ids (of these) already on an active invoice line. */
+/**
+ * "This appointment is not on an invoice" for a query of another module's appointments (billing's visit source):
+ * no invoice line holds its billing lock. Matches the partial unique index pms_invoice_lines_appointment (the
+ * literal "billing_lock = 1" lets SQLite / D1 use it), so it is one index probe per appointment.
+ */
+export function notOnAnInvoice(appointment: { tenantId: Expression<string>; id: Expression<string> }): Expression<SqlBool> {
+  return sql<SqlBool>`not exists (select 1 from pms_invoice_lines as billed where billed.tenant_id = ${appointment.tenantId} and billed.appointment_id = ${appointment.id} and billed.billing_lock = 1)`;
+}
+
 export async function billedAppointmentIds(ctx: RepoContext, tenantId: string, appointmentIds: string[]): Promise<Set<string>> {
   assertTenantId(tenantId);
   const out = new Set<string>();
@@ -851,16 +860,16 @@ export async function listInvoicesPage(ctx: RepoContext, tenantId: string, optio
       q = q.where("status", "=", "cancelled");
       break;
     case "issued":
-      q = q.where("status", "=", "issued").where("voided_at", "is", null).where("paid_pence", "=", 0).where("credited_pence", "=", 0).where(BALANCE, ">", 0).where((eb) => eb.or([eb("due_on", "is", null), eb("due_on", ">=", today)]));
+      q = q.where(OPEN_INVOICE).where("voided_at", "is", null).where("paid_pence", "=", 0).where("credited_pence", "=", 0).where(BALANCE, ">", 0).where((eb) => eb.or([eb("due_on", "is", null), eb("due_on", ">=", today)]));
       break;
     case "part_paid":
-      q = q.where("status", "=", "issued").where(BALANCE, ">", 0).where(sql<boolean>`(paid_pence > 0 or credited_pence > 0)`).where((eb) => eb.or([eb("due_on", "is", null), eb("due_on", ">=", today)]));
+      q = q.where(OPEN_INVOICE).where(BALANCE, ">", 0).where(sql<boolean>`(paid_pence > 0 or credited_pence > 0)`).where((eb) => eb.or([eb("due_on", "is", null), eb("due_on", ">=", today)]));
       break;
     case "outstanding":
-      q = q.where("status", "=", "issued").where(BALANCE, ">", 0);
+      q = q.where(OPEN_INVOICE).where(BALANCE, ">", 0);
       break;
     case "overdue":
-      q = q.where("status", "=", "issued").where(BALANCE, ">", 0).where("due_on", "<", today);
+      q = q.where(OPEN_INVOICE).where(BALANCE, ">", 0).where("due_on", "<", today);
       break;
     case "paid":
       q = q.where("status", "=", "issued").where("voided_at", "is", null).where(BALANCE, "=", 0).where(sql<boolean>`(credited_pence < total_pence or total_pence = 0)`);
@@ -872,7 +881,7 @@ export async function listInvoicesPage(ctx: RepoContext, tenantId: string, optio
       q = q.where("status", "=", "issued").where("voided_at", "is not", null);
       break;
     case "refund_due":
-      q = q.where("status", "=", "issued").where(BALANCE, "<", 0);
+      q = q.where(OPEN_INVOICE).where(BALANCE, "<", 0);
       break;
     default:
       break;
@@ -926,6 +935,36 @@ export async function listInvoicesPage(ctx: RepoContext, tenantId: string, optio
   return { rows: rows.map(toInvoiceSummary), total: num(count?.n ?? 0) };
 }
 
+/**
+ * Overdue invoices (issued, owed, due before today) in the member's sites: how many, how many were due on or
+ * before `over30Before`, and the `top` longest overdue – counted in the database over the OPEN invoices (the
+ * partial index pms_invoices_open), not taken from a first page.
+ */
+export async function overdueInvoicesSummary(
+  ctx: RepoContext,
+  tenantId: string,
+  q: { siteIds?: ReadonlySet<string> | null; over30Before: string; top: number },
+): Promise<{ total: number; over30: number; rows: InvoiceSummary[] }> {
+  assertTenantId(tenantId);
+  const today = todayOf(ctx);
+  const sites = q.siteIds ? Array.from(q.siteIds).slice(0, 90) : null;
+  if (sites && sites.length === 0) return { total: 0, over30: 0, rows: [] };
+  let base = ctx.db.selectFrom(INV).where("tenant_id", "=", tenantId).where(OPEN_INVOICE).where(BALANCE, ">", 0).where("due_on", "<", today);
+  if (sites) base = base.where("site_id", "in", sites);
+  const [count, rows] = await Promise.all([
+    base
+      .select([(eb) => eb.fn.countAll<number>().as("n"), (eb) => eb.fn.sum<number>(eb.case().when("due_on", "<=", q.over30Before).then(1).else(0).end()).as("over30")])
+      .executeTakeFirst(),
+    base
+      .select(SUMMARY_COLUMNS)
+      .orderBy("due_on")
+      .orderBy("id")
+      .limit(Math.min(50, Math.max(1, q.top)))
+      .execute(),
+  ]);
+  return { total: num(count?.n ?? 0), over30: num(count?.over30 ?? 0), rows: rows.map(toInvoiceSummary) };
+}
+
 export interface BillingFigures {
   drafts: number;
   outstandingPence: number;
@@ -948,21 +987,44 @@ export async function billingFigures(ctx: RepoContext, tenantId: string, scope: 
   const today = todayOf(ctx);
   const monthStart = `${today.slice(0, 7)}-01`;
   const sites = scope.siteIds ? Array.from(scope.siteIds).slice(0, 90) : null;
-  let q = ctx.db
+  // Three indexed reads instead of one pass over every invoice the clinic ever raised: the drafts, the OPEN
+  // invoices (issued with a balance – the partial index pms_invoices_open, 0212) for what is owed, overdue or owed
+  // back, and this month's issued invoices (pms_invoices_status_issued). Same figures as adding up everything.
+  let draftQ = ctx.db
+    .selectFrom(INV)
+    .select((eb) => eb.fn.countAll<number>().as("drafts"))
+    .where("tenant_id", "=", tenantId)
+    .where("status", "=", "draft");
+  let openQ = ctx.db
     .selectFrom(INV)
     .select([
-      sql<number>`coalesce(sum(case when status = 'draft' then 1 else 0 end), 0)`.as("drafts"),
-      sql<number>`coalesce(sum(case when status = 'issued' and total_pence - paid_pence - credited_pence > 0 then total_pence - paid_pence - credited_pence else 0 end), 0)`.as("outstanding"),
-      sql<number>`coalesce(sum(case when status = 'issued' and bill_to = 'patient' and total_pence - paid_pence - credited_pence > 0 then total_pence - paid_pence - credited_pence else 0 end), 0)`.as("outstanding_p"),
-      sql<number>`coalesce(sum(case when status = 'issued' and total_pence - paid_pence - credited_pence > 0 then 1 else 0 end), 0)`.as("outstanding_n"),
-      sql<number>`coalesce(sum(case when status = 'issued' and total_pence - paid_pence - credited_pence > 0 and due_on < ${today} then total_pence - paid_pence - credited_pence else 0 end), 0)`.as("overdue"),
-      sql<number>`coalesce(sum(case when status = 'issued' and total_pence - paid_pence - credited_pence > 0 and due_on < ${today} then 1 else 0 end), 0)`.as("overdue_n"),
-      sql<number>`coalesce(sum(case when status = 'issued' and total_pence - paid_pence - credited_pence < 0 then paid_pence + credited_pence - total_pence else 0 end), 0)`.as("refunds"),
-      sql<number>`coalesce(sum(case when status = 'issued' and voided_at is null and issued_on >= ${monthStart} then total_pence else 0 end), 0)`.as("month"),
+      sql<number>`coalesce(sum(case when total_pence - paid_pence - credited_pence > 0 then total_pence - paid_pence - credited_pence else 0 end), 0)`.as("outstanding"),
+      sql<number>`coalesce(sum(case when bill_to = 'patient' and total_pence - paid_pence - credited_pence > 0 then total_pence - paid_pence - credited_pence else 0 end), 0)`.as("outstanding_p"),
+      sql<number>`coalesce(sum(case when total_pence - paid_pence - credited_pence > 0 then 1 else 0 end), 0)`.as("outstanding_n"),
+      sql<number>`coalesce(sum(case when total_pence - paid_pence - credited_pence > 0 and due_on < ${today} then total_pence - paid_pence - credited_pence else 0 end), 0)`.as("overdue"),
+      sql<number>`coalesce(sum(case when total_pence - paid_pence - credited_pence > 0 and due_on < ${today} then 1 else 0 end), 0)`.as("overdue_n"),
+      sql<number>`coalesce(sum(case when total_pence - paid_pence - credited_pence < 0 then paid_pence + credited_pence - total_pence else 0 end), 0)`.as("refunds"),
     ])
-    .where("tenant_id", "=", tenantId);
-  if (sites) q = sites.length ? q.where("site_id", "in", sites) : q.where(sql<boolean>`1 = 0`);
-  if (scope.siteId) q = q.where("site_id", "=", scope.siteId);
+    .where("tenant_id", "=", tenantId)
+    .where(OPEN_INVOICE);
+  let monthQ = ctx.db
+    .selectFrom(INV)
+    .select(sql<number>`coalesce(sum(total_pence), 0)`.as("month"))
+    .where("tenant_id", "=", tenantId)
+    .where("status", "=", "issued")
+    .where("issued_on", ">=", monthStart)
+    .where("voided_at", "is", null);
+  if (sites) {
+    const none = sql<boolean>`1 = 0`;
+    draftQ = sites.length ? draftQ.where("site_id", "in", sites) : draftQ.where(none);
+    openQ = sites.length ? openQ.where("site_id", "in", sites) : openQ.where(none);
+    monthQ = sites.length ? monthQ.where("site_id", "in", sites) : monthQ.where(none);
+  }
+  if (scope.siteId) {
+    draftQ = draftQ.where("site_id", "=", scope.siteId);
+    openQ = openQ.where("site_id", "=", scope.siteId);
+    monthQ = monthQ.where("site_id", "=", scope.siteId);
+  }
   let pq = ctx.db
     .selectFrom(PAY)
     .select(["method", (eb) => eb.fn.sum<number>("amount_pence").as("n")])
@@ -972,7 +1034,8 @@ export async function billingFigures(ctx: RepoContext, tenantId: string, scope: 
     .where("received_on", "=", today);
   if (sites) pq = sites.length ? pq.where("site_id", "in", sites) : pq.where(sql<boolean>`1 = 0`);
   if (scope.siteId) pq = pq.where("site_id", "=", scope.siteId);
-  const [row, taken] = await Promise.all([q.executeTakeFirst(), pq.groupBy("method").execute()]);
+  const [draftRow, openRow, monthRow, taken] = await Promise.all([draftQ.executeTakeFirst(), openQ.executeTakeFirst(), monthQ.executeTakeFirst(), pq.groupBy("method").execute()]);
+  const row = { drafts: draftRow?.drafts, ...openRow, month: monthRow?.month };
   const byMethod: Record<string, number> = {};
   for (const t of taken) byMethod[t.method] = num(t.n);
   const outstanding = num(row?.outstanding ?? 0);
@@ -1019,7 +1082,8 @@ export function owesMoneyPatientIds(ctx: RepoContext, tenantId: string) {
     .selectFrom(INV)
     .select("patient_id")
     .where("tenant_id", "=", tenantId)
-    .where("status", "=", "issued")
+    // Open invoices only (the partial index): an invoice with no balance adds nothing to what a patient owes.
+    .where(OPEN_INVOICE)
     .where("bill_to", "=", "patient")
     .groupBy("patient_id")
     .having((eb) => eb(eb.fn.sum<number>(BALANCE), ">", 0));

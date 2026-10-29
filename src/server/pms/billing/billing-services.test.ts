@@ -139,6 +139,7 @@ describe("billing services on SQLite", () => {
         { appointmentId: "appt_01JTEST0000000000000000003", patientId: "pat_someone_else", caseId: null, serviceId: id.fu, practitionerId: null, siteId: null, date: "2026-10-08", startTime: "10:00", status: "attended" },
       ],
       listClinicVisits: async () => [],
+      listUninvoicedVisits: async () => ({ visits: [], total: 0, next: null }),
       waiveFee: async () => false,
     });
     const first = await suggestVisitLines(ctx, T, { patientId: id.pat, caseId: id.case }, id.list);

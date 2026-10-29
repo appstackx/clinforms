@@ -20,12 +20,14 @@ import { testCipher } from "../../../db/testing/databases";
 import { listAudit } from "../../../repos/audit";
 import type { RepoContext } from "../../../repos/context";
 import { listCreditNotesForInvoice } from "../../../repos/pms/billing/credit-notes";
-import { getInvoice, listInvoicesPage } from "../../../repos/pms/billing/invoices";
+import { getInvoice, listInvoicesPage, notOnAnInvoice } from "../../../repos/pms/billing/invoices";
 import { updateBillingSettings } from "../../../repos/pms/billing/settings";
 import { createAuthorisation, createCase, getAuthorisation } from "../../../repos/pms/cases";
 import { bulkCreateDiaryItems, setAppointmentStatus } from "../../../repos/pms/diary/appointments";
 import { createPractitioner, createService, createSite } from "../../../repos/pms/directory";
 import { createPatient } from "../../../repos/pms/patients";
+import { runBatch } from "../../../db/batch";
+import { addDaysIso } from "../../../../modules/pms/billing/status";
 import { createPriceList, setPriceListItem } from "../../../repos/pms/price-lists";
 import { createReferrer } from "../../../repos/pms/referrers";
 import type { QueryLog } from "../../../repos/pms/testing/guarded-db";
@@ -421,6 +423,94 @@ export function defineBillingServiceSuite(label: string, factory: () => Promise<
       assert.equal((await caseContributionFor(reception(), tedCase)).caseMode, null);
       assert.equal((await listAudit(ctx, A, { action: "pms.case_terms.set" })).length, 2);
       assert.equal((await listAudit(ctx, A, { action: "pms.payer_terms.set" })).length, 1);
+    });
+
+    it("M10 scale: 'Attended, not invoiced' lists the NEWEST visits of a busy week and counts them all; invoiced ones are left out in the database", async () => {
+      const C = "scale-bill";
+      const recC = () => testActor(ctx, C, "staff", { userId: "user_reception_01", name: "Jess Taylor" });
+      const site = (await createSite(ctx, C, { name: "Scale Road (fictional)", code: "SCA" }, SEED)).id;
+      const fu = (await createService(ctx, C, { name: "Follow-up 20 min", code: "FU", category: "follow_up", durationMinutes: 20, defaultPricePence: 4500 }, SEED)).id;
+      const items: Parameters<typeof bulkCreateDiaryItems>[2] = [];
+      for (let p = 0; p < 3; p++) {
+        const prac = (await createPractitioner(ctx, C, { displayName: `Scale Physio ${p + 1}`, registrationNumber: `PH-DEMO-0${p + 4}`, defaultSiteId: site }, SEED)).id;
+        const patient = (await createPatient(ctx, C, { firstName: "Scale", lastName: `Patient ${p + 1}` }, SEED)).id;
+        // 200 completed 20-minute visits each, back to back from Wednesday 21/10 (all within the last 7 days).
+        for (let i = 0; i < 200; i++) {
+          const startsAt = new Date(Date.parse("2026-10-21T00:00:00.000Z") + i * 20 * 60_000 + p * 1000).toISOString();
+          items.push({ kind: "appointment", siteId: site, practitionerId: prac, patientId: patient, serviceId: fu, startsAt, endsAt: new Date(Date.parse(startsAt) + 20 * 60_000).toISOString(), status: "attended", source: "staff" });
+        }
+      }
+      const ids = await bulkCreateDiaryItems(ctx, C, items, SEED);
+      assert.equal(ids.length, 600);
+      const byNewest = items.map((it, i) => ({ id: ids[i], at: it.startsAt })).sort((x, y) => (x.at === y.at ? (x.id < y.id ? 1 : -1) : x.at < y.at ? 1 : -1));
+      const first = ok(await uninvoicedVisitsFor(recC()));
+      assert.equal(first.total, 600, "every visit still to invoice is counted");
+      assert.equal(first.visits.length, 500, "the list shows 500");
+      assert.equal(first.visits[first.visits.length - 1].appointmentId, byNewest[0].id, "the newest visit is in the list (shown last: oldest first)");
+      assert.equal(first.visits[0].appointmentId, byNewest[499].id, "the 500 newest, not the oldest of the week");
+      assert.equal(ok(await billingHomeFor(recC())).figures.uninvoicedVisits, 600);
+      // Invoice the two newest: they leave the list and the count.
+      ok(await invoiceVisitsFor(recC(), { appointmentIds: [byNewest[0].id, byNewest[1].id], issue: false }));
+      const after2 = ok(await uninvoicedVisitsFor(recC()));
+      assert.equal(after2.total, 598);
+      assert.equal(after2.visits[after2.visits.length - 1].appointmentId, byNewest[2].id);
+      assert.ok(!after2.visits.some((v) => v.appointmentId === byNewest[0].id || v.appointmentId === byNewest[1].id));
+      // Keyset paging through the source: two pages, newest first, nothing twice, nothing missed.
+      const page1 = await DIARY_VISIT_SOURCE.listUninvoicedVisits(ctx, C, { from: "2026-07-29", until: DAY, siteIds: null, notBilled: notOnAnInvoice, limit: 400 });
+      const page2 = await DIARY_VISIT_SOURCE.listUninvoicedVisits(ctx, C, { from: "2026-07-29", until: DAY, siteIds: null, notBilled: notOnAnInvoice, limit: 400, before: page1.next });
+      assert.deepEqual([page1.visits.length, page2.visits.length, page2.next], [400, 198, null]);
+      assert.equal(new Set([...page1.visits, ...page2.visits].map((v) => v.appointmentId)).size, 598);
+      assert.equal(page1.visits[0].appointmentId, byNewest[2].id);
+    });
+
+    it("M10 scale: aged debt of a member limited to one site adds up ALL that site's open invoices (filtered in the query); names only for the 8 largest", async () => {
+      const C = "scale-debt";
+      const x = (await createSite(ctx, C, { name: "Xavier Street (fictional)", code: "XAV" }, SEED)).id;
+      const y = (await createSite(ctx, C, { name: "Yew Lane (fictional)", code: "YEW" }, SEED)).id;
+      const pats: string[] = [];
+      for (let i = 0; i < 30; i++) pats.push((await createPatient(ctx, C, { firstName: "Debt", lastName: `Patient ${String(i + 1).padStart(2, "0")}` }, SEED)).id);
+      // 230 open invoices at Xavier Street, 20 at Yew Lane and 10 paid ones (history), loaded as an import would.
+      const at = utc(DAY, "08:00");
+      const rows: { site: string; patient: string; total: number; paid: number; due: string }[] = [];
+      for (let i = 0; i < 230; i++) rows.push({ site: x, patient: pats[i % 25], total: 1000 + (i % 25) * 100 + i, paid: i % 3 === 0 ? 500 : 0, due: addDaysIso(DAY, -((i * 7) % 150)) });
+      for (let i = 0; i < 20; i++) rows.push({ site: y, patient: pats[25 + (i % 5)], total: 9000 + i, paid: 0, due: addDaysIso(DAY, -40) });
+      for (let i = 0; i < 10; i++) rows.push({ site: x, patient: pats[i], total: 2000, paid: 2000, due: addDaysIso(DAY, -100) });
+      const inserts = rows.map((r, i) =>
+        ctx.db.insertInto("pms_invoices").values({
+          tenant_id: C,
+          id: `inv_01JSCALE${String(i).padStart(18, "0")}`,
+          rev: 1,
+          status: "issued",
+          number_prefix: "INV",
+          number_seq: i + 1,
+          patient_id: r.patient,
+          bill_to: "patient",
+          payer_type: "self_pay",
+          site_id: r.site,
+          issued_on: addDaysIso(r.due, -30),
+          due_on: r.due,
+          net_pence: r.total,
+          vat_pence: 0,
+          total_pence: r.total,
+          paid_pence: r.paid,
+          credited_pence: 0,
+          prices_include_vat: 1,
+          created_at: at,
+          updated_at: at,
+        }),
+      );
+      for (let i = 0; i < inserts.length; i += 90) await runBatch(ctx.db, inserts.slice(i, i + 90));
+      const owed = (site: string | null) => rows.filter((r) => (site === null || r.site === site) && r.total > r.paid).reduce((n, r) => n + r.total - r.paid, 0);
+      const limited = ok(await agedDebtFor(testActor(ctx, C, "admin", { userId: "user_admin_x", name: "Xena Admin" }, { siteIds: [x] })));
+      assert.equal(limited.totals.totalPence, owed(x), "all 230 open invoices at the member's site, not the first 200");
+      assert.equal(limited.rows[0].totalPence, owed(x));
+      const all = ok(await agedDebtFor(testActor(ctx, C, "owner", { userId: "user_owner_01", name: "Helen Ward" })));
+      assert.equal(all.totals.totalPence, owed(null));
+      // The 8 largest debtors with their names (looked up for those 8 only).
+      assert.equal(all.largest.length, 8);
+      for (let i = 1; i < all.largest.length; i++) assert.ok(all.largest[i - 1].amountPence >= all.largest[i].amountPence, "largest first");
+      assert.ok(all.largest.every((l) => /^Debt Patient \d\d$/.test(l.name)), all.largest.map((l) => l.name).join(", "));
+      assert.ok(all.largest[0].patientId && pats.slice(25).includes(all.largest[0].patientId), "a Yew Lane patient owes most (4 × ~£90)");
     });
 
     it("tenant-scope guard: every clinic-system statement named tenant_id", () => {

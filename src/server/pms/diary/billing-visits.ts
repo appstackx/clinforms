@@ -8,7 +8,7 @@
  * Billing leaves out what is already on an invoice (its own lock) and prices the rest.
  */
 import "server-only";
-import type { Selectable } from "kysely";
+import { sql, type Selectable } from "kysely";
 import { DIARY_TO_VISIT_STATUS, type BillableVisit } from "../../../modules/pms/billing/visits";
 import { CHARGEABLE_STATUSES } from "../../../modules/pms/diary/rules";
 import { formatLondonTime } from "../../../modules/pms/diary/time";
@@ -17,7 +17,7 @@ import type { PmsActor } from "../../../modules/pms/core/types";
 import type { PmsAppointmentsTable } from "../../db/pms-schema/diary";
 import { assertId, assertTenantId, type RepoContext } from "../../repos/context";
 import { waiveAppointmentFee } from "../../repos/pms/diary/appointments";
-import type { BillableVisitSource, ClinicVisitQuery, VisitQuery } from "../billing/visit-source";
+import type { BillableVisitSource, ClinicVisitQuery, UninvoicedVisitQuery, VisitQuery } from "../billing/visit-source";
 import { pmsNow } from "../../../modules/pms/core/clock";
 
 const COLUMNS = ["id", "patient_id", "case_id", "service_id", "practitioner_id", "site_id", "authorisation_id", "starts_at", "starts_on", "status", "fee_due", "fee_pence"] as const;
@@ -87,6 +87,36 @@ export const DIARY_VISIT_SOURCE: BillableVisitSource = {
       .limit(Math.min(500, Math.max(1, query.limit ?? 500)))
       .execute();
     return rows.map(toVisit).filter((v): v is BillableVisit => v !== null);
+  },
+  async listUninvoicedVisits(ctx, tenantId, query: UninvoicedVisitQuery) {
+    assertTenantId(tenantId);
+    const limit = Math.min(500, Math.max(1, Math.floor(query.limit ?? 500)));
+    const sites = query.siteIds ? Array.from(query.siteIds).slice(0, 90) : null;
+    if (sites && sites.length === 0) return { visits: [], total: 0, next: null };
+    const scoped = () => {
+      let q = chargeable(ctx, tenantId)
+        .where("starts_on", ">=", query.from)
+        .where("starts_on", "<=", query.until)
+        .where(() => query.notBilled({ tenantId: sql.ref<string>("pms_appointments.tenant_id"), id: sql.ref<string>("pms_appointments.id") }));
+      if (sites) q = q.where("site_id", "in", sites);
+      return q;
+    };
+    let page = scoped();
+    const b = query.before;
+    if (b) page = page.where((eb) => eb.or([eb("starts_at", "<", b.startsAt), eb.and([eb("starts_at", "=", b.startsAt), eb("id", "<", b.id)])]));
+    const [rows, count] = await Promise.all([
+      page.orderBy("starts_at", "desc").orderBy("id", "desc").limit(limit).execute(),
+      scoped()
+        .clearSelect()
+        .select((eb) => eb.fn.countAll<number>().as("n"))
+        .executeTakeFirst(),
+    ]);
+    const last = rows.length === limit ? rows[rows.length - 1] : null;
+    return {
+      visits: rows.map(toVisit).filter((v): v is BillableVisit => v !== null),
+      total: Number(count?.n ?? 0),
+      next: last ? { startsAt: last.starts_at, id: last.id } : null,
+    };
   },
   async waiveFee(ctx, tenantId, appointmentId, actor: PmsActor) {
     return waiveAppointmentFee(ctx, tenantId, appointmentId, actor);
