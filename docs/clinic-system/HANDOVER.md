@@ -1305,3 +1305,83 @@ audit by patient).
    re-created; two simultaneous OFFERS of the same slot are checked by the server only (bookings over a hold are
    database-enforced).
 8. pms-diary-screens / pms-messages-screens hard-code demo-week dates – make them relative to the clock.
+
+## 20. M10 full review
+
+### 20.1 Security findings and fixes
+
+**Branch:** `feat/cs-m10-sec` from `feat/clinic-system` `842bb02` (then `1db2928`, the native read shim, merged in),
+worktree `/Users/khuram/Projects/Appstackx/clinforms-wt/cs-m10-sec`, e2e ports 3210–3219. `main` untouched; no
+production action. Findings: `scratchpad/m10/security-findings.md` (C1, H1–H4, M1–M6, L1–L7). Every fix has a
+regression test that failed before it (checked by reverting the fix where it was not obvious). Most service-level
+tests are in `src/server/pms/security-m10.test.ts`; the others sit in the module suites named below.
+
+**Migration:** portal **0190** `pms_intake_device_pairings` (+ Postgres twin `20261024000190_…`), new `extra` range
+`[190, 190]` for portal in `src/modules/pms/core/modules.ts`, contract §3 and `scripts/pms/contract.test.ts` updated.
+0191–0199 are unused.
+
+| Finding | Fix | Test | Commit |
+|---|---|---|---|
+| **C1** reception could read a patient's portal sign-in link in Messages → Outbox | The `portal_link` email is stored with the link replaced by "[Sign-in link – only in the email sent to the patient]"; only the provider gets the real link (`DocumentMessageInput.secretFields`, `deliver(sendAs)`). View, reply threads and copies written before the fix are redacted when shown (`src/modules/pms/comms/secret-links.ts`). A failed sign-in email shows no Retry and `retryMessage` refuses it. Payment links (the provider's hosted pay page) and stop-email links (opt-out only) are not keys to the patient's data: left as they are | `security-m10.test.ts` C1 (no 43-character token in any staff view, not even encrypted in `pms_messages`; Retry refused); portal suite reads the link from the test provider; e2e helpers check the hidden link | `ebd63ae` |
+| **H1** subject-access export with `reports.export` only | Needs `reports.export` AND `clinical.view` (service; record menu and Data rights panel hidden otherwise) | records service suite (reception with an exception, admin without clinical.view) | `c8f83f4` |
+| **L1** Copy from last note with `clinical.write` only | Also `clinical.view` | records service suite | `c8f83f4` |
+| **M3** `{{latest_outcomes}}` filled without `clinical.view` | Filled only when the member has `clinical.view` (start and save of a letter; discharge letter already required it); `startLetter` defaults to not filling it | `letter-files.test.ts` | `c8f83f4` |
+| **L5** claims CSV Diagnosis code | Blank without `clinical.view` (column kept) | `letter-files.test.ts` | `c8f83f4` |
+| **H2** native ClinForms reports readable by any member | New optional `MedreportDeps.mayReadReport` / `restrictsReports`. Host rule (`src/server/pms/native-report-access.ts`): a report with `connectorId "native"` whose snapshot holds notes or outcome scores, or that is approved, needs the clinic system's `clinical.view` (`resolveMemberAccess`). Store GET / PUT / DELETE / reuse and `/render` answer 404 otherwise (as for a missing report). Reception's own forms (no clinical prefill) stay readable. Other reports: no access read at all; ClinForms-only clinics: no extra store read | `native-report-access.test.ts` (same status and body with and without the hook for a non-native report); host wiring in `security-m10.test.ts` | `5755203` |
+| **H4** self-escalation through the role grid | `settings.members` locked off for clinicians and reception; nobody but the owner changes their own role's row; only owner/admin change the admin row or an admin member (access, role, activation, signing) | `security-m10.test.ts` H4 | `53887af` |
+| **H3** the clinic device was a staff browser | Pairing by code: "Complete in the clinic" opens the member's own hand-off page with "Show a code for the device" (8 characters, no look-alikes, valid 10 min, works once, New code replaces it). A separate browser, not signed in, opens `/clinics/<c>/device` and types it (10 tries per address, 60 per clinic per 10 min); only then does it get its own secret. No staff cookie or session on the device, no `/app` link on the device page; verification stays on the staff screen with the member's password (page refreshes itself every 5 s) | `portal-polish.test.ts` (pairing, replaced/used/expired/other-clinic codes, rate limit, audit has no code); e2e `pms-polish-portal` steps 4–6 with a separate signed-out device context | `ea130ce` |
+| **M1** native launch skipped the trial-ended check | `assertTenantMayCreate(profile, "launch")` before anything is written: "Your ClinForms trial has ended…"; the panel answers `canStart:false` with the reason | `security-m10.test.ts` M1 | `161e25d` |
+| **M2** import ignored site scope | Every import function needs `settings.import` and every site | `security-m10.test.ts` M2 | `20d2205` |
+| **L2** booking options without scope | Patient outside the sites → nothing; cases at other sites left out | `security-m10.test.ts` L2 | `20d2205` |
+| **L3** overlapping imports | One import of a kind at a time: approve refuses while another is approved/importing; `claimImportStep` holds a batch off while another of its kind imports (step answers busy) | integration suite (SQLite + PGlite) | `20d2205` |
+| **M4** booking showed whether someone is a patient | Every public booking gets the same forms (matched or new); answer no sooner than 1.5 s, rounded up to the next second | portal suite (same forms both ways) | `1abb654` |
+| **M5** manage link showed later answers | A sent form shows "Sent" only (`manageFormView`) | portal suite | `1abb654` |
+| **M6** booking spam | Production (`VERCEL_ENV=production`): booking for new patients cannot be switched on and is refused without Turnstile; client address from the platform header (pms-local `trustedClientIp`; `session.ts` unchanged); ≤ 40 public bookings an hour per clinic reach the patient step | `security-m10.test.ts` M6; portal suite (production refusal, cap) | `1abb654` |
+| **L6** access off for a patient without an account | Account created, disabled | `security-m10.test.ts` L6 | `1abb654` |
+| **L7** | Sign-in padding 2.5 s, slower rounded up to the second; manage link swaps its secret for a cookie (`/booking/<secret>` route → `/booking/manage`); staff email change ends portal sessions and unused links; hand-off password throttle fails closed (pms-local; ClinForms' `throttle()` unchanged); `signInWithLink` uses the link inside the session batch; in-app launches carry `forUserId` and open only for that member. SMS webhook replay check left as is (not live) | `security-m10.test.ts` L7; `native-report-access.test.ts` (launch) | `1abb654` |
+| **L4** CSV formula defusing | One helper `src/modules/pms/core/csv-safe.ts` (leading whitespace, full-width ＝＋－＠｜, `\n=`, `|`; quotes CR) used by the five writers | `csv-safe.test.ts` | `c516c5c` |
+| (follow-ups) | Audit labels for `pms.intake_handoff.pair_code`, `…paired`, `pms.portal_account.signed_out`; guard first in `lastNoteForCopyFor`; e2e clinic-system-access counts the 2 new locked cells | admin.test, records-routes.test | `7facfbe`, `(e2e commit)` |
+
+**Decisions taken (safe defaults – change any):**
+1. C1: the stored copy of a sign-in email has the WHOLE link replaced (the `?next=` page is not kept either); a
+   failed sign-in email is never re-sent from the log – the patient asks for a new link or staff send the form again.
+   Payment links and stop-email links are not hidden (not keys to the patient's data).
+2. H1: no partial export – without `clinical.view` the subject-access copy is refused (a copy without notes would
+   look complete and is not).
+3. H2: native report rule = native AND (notes or outcome scores in the snapshot, OR approved). Reception still opens
+   the forms they start (no clinical prefill). A clinician's later answers in a reception-started DRAFT remain
+   readable by reception until it is approved (then clinical.view only, like the filed copy). Refused = 404. The
+   Studio's snapshot list still lists the report id (summaries carry no patient data); opening it answers 404.
+4. H3: code only, no QR (a QR would put the code into a camera app's history); 8 characters from 29 without
+   look-alikes; 10 tries per address and 60 per clinic per 10 minutes; a device that completed a form stays on
+   "hand back" until staff verify or end it; the staff page refreshes itself every 5 s while the device has the form.
+5. H4: `settings.members` is a lock for clinicians and reception (stored overrides/exceptions that granted it stop
+   working); admins cannot change the admin row – only the owner can.
+6. M4: public bookings matched to an existing record now get the new-patient forms too (the same as a new record);
+   staff may see an extra health questionnaire for a returning patient booking online.
+7. M6: production = `VERCEL_ENV=production`; the public booking page refuses bookings there without Turnstile and
+   booking for new patients cannot be switched on; preview/local unchanged. Cap: 40 public bookings an hour per clinic
+   reach the patient step (counted before the match so it reveals nothing).
+8. L7: sign-in answers take ≥ 2.5 s (slower rounded up to the whole second); booking ≥ 1.5 s. Manage-link cookie
+   `clinic_manage` (httpOnly, Lax, path `/clinics/<c>/booking`, until the link expires); the address is now
+   `/booking/manage` (old links still work – they swap and redirect). The email-change sign-out runs only for a staff
+   edit of the record (a form applied to the record does not). `forUserId` is an optional launch claim (partner
+   launches unchanged).
+9. ClinForms behaviour: unchanged for non-native reports and for clinics without the clinic system (H2 tests compare
+   answers with and without the hook); `src/server/auth/session.ts` untouched (pms-local IP and throttle helpers).
+
+**Results (final head `14dad73`, chain c3, before the merge into `feat/clinic-system`):** typecheck and lint green;
+test:pms 721/0, test:medreport 1786/0 (3 LibreOffice skips; the R2-SEC-2 "under a second" timing test failed once
+under heavy parallel load in c2 and passes in c3), test:db 1121/0/3, test:auth 134/0, test:site 126/0, test:gateway
+628/0/2; build green. **Merged** `--no-ff` into `feat/clinic-system` as `8796702` (from `1db2928`).
+E2E (fresh `pms:seed-demo -- --fresh` scratch SQLite each, servers stopped). Production build: **pms-polish-portal
+9/9** (new pairing steps), **pms-portal-screens 15/15**, **pms-records-screens 17/17**, **clinic-system-access 13/13**,
+**pms-integration 14/14**. `next dev` with the TEST clock at Wed 28/10/2026 10:30 London: **pms-messages-screens
+18/18**. Runner: scratchpad `sec-e2e.sh <script> <port> <out> [dev]` (`DEMO_FLAG=1` for pms-integration,
+`E2E_DAY=2026-10-28` for dev). The portal e2e helpers no longer read a sign-in link from the outbox (it is hidden):
+they check the hidden text, then give the newest link a known secret in the scratch database (its hash only).
+
+**Open items (security):** the Studio still lists ids of reports it will not open for a member (H2, harmless); the
+SMS webhook replay check uses the message id only (not live – leave); a theoretical same-millisecond double use of
+one sign-in link by its own holder could open two sessions (L7 batch); Turnstile itself is still not configured
+anywhere (production booking is therefore refused until it is).
