@@ -26,7 +26,9 @@ import type { DiaryCaller } from "./diary/caller";
 import { SITE_SCOPED_MESSAGE, listImportsFor, startImportFor } from "./integration/import-service";
 import type { ClinicProfile } from "../../modules/medreport/api/deps";
 import { saveRolePermissions } from "../repos/pms/access";
-import { bookingNeedsHumanCheck, humanCheckRequired, trustedClientIp } from "./portal/human-check";
+import { bookingNeedsHumanCheck, humanCheckRequired, humanTokenFrom, trustedClientIp, verifyHumanCheck } from "./portal/human-check";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { saveBookingSettingsFor, setPortalAccessFor } from "./portal/staff";
 import type { ClinicActor } from "./actor";
 import { createSignInLink, getPortalAccountForPatient, setPortalAccountStatus, signInWithLink } from "../repos/pms/portal/accounts";
@@ -222,6 +224,44 @@ describe("M10 security", () => {
       assert.equal(trustedClientIp(h({ "x-forwarded-for": "6.6.6.6, 203.0.113.9" }), { VERCEL: "1" }), "203.0.113.9", "the last hop");
       assert.equal(trustedClientIp(h({ "x-forwarded-for": "6.6.6.6, 198.51.100.1" }), {}), "198.51.100.1");
       assert.equal(trustedClientIp(h({}), {}), "local");
+    });
+    it("final check: the widget's token reaches siteverify (humanTokenFrom → verifyHumanCheck)", async () => {
+      const env = { NEXT_PUBLIC_CLINIC_TURNSTILE_SITE_KEY: "site-key-fictional", CLINIC_TURNSTILE_SECRET: "secret-fictional" };
+      const token = "tok-" + "a".repeat(40);
+      const sent: string[] = [];
+      const fakeFetch = (async (_url: unknown, init?: { body?: unknown }) => {
+        sent.push(String(init?.body));
+        const body = new URLSearchParams(String(init?.body));
+        return new Response(JSON.stringify({ success: body.get("response") === token }));
+      }) as unknown as typeof fetch;
+      assert.equal(humanTokenFrom({ email: "a@example.com", humanToken: token }), token);
+      assert.equal(humanTokenFrom({ email: "a@example.com" }), null);
+      assert.equal(humanTokenFrom({ humanToken: 42 }), null);
+      assert.equal(humanTokenFrom({ humanToken: "x".repeat(4097) }), null);
+      assert.equal(humanTokenFrom(null), null);
+      assert.deepEqual(await verifyHumanCheck(humanTokenFrom({ humanToken: token }), "203.0.113.9", env, fakeFetch), { ok: true, checked: true });
+      const posted = new URLSearchParams(sent[0]);
+      assert.equal(posted.get("response"), token);
+      assert.equal(posted.get("remoteip"), "203.0.113.9");
+      assert.deepEqual(await verifyHumanCheck(humanTokenFrom({}), null, env, fakeFetch), { ok: false }, "no token, refused");
+      assert.equal(sent.length, 1, "no siteverify call without a token");
+    });
+    it("final check: the public booking and sign-in pages show the widget and their actions forward its token", () => {
+      // Before the final check (1d861d9) neither page passed a site key and neither action passed humanToken, so
+      // setting the two Turnstile keys refused every public booking and every sign-in link.
+      const root = join(process.cwd(), "src/app/(public-clinic)/clinics/[clinicId]");
+      const src = (f: string) => readFileSync(join(root, f), "utf8");
+      assert.match(src("book/page.tsx"), /humanCheckSiteKey=\{humanCheckSiteKey\(\)\}/);
+      assert.match(src("portal/page.tsx"), /humanCheckSiteKey=\{humanCheckSiteKey\(\)\}/);
+      assert.match(src("book/actions.ts"), /bookFromPublicPage\(clinic, input, deps\)/);
+      assert.match(src("book/actions.ts"), /flowDeps\(\{ humanToken: humanTokenFrom\(input\) \}\)/);
+      assert.match(src("portal/actions.ts"), /requestSignInLink\([^)]*flowDeps\(\{ humanToken: humanTokenFrom\(input\) \}\)\)/);
+      const flow = readFileSync(join(process.cwd(), "src/components/pms/portal/booking-flow.tsx"), "utf8");
+      assert.match(flow, /<HumanCheck /);
+      assert.match(flow, /humanToken \}/);
+      const signIn = readFileSync(join(process.cwd(), "src/components/pms/portal/sign-in-form.tsx"), "utf8");
+      assert.match(signIn, /<HumanCheck /);
+      assert.match(readFileSync(join(process.cwd(), "next.config.mjs"), "utf8"), /challenges\.cloudflare\.com/);
     });
     it("staff cannot switch booking for new patients on in production without it", async () => {
       const owner2 = { ...testActor(ctx, A, "owner", { userId: "user_owner", name: "Helen Ward (fictional)" }), siteIds: null } as unknown as ClinicActor;

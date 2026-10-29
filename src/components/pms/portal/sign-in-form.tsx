@@ -4,24 +4,41 @@
 import * as React from "react";
 import { Mail } from "lucide-react";
 import { PmsButton } from "@/components/pms/ui";
+import { HumanCheck } from "@/components/pms/portal/human-check";
 
 type Answer = { ok: true; message?: string } | { ok: false; error: string; fieldErrors?: Record<string, string> };
 
-export function SignInForm({ clinicId, contactLine, action }: { clinicId: string; contactLine: string | null; action: (clinicId: string, input: { email: string; website?: string }) => Promise<Answer> }) {
+export function SignInForm({
+  clinicId,
+  contactLine,
+  action,
+  humanCheckSiteKey = null,
+}: {
+  clinicId: string;
+  contactLine: string | null;
+  action: (clinicId: string, input: { email: string; website?: string; humanToken?: string | null }) => Promise<Answer>;
+  /** The Turnstile site key when the bot check is set up on this deployment (else null – no widget). */
+  humanCheckSiteKey?: string | null;
+}) {
   const [email, setEmail] = React.useState("");
   const [website, setWebsite] = React.useState("");
   const [pending, setPending] = React.useState(false);
   const [sent, setSent] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [fieldError, setFieldError] = React.useState<string | null>(null);
+  const [humanToken, setHumanToken] = React.useState<string | null>(null);
+  const [humanReset, setHumanReset] = React.useState(0);
+  const needsToken = humanCheckSiteKey !== null && !humanToken;
 
   const send = async (e?: React.FormEvent) => {
     e?.preventDefault();
     setPending(true);
     setError(null);
     setFieldError(null);
-    const r = await action(clinicId, { email, website });
+    const r = await action(clinicId, humanCheckSiteKey ? { email, website, humanToken } : { email, website });
     setPending(false);
+    // A Turnstile token works once – ask for a fresh one whatever the answer.
+    if (humanCheckSiteKey) setHumanReset((n) => n + 1);
     if (r.ok) setSent(email.trim());
     else {
       setError(r.error);
@@ -41,7 +58,8 @@ export function SignInForm({ clinicId, contactLine, action }: { clinicId: string
             If <strong>{sent}</strong> is the address we hold for you, we&apos;ve sent a sign-in link to it. It works once, for 15 minutes.
           </p>
         </div>
-        <PmsButton type="button" variant="secondary" size="lg" className="w-full" onClick={() => void send()} loading={pending} loadingText="Sending…">
+        {humanCheckSiteKey ? <HumanCheck siteKey={humanCheckSiteKey} action="portal_sign_in" onToken={setHumanToken} resetKey={humanReset} /> : null}
+        <PmsButton type="button" variant="secondary" size="lg" className="w-full" disabled={needsToken} onClick={() => void send()} loading={pending} loadingText="Sending…">
           Send it again
         </PmsButton>
         {error ? (
@@ -87,7 +105,8 @@ export function SignInForm({ clinicId, contactLine, action }: { clinicId: string
         <label htmlFor="pt-website">Leave this empty</label>
         <input id="pt-website" tabIndex={-1} autoComplete="off" value={website} onChange={(e) => setWebsite(e.target.value)} />
       </div>
-      <PmsButton type="submit" size="lg" className="h-12 w-full text-[16px]" loading={pending} loadingText="Sending…">
+      {humanCheckSiteKey ? <HumanCheck siteKey={humanCheckSiteKey} action="portal_sign_in" onToken={setHumanToken} resetKey={humanReset} /> : null}
+      <PmsButton type="submit" size="lg" className="h-12 w-full text-[16px]" disabled={needsToken} loading={pending} loadingText="Sending…">
         Email me a sign-in link
       </PmsButton>
       {contactLine ? <p className="text-[13px] text-[#334155]">{contactLine}</p> : null}

@@ -10,6 +10,9 @@
  *   A custom NEXT_PUBLIC_POSTHOG_HOST (absolute URL) is added to script-src/connect-src.
  * - media-src: the product demo video at /demo plays from MEDIA_ORIGIN (src/lib/site/demo-video.ts, which a test
  *   holds to this value); its captions track and poster are on our own domain ('self').
+ * - Cloudflare Turnstile (the clinic system's public booking / portal sign-in bot check,
+ *   src/components/pms/portal/human-check.tsx): https://challenges.cloudflare.com joins script-src and frame-src
+ *   only when NEXT_PUBLIC_CLINIC_TURNSTILE_SITE_KEY is set at build time; otherwise the policy is unchanged.
  * - skipTrailingSlashRedirect: the analytics API paths end in "/" and must not be redirected.
  */
 
@@ -28,18 +31,21 @@ function analyticsOrigin() {
   }
 }
 
+/** Turnstile's origin when the clinic system's bot check is set up on this build (see human-check.ts), else null. */
+const TURNSTILE_ORIGIN = process.env.NEXT_PUBLIC_CLINIC_TURNSTILE_SITE_KEY?.trim() ? "https://challenges.cloudflare.com" : null;
+
 function contentSecurityPolicy() {
   const extra = analyticsOrigin();
   const directives = {
     "default-src": ["'self'"],
-    "script-src": ["'self'", "'unsafe-inline'", ...(isDev ? ["'unsafe-eval'"] : []), ...(extra ? [extra] : [])],
+    "script-src": ["'self'", "'unsafe-inline'", ...(isDev ? ["'unsafe-eval'"] : []), ...(extra ? [extra] : []), ...(TURNSTILE_ORIGIN ? [TURNSTILE_ORIGIN] : [])],
     "style-src": ["'self'", "'unsafe-inline'"],
     "img-src": ["'self'", "data:", "blob:"],
     "media-src": ["'self'", MEDIA_ORIGIN],
     "font-src": ["'self'", "data:"],
     "worker-src": ["'self'", "blob:"],
     "connect-src": ["'self'", ...(extra ? [extra] : [])],
-    "frame-src": ["'none'"],
+    "frame-src": TURNSTILE_ORIGIN ? [TURNSTILE_ORIGIN] : ["'none'"],
     "frame-ancestors": ["'none'"],
     "base-uri": ["'self'"],
     "form-action": ["'self'"],

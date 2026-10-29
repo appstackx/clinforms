@@ -13,6 +13,7 @@ import * as React from "react";
 import Link from "next/link";
 import { Check, ChevronLeft, Clock, Crosshair, MapPin, Search } from "lucide-react";
 import { PmsButton } from "@/components/pms/ui";
+import { HumanCheck } from "@/components/pms/portal/human-check";
 import { formatMiles, milesBetween, type LatLng } from "@/modules/pms/portal/distance";
 import { formatDayDate, formatUkTime, formatWhen } from "@/modules/pms/portal/time";
 import { BOOKING_DETAIL_FIELDS, bookingDetailsErrors } from "@/modules/pms/portal/schemas";
@@ -35,6 +36,8 @@ export interface BookingFlowProps {
   fixed?: { siteId: string; serviceId: string; label: string };
   /** Portal and move modes: where "Back" from the first step goes, and where to go when done. */
   homeHref?: string;
+  /** Public mode: the Turnstile site key when the bot check is set up on this deployment (else null – no widget). */
+  humanCheckSiteKey?: string | null;
 }
 
 const STEP_NAMES: Record<Step, string> = { site: "Clinic", service: "Service", prac: "Practitioner", time: "Time", details: "Your details", confirm: "Confirm", done: "Booked" };
@@ -84,7 +87,7 @@ function icsHref(r: BookResultView, clinicName: string): string {
   return `data:text/calendar;charset=utf-8,${encodeURIComponent(lines.join("\r\n"))}`;
 }
 
-export function BookingFlow({ mode, clinicId, data, portalPath, loadSlots, book, fixed, homeHref }: BookingFlowProps) {
+export function BookingFlow({ mode, clinicId, data, portalPath, loadSlots, book, fixed, homeHref, humanCheckSiteKey = null }: BookingFlowProps) {
   const steps = stepsFor(mode);
   const [step, setStep] = React.useState<Step>(steps[0]);
   const [siteId, setSiteId] = React.useState<string | null>(fixed?.siteId ?? null);
@@ -98,6 +101,9 @@ export function BookingFlow({ mode, clinicId, data, portalPath, loadSlots, book,
   const [error, setError] = React.useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({});
   const [details, setDetails] = React.useState({ firstName: "", lastName: "", dateOfBirth: "", phoneMobile: "", email: "", paying: "self", reminders: true, website: "" });
+  const humanKey = mode === "public" ? humanCheckSiteKey : null;
+  const [humanToken, setHumanToken] = React.useState<string | null>(null);
+  const [humanReset, setHumanReset] = React.useState(0);
   const [done, setDone] = React.useState<BookResultView | null>(null);
   const [origin, setOrigin] = React.useState<LatLng | null>(null);
   const [locating, setLocating] = React.useState(false);
@@ -199,8 +205,10 @@ export function BookingFlow({ mode, clinicId, data, portalPath, loadSlots, book,
     setError(null);
     setFieldErrors({});
     const practitionerId = pracId === "any" ? "any" : slot.practitionerId;
-    const r = await book(clinicId, mode === "public" ? { siteId, serviceId, practitionerId, startsAt: slot.startsAt, ...details } : { siteId, serviceId, practitionerId, startsAt: slot.startsAt });
+    const r = await book(clinicId, mode === "public" ? { siteId, serviceId, practitionerId, startsAt: slot.startsAt, ...details, ...(humanKey ? { humanToken } : {}) } : { siteId, serviceId, practitionerId, startsAt: slot.startsAt });
     setLoading(false);
+    // A Turnstile token works once – ask for a fresh one whatever the answer.
+    if (humanKey) setHumanReset((n) => n + 1);
     if (r.ok) {
       setDone(r);
       go("done");
@@ -234,7 +242,7 @@ export function BookingFlow({ mode, clinicId, data, portalPath, loadSlots, book,
   const cta: Partial<Record<Step, { label: string; disabled: boolean; onClick: () => void }>> = {
     time: { label: "Continue", disabled: !slot, onClick: () => go(mode === "public" ? "details" : "confirm") },
     details: { label: "Continue", disabled: false, onClick: continueFromDetails },
-    confirm: { label: mode === "move" ? "Move my appointment" : "Confirm booking", disabled: loading || !slot, onClick: () => void submit() },
+    confirm: { label: mode === "move" ? "Move my appointment" : "Confirm booking", disabled: loading || !slot || (humanKey !== null && !humanToken), onClick: () => void submit() },
   };
   const action = cta[step];
 
@@ -586,6 +594,11 @@ export function BookingFlow({ mode, clinicId, data, portalPath, loadSlots, book,
               </span>
             </div>
             {mode !== "move" ? <p className="mt-3 text-[14px] text-[#334155]">Pay at the clinic. No card needed now.</p> : null}
+            {humanKey ? (
+              <div className="mt-4">
+                <HumanCheck siteKey={humanKey} action="booking" onToken={setHumanToken} resetKey={humanReset} />
+              </div>
+            ) : null}
           </section>
         ) : null}
 

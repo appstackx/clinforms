@@ -1,9 +1,11 @@
 /**
  * Bot check for the public booking and sign-in forms – READY BUT OFF. When both
  *   NEXT_PUBLIC_CLINIC_TURNSTILE_SITE_KEY (shown in the page) and CLINIC_TURNSTILE_SECRET (server only)
- * are set, the forms show the challenge and the server verifies the token with Cloudflare's siteverify endpoint
- * before booking; otherwise the honeypot field and the rate limits protect the forms on their own. Turning it on
- * also needs challenges.cloudflare.com in the Content Security Policy (script-src, frame-src) – next.config.mjs.
+ * are set, the forms show the Cloudflare Turnstile widget (src/components/pms/portal/human-check.tsx; the pages pass
+ * humanCheckSiteKey() down), the actions forward its token (humanTokenFrom) and the server verifies it with
+ * Cloudflare's siteverify endpoint before booking or sending a sign-in link; otherwise the honeypot field and the
+ * rate limits protect the forms on their own. next.config.mjs adds challenges.cloudflare.com to the Content Security
+ * Policy (script-src, frame-src) when the site key is set at build time.
  */
 import "server-only";
 
@@ -15,6 +17,16 @@ export function humanCheckSiteKey(env: Env = process.env): string | null {
   const site = env.NEXT_PUBLIC_CLINIC_TURNSTILE_SITE_KEY?.trim();
   const secret = env.CLINIC_TURNSTILE_SECRET?.trim();
   return site && secret ? site : null;
+}
+
+/**
+ * The widget's token from a form's input (the field `humanToken`), or null. The schemas ignore the extra field; the
+ * actions pass it to the flows as FlowDeps.humanToken (final check 29/10/2026: before this the token never reached
+ * the server, so setting the two keys refused every booking and sign-in link).
+ */
+export function humanTokenFrom(input: Readonly<Record<string, unknown>> | null | undefined): string | null {
+  const t = input?.humanToken;
+  return typeof t === "string" && t.length > 0 && t.length <= 4096 ? t : null;
 }
 
 /**

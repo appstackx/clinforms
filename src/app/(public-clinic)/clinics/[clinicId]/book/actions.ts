@@ -10,6 +10,7 @@ import { formatWhen } from "@/modules/pms/portal/time";
 import { bookFromPublicPage } from "@/server/pms/portal/booking";
 import { slotsForWeek, type SlotsAnswer } from "@/server/pms/portal/booking-view";
 import { directoryView } from "@/server/pms/portal/directory-view";
+import { humanTokenFrom } from "@/server/pms/portal/human-check";
 import { flowDeps, publicClinicFor } from "@/server/pms/portal/public-page";
 
 const CLOSED = "Online booking is closed at the moment. Please contact the clinic.";
@@ -25,7 +26,7 @@ export type BookAnswer = BookResultView | { ok: false; error: string; fieldError
 export async function bookAction(clinicId: string, input: Record<string, unknown>): Promise<BookAnswer> {
   const clinic = await publicClinicFor(clinicId);
   if (!clinic || !clinic.settings.onlineBooking) return { ok: false, error: CLOSED };
-  const deps = flowDeps();
+  const deps = flowDeps({ humanToken: humanTokenFrom(input) });
   const r = await bookFromPublicPage(clinic, input, deps);
   if (!r.ok) return r;
   const dir = await directoryView(deps.ctx, clinic.tenantId);

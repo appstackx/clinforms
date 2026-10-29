@@ -16,6 +16,7 @@ import { SIGN_IN_SENT, completeSignIn, requestSignInLink, signOutPortal, PORTAL_
 import { patientForm } from "@/server/pms/portal/portal-views";
 import { clearPortalCookie, evenTiming, flowDeps, portalViewer, publicClinicFor, safePortalNext, setPortalCookie } from "@/server/pms/portal/public-page";
 import { cookies } from "next/headers";
+import { humanTokenFrom } from "@/server/pms/portal/human-check";
 import type { BookResultView } from "@/modules/pms/portal/flow-types";
 import { formatScore } from "@/modules/pms/records/outcomes";
 import { getOutcome } from "@/server/repos/pms/records/outcomes";
@@ -25,11 +26,11 @@ const SIGNED_OUT = "Your session has ended. Please sign in again.";
 export type SimpleAnswer = { ok: true; message?: string } | { ok: false; error: string; fieldErrors?: Record<string, string> };
 
 /** "Email me a sign-in link": the same answer, after about the same time, whoever asks. */
-export async function requestLinkAction(clinicId: string, input: { email: string; website?: string }): Promise<SimpleAnswer> {
+export async function requestLinkAction(clinicId: string, input: { email: string; website?: string; humanToken?: string | null }): Promise<SimpleAnswer> {
   const clinic = await publicClinicFor(clinicId);
   if (!clinic || !clinic.settings.portal) return { ok: false, error: "The patient portal is not open at the moment. Please contact the clinic." };
   // M10 L7: 2.5 s covers a matched request on D1 (account, link, email through comms) – slower ones round up.
-  const r = await evenTiming(2500, () => requestSignInLink(clinic, input, flowDeps()));
+  const r = await evenTiming(2500, () => requestSignInLink(clinic, { email: input.email, website: input.website }, flowDeps({ humanToken: humanTokenFrom(input) })));
   return r.ok ? { ok: true, message: SIGN_IN_SENT } : r;
 }
 
