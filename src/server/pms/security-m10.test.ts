@@ -17,6 +17,8 @@ import { messageDetailFor, outboxFor, patientMessagesFor } from "./comms/views";
 import { retryMessageFor } from "./comms/writes";
 import { clearTestOutbox, testOutbox } from "./comms/providers/test";
 import { sendSignInLink } from "./portal/portal-auth";
+import { clinicalAccessFrom } from "./native-report-access";
+import { saveRolePermissions } from "../repos/pms/access";
 import { testActor, type RecordsActor, type Result } from "./records/access";
 
 const A = "riverside-a";
@@ -102,6 +104,17 @@ describe("M10 security", () => {
       assert.ok(!hasSecretLink(shown) && !TOKEN_RUN.test(shown) && shown.includes(HIDDEN_LINK) && shown.endsWith("footer"));
       assert.ok(!TOKEN_RUN.test(redactSecretLinks("Manage: /clinics/riverside-a/booking/AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-abcde")));
       assert.equal(redactSecretLinks("Stop emails: https://x.example/api/clinic-messages/unsubscribe?t=v1.a.b"), "Stop emails: https://x.example/api/clinic-messages/unsubscribe?t=v1.a.b", "other links unchanged");
+    });
+  });
+
+  describe("H2: the host's rule reads the member's clinic-system access", () => {
+    it("clinician yes; reception no; a clinician whose clinical.view the clinic switched off no", async () => {
+      const read = clinicalAccessFrom(() => ({ db: g.db }));
+      assert.equal(await read(A, "user_clin", "clinician"), true);
+      assert.equal(await read(A, "user_rec", "staff"), false);
+      assert.equal((await saveRolePermissions(ctx, A, [{ role: "clinician", permission: "clinical.view", allowed: false }], OWNER)).ok, true);
+      assert.equal(await read(A, "user_clin", "clinician"), false);
+      assert.equal((await saveRolePermissions(ctx, A, [{ role: "clinician", permission: "clinical.view", allowed: true }], OWNER)).ok, true);
     });
   });
 });
