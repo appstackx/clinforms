@@ -62,6 +62,25 @@ refused on a production deployment unless `CLINIC_ALLOW_TEST_PROVIDER=1`. The SM
 `CLINIC_SMS_PROVIDER=test` and `CLINIC_SMS_WEBHOOK_SECRET` (32+ characters). A live email or SMS provider is
 K2-COMMS-005/006 (after gate B, DPA, Khuram's choice of service).
 
+### Local testing with Mailpit
+
+`mailpit` is a third value for both variables, for **local runs only** (`src/server/pms/comms/providers/mailpit.ts`).
+The real message – including the portal sign-in link that staff screens never show – is handed to a local
+[Mailpit](https://mailpit.axllent.org) inbox through its HTTP API (`POST $MAILPIT_URL/api/v1/send`; `MAILPIT_URL`
+defaults to `http://localhost:8026`) and recorded as sent, like `test`. With `CLINIC_SMS_PROVIDER=mailpit` a text
+appears there as a plain email to `<phone digits>@sms.local` (e.g. `447700900123@sms.local`) with subject "Text message" (nothing is texted; the SMS webhook
+stays `test`-only, so simulated replies and delivery receipts need `test`). It is refused (the Messages screen shows
+"not set up correctly") on any Vercel environment, and with `NODE_ENV=production` unless `MAILPIT_URL` points at
+localhost / 127.0.0.1 (so a local `next start` works). The ClinForms account emails (invitations, sign-in and reset
+links) can use the same inbox with `CLINFORMS_EMAIL_PROVIDER=mailpit` (`src/server/email/providers.ts`).
+
+```sh
+# Mailpit must expose its web/API port; SMTP is not needed.
+export CLINFORMS_EMAIL_PROVIDER=mailpit CLINIC_EMAIL_PROVIDER=mailpit CLINIC_SMS_PROVIDER=mailpit
+export MAILPIT_URL=http://localhost:8026
+# then open http://localhost:8026 to read what was sent
+```
+
 ## Route placement (M6 decision)
 
 The three sessionless endpoints live together under `src/app/api/clinic-messages/{cron,sms,unsubscribe}/route.ts`,

@@ -31,7 +31,7 @@ const MAX_SKEW_SECONDS = 300;
 export interface WebhookDeps {
   secret: string | undefined;
   /** The SMS provider's mode: the webhook exists only for "test". */
-  providerMode: "outbox" | "test" | "misconfigured";
+  providerMode: "outbox" | "test" | "mailpit" | "misconfigured";
   ctx: () => RepoContext;
   /** Providers for the one confirmation text after a STOP (optional). */
   dispatch?: () => DispatchDeps;
