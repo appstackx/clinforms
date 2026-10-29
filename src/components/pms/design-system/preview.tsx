@@ -1,6 +1,7 @@
 "use client";
 /**
- * The design-system preview (/app/clinic/design-system): every kit component with the design's fictional examples,
+ * The design-system preview (/app/clinic/design-system): every kit component with the design's fictional examples
+ * (the round 2 brief's Part A components follow in ./part-a),
  * laid out like docs/clinic-system/design/design-system-v1.pdf so the two can be compared side by side. Fixed
  * example data only – no clinic data is read.
  */
@@ -48,6 +49,7 @@ import {
   type DiaryBlockStatus,
   type SortState,
 } from "../ui";
+import { PartAShowcase } from "./part-a";
 
 const COLOURS = [
   { name: "background", hsl: "210 40% 98%", hex: "#F8FAFC", swatch: "bg-background", on: "text-foreground", sample: "Aa", use: "App canvas" },
@@ -645,6 +647,8 @@ export function DesignSystemPreview({ productName }: { productName: string }) {
           ]}
         />
       </Section>
+
+      <PartAShowcase />
     </div>
   );
 }
