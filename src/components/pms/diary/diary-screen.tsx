@@ -14,7 +14,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Ban, ChevronLeft, ChevronRight, Hourglass, Move, Plus, Printer } from "lucide-react";
+import { AlertTriangle, Ban, ChevronLeft, ChevronRight, Clock, Hourglass, Move, PanelRightOpen, Plus, Printer } from "lucide-react";
 import { moveAppointmentAction, resizeAppointmentAction, setAppointmentStatusAction } from "@/app/app/clinic/diary/actions";
 import { formatHhmm, londonParts } from "@/modules/pms/diary/time";
 import type { AppointmentStatus } from "@/modules/pms/diary/rules";
@@ -25,12 +25,14 @@ import { Kbd, ShortcutsSheet } from "../ui/keyboard-hint";
 import { SelectInput, Switch } from "../ui/inputs";
 import { DIARY_SHORTCUTS, isPlainKey, isTypingTarget } from "../ui/shortcuts";
 import { useToast } from "../ui/toast";
+import { ContextMenu, isContextMenuKey, pointOf, type ContextMenuItem } from "../ui/context-menu";
 import { SITE_COOKIE, SITE_COOKIE_MAX_AGE } from "../shell/site-cookie";
-import { DIARY_PATH } from "./api";
+import { DIARY_PATH, diaryApi } from "./api";
 import { AppointmentDrawer } from "./appointment-drawer";
+import { useAppointmentActions, type DrawerPanel, type StatusUndo } from "./appointment-actions";
 import { BookingDialog, type BookingPreset } from "./booking-dialog";
 import { DiaryGrid, ResourceHeader, type GridPreview } from "./diary-grid";
-import { bookedText, cardSpan, clampLength, clampStart, clashInColumn, longDate, patientClash, weekRange } from "./grid-model";
+import { bookedText, cardSpan, clampLength, clampStart, clashInColumn, crossesResource, firstFreeStart, inWindows, longDate, patientClash, weekRange } from "./grid-model";
 import { MobileDiary } from "./mobile-diary";
 
 export interface DiaryScreenProps {
@@ -60,6 +62,15 @@ interface Moving {
   columnIndex: number;
   start: number;
   length: number;
+  /** Enter pressed once on another practitioner's column or another site: the second Enter moves it. */
+  confirm?: boolean;
+}
+
+/** The block's context menu: which item, where it opened, the item's details once loaded. */
+interface BlockMenu {
+  id: string;
+  point: { x: number; y: number };
+  trigger: HTMLElement | null;
 }
 
 export function DiaryScreen({ data, cookieSite, can, payers, unsignedNotes }: DiaryScreenProps) {
@@ -76,6 +87,29 @@ export function DiaryScreen({ data, cookieSite, can, payers, unsignedNotes }: Di
   const [nowMinute, setNowMinute] = React.useState<number | null>(null);
   const [isToday, setIsToday] = React.useState<string>(data.today);
   const blocks = React.useRef(new Map<string, HTMLButtonElement>());
+  const [drawerPanel, setDrawerPanel] = React.useState<DrawerPanel | null>(null);
+  const [menu, setMenu] = React.useState<BlockMenu | null>(null);
+  const [menuDetails, setMenuDetails] = React.useState<AppointmentDetailsView | null>(null);
+  // After a move or resize the block is drawn again (a new column, a new height): focus goes back to it, not <body>.
+  const focusAfter = React.useRef<{ id: string; until: number } | null>(null);
+  React.useEffect(() => {
+    const f = focusAfter.current;
+    if (!f) return;
+    if (Date.now() > f.until) {
+      focusAfter.current = null;
+      return;
+    }
+    const el = blocks.current.get(f.id);
+    if (el && el.isConnected && document.activeElement !== el) {
+      el.focus();
+      focusAfter.current = null;
+    }
+  }, [data.cards]);
+  const keepFocusOn = (id: string) => {
+    focusAfter.current = { id, until: Date.now() + 15_000 };
+    const el = blocks.current.get(id);
+    if (el && el.isConnected) el.focus();
+  };
 
   // The current time (client only – the server's render has none, so hydration matches).
   React.useEffect(() => {
@@ -121,9 +155,11 @@ export function DiaryScreen({ data, cookieSite, can, payers, unsignedNotes }: Di
     const key = `${preset.waitingListId ?? ""}:${preset.patientId}`;
     if (presetUsed.current === key) return;
     presetUsed.current = key;
+    const date = p.date < data.today ? data.today : p.date;
+    const free = firstFreeStart(data.columns, preset.practitionerId, date);
     setBooking({
-      date: p.date < data.today ? data.today : p.date,
-      time: "09:00",
+      date,
+      time: free !== null ? formatHhmm(free) : "09:00",
       practitionerId: preset.practitionerId,
       roomId: null,
       patient: { id: preset.patientId, name: preset.patientName },
@@ -131,7 +167,7 @@ export function DiaryScreen({ data, cookieSite, can, payers, unsignedNotes }: Di
       caseId: preset.caseId,
       waitingListId: preset.waitingListId,
     });
-  }, [data.bookingPreset, can.book, p.date, data.today]);
+  }, [data.bookingPreset, data.columns, can.book, p.date, data.today]);
 
   const refresh = React.useCallback(() => {
     router.refresh();
@@ -172,6 +208,7 @@ export function DiaryScreen({ data, cookieSite, can, payers, unsignedNotes }: Di
       if (r.conflict) refresh();
       return;
     }
+    keepFocusOn(card.id);
     refresh();
     undoToast(`${card.patientName ?? "Appointment"} moved to ${formatHhmm(start)}${p.view === "day" ? ` with ${columns[columnIndex].label}` : ` on ${longDate(columns[columnIndex].date)}`}${r.warnings.length ? `. ${r.warnings.join(" ")}` : ""}`, async () => {
       const back = await moveAppointmentAction({ id: card.id, expectedRev: r.rev ?? card.rev + 1, ...placement(from, span.start) });
@@ -188,6 +225,7 @@ export function DiaryScreen({ data, cookieSite, can, payers, unsignedNotes }: Di
       if (r.conflict) refresh();
       return;
     }
+    keepFocusOn(card.id);
     refresh();
     undoToast(`${card.patientName ?? "Appointment"} now ${length} min`, async () => {
       const back = await resizeAppointmentAction({ id: card.id, expectedRev: r.rev ?? card.rev + 1, durationMinutes: span.end - span.start });
@@ -224,7 +262,7 @@ export function DiaryScreen({ data, cookieSite, can, payers, unsignedNotes }: Di
 
   const onBlockKey = (e: React.KeyboardEvent<HTMLButtonElement>, card: DiaryCard, columnIndex: number) => {
     if (moving && moving.card.id === card.id) {
-      const m = { ...moving };
+      const m: Moving = { ...moving, confirm: false };
       if (e.key === "ArrowUp") m.start = clampStart(m.start - 15, m.length, grid);
       else if (e.key === "ArrowDown") m.start = clampStart(m.start + 15, m.length, grid);
       else if (e.key === "ArrowLeft") m.columnIndex = Math.max(0, m.columnIndex - 1);
@@ -243,6 +281,12 @@ export function DiaryScreen({ data, cookieSite, can, payers, unsignedNotes }: Di
           setMoveMessage("blocked");
           return;
         }
+        // Another practitioner or another site: say so and ask for a second Enter (K2 M10 finding 3).
+        if (crossesResource(columns[columnIndex], columns[m.columnIndex]) && !moving.confirm) {
+          setMoveMessage(null);
+          setMoving({ ...m, confirm: true });
+          return;
+        }
         setMoving(null);
         const span = cardSpan(card, columns[columnIndex].date);
         if (m.start !== span.start || m.columnIndex !== columnIndex) void saveMove(card, m.columnIndex, m.start, anyway);
@@ -253,7 +297,13 @@ export function DiaryScreen({ data, cookieSite, can, payers, unsignedNotes }: Di
       setMoving(m);
       return;
     }
-    if (moving || !can.book || card.kind !== "appointment") return;
+    if (moving) return;
+    if (isContextMenuKey(e)) {
+      e.preventDefault();
+      openMenu(card.id, pointOf(e.currentTarget), e.currentTarget);
+      return;
+    }
+    if (!can.book || card.kind !== "appointment") return;
     if (isPlainKey(e, "m") || isPlainKey(e, "M")) {
       e.preventDefault();
       startMove(card.id);
@@ -268,7 +318,7 @@ export function DiaryScreen({ data, cookieSite, can, payers, unsignedNotes }: Di
   // Page shortcuts: N new appointment, T today, [ ] previous / next, ? the sheet (the shell has "/" and "?").
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.defaultPrevented || isTypingTarget(e.target as HTMLElement | null) || booking || moving) return;
+      if (e.defaultPrevented || isTypingTarget(e.target as HTMLElement | null) || booking || moving || selectedId || menu) return;
       if ((isPlainKey(e, "n") || isPlainKey(e, "N")) && can.book && data.site) {
         e.preventDefault();
         openNew();
@@ -291,7 +341,10 @@ export function DiaryScreen({ data, cookieSite, can, payers, unsignedNotes }: Di
   const openNew = (preset?: Partial<BookingPreset>) => {
     const date = p.view === "week" ? (columns.find((c) => c.date >= data.today)?.date ?? columns[0]?.date ?? p.date) : p.date;
     const minute = nowMinute !== null && date === isToday ? Math.ceil((nowMinute + 1) / 15) * 15 : 9 * 60;
-    setBooking({ date, time: formatHhmm(Math.min(minute, 20 * 60)), practitionerId: p.by === "practitioner" && p.view === "week" ? p.resourceId : firstPractitioner, roomId: null, ...preset });
+    const practitionerId = p.by === "practitioner" && p.view === "week" ? p.resourceId : firstPractitioner;
+    // The first free time of that practitioner on that day (free slots are never in the past), not a clash at 09:00.
+    const free = firstFreeStart(columns, preset?.practitionerId ?? practitionerId, preset?.date ?? date);
+    setBooking({ date, time: formatHhmm(Math.min(free ?? minute, 20 * 60)), practitionerId, roomId: null, ...preset });
   };
 
   const onSlot = (columnIndex: number, minute: number) => {
@@ -322,11 +375,68 @@ export function DiaryScreen({ data, cookieSite, can, payers, unsignedNotes }: Di
   const closeDrawer = () => {
     const id = selectedId;
     setSelectedId(null);
+    setDrawerPanel(null);
     if (id) window.setTimeout(() => blocks.current.get(id)?.focus(), 0);
   };
 
+  const onItemChanged = (message: string, undo: StatusUndo | null) => {
+    refresh();
+    if (undo) {
+      undoToast(message, async () => {
+        const r = await setAppointmentStatusAction({ id: undo.id, expectedRev: undo.rev, status: undo.status as AppointmentStatus });
+        if (!r.ok) toast.error(r.error);
+        refresh();
+      });
+    } else toast.success(message);
+  };
+
+  // The block's context menu (right-click, Shift+F10, the menu key): "Open details" and the drawer's actions.
+  const openMenu = (id: string, point: { x: number; y: number }, trigger: HTMLElement | null) => {
+    if (moving) return;
+    setMenuDetails((d) => (d && d.id === id ? d : null));
+    setMenu({ id, point, trigger: trigger ?? blocks.current.get(id) ?? null });
+  };
+  React.useEffect(() => {
+    if (!menu) return;
+    let live = true;
+    void diaryApi.appointment<AppointmentDetailsView>(menu.id).then((r) => {
+      if (!live) return;
+      if (r.ok) setMenuDetails(r.data);
+      else toast.error(r.error);
+    });
+    return () => {
+      live = false;
+    };
+  }, [menu, toast]);
+  const menuCard = menu ? data.cards.find((c) => c.id === menu.id) : undefined;
+  const menuD = menu && menuDetails && menuDetails.id === menu.id ? menuDetails : null;
+  const menuActions = useAppointmentActions(menuD, { book: can.book, clinical: can.clinical, pay: can.pay, message: can.message }, {
+    onChanged: onItemChanged,
+    onError: (m) => toast.error(m),
+    onMove: (id) => startMove(id),
+    onRebook: (d) => onRebook(d),
+    openPanel: (panel) => {
+      if (!menu) return;
+      setDrawerPanel(panel);
+      setSelectedId(menu.id);
+    },
+  });
+  const menuItems: ContextMenuItem[] = menu
+    ? [
+        { key: "open", label: "Open details", icon: PanelRightOpen, shortcut: "Enter", onSelect: () => setSelectedId(menu.id) },
+        ...(menuD
+          ? menuActions.actions.map((x, i) => ({ key: x.key, label: x.label, icon: x.icon, danger: x.danger, shortcut: x.kbd, separatorBefore: i === 0, onSelect: x.run }))
+          : [{ key: "loading", label: "Loading actions…", disabled: true, separatorBefore: true, onSelect: () => undefined }]),
+      ]
+    : [];
+
   const preview: GridPreview | null = moving ? { id: moving.card.id, columnIndex: moving.columnIndex, start: moving.start, length: moving.length, clash: clashAt(moving.card.id, moving.columnIndex, moving.start, moving.length) } : null;
   const movingClash = moving ? clashWith(moving.card, moving.columnIndex, moving.start, moving.length) : null;
+  const movingColumn = moving ? columns[moving.columnIndex] : undefined;
+  // Outside the practitioner's (or the room's) rota: said in the live hint BEFORE Enter (the server warns again).
+  const movingOutOfHours = Boolean(moving && movingColumn && movingColumn.key !== "r:none" && !inWindows(movingColumn, moving.start, moving.start + moving.length));
+  const movingFrom = moving ? columns.find((c) => c.key === moving.card.columnKey) : undefined;
+  const movingCrosses = Boolean(moving && movingFrom && movingColumn && crossesResource(movingFrom, movingColumn));
 
   const segment = (on: boolean) =>
     cn("inline-flex h-[30px] items-center rounded-[8px] px-3 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary", on ? "bg-white font-semibold text-foreground shadow-[0_1px_2px_rgba(15,23,42,0.08)]" : "text-[#475569] hover:text-foreground");
@@ -348,6 +458,9 @@ export function DiaryScreen({ data, cookieSite, can, payers, unsignedNotes }: Di
           dayHref={(date) => href({ date, view: "day", by: "practitioner" })}
           nowMinute={nowMinute}
           unsignedNotes={unsignedNotes}
+          holds={data.holds}
+          holdHref={can.rota || can.book ? `${DIARY_PATH}/waiting-list${data.site ? `?site=${data.site.id}` : ""}` : undefined}
+          closure={p.view === "day" ? (data.closures.find((c) => c.date === p.date) ?? null) : null}
           onOpen={setSelectedId}
         />
         {p.view !== "day" || p.by !== "practitioner" ? (
@@ -357,7 +470,7 @@ export function DiaryScreen({ data, cookieSite, can, payers, unsignedNotes }: Di
             </Link>
           </p>
         ) : null}
-        {can.book && data.site ? (
+        {can.book && data.site && !(p.view === "day" && data.closures.some((c) => c.date === p.date)) ? (
           <PmsButton size="lg" className="mt-3 w-full" onClick={() => openNew()}>
             <Plus aria-hidden />
             New appointment
@@ -454,7 +567,7 @@ export function DiaryScreen({ data, cookieSite, can, payers, unsignedNotes }: Di
 
         <div aria-live="polite" className="min-h-[28px]">
           {moving ? (
-            <div className={cn("flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[10px] border px-3 py-1.5 text-sm", movingClash ? "border-[#FECACA] bg-[#FEF2F2] text-destructive-strong" : "border-[#99E2D8] bg-[#F0FDFA] text-[#0B5F58]")}>
+            <div data-testid="move-hint" className={cn("flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[10px] border px-3 py-1.5 text-sm", movingClash ? "border-[#FECACA] bg-[#FEF2F2] text-destructive-strong" : movingOutOfHours || moving.confirm ? "border-[#FDBA74] bg-[#FFF7ED] text-[#9A3412]" : "border-[#99E2D8] bg-[#F0FDFA] text-[#0B5F58]")}>
               {movingClash ? <AlertTriangle className="h-4 w-4" aria-hidden /> : <Move className="h-4 w-4" aria-hidden />}
               <span className="font-semibold">
                 Moving {moving.card.patientName ?? "appointment"} → {formatHhmm(moving.start)}–{formatHhmm(moving.start + moving.length)}, {columnName(moving.columnIndex)}
@@ -464,6 +577,19 @@ export function DiaryScreen({ data, cookieSite, can, payers, unsignedNotes }: Di
                   ? `${moveMessage === "blocked" ? "Can't drop here – " : ""}${movingClash.patientId && movingClash.patientId === moving.card.patientId ? `the patient already has ${movingClash.practitionerName ?? "another appointment"}` : `clashes with ${movingClash.kind === "block" ? (movingClash.title ?? "blocked time") : (movingClash.patientName ?? "another appointment")}`} ${movingClash.timeLabel}`
                   : "Slot is free"}
               </span>
+              {movingOutOfHours ? (
+                <span data-testid="move-out-of-hours" className="inline-flex items-center gap-1 font-semibold text-[#9A3412]">
+                  <Clock className="h-4 w-4" aria-hidden />
+                  Outside {movingColumn?.practitionerId || p.view === "week" ? "the practitioner's" : "the room's"} working hours
+                </span>
+              ) : null}
+              {moving.confirm ? (
+                <span data-testid="move-confirm" className="font-semibold text-[#9A3412]">
+                  Move to {columnName(moving.columnIndex)}{movingFrom && movingColumn && movingFrom.siteId !== movingColumn.siteId ? " (another site)" : ""}? Press <Kbd>Enter</Kbd> again to confirm
+                </span>
+              ) : movingCrosses && !movingClash ? (
+                <span className="text-xs">{p.view === "week" ? "Another site" : "Another practitioner"} – Enter asks you to confirm</span>
+              ) : null}
               {movingClash && overridableClash(moving.card, movingClash, moving.columnIndex) ? (
                 <span className="text-xs">
                   <Kbd>Shift+Enter</Kbd> book anyway (double-booking is logged)
@@ -535,6 +661,7 @@ export function DiaryScreen({ data, cookieSite, can, payers, unsignedNotes }: Di
               setSelectedId(id);
             }}
             onBlockKey={onBlockKey}
+            onBlockMenu={(id, point, el) => openMenu(id, point, el)}
             onSlot={onSlot}
             onDrop={(card, change) => (change.resize ? void saveResize(card, change.length) : void saveMove(card, change.columnIndex, change.start))}
             clashAt={clashAt}
@@ -553,18 +680,10 @@ export function DiaryScreen({ data, cookieSite, can, payers, unsignedNotes }: Di
         id={selectedId}
         version={drawerVersion}
         can={{ book: can.book, clinical: can.clinical, pay: can.pay, message: can.message }}
+        initialPanel={drawerPanel}
         onClose={closeDrawer}
         onError={(m) => toast.error(m)}
-        onChanged={(message, undo) => {
-          refresh();
-          if (undo) {
-            undoToast(message, async () => {
-              const r = await setAppointmentStatusAction({ id: undo.id, expectedRev: undo.rev, status: undo.status as AppointmentStatus });
-              if (!r.ok) toast.error(r.error);
-              refresh();
-            });
-          } else toast.success(message);
-        }}
+        onChanged={onItemChanged}
         onMove={(id) => startMove(id)}
         onRebook={onRebook}
       />
@@ -588,6 +707,14 @@ export function DiaryScreen({ data, cookieSite, can, payers, unsignedNotes }: Di
           onBooked={() => refresh()}
         />
       ) : null}
+      <ContextMenu
+        open={Boolean(menu)}
+        point={menu?.point ?? null}
+        label={`Actions for ${menuCard ? (menuCard.kind === "block" ? (menuCard.title ?? "blocked time") : (menuCard.patientName ?? "the appointment")) : "the appointment"}`}
+        items={menuItems}
+        returnFocusTo={menu?.trigger ?? null}
+        onClose={() => setMenu(null)}
+      />
       <ShortcutsSheet open={shortcuts} onOpenChange={setShortcuts} groups={[{ title: "Diary", shortcuts: [...DIARY_SHORTCUTS, { label: "Shorten / lengthen selected appointment", keys: ["Shift", "↑", "↓"] }] }]} />
     </div>
   );
