@@ -3,13 +3,24 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { NextRequest } from "next/server";
 import { SESSION_COOKIE_NAMES } from "../../lib/session-cookie";
+import { BRANDS } from "../../lib/brand";
 import { PUBLIC_SITE_PATHS, config, middleware } from "../../middleware";
 import { createSqliteTestDb } from "../db/testing/databases";
 import { createAuth } from "./create-auth";
 import { createClinic } from "./platform";
 import { CookieJar } from "./testing/cookie-jar";
 
-const m = () => config.matcher as readonly string[];
+type Matcher = string | { source: string; has?: { type: string; value: string }[] };
+const entries = () => config.matcher as readonly Matcher[];
+const plain = () => entries().filter((e): e is string => typeof e === "string");
+const sourceOf = (e: Matcher) => (typeof e === "string" ? e : e.source);
+/** The host pattern every app-only brand's public page entry must carry (see src/middleware.ts). */
+const appOnlyHostPattern = () =>
+  Object.values(BRANDS)
+    .filter((b) => !b.publicSite)
+    .flatMap((b) => [...b.hosts, ...b.devHosts])
+    .map((h) => h.replace(/\./g, "\\."))
+    .join("|");
 
 describe("middleware", () => {
   it("redirects /app without a session cookie to /login?next=…", () => {
@@ -27,9 +38,25 @@ describe("middleware", () => {
     }
   });
   it("the matcher covers /app and the auth pages but never /api, /reports or /pms-sandbox", () => {
-    const m = config.matcher;
+    const m = plain();
     for (const p of ["/app", "/app/:path*", "/login", "/two-factor", "/accept-invite", "/reset-password"]) assert.ok(m.includes(p), p);
-    assert.ok(!m.some((p) => p.startsWith("/api") || p.startsWith("/reports") || p.startsWith("/pms-sandbox") || p === "/:path*"));
+    assert.ok(!entries().map(sourceOf).some((p) => p.startsWith("/api") || p.startsWith("/reports") || p.startsWith("/pms-sandbox") || p === "/:path*"));
+  });
+  it("M10: unconditionally, the matcher is main's again – public pages only with an app-only brand's host", () => {
+    assert.deepEqual(plain(), ["/app", "/app/:path*", "/login", "/two-factor", "/accept-invite", "/reset-password"]);
+    const conditional = entries().filter((e): e is Exclude<Matcher, string> => typeof e !== "string");
+    assert.deepEqual(conditional.map((e) => e.source).sort(), [...PUBLIC_SITE_PATHS].sort());
+    const pattern = appOnlyHostPattern();
+    assert.ok(pattern.length > 0);
+    for (const e of conditional) {
+      assert.deepEqual(e.has, [{ type: "host", value: pattern }], `${e.source}: the host list in src/middleware.ts must match src/lib/brand.ts`);
+      // Next anchors the value (^…$) and matches the Host header without its port.
+      const re = new RegExp(`^${e.has?.[0].value}$`);
+      for (const b of Object.values(BRANDS)) {
+        for (const h of [...b.hosts, ...b.devHosts]) assert.equal(re.test(h), !b.publicSite, `${h} (${b.id})`);
+      }
+      for (const h of ["clinforms-abc-team.vercel.app", "clinicxlocalhost", "evil.clinic.localhost.example"]) assert.equal(re.test(h), false, h);
+    }
   });
   it("public pages pass through untouched on ClinForms' hosts (no redirect, no noindex)", () => {
     for (const host of ["clinforms.co.uk", "www.clinforms.co.uk", "localhost:3180", "clinforms-abc-team.vercel.app"]) {
@@ -38,7 +65,6 @@ describe("middleware", () => {
         assert.equal(res.status, 200, `${host}${p}`);
         assert.equal(res.headers.get("location"), null);
         assert.equal(res.headers.get("x-robots-tag"), null, `${host}${p} stays indexable`);
-        assert.ok(m().includes(p), `the matcher covers ${p}`);
       }
     }
   });
