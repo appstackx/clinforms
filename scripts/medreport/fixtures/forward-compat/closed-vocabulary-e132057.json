@@ -1,10 +1,5 @@
 {
   "report": {
-    ".episodeRef.connectorId": [
-      "file-import",
-      "tm3",
-      "tm3-sim"
-    ],
     ".instructingParty.type": [
       "case_manager",
       "employer",
@@ -12,11 +7,6 @@
       "mlc",
       "other",
       "solicitor"
-    ],
-    ".bundleSnapshot.source.connectorId": [
-      "file-import",
-      "tm3",
-      "tm3-sim"
     ],
     ".bundleSnapshot.registration.id": [
       "REG"

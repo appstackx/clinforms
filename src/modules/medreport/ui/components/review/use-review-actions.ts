@@ -13,6 +13,7 @@ import { useCallback, useRef, useState } from "react";
 import type { RenderFormat, RenderRequest } from "../../../api/contract";
 import { BATCH_CONCURRENCY, NOTICES } from "../../../config.public";
 import { sha256HexBytes } from "../../../core/fingerprint";
+import { UNKNOWN_CONNECTOR_FILING, isKnownConnectorId } from "../../../core/labels";
 import { prefillSigners, prefillSignersText } from "../../../core/parties";
 import { planDraftGroups } from "../../../core/report-factory";
 import { ReportSchema } from "../../../core/schemas";
@@ -67,6 +68,11 @@ const CONNECTOR_LABELS: Record<string, string> = {
  */
 export function canFileBack(connectorId: string): boolean {
   return connectorId === "tm3-sim" || connectorId === "native";
+}
+
+/** A connector id this build does not know (a later release's clinic system record) is named neutrally. */
+function connectorLabel(connectorId: string): string {
+  return Object.prototype.hasOwnProperty.call(CONNECTOR_LABELS, connectorId) ? CONNECTOR_LABELS[connectorId] : "clinic system";
 }
 
 function problemText(err: unknown, fallback: string): { title: string; detail?: string; code: string } {
@@ -240,7 +246,9 @@ export function useReviewActions(opts: {
         detail:
           connectorId === "file-import"
             ? "This report was made from an uploaded export, so there is no clinic system to file it to. Download the completed form and attach it to the patient record."
-            : "Filing to TM3 needs the live TM3 connection (partner access). Download the completed form and attach it to the patient record.",
+            : !isKnownConnectorId(connectorId)
+              ? UNKNOWN_CONNECTOR_FILING
+              : "Filing to TM3 needs the live TM3 connection (partner access). Download the completed form and attach it to the patient record.",
       });
       return;
     }
@@ -287,7 +295,7 @@ export function useReviewActions(opts: {
           type: "activity",
           action: "filed",
           actor,
-          detail: `Saved “${out.fileName}” to the ${CONNECTOR_LABELS[connectorId]} record (document ${res.attachReceipt.externalDocumentId}, SHA-256 ${res.attachReceipt.sha256.slice(0, 12)}…).${browserCopy || connectorId === "native" ? "" : " This browser could not keep a copy for the simulated record."}`,
+          detail: `Saved “${out.fileName}” to the ${connectorLabel(connectorId)} record (document ${res.attachReceipt.externalDocumentId}, SHA-256 ${res.attachReceipt.sha256.slice(0, 12)}…).${browserCopy || connectorId === "native" ? "" : " This browser could not keep a copy for the simulated record."}`,
         });
         return out.fileName;
       };

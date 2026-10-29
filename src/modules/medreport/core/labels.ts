@@ -3,8 +3,10 @@
  * Owner: WD – docs/bh2-ownership.json (bh2 WD: the drafted-wording label is neutral, R-regression-7; flagEvidenceShown,
  * B2-15).
  */
+import { ConnectorIdSchema } from "./schemas";
 import type {
   AnswerType,
+  ConnectorId,
   AppointmentStatus,
   ComputedFactFormat,
   DataCheckCode,
@@ -247,6 +249,8 @@ export const UNKNOWN_MEMBER_LABELS = {
   flagCode: "Other check",
   paragraphOrigin: "Entered",
   registrationPath: "Another value from the record (kept as saved)",
+  /** A connector id this build does not know (the clinic system's own record, 10/2026: "native"). Never a vendor's name. */
+  connectorId: "Clinic system",
 } as const;
 
 const has = (labels: object, key: string) => Object.prototype.hasOwnProperty.call(labels, key);
@@ -267,6 +271,20 @@ export function flagEvidenceShown(flag: { code: string; evidence?: string }): st
 
 export function flagCodeLabel(code: string): string {
   return has(FLAG_CODE_LABELS, code) ? FLAG_CODE_LABELS[code as ReportFlagCode] : UNKNOWN_MEMBER_LABELS.flagCode;
+}
+
+/** True for a connector id this build has (a stored report from a later release may name one it does not). */
+export function isKnownConnectorId(id: string): id is ConnectorId {
+  return (ConnectorIdSchema.options as readonly string[]).includes(id);
+}
+
+/** Why a report from a connector this build does not know is not filed back from here (review toast and approved banner). */
+export const UNKNOWN_CONNECTOR_FILING =
+  "This report was made from the patient's record in the clinic system, which this version cannot file to. Download the completed form and attach it to the patient's record.";
+
+/** The id itself for a connector this build knows (as before); the neutral label for one it does not. */
+export function connectorIdLabel(id: string): string {
+  return isKnownConnectorId(id) ? id : UNKNOWN_MEMBER_LABELS.connectorId;
 }
 
 export function isKnownRegistrationPath(path: string): path is RegistrationPath {
