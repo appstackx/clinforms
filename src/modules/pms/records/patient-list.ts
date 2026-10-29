@@ -24,11 +24,13 @@ export interface PatientListFilters {
   seenToday: boolean;
   /** Owes money on issued invoices addressed to them (billing; members with billing.view). */
   owesMoney: boolean;
+  /** Has a case or an appointment at this site (only a site within the member's own scope is honoured). */
+  siteId: string | null;
   sort: "asc" | "desc";
   page: number;
 }
 
-export const DEFAULT_PATIENT_FILTERS: PatientListFilters = { q: "", status: "active", practitionerId: null, payer: null, noFuture: false, seenToday: false, owesMoney: false, sort: "asc", page: 1 };
+export const DEFAULT_PATIENT_FILTERS: PatientListFilters = { q: "", status: "active", practitionerId: null, payer: null, noFuture: false, seenToday: false, owesMoney: false, siteId: null, sort: "asc", page: 1 };
 
 const ID = /^[a-z]{2,6}_[0-9A-HJKMNP-TV-Z]{26}$/;
 
@@ -45,6 +47,7 @@ export function filtersFromParams(params: Params): PatientListFilters {
   const status = get(params, "status");
   const payer = get(params, "payer");
   const prac = get(params, "practitioner");
+  const site = get(params, "site");
   const page = Number(get(params, "page") ?? 1);
   return {
     q: (get(params, "q") ?? "").trim().slice(0, 120),
@@ -54,6 +57,7 @@ export function filtersFromParams(params: Params): PatientListFilters {
     noFuture: get(params, "nofuture") === "1",
     seenToday: get(params, "seen") === "today",
     owesMoney: get(params, "owes") === "1",
+    siteId: site && ID.test(site) ? site : null,
     sort: get(params, "sort") === "desc" ? "desc" : "asc",
     page: Number.isInteger(page) && page > 0 && page < 100_000 ? page : 1,
   };
@@ -69,6 +73,7 @@ export function paramsFromFilters(f: Partial<PatientListFilters>): URLSearchPara
   if (f.noFuture) p.set("nofuture", "1");
   if (f.seenToday) p.set("seen", "today");
   if (f.owesMoney) p.set("owes", "1");
+  if (f.siteId) p.set("site", f.siteId);
   if (f.sort === "desc") p.set("sort", "desc");
   if (f.page && f.page > 1) p.set("page", String(f.page));
   return p;
@@ -76,7 +81,7 @@ export function paramsFromFilters(f: Partial<PatientListFilters>): URLSearchPara
 
 /** True when any filter narrows the list beyond the default "active patients". */
 export function hasNarrowingFilters(f: PatientListFilters): boolean {
-  return Boolean(f.q || f.practitionerId || f.payer || f.noFuture || f.seenToday || f.owesMoney || f.status !== "active");
+  return Boolean(f.q || f.practitionerId || f.payer || f.noFuture || f.seenToday || f.owesMoney || f.siteId || f.status !== "active");
 }
 
 /** One CSV cell: quoted when needed; a leading = + - @ tab or carriage return is defused with an apostrophe. */

@@ -179,6 +179,7 @@ const NOUNS: Readonly<Record<string, string>> = {
   form: "Form",
   file: "File",
   settings: "Settings",
+  // The clinic's own (third-party) clinic system that opened ClinForms – a generic phrase, not CLINIC_SYSTEM_NAME (M10).
   launch: "Clinic system",
   platform: "Platform",
   notes: "Notes",

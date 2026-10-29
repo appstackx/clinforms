@@ -20,7 +20,7 @@ import type { PatientStatus, PayerType } from "../../../modules/pms/core/types";
 import { ageOn } from "../../../modules/pms/records/form-values";
 import { PAYER_TYPE_LABELS } from "../../../modules/pms/records/copy";
 import { MAX_EXPORT_ROWS, PATIENT_PAGE_SIZE, csvLine, type PatientListFilters } from "../../../modules/pms/records/patient-list";
-import { listPractitioners, findPractitionerByUser } from "../../repos/pms/directory";
+import { listPractitioners, listSites, findPractitionerByUser } from "../../repos/pms/directory";
 import { nextAppointmentsFor } from "../../repos/pms/diary/appointments";
 import { listReferrers } from "../../repos/pms/referrers";
 import { pmsAudit } from "../../repos/pms/context";
@@ -58,6 +58,14 @@ export interface PatientListView {
   practitioners: { id: string; name: string }[];
   /** The member's own practitioner record ("My patients"), if they are one. */
   myPractitionerId: string | null;
+  /** Choices for the Site filter: the clinic's active sites within the member's scope (none when there is only one). */
+  sites: { id: string; name: string }[];
+}
+
+/** The Site filter is honoured only for a site within the member's own scope (K2-SITE-004); otherwise ignored. */
+export function siteFilterFor(actor: Pick<RecordsActor, "siteIds">, siteId: string | null): string | null {
+  if (!siteId) return null;
+  return actor.siteIds === null || actor.siteIds === undefined || actor.siteIds.has(siteId) ? siteId : null;
 }
 
 function nowOf(actor: RecordsActor): Date {
@@ -80,6 +88,7 @@ async function rowsFor(actor: RecordsActor, filters: PatientListFilters, limit: 
     now: now.toISOString(),
     sort: filters.sort,
     siteIds: actor.siteIds ?? null,
+    siteId: siteFilterFor(actor, filters.siteId),
     limit,
     offset,
   });
@@ -126,7 +135,8 @@ export async function patientListFor(actor: RecordsActor, filters: PatientListFi
   return attempt("patient_list", async () => {
     const page = Math.max(1, filters.page);
     const { rows, total, today, practitioners } = await rowsFor(actor, filters, PATIENT_PAGE_SIZE, (page - 1) * PATIENT_PAGE_SIZE);
-    const me = await findPractitionerByUser(actor.repo(), actor.tenantId, actor.userId);
+    const [me, allSites] = await Promise.all([findPractitionerByUser(actor.repo(), actor.tenantId, actor.userId), listSites(actor.repo(), actor.tenantId)]);
+    const sites = allSites.filter((s) => s.active && (actor.siteIds == null || actor.siteIds.has(s.id))).map((s) => ({ id: s.id, name: s.name }));
     return ok({
       rows,
       total,
@@ -135,6 +145,7 @@ export async function patientListFor(actor: RecordsActor, filters: PatientListFi
       today,
       practitioners: practitioners.filter((p) => p.active).map((p) => ({ id: p.id, name: p.displayName })),
       myPractitionerId: me?.id ?? null,
+      sites: sites.length > 1 ? sites : [],
     });
   });
 }
@@ -173,7 +184,7 @@ export async function patientCsvFor(actor: RecordsActor, filters: PatientListFil
       count += page.rows.length;
       if (page.rows.length < 500) break;
     }
-    const used = Object.entries({ q: Boolean(filters.q), status: filters.status !== "active", practitioner: Boolean(filters.practitionerId), payer: Boolean(filters.payer), noFuture: filters.noFuture, seenToday: filters.seenToday, owesMoney: filters.owesMoney })
+    const used = Object.entries({ q: Boolean(filters.q), status: filters.status !== "active", practitioner: Boolean(filters.practitionerId), payer: Boolean(filters.payer), noFuture: filters.noFuture, seenToday: filters.seenToday, owesMoney: filters.owesMoney, site: Boolean(filters.siteId) })
       .filter(([, on]) => on)
       .map(([k]) => k);
     await pmsAudit(actor.repo(), actor.tenantId, actor.actor, { action: "pms.patients.export", targetType: "pms_patient_list", targetId: "patients", detail: { count, filters: used } });

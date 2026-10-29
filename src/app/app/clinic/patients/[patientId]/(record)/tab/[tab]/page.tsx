@@ -6,6 +6,7 @@ import { PMS_RECORD_TABS } from "@/modules/pms/record-tabs";
 import { STAND_IN_COPY, STAND_IN_KEYS, standInPermission } from "@/modules/pms/records/record-tab-model";
 import { requireClinicActor } from "@/server/pms/actor";
 import { loadRecordHeader } from "@/server/pms/records/record-header";
+import { ScrollRegion } from "@/components/pms/ui/scroll-region";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Patient record", robots: { index: false, follow: false } };
@@ -47,7 +48,7 @@ export default async function StandInTab({ params }: { params: { patientId: stri
         <p className="p-5 text-sm text-muted-foreground">No appointments yet.</p>
       ) : (
         <>
-          <div className="relative hidden overflow-x-auto md:block">
+          <ScrollRegion label="Appointments" className="relative hidden overflow-x-auto md:block">
             <table className="w-full min-w-[640px] text-sm">
               <caption className="sr-only">Appointments</caption>
               <thead>
@@ -75,7 +76,7 @@ export default async function StandInTab({ params }: { params: { patientId: stri
                 ))}
               </tbody>
             </table>
-          </div>
+          </ScrollRegion>
           <ul className="flex flex-col gap-2 p-4 md:hidden">
             {rows.map((r) => (
               <li key={r.id} className="flex flex-col gap-1 rounded-xl border border-border px-3.5 py-3 text-sm">

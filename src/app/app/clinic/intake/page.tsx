@@ -7,6 +7,7 @@ import { STARTER_FORMS } from "@/modules/pms/portal/starters";
 import { requireClinicActor } from "@/server/pms/actor";
 import { intakeFormsFor } from "@/server/pms/portal/staff";
 import { addStarterFormAction, newIntakeFormAction } from "./actions";
+import { ScrollRegion } from "@/components/pms/ui/scroll-region";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Intake forms" };
@@ -34,7 +35,7 @@ export default async function IntakeFormsPage() {
         {templates.length === 0 ? (
           <p className="p-5 text-sm text-[#475569]">No forms yet. Start from one of the starter forms below.</p>
         ) : (
-          <div className="overflow-x-auto">
+          <ScrollRegion label="Forms" className="relative overflow-x-auto">
             <table className="w-full min-w-[640px] text-left text-sm">
               <caption className="sr-only">The clinic&apos;s forms</caption>
               <thead className="bg-[#F8FAFC] text-[#475569]">
@@ -67,7 +68,7 @@ export default async function IntakeFormsPage() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </ScrollRegion>
         )}
       </section>
       <IntakeStarterButtons starters={starters} addStarter={addStarterFormAction} newForm={newIntakeFormAction} />

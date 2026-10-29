@@ -31,6 +31,7 @@ import {
   setPriceAction,
 } from "@/app/app/clinic/setup/actions";
 import { SetupCard, SetupError, SetupFormBar, SetupGrid, SetupHeader, SetupList, SetupPage, SetupSplit, setupFocus, useSetupForm } from "./setup-kit";
+import { ScrollRegion } from "@/components/pms/ui/scroll-region";
 
 const BASE = "/app/clinic/setup";
 const penceInput = (p: number | null | undefined) => (typeof p === "number" ? (p / 100).toFixed(2) : "");
@@ -109,7 +110,7 @@ export function ServicesSetup({ services, serviceId }: { services: Service[]; se
     <SetupPage>
       <SetupHeader title="Services and durations" description="What can be booked, for how long, at what standard price, and whether patients can book it online." action={<NewButton href={`${BASE}/services?service=new`} label="Add service" testId="add-service" />} />
       {showForm ? <ServiceForm key={chosen?.id ?? "new"} service={chosen} onDone={() => router.push(`${BASE}/services`)} /> : null}
-      <div className="overflow-x-auto rounded-2xl border border-border bg-white">
+      <ScrollRegion label="Services and durations" className="relative overflow-x-auto rounded-2xl border border-border bg-white">
         <table className="w-full min-w-[720px] border-collapse text-sm">
           <caption className="sr-only">Services</caption>
           <thead>
@@ -141,7 +142,7 @@ export function ServicesSetup({ services, serviceId }: { services: Service[]; se
             ))}
           </tbody>
         </table>
-      </div>
+      </ScrollRegion>
     </SetupPage>
   );
 }

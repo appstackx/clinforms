@@ -225,24 +225,33 @@ function Pill({ pill }: { pill: DashboardPill }) {
 }
 
 function Row({ item }: { item: DashboardListItem }) {
+  // Below sm the pill and the action go on their own line under the text (M10: at 375 px the name was cut off and the
+  // detail wrapped one word per line beside them).
+  const trailing = item.pill || item.action;
   return (
-    <li className="flex items-center gap-3 px-4 py-3 md:px-5" data-testid="dash-row">
+    <li className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 sm:flex-nowrap md:px-5" data-testid="dash-row">
       {item.lead ? <span className="w-11 shrink-0 text-sm font-semibold tabular-nums text-foreground">{item.lead}</span> : null}
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="flex min-w-0 items-center gap-1.5">
           {item.href ? (
-            <Link href={item.href} className={cn("truncate font-semibold text-foreground hover:underline", focusRing)}>
+            <Link href={item.href} title={item.primary} className={cn("truncate font-semibold text-foreground hover:underline", focusRing)}>
               {item.primary}
             </Link>
           ) : (
-            <span className="truncate font-semibold text-foreground">{item.primary}</span>
+            <span className="truncate font-semibold text-foreground" title={item.primary}>
+              {item.primary}
+            </span>
           )}
           {item.alert ? <TriangleAlert role="img" aria-label="Has alert" className="h-3.5 w-3.5 shrink-0 text-[#864E0E]" /> : null}
         </span>
         <span className="text-[13px] text-[#475569]">{item.secondary}</span>
       </span>
-      {item.pill ? <Pill pill={item.pill} /> : null}
-      {item.action ? <RowAction action={item.action} name={item.primary} /> : null}
+      {trailing ? (
+        <span className={cn("flex shrink-0 basis-full items-center gap-2 sm:basis-auto", item.lead && "pl-14 sm:pl-0")} data-testid="dash-row-trailing">
+          {item.pill ? <Pill pill={item.pill} /> : null}
+          {item.action ? <RowAction action={item.action} name={item.primary} /> : null}
+        </span>
+      ) : null}
     </li>
   );
 }

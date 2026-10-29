@@ -6,8 +6,8 @@
  */
 import * as React from "react";
 import Link from "next/link";
-import { Clock } from "lucide-react";
-import type { DiaryCard, DiaryColumn } from "@/modules/pms/diary/view";
+import { Ban, CalendarClock, Clock, Repeat } from "lucide-react";
+import type { DiaryCard, DiaryColumn, DiaryHold } from "@/modules/pms/diary/view";
 import { formatHhmm, isoWeekday, weekDates, weekdayName } from "@/modules/pms/diary/time";
 import { cn } from "@/lib/utils";
 import { SelectInput } from "../ui/inputs";
@@ -25,10 +25,16 @@ export interface MobileDiaryProps {
   dayHref: (date: string) => string;
   nowMinute: number | null;
   unsignedNotes: { count: number; href: string | null } | null;
+  /** Slots held for waiting patients (offers) – listed so nobody books over them on the phone either. */
+  holds?: DiaryHold[];
+  /** Where a hold links to (the waiting list). */
+  holdHref?: string;
+  /** The site is closed on this day (Set-up → Sites and hours): "Closed – <reason>", nothing to book. */
+  closure?: { date: string; reason: string | null } | null;
   onOpen: (id: string) => void;
 }
 
-export function MobileDiary({ date, today, siteName, columns, cards, myColumnKey, dayHref, nowMinute, unsignedNotes, onOpen }: MobileDiaryProps) {
+export function MobileDiary({ date, today, siteName, columns, cards, myColumnKey, dayHref, nowMinute, unsignedNotes, holds = [], holdHref, closure = null, onOpen }: MobileDiaryProps) {
   const [chosen, setChosen] = React.useState<string | null>(myColumnKey ?? columns[0]?.key ?? null);
   React.useEffect(() => {
     if (!columns.some((c) => c.key === chosen)) setChosen(myColumnKey ?? columns[0]?.key ?? null);
@@ -36,6 +42,12 @@ export function MobileDiary({ date, today, siteName, columns, cards, myColumnKey
   const column = columns.find((c) => c.key === chosen) ?? null;
   const mine = column ? cards.filter((c) => c.columnKey === column.key).sort((a, b) => a.startsAt.localeCompare(b.startsAt)) : [];
   const appointments = mine.filter((c) => c.kind === "appointment" && c.status !== "cancelled");
+  const myHolds = column ? holds.filter((h) => h.columnKey === column.key) : [];
+  // Cards and held slots in time order.
+  type Row = { hold: DiaryHold; card?: undefined } | { card: DiaryCard; hold?: undefined };
+  const rows: Row[] = [...mine.map((card): Row => ({ card })), ...myHolds.map((hold): Row => ({ hold }))].sort((a, b) =>
+    (a.card ?? a.hold).startsAt.localeCompare((b.card ?? b.hold).startsAt),
+  );
   const days = weekDates(date).slice(0, 6);
   const isMine = Boolean(myColumnKey && chosen === myColumnKey);
   let nowShown = false;
@@ -100,9 +112,45 @@ export function MobileDiary({ date, today, siteName, columns, cards, myColumnKey
           )
         ) : null}
       </div>
-      {mine.length === 0 ? <p className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-[#475569]">Nothing booked on this day.</p> : null}
+      {closure ? (
+        <div role="status" data-testid="mobile-closed" className="flex items-start gap-2 rounded-[10px] border border-[#FDBA74] bg-[#FFF7ED] px-3.5 py-2.5 text-sm text-[#9A3412]">
+          <Ban className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+          <span>
+            <span className="block font-semibold">{closure.reason ? `Closed – ${closure.reason}` : "Closed"}</span>
+            <span className="block text-[#7C2D12]">Nothing can be booked here on this day.</span>
+          </span>
+        </div>
+      ) : null}
+      {rows.length === 0 && !closure ? <p className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-[#475569]">Nothing booked on this day.</p> : null}
       <ul className="flex flex-col gap-2">
-        {mine.map((c) => {
+        {rows.map((row) => {
+          if (row.hold) {
+            const h = row.hold;
+            const text = `Held${h.patientName ? ` for ${h.patientName}` : " for a waiting patient"} until ${h.holdUntilLabel}`;
+            const inner = (
+              <>
+                <CalendarClock className="h-4 w-4 shrink-0" aria-hidden />
+                <span className="w-11 shrink-0 font-semibold tabular-nums">{h.timeLabel.split("–")[0]}</span>
+                <span className="min-w-0 flex-1">
+                  {text}
+                  <span className="sr-only"> (waiting-list offer – not bookable)</span>
+                </span>
+              </>
+            );
+            const cls = "flex min-h-[44px] w-full items-center gap-3 rounded-xl border-2 border-dashed border-[#7C93E8] bg-[#F5F7FE] px-3 py-2.5 text-left text-sm font-semibold text-[#1E3A8A]";
+            return (
+              <li key={`hold:${h.id}`} data-testid="mobile-hold">
+                {holdHref ? (
+                  <Link href={holdHref} className={cn(cls, "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary")}>
+                    {inner}
+                  </Link>
+                ) : (
+                  <div className={cls}>{inner}</div>
+                )}
+              </li>
+            );
+          }
+          const c = row.card;
           const span = cardSpan(c, date);
           const items: React.ReactNode[] = [];
           if (!nowShown && nowMinute !== null && date === today && span.start > nowMinute) {
@@ -139,7 +187,15 @@ export function MobileDiary({ date, today, siteName, columns, cards, myColumnKey
                     <span className="text-xs text-[#475569]">{span.end - span.start} min</span>
                   </span>
                   <span className="flex min-w-0 flex-1 flex-col">
-                    <span className={cn("truncate font-semibold text-foreground", (c.status === "cancelled" || c.status === "late_cancelled") && "line-through")}>{c.patientName ?? "Appointment"}</span>
+                    <span className={cn("flex min-w-0 items-center gap-1 font-semibold text-foreground", (c.status === "cancelled" || c.status === "late_cancelled") && "line-through")}>
+                      <span className="truncate">{c.patientName ?? "Appointment"}</span>
+                      {c.seriesId ? (
+                        <>
+                          <Repeat className="h-3.5 w-3.5 shrink-0 text-[#475569]" aria-hidden data-series="true" />
+                          <span className="sr-only">, part of a recurring booking</span>
+                        </>
+                      ) : null}
+                    </span>
                     <span className="truncate text-xs text-[#475569]">{[c.serviceName, c.roomName].filter(Boolean).join(" · ")}</span>
                   </span>
                   <StatusPill kind="appointment" status={c.status} size="sm" label={c.status === "dna" ? "DNA" : c.status === "late_cancelled" ? "Late cancel" : undefined} />

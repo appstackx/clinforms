@@ -291,6 +291,7 @@ function NavLink({ item, current, plain = false }: { item: ShellNavItem; current
     <Link
       href={item.href}
       aria-current={current ? "page" : undefined}
+      title={item.title && item.title !== item.label ? item.title : undefined}
       className={cn(
         "flex h-9 items-center gap-2.5 rounded-[8px] px-2.5",
         current ? "bg-[#E6F7F5] font-semibold text-[#0B5F58]" : "font-medium text-[#334155] hover:bg-[#F1F5F9] hover:text-foreground",

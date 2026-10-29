@@ -18,6 +18,7 @@ import { BILLING_PATH, date, focusRing, money, parsePounds, poundsText } from ".
 import { PrintInvoiceSheet } from "./print-sheets";
 import { EmailInvoiceButton, TextPaymentLinkButton } from "@/components/pms/comms/billing-buttons";
 import { TakePaymentDialog } from "./take-payment-dialog";
+import { ScrollRegion } from "@/components/pms/ui/scroll-region";
 
 export interface InvoiceDetailProps {
   invoice: InvoiceDetailView;
@@ -257,7 +258,7 @@ export function InvoiceDetail({ invoice: inv, clinic, howToPay, printedBy, print
             <h2 id="items-h" className="px-5 py-4 text-base font-semibold">
               Items
             </h2>
-            <div className="overflow-x-auto">
+            <ScrollRegion label="Items" className="relative overflow-x-auto">
               <table className="w-full min-w-[640px] text-sm">
                 <caption className="sr-only">Items</caption>
                 <thead className="border-y border-border bg-[#F8FAFC] text-left text-xs font-semibold text-[#334155]">
@@ -283,7 +284,7 @@ export function InvoiceDetail({ invoice: inv, clinic, howToPay, printedBy, print
                   ))}
                 </tbody>
               </table>
-            </div>
+            </ScrollRegion>
             <div className="flex justify-end gap-6 px-5 py-3 text-sm">
               <strong>{inv.billTo === "payer" ? "Total due from insurer" : "Total"}</strong>
               <strong className="tabular-nums">{money(inv.totalPence)}</strong>

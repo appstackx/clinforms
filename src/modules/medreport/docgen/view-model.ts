@@ -404,6 +404,7 @@ function provenanceText(bundle: EpisodeBundle): string {
   } else if (bundle.source.connectorId === "tm3-sim" || bundle.source.simulated) {
     source = SIMULATED_SOURCE_LABEL;
   } else {
+    // The third-party system the records came from – a generic phrase, deliberately not CLINIC_SYSTEM_NAME (M10).
     source = bundle.source.label ?? "Clinic system";
   }
   return fetched ? `${source} · records retrieved ${fetched}` : source;

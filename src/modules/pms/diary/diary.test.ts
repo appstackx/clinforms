@@ -105,7 +105,8 @@ describe("UK time (Europe/London)", () => {
     assert.equal(formatHhmm(570), "09:30");
     assert.equal(endMinuteOf("24:00"), 1440);
     assert.equal(formatDayHeading("2026-10-24"), "Saturday 24 October 2026");
-    assert.equal(formatDayShort("2026-10-24"), "Sat 24 Oct");
+    assert.equal(formatDayShort("2026-10-24"), "Sat 24/10");
+    assert.equal(formatDayShort("2026-11-04"), "Wed 04/11");
     assert.equal(isCanonicalIso("2026-10-24T09:00:00.000Z"), true);
     assert.equal(isCanonicalIso("2026-10-24T09:00:00Z"), false, "no milliseconds: would compare wrongly as text");
   });

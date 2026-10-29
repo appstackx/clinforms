@@ -84,7 +84,7 @@ export default async function PatientCasesPage({ params }: { params: { patientId
                           <span className="font-mono text-xs text-foreground">{a.code}</span>
                           <Pill tone={view.state === "active" ? (warnings.length ? "amber" : "teal") : "neutral"}>{AUTHORISATION_STATE_LABELS[view.state]}</Pill>
                           <span className="text-foreground">{authorisationRemaining(view, a, formatPence).join(" · ")}</span>
-                          {a.expiresOn ? <span className="text-muted-foreground">expires {formatUkDate(a.expiresOn)}</span> : null}
+                          {a.expiresOn ? <span className="text-[#475569]">expires {formatUkDate(a.expiresOn)}</span> : null}
                           {warnings.map((w) => (
                             <Pill key={w} tone="amber">
                               {w}

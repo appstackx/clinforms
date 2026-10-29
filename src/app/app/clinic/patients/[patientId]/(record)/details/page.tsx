@@ -4,7 +4,7 @@ import { ActionForm, Submit } from "@/components/pms/records/form";
 import { DetailList, LinkButton, Pill, TextLinkTo } from "@/components/pms/records/ui";
 import { formatUkDate } from "@/modules/pms/core/text";
 import { retentionReviewFrom } from "@/modules/pms/core/retention";
-import { activityTime } from "@/server/admin/activity";
+import { formatUkDateTime } from "@/modules/pms/core/access";
 import { requireClinicActor } from "@/server/pms/actor";
 import { patientOr404, patientPath } from "@/server/pms/records/record";
 import { listCasesForPatient } from "@/server/repos/pms/cases";
@@ -56,7 +56,7 @@ export default async function PatientDetailsPage({ params }: { params: { patient
       <div className="space-y-6">
         {anonymised ? (
           <div role="status" className="rounded-lg border border-[#C7D4F5] bg-[#EFF4FF] px-3.5 py-2.5 text-sm text-foreground">
-            This record was anonymised on {activityTime(anonymisation?.doneAt ?? "")}. The dates and scores stay for the clinic&apos;s figures; who the patient was and what was written are gone.
+            This record was anonymised on {formatUkDateTime(anonymisation?.doneAt ?? "")}. The dates and scores stay for the clinic&apos;s figures; who the patient was and what was written are gone.
           </div>
         ) : null}
         {flags && flags.ok ? (
@@ -110,10 +110,10 @@ export default async function PatientDetailsPage({ params }: { params: { patient
         <Panel title="Consent and contact preferences">
           <DetailList
             items={[
-              { label: "Assessment and treatment", value: patient.consentTreatment ? `Consent recorded ${patient.consentTreatmentAt ? activityTime(patient.consentTreatmentAt) : ""}` : "Not recorded yet" },
+              { label: "Assessment and treatment", value: patient.consentTreatment ? `Consent recorded ${patient.consentTreatmentAt ? formatUkDateTime(patient.consentTreatmentAt) : ""}` : "Not recorded yet" },
               { label: "May write to the GP", value: yesNo(patient.consentShareGp) },
               { label: "Appointment reminders", value: [patient.reminderSms ? "Text" : null, patient.reminderEmail ? "Email" : null].filter(Boolean).join(" and ") || "None" },
-              { label: "Marketing", value: marketing ? `By ${marketing}, agreed ${SOURCE[patient.marketingConsentSource ?? ""] ?? ""}${patient.marketingConsentAt ? ` on ${activityTime(patient.marketingConsentAt)}` : ""}` : "Not agreed" },
+              { label: "Marketing", value: marketing ? `By ${marketing}, agreed ${SOURCE[patient.marketingConsentSource ?? ""] ?? ""}${patient.marketingConsentAt ? ` on ${formatUkDateTime(patient.marketingConsentAt)}` : ""}` : "Not agreed" },
             ]}
           />
         </Panel>
