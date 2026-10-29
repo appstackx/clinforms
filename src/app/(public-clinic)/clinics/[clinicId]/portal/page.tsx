@@ -4,6 +4,7 @@ import { SignInForm } from "@/components/pms/portal/sign-in-form";
 import { PortalSignOut } from "@/components/pms/portal/portal-sign-out";
 import { clinicPublicPaths } from "@/modules/pms/portal/paths";
 import { portalHome } from "@/server/pms/portal/portal-views";
+import { humanCheckSiteKey } from "@/server/pms/portal/human-check";
 import { portalViewer, publicClinicOr404, publicCtx } from "@/server/pms/portal/public-page";
 import { requestLinkAction, signOutAction } from "./actions";
 
@@ -24,7 +25,7 @@ export default async function PortalPage({ params, searchParams }: { params: { c
     const phone = clinic.settings.contactPhone;
     return (
       <main className="px-4 pb-16 pt-6">
-        <SignInForm clinicId={clinic.tenantId} action={requestLinkAction} contactLine={phone ? `Can't get into your email? Call the clinic on ${phone}.` : "Can't get into your email? Call the clinic."} />
+        <SignInForm clinicId={clinic.tenantId} action={requestLinkAction} humanCheckSiteKey={humanCheckSiteKey()} contactLine={phone ? `Can't get into your email? Call the clinic on ${phone}.` : "Can't get into your email? Call the clinic."} />
       </main>
     );
   }
