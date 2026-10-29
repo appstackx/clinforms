@@ -43,8 +43,8 @@ export interface MessagesHomeView {
   quietEnd: string;
   /** Replies waiting for someone (the tab's and the nav's number). */
   toAction: number;
-  /** "outbox" = nothing leaves the system; "test" = a test service; "misconfigured". */
-  mode: { sms: "outbox" | "test" | "misconfigured"; email: "outbox" | "test" | "misconfigured" };
+  /** "outbox" = nothing leaves the system; "test" = a test service; "mailpit" = a local Mailpit inbox; "misconfigured". */
+  mode: { sms: "outbox" | "test" | "mailpit" | "misconfigured"; email: "outbox" | "test" | "mailpit" | "misconfigured" };
   /** messages.templates: may change templates and settings, and run the due messages now. */
   canManage: boolean;
   /** messages.letters: may open and write letters. */

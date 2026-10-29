@@ -20,6 +20,7 @@ import type { DispatchDeps } from "./dispatch";
 import { commsLinkOrigin, commsLinkSecret, signStopToken, stopLinkUrl, verifyStopToken } from "./links";
 import { assertNoLiveKeys, providerStatus, resolveCommsProviders } from "./providers";
 import { outboxEmail, outboxSms } from "./providers/outbox";
+import { MAILPIT_SMS_SUBJECT, mailpitEmailProvider, mailpitSmsProvider } from "./providers/mailpit";
 import { handleUnsubscribe } from "./unsubscribe";
 import { SIGNATURE_HEADER, TIMESTAMP_HEADER, handleSmsWebhook, signWebhook } from "./webhook";
 
@@ -43,6 +44,64 @@ describe("providers: outbox by default, test on request, nothing live", () => {
     assert.doesNotThrow(() => assertNoLiveKeys({ CLINIC_SMS_API_KEY: "test_abc" }));
     assert.throws(() => assertNoLiveKeys({ CLINIC_SMS_API_KEY: "live_abc" }), /live keys are refused/);
     assert.throws(() => resolveCommsProviders({ CLINIC_EMAIL_API_KEY: "sk_123" }), /live keys are refused/);
+  });
+});
+
+describe("providers: mailpit (local testing only)", () => {
+  const fake = (respond: () => Response | Promise<Response>) => {
+    const calls: { url: string; body: Record<string, unknown> }[] = [];
+    const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
+      calls.push({ url: String(input), body: JSON.parse(String(init?.body)) as Record<string, unknown> });
+      return respond();
+    }) as typeof fetch;
+    return { fetchImpl, calls };
+  };
+  it("chosen by env; refused on any Vercel environment and on a non-local production run", () => {
+    const p = resolveCommsProviders({ CLINIC_SMS_PROVIDER: "test", CLINIC_EMAIL_PROVIDER: "mailpit" });
+    assert.deepEqual([p.sms.mode, p.email.mode, p.email.id], ["test", "mailpit", "mailpit"]);
+    assert.equal(resolveCommsProviders({ CLINIC_SMS_PROVIDER: "MAILPIT" }).sms.mode, "mailpit");
+    assert.equal(resolveCommsProviders({ CLINIC_EMAIL_PROVIDER: "mailpit", NODE_ENV: "production" }).email.mode, "mailpit", "local next start");
+    for (const VERCEL_ENV of ["production", "preview", "development"]) {
+      assert.throws(() => resolveCommsProviders({ CLINIC_EMAIL_PROVIDER: "mailpit", VERCEL_ENV }), /CLINIC_EMAIL_PROVIDER=mailpit is refused.*Vercel/);
+      assert.throws(() => resolveCommsProviders({ CLINIC_SMS_PROVIDER: "mailpit", VERCEL_ENV, CLINIC_ALLOW_TEST_PROVIDER: "1" }), /refused/);
+    }
+    assert.throws(() => resolveCommsProviders({ CLINIC_EMAIL_PROVIDER: "mailpit", NODE_ENV: "production", MAILPIT_URL: "https://mail.example.com" }), /localhost/);
+    assert.deepEqual(providerStatus({ CLINIC_EMAIL_PROVIDER: "mailpit", CLINIC_SMS_PROVIDER: "mailpit" }), { sms: "mailpit", email: "mailpit" });
+    assert.deepEqual(providerStatus({ CLINIC_EMAIL_PROVIDER: "mailpit", VERCEL_ENV: "production" }), { sms: "misconfigured", email: "misconfigured" });
+    assert.throws(() => resolveCommsProviders({ CLINIC_EMAIL_PROVIDER: "mailpit", CLINIC_EMAIL_API_KEY: "live_abc" }), /live keys are refused/);
+    assert.throws(() => resolveCommsProviders({ CLINIC_EMAIL_PROVIDER: "smtp" }), /must be outbox or test/);
+  });
+  it("email: the real message (links, headers) to /api/v1/send; reported sent", async () => {
+    const { fetchImpl, calls } = fake(() => new Response(JSON.stringify({ ID: "Zx81" })));
+    const provider = mailpitEmailProvider({}, fetchImpl);
+    const outcome = await provider.send({
+      messageId: "msg_1",
+      to: "pat@example.com",
+      fromName: "Riverside Physio",
+      replyTo: "hello@riverside.example",
+      subject: "Sign in to your portal",
+      text: "Sign in: http://localhost:3300/portal/k/abc",
+      html: "<p>http://localhost:3300/portal/k/abc</p>",
+      headers: { "List-Unsubscribe": "<http://localhost:3300/u/1>" },
+    });
+    assert.deepEqual(outcome, { status: "sent", providerMessageId: "mailpit_Zx81" });
+    assert.equal(calls[0].url, "http://localhost:8026/api/v1/send");
+    const body = calls[0].body;
+    assert.deepEqual(body.To, [{ Email: "pat@example.com" }]);
+    assert.deepEqual(body.ReplyTo, [{ Email: "hello@riverside.example", Name: "Riverside Physio" }]);
+    assert.equal((body.From as { Name: string }).Name, "Riverside Physio");
+    assert.ok(String(body.Text).includes("/portal/k/abc"));
+    assert.deepEqual(body.Headers, { "List-Unsubscribe": "<http://localhost:3300/u/1>" });
+  });
+  it("sms: shown as a labelled email to <phone>@sms.local; Mailpit down = failed", async () => {
+    const { fetchImpl, calls } = fake(() => new Response(JSON.stringify({ ID: "s1" })));
+    const outcome = await mailpitSmsProvider({}, fetchImpl).send({ messageId: "m2", to: "+447700900123", from: "Riverside", body: "See you at 10:00" });
+    assert.deepEqual(outcome, { status: "sent", providerMessageId: "mailpit_s1" });
+    assert.deepEqual(calls[0].body.To, [{ Email: "447700900123@sms.local" }]);
+    assert.equal(calls[0].body.Subject, MAILPIT_SMS_SUBJECT);
+    assert.match(String(calls[0].body.Text), /^\(Local test: a text message to \+447700900123 from "Riverside", caught by Mailpit\. Nothing was texted\.\)\n\nSee you at 10:00$/);
+    const down = fake(() => Promise.reject(new TypeError("fetch failed")));
+    assert.deepEqual(await mailpitEmailProvider({}, down.fetchImpl).send({ messageId: "m3", to: "a@b.c", fromName: "C", replyTo: null, subject: "s", text: "t", html: "", headers: {} }), { status: "failed", errorCode: "mailpit_unavailable" });
   });
 });
 

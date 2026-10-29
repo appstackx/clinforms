@@ -1,18 +1,19 @@
 /**
  * Message providers (contract §11): the comms module hands texts and emails to a provider behind these
- * interfaces. Only two exist in this build, both safe:
+ * interfaces. Only these exist in this build, all safe:
  *
  *   outbox – the DEFAULT: nothing leaves the system; the message is kept in the outbox (status "outbox") and shown
  *            on the Messages screen as "In the outbox – not sent";
  *   test   – a test service in memory: it "accepts" messages (provider ids test_…), fails numbers ending 999 and
  *            addresses starting "bounce@" (so failures can be shown), and never contacts anyone.
+ *   mailpit – LOCAL TESTING ONLY: the real message goes to a local Mailpit inbox (./mailpit.ts); never on Vercel.
  *
  * A real provider (a UK SMS gateway, a transactional email service) is added later as another implementation,
  * with the clinic's DPA in place and a key that is NOT kept in git.
  */
 import type { SendOutcome } from "../../../repos/pms/comms/messages";
 
-export type ProviderMode = "outbox" | "test";
+export type ProviderMode = "outbox" | "test" | "mailpit";
 
 export interface OutboundSms {
   messageId: string;

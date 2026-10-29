@@ -1,7 +1,7 @@
 /**
  * The portal's emails go through comms (one message log, one outbox screen – K2-BOOK-004): a sign-in link is the
  * "portal_link" message, written from the clinic's template ("Patient portal sign-in"), to the address on the
- * patient's record, outbox / test providers only. Booking confirmations, cancellation and "moved" notices are the
+ * patient's record, outbox / test providers (or mailpit, locally). Booking confirmations, cancellation and "moved" notices are the
  * diary's appointment messages (comms plans them through the diary hook) – not sent from here.
  */
 import "server-only";
