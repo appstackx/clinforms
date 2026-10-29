@@ -30,8 +30,8 @@ import {
 } from "../../../modules/pms/reporting/dashboard";
 import { logAuthEvent } from "../../email/log";
 import { listPractitioners, listServices, listSites } from "../../repos/pms/directory";
-import { listDiary } from "../../repos/pms/diary/appointments";
-import { billingFigures, listInvoicesPage } from "../../repos/pms/billing/invoices";
+import { countDiaryDay, listDiary, type DiaryDayCount } from "../../repos/pms/diary/appointments";
+import { billingFigures, overdueInvoicesSummary } from "../../repos/pms/billing/invoices";
 import { getPatientSummaries } from "../../repos/pms/patients";
 import { listReferrers } from "../../repos/pms/referrers";
 import { getReportingSettings } from "../../repos/pms/reporting/settings";
@@ -90,7 +90,7 @@ export interface DashboardOptions {
 export async function dashboardFor(actor: ClinicActor, options: DashboardOptions = {}): Promise<DashboardView> {
   const role: DashboardRole = dashboardRoleOf(actor.role);
   const ctx = actor.repo();
-  const now = pmsNow();
+  const now = ctx.now ? ctx.now() : pmsNow();
   const today = ukToday(now);
   const allSites = await listSites(ctx, actor.tenantId);
   const sites = actor.siteIds === null ? allSites : allSites.filter((s) => actor.siteIds?.has(s.id));
@@ -112,37 +112,17 @@ export async function dashboardFor(actor: ClinicActor, options: DashboardOptions
     return { ...c, failed: true, items: [], bars: [], count: null };
   };
 
-  // Today's diary within scope (read once, used by several tiles).
-  const diaryToday = await tile("diary_today", async () => {
-    if (!actor.can("diary.view") || scopeIds.length === 0) return [];
-    const out: Awaited<ReturnType<typeof listDiary>>["items"] = [];
-    for (let i = 0; i < scopeIds.length; i += 90) {
-      const r = await listDiary(ctx, actor.tenantId, { ...range, siteIds: scopeIds.slice(i, i + 90), appointmentsOnly: true, limit: 500 });
-      out.push(...r.items);
-    }
-    return out.filter((a) => a.startsOn === today);
-  });
+  const nowText = now.toISOString();
+  const canDiary = actor.can("diary.view") && scopeIds.length > 0;
+  // Today's appointments within scope, COUNTED in the database by site, practitioner and status (a list of a big
+  // clinic's day would be cut short); the lists below read only what they show. Tiles load in parallel.
+  const dayCounts = (): Promise<DiaryDayCount[] | TileFailed> => tile("diary_today", async () => (canDiary ? countDiaryDay(ctx, actor.tenantId, { date: today, now: nowText, siteIds: scopeIds }) : []));
+  const total = (rows: readonly DiaryDayCount[], keep: (r: DiaryDayCount) => boolean = () => true) => rows.filter(keep).reduce((n, r) => n + r.appointments, 0);
 
   if (role === "manager") {
-    // Appointments today.
-    if (actor.can("diary.view")) {
-      if (diaryToday instanceof TileFailed) kpis.push(failedKpi({ id: "appointments", label: "Appointments today", icon: "calendar", href: `${BASE}/diary` }));
-      else {
-        const done = diaryToday.filter((a) => DONE.has(a.status)).length;
-        const dna = diaryToday.filter((a) => a.status === "dna").length;
-        const withAppointments = new Set(diaryToday.map((a) => a.siteId)).size;
-        kpis.push({
-          id: "appointments",
-          label: "Appointments today",
-          icon: "calendar",
-          value: diaryToday.length.toLocaleString("en-GB"),
-          sub: `${done} done · ${dna} DNA · ${withAppointments} site${withAppointments === 1 ? "" : "s"}`,
-          href: `${BASE}/diary`,
-        });
-      }
-    }
     // Utilisation today, overall and by site.
-    const util = await tile("utilisation_today", async () => {
+    const utilisationTile = () =>
+      tile("utilisation_today", async () => {
       // The Utilisation report's own figures for today (booked minutes against rota time clipped to opening hours).
       const [settings, r] = await Promise.all([getReportingSettings(ctx, actor.tenantId), utilisationTodayBySite(actor, { now })]);
       if (!r.ok) throw new Error(r.error);
@@ -153,8 +133,46 @@ export async function dashboardFor(actor: ClinicActor, options: DashboardOptions
       const totalAvail = rows.reduce((t, x) => t + x.available, 0);
       const totalBooked = rows.reduce((t, x) => t + x.booked, 0);
       return { target: settings.utilisationTargetPercent, rows, overall: totalAvail > 0 ? totalBooked / totalAvail : null };
-    });
-    if (actor.can("reports.all")) {
+      });
+    // Taken today (by method) and overdue invoices: billing's own figures, as on Billing.
+    const overdueTile = () =>
+      tile("billing_today", async () => {
+        // Counted in the database (all overdue invoices, not a first page); the 4 longest overdue are listed.
+        const [figures, summary, referrers] = await Promise.all([
+          billingFigures(ctx, actor.tenantId, { siteIds: actor.siteIds }),
+          overdueInvoicesSummary(ctx, actor.tenantId, { siteIds: actor.siteIds, over30Before: addDays(today, -30), top: 4 }),
+          listReferrers(ctx, actor.tenantId, { includeInactive: true, limit: 500 }),
+        ]);
+        const patients = await getPatientSummaries(ctx, actor.tenantId, summary.rows.map((r) => r.patientId));
+        const payers = new Map(referrers.map((r) => [r.id, r.name]));
+        return { figures, total: summary.total, over30: summary.over30, rows: summary.rows, patients, payers };
+      });
+    // Every tile's read starts now (in parallel); the page is put together in its fixed order below.
+    const countsP = actor.can("diary.view") ? dayCounts() : null;
+    const utilP = actor.can("reports.all") ? utilisationTile() : null;
+    const overdueP = actor.can("billing.view") ? overdueTile() : null;
+    const failedP = actor.can("messages.send") ? tile("failed_messages", () => failedMessagesSummaryFor(actor)) : null;
+    const authsP = actor.can("patients.view") ? tile("authorisations", () => authorisationsEndingSoon(actor, today, scopeIds, siteName)) : null;
+    // Appointments today.
+    if (countsP) {
+      const counts = await countsP;
+      if (counts instanceof TileFailed) kpis.push(failedKpi({ id: "appointments", label: "Appointments today", icon: "calendar", href: `${BASE}/diary` }));
+      else {
+        const done = total(counts, (r) => DONE.has(r.status));
+        const dna = total(counts, (r) => r.status === "dna");
+        const withAppointments = new Set(counts.filter((r) => r.appointments > 0).map((r) => r.siteId)).size;
+        kpis.push({
+          id: "appointments",
+          label: "Appointments today",
+          icon: "calendar",
+          value: total(counts).toLocaleString("en-GB"),
+          sub: `${done} done · ${dna} DNA · ${withAppointments} site${withAppointments === 1 ? "" : "s"}`,
+          href: `${BASE}/diary`,
+        });
+      }
+    }
+    const util = utilP ? await utilP : null;
+    if (util) {
       if (util instanceof TileFailed) kpis.push(failedKpi({ id: "utilisation", label: "Utilisation today", icon: "chart", href: `${BASE}/reports/utilisation` }));
       else {
         const lowest = util.rows.slice().sort((a, b) => a.value - b.value)[0];
@@ -168,19 +186,8 @@ export async function dashboardFor(actor: ClinicActor, options: DashboardOptions
         });
       }
     }
-    // Taken today (by method) and overdue invoices: billing's own figures, as on Billing.
-    if (actor.can("billing.view")) {
-      const overdue = await tile("billing_today", async () => {
-        const [figures, page] = await Promise.all([
-          billingFigures(ctx, actor.tenantId, { siteIds: actor.siteIds }),
-          listInvoicesPage(ctx, actor.tenantId, { state: "overdue", siteIds: actor.siteIds, limit: 200 }),
-        ]);
-        const rows = page.rows.slice().sort((a, b) => (a.dueOn ?? "").localeCompare(b.dueOn ?? "")).slice(0, 4);
-        const patients = await getPatientSummaries(ctx, actor.tenantId, rows.map((r) => r.patientId));
-        const payers = new Map((await listReferrers(ctx, actor.tenantId, { includeInactive: true, limit: 500 })).map((r) => [r.id, r.name]));
-        const over30 = page.rows.filter((r) => r.dueOn && r.dueOn <= addDays(today, -30)).length;
-        return { figures, total: page.total, over30, rows, patients, payers };
-      });
+    const overdue = overdueP ? await overdueP : null;
+    if (overdue) {
       if (overdue instanceof TileFailed) kpis.push(failedKpi({ id: "taken", label: "Taken today", icon: "pound", href: `${BASE}/billing` }));
       else {
         const by = overdue.figures.takenTodayByMethod;
@@ -228,7 +235,7 @@ export async function dashboardFor(actor: ClinicActor, options: DashboardOptions
       }
     }
     // Today by site (bars).
-    if (actor.can("reports.all")) {
+    if (util) {
       if (util instanceof TileFailed) cards.unshift(failedCard({ id: "by-site", title: "Today by site", link: { href: `${BASE}/diary`, text: "Diary" }, kind: "bars", empty: EMPTY.bySite }));
       else {
         cards.unshift({
@@ -246,8 +253,8 @@ export async function dashboardFor(actor: ClinicActor, options: DashboardOptions
       }
     }
     // Failed messages with Retry.
-    if (actor.can("messages.send")) {
-      const failed = await tile("failed_messages", () => failedMessagesSummaryFor(actor));
+    if (failedP) {
+      const failed = await failedP;
       if (failed instanceof TileFailed) cards.splice(1, 0, failedCard({ id: "failed", title: "Failed messages", link: { href: `${BASE}/messages?filter=failed`, text: "Outbox" }, kind: "list", empty: EMPTY.failed }));
       else
         cards.splice(1, 0, {
@@ -270,15 +277,32 @@ export async function dashboardFor(actor: ClinicActor, options: DashboardOptions
         });
     }
     // Authorisations ending soon.
-    if (actor.can("patients.view")) {
-      const auths = await tile("authorisations", () => authorisationsEndingSoon(actor, today, scopeIds, siteName));
+    if (authsP) {
+      const auths = await authsP;
       const card = { id: "authorisations", title: "Authorisations ending soon", link: actor.can("reports.all") ? { href: `${BASE}/reports/authorisations`, text: "Report" } : null, kind: "list" as const, empty: EMPTY.authorisations };
       if (auths instanceof TileFailed) cards.push(failedCard(card));
       else cards.splice(Math.min(2, cards.length), 0, { ...card, count: auths.total, items: auths.items, bars: [] });
     }
   } else if (role === "clinician") {
     const practitionerId = await currentPractitionerId(actor);
-    const mine = diaryToday instanceof TileFailed ? diaryToday : diaryToday.filter((a) => practitionerId !== null && a.practitionerId === practitionerId).sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+    // My day (one practitioner's list is always short) and my unsigned notes, read in parallel.
+    const mineP = tile("diary_today", async () => {
+      if (!canDiary || practitionerId === null) return [];
+      const out: Awaited<ReturnType<typeof listDiary>>["items"] = [];
+      for (let i = 0; i < scopeIds.length; i += 89) {
+        const r = await listDiary(ctx, actor.tenantId, { ...range, practitionerIds: [practitionerId], siteIds: scopeIds.slice(i, i + 89), appointmentsOnly: true, limit: 500 });
+        out.push(...r.items);
+      }
+      return out.filter((a) => a.startsOn === today).sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+    });
+    const unsignedP = actor.can("clinical.view")
+      ? tile("unsigned_notes", async () => {
+          const r = await unsignedNotesFor(actor, { scope: "mine", limit: 20 });
+          if (!r.ok) throw new Error(r.error);
+          return r.value;
+        })
+      : null;
+    const mine = await mineP;
     if (mine instanceof TileFailed) kpis.push(failedKpi({ id: "mine", label: "My appointments today", icon: "calendar", href: `${BASE}/diary` }));
     else {
       const done = mine.filter((a) => DONE.has(a.status)).length;
@@ -286,12 +310,8 @@ export async function dashboardFor(actor: ClinicActor, options: DashboardOptions
       kpis.push({ id: "mine", label: "My appointments today", icon: "calendar", value: String(mine.length), sub: `${done} done${inTreatment ? ` · ${inTreatment} in treatment` : ""}`, href: `${BASE}/diary` });
     }
     // Unsigned notes.
-    if (actor.can("clinical.view")) {
-      const unsigned = await tile("unsigned_notes", async () => {
-        const r = await unsignedNotesFor(actor, { scope: "mine", limit: 20 });
-        if (!r.ok) throw new Error(r.error);
-        return r.value;
-      });
+    if (unsignedP) {
+      const unsigned = await unsignedP;
       if (unsigned instanceof TileFailed) {
         kpis.push(failedKpi({ id: "unsigned", label: "Unsigned notes", icon: "file", href: `${BASE}/patients/unsigned-notes`, warn: true }));
         cards.push(failedCard({ id: "unsigned", title: "Unsigned notes", link: { href: `${BASE}/patients/unsigned-notes`, text: "All" }, kind: "list", empty: EMPTY.unsigned }));
@@ -331,8 +351,11 @@ export async function dashboardFor(actor: ClinicActor, options: DashboardOptions
       kpis.push(failedKpi({ id: "cases", label: "Open cases", icon: "users", href: `${BASE}/patients` }));
       cards.unshift(failedCard({ id: "next", title: "My next patients", link: { href: `${BASE}/diary`, text: "My diary" }, kind: "list", empty: EMPTY.next }));
     } else {
-      const patients = await getPatientSummaries(ctx, actor.tenantId, mine.map((a) => a.patientId).filter((p): p is string => p !== null));
-      const services = new Map((await listServices(ctx, actor.tenantId, { includeInactive: true })).map((s) => [s.id, s.name]));
+      const [patients, serviceList] = await Promise.all([
+        getPatientSummaries(ctx, actor.tenantId, mine.map((a) => a.patientId).filter((p): p is string => p !== null)),
+        listServices(ctx, actor.tenantId, { includeInactive: true }),
+      ]);
+      const services = new Map(serviceList.map((s) => [s.id, s.name]));
       const due = mine.filter((a) => a.caseId && a.status !== "dna" && measureDue(figures.outcomes.get(a.caseId)));
       const showClinical = actor.can("clinical.view");
       if (showClinical) {
@@ -386,32 +409,72 @@ export async function dashboardFor(actor: ClinicActor, options: DashboardOptions
       }
     }
   } else {
-    // Reception: the chosen site (the shell's switcher), else every site in scope.
-    const atSite = diaryToday instanceof TileFailed ? diaryToday : diaryToday.filter((a) => !chosen || a.siteId === chosen).sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+    // Reception: the chosen site (the shell's switcher), else every site in scope. The figures are counted in the
+    // database; the arrivals list reads only appointments still to come or under way (booked / arrived).
+    const sitesHere = chosen ? [chosen] : scopeIds;
+    const countsP = dayCounts();
+    const arrivalsP = tile("diary_today", async () => {
+      if (!canDiary || sitesHere.length === 0) return [];
+      const out: Awaited<ReturnType<typeof listDiary>>["items"] = [];
+      const from = new Date(Math.max(Date.parse(range.from), now.getTime() - 30 * 60_000)).toISOString();
+      for (let i = 0; i < sitesHere.length; i += 90) {
+        const r = await listDiary(ctx, actor.tenantId, { from, to: range.to, siteIds: sitesHere.slice(i, i + 90), appointmentsOnly: true, statuses: ["booked", "arrived"], limit: 200 });
+        out.push(...r.items);
+      }
+      return out.filter((a) => a.startsOn === today && Date.parse(a.endsAt) > now.getTime() - 30 * 60_000).sort((a, b) => a.startsAt.localeCompare(b.startsAt) || a.id.localeCompare(b.id));
+    });
+    const waitingP = actor.can("diary.view")
+      ? tile("waiting_list", async () => {
+          const r = await loadWaitingList(await diaryCallerOf(actor), { status: "open", siteId: chosen ?? undefined });
+          if (!r.ok) throw new Error("waiting");
+          return r.data;
+        })
+      : null;
+    const visitsP = actor.can("billing.edit")
+      ? tile("invoices_to_raise", async () => {
+          // The 4 newest to show and how many there are (billing counts them in the database).
+          const r = await uninvoicedVisitsFor(actor, { limit: 4 });
+          if (!r.ok) throw new Error("visits");
+          return { rows: r.value.visits.slice().reverse(), total: r.value.total };
+        })
+      : null;
+    const repliesP = actor.can("messages.send")
+      ? tile("replies", async () => {
+          const r = await repliesFor(actor);
+          if (!r.ok) throw new Error("replies");
+          return r.value.filter((x) => x.toAction);
+        })
+      : null;
+    const [counts, arrivals] = await Promise.all([countsP, arrivalsP]);
     const where = chosen ? (siteName.get(chosen) ?? "your site") : sites.length === 1 ? sites[0].name : "your sites";
-    if (atSite instanceof TileFailed) {
+    if (counts instanceof TileFailed || arrivals instanceof TileFailed) {
       kpis.push(failedKpi({ id: "appointments", label: "Appointments today", icon: "calendar", href: `${BASE}/diary` }));
       kpis.push(failedKpi({ id: "to-arrive", label: "Still to arrive", icon: "user-check", href: `${BASE}/diary` }));
       cards.push(failedCard({ id: "arrivals", title: `Arrivals at ${where}`, link: { href: `${BASE}/diary`, text: "Diary" }, kind: "list", empty: EMPTY.arrivals }));
     } else {
-      const done = atSite.filter((a) => DONE.has(a.status)).length;
-      const dna = atSite.filter((a) => a.status === "dna").length;
-      const toArrive = atSite.filter((a) => a.status === "booked" && Date.parse(a.endsAt) > now.getTime());
-      const patients = await getPatientSummaries(ctx, actor.tenantId, atSite.map((a) => a.patientId).filter((p): p is string => p !== null));
-      const practitioners = new Map((await listPractitioners(ctx, actor.tenantId, { includeInactive: true })).map((p) => [p.id, p.displayName]));
-      const services = new Map((await listServices(ctx, actor.tenantId, { includeInactive: true })).map((s) => [s.id, s.name]));
-      kpis.push({ id: "appointments", label: "Appointments today", icon: "calendar", value: String(atSite.length), sub: `${where} · ${done} done · ${dna} DNA`, href: `${BASE}/diary` });
-      const next = toArrive[0];
+      const here = counts.filter((r) => !chosen || r.siteId === chosen);
+      const done = total(here, (r) => DONE.has(r.status));
+      const dna = total(here, (r) => r.status === "dna");
+      const toArriveCount = here.reduce((n, r) => n + r.toArrive, 0);
+      const next = arrivals.find((a) => a.status === "booked" && Date.parse(a.endsAt) > now.getTime());
+      const visible = arrivals.filter((a) => a.status !== "attended" && a.status !== "dna").slice(0, 6);
+      const [patients, practitionerList, serviceList] = await Promise.all([
+        getPatientSummaries(ctx, actor.tenantId, [...visible, ...(next ? [next] : [])].map((a) => a.patientId).filter((p): p is string => p !== null)),
+        listPractitioners(ctx, actor.tenantId, { includeInactive: true }),
+        listServices(ctx, actor.tenantId, { includeInactive: true }),
+      ]);
+      const practitioners = new Map(practitionerList.map((p) => [p.id, p.displayName]));
+      const services = new Map(serviceList.map((s) => [s.id, s.name]));
+      kpis.push({ id: "appointments", label: "Appointments today", icon: "calendar", value: String(total(here)), sub: `${where} · ${done} done · ${dna} DNA`, href: `${BASE}/diary` });
       kpis.push({
         id: "to-arrive",
         label: "Still to arrive",
         icon: "user-check",
-        value: String(toArrive.length),
+        value: String(toArriveCount),
         sub: next ? `Next: ${formatLondonTime(next.startsAt)} ${nameOf(next.patientId ? patients.get(next.patientId) : undefined)}` : "Everyone is in",
         href: `${BASE}/diary`,
       });
       const canMark = actor.can("diary.book");
-      const visible = atSite.filter((a) => Date.parse(a.endsAt) > now.getTime() - 30 * 60_000 && a.status !== "attended" && a.status !== "dna").slice(0, 6);
       cards.push({
         id: "arrivals",
         title: `Arrivals at ${where}`,
@@ -437,12 +500,8 @@ export async function dashboardFor(actor: ClinicActor, options: DashboardOptions
       });
     }
     // Waiting list.
-    if (actor.can("diary.view")) {
-      const waiting = await tile("waiting_list", async () => {
-        const r = await loadWaitingList(await diaryCallerOf(actor), { status: "open", siteId: chosen ?? undefined });
-        if (!r.ok) throw new Error("waiting");
-        return r.data;
-      });
+    if (waitingP) {
+      const waiting = await waitingP;
       const card = { id: "waiting", title: "Waiting list", link: { href: `${BASE}/diary/waiting-list`, text: "All" }, kind: "list" as const, empty: EMPTY.waiting };
       if (waiting instanceof TileFailed) cards.push(failedCard(card));
       else {
@@ -463,24 +522,20 @@ export async function dashboardFor(actor: ClinicActor, options: DashboardOptions
       }
     }
     // Invoices to raise.
-    if (actor.can("billing.edit")) {
-      const visits = await tile("invoices_to_raise", async () => {
-        const r = await uninvoicedVisitsFor(actor);
-        if (!r.ok) throw new Error("visits");
-        return r.value.visits;
-      });
+    if (visitsP) {
+      const visits = await visitsP;
       if (visits instanceof TileFailed) {
         kpis.push(failedKpi({ id: "to-invoice", label: "Invoices to raise", icon: "pound", href: `${BASE}/billing/invoice-visits` }));
         cards.push(failedCard({ id: "to-invoice", title: "Invoices to raise", link: { href: `${BASE}/billing/invoice-visits`, text: "Invoice visits" }, kind: "list", empty: EMPTY.toInvoice }));
       } else {
-        kpis.push({ id: "to-invoice", label: "Invoices to raise", icon: "pound", value: String(visits.length), sub: "Attended visits not invoiced", href: `${BASE}/billing/invoice-visits` });
+        kpis.push({ id: "to-invoice", label: "Invoices to raise", icon: "pound", value: String(visits.total), sub: "Attended visits not invoiced", href: `${BASE}/billing/invoice-visits` });
         cards.push({
           id: "to-invoice",
           title: "Invoices to raise",
-          count: visits.length,
+          count: visits.total,
           link: { href: `${BASE}/billing/invoice-visits`, text: "Invoice visits" },
           kind: "list",
-          items: visits.slice(0, 4).map((v) => ({
+          items: visits.rows.slice(0, 4).map((v) => ({
             id: v.appointmentId,
             primary: v.patientName,
             href: PATIENT(v.patientId),
@@ -492,12 +547,8 @@ export async function dashboardFor(actor: ClinicActor, options: DashboardOptions
       }
     }
     // Replies to answer.
-    if (actor.can("messages.send")) {
-      const replies = await tile("replies", async () => {
-        const r = await repliesFor(actor);
-        if (!r.ok) throw new Error("replies");
-        return r.value.filter((x) => x.toAction);
-      });
+    if (repliesP) {
+      const replies = await repliesP;
       if (replies instanceof TileFailed) {
         kpis.push(failedKpi({ id: "replies", label: "Replies to answer", icon: "message", href: `${BASE}/messages?tab=replies` }));
         cards.push(failedCard({ id: "replies", title: "Replies to answer", link: { href: `${BASE}/messages?tab=replies`, text: "Messages" }, kind: "list", empty: EMPTY.replies }));
