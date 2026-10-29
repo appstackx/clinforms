@@ -12,6 +12,8 @@ import type { PayerRef } from "./payments";
 import { OPEN_INVOICE, chunks } from "./shared";
 
 const PAGE = 500;
+/** Open invoices per page of the aged-debt read (12 short columns: a round trip to D1 costs more than the rows). */
+const DEBT_PAGE = 2000;
 export const REPORT_ROW_CAP = 20_000;
 
 export interface DebtInvoiceRow extends DebtInvoice {
@@ -48,7 +50,7 @@ export async function debtInvoices(
     // One debtor (a statement's ages): its invoices only – the debtor key below decides, this narrows the read.
     const d = options.debtor;
     if (d) q = d.payerKind === "patient" ? q.where("patient_id", "=", d.patientId) : q.where("bill_to", "=", "payer").where("payer_referrer_id", "=", d.payerReferrerId);
-    const page = await q.orderBy("id").limit(PAGE).execute();
+    const page = await q.orderBy("id").limit(DEBT_PAGE).execute();
     for (const r of page) {
       const billTo = r.bill_to as "patient" | "payer";
       out.push({
@@ -64,7 +66,7 @@ export async function debtInvoices(
         siteId: r.site_id,
       });
     }
-    if (page.length < PAGE) return { rows: out, truncated: false };
+    if (page.length < DEBT_PAGE) return { rows: out, truncated: false };
     if (out.length >= REPORT_ROW_CAP) return { rows: out, truncated: true };
     after = page[page.length - 1].id;
   }
