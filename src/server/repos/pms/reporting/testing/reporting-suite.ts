@@ -189,6 +189,20 @@ export function defineReportingRepoSuite(label: string, factory: () => Promise<R
       assert.equal(back.hasOlder, true);
       const b = await searchAudit(ctx, B, { limit: 200 });
       assert.ok(b.entries.every((e) => e.tenantId === B && e.userId === ACTOR_B.userId));
+      // About a patient (the patients a name search found): the patient record itself and entries whose detail names
+      // the patient's id – here Megan's record and her two cases; never another clinic's rows.
+      const meg = await searchAudit(ctx, A, { relatedIds: [ids.megan], limit: 200 });
+      assert.ok(meg.entries.some((e) => e.action === "pms.patient.create" && e.targetId === ids.megan));
+      assert.equal(meg.entries.filter((e) => e.action === "pms.case.create").length, 2);
+      assert.ok(meg.entries.every((e) => e.targetId === ids.megan || (e.detail as { patientId?: string } | null)?.patientId === ids.megan));
+      const both = await searchAudit(ctx, A, { relatedIds: [ids.megan, ids.daniel], actions: ["pms.case.create"] });
+      assert.equal(both.entries.length, 3);
+      assert.equal((await searchAudit(ctx, A, { relatedIds: [] })).entries.length, 0, "no patient found: nothing");
+      assert.equal((await searchAudit(ctx, B, { relatedIds: [ids.megan] })).entries.length, 0, "another clinic");
+      // LIKE wildcards in an id are taken literally ("pat_…" with "_" swapped for another character matches nothing).
+      assert.equal((await searchAudit(ctx, A, { relatedIds: [ids.megan.replace("_", "X")] })).entries.length, 0);
+      await rejects(searchAudit(ctx, A, { relatedIds: ["50%"] }), /record id/);
+      await rejects(searchAudit(ctx, A, { relatedIds: Array.from({ length: 21 }, (_, i) => `pat_${i}`) }), /Too many/);
     });
 
     it("figures from the record: cases by month and payer, caseload, referral sources, new and returning, registrations", async () => {

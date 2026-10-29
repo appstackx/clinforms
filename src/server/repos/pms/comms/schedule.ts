@@ -103,8 +103,16 @@ export async function syncAppointmentMessages(
   let cancelled = 0;
   let kept = 0;
   let refreshed = 0;
+  // A notice still waiting to go (a confirmation held for quiet hours, a cancellation notice…) stays while it is
+  // still true – a later sync that does not ask for it again (a details change, the run's reconcile sweep, M9b)
+  // must not cancel it: a confirmation or "moved" notice of the current start while the appointment is booked; a
+  // cancellation or did-not-attend notice while it is not.
+  const stillTrue = (r: (typeof existing)[number]) =>
+    appt.active
+      ? (r.kind === "confirmation" || r.kind === "moved") && new Date(r.starts_at).toISOString() === snapshot.starts_at
+      : r.kind === "cancelled" || r.kind === "late_cancelled" || r.kind === "dna";
   for (const r of existing) {
-    if (r.status !== "pending" || wanted.has(r.dedupe_key)) continue;
+    if (r.status !== "pending" || wanted.has(r.dedupe_key) || stillTrue(r)) continue;
     queries.push(
       ctx.db
         .updateTable(T)

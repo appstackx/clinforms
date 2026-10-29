@@ -9,7 +9,7 @@
  */
 import { CLINIC_BASE_PATH } from "../core/modules";
 
-export const REPORT_IDS = ["attendance", "utilisation", "caseload", "revenue", "debtors", "authorisations"] as const;
+export const REPORT_IDS = ["attendance", "utilisation", "patients", "caseload", "revenue", "debtors", "authorisations"] as const;
 export type ReportId = (typeof REPORT_IDS)[number];
 
 export const REPORT_GROUPS = ["Appointments", "Clinical", "Finance"] as const;
@@ -49,6 +49,15 @@ export const REPORTS: Readonly<Record<ReportId, ReportInfo>> = {
     title: "Utilisation",
     description: "Booked time as a share of rota time.",
     href: `${REPORTS_PATH}/utilisation`,
+    group: "Appointments",
+    ownCaseload: true,
+    filters: { period: true, practitioner: true, service: false },
+  },
+  patients: {
+    id: "patients",
+    title: "New and returning patients",
+    description: "Patients seen, and how many came for the first time.",
+    href: `${REPORTS_PATH}/patients`,
     group: "Appointments",
     ownCaseload: true,
     filters: { period: true, practitioner: true, service: false },

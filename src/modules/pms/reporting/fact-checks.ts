@@ -6,7 +6,7 @@
  */
 import { PAYER_TYPES } from "../core/schemas";
 import { isIsoDate } from "../core/text";
-import { APPOINTMENT_OUTCOMES, REVENUE_KINDS, type AppointmentFact, type AvailabilityFact, type DebtFact, type RevenueFact } from "./facts";
+import { APPOINTMENT_OUTCOMES, REVENUE_KINDS, type AppointmentFact, type AvailabilityFact, type DebtFact, type RevenueFact, type VisitFact } from "./facts";
 
 export interface FactFilter {
   from: string;
@@ -90,7 +90,21 @@ export function checkAppointmentFacts(facts: readonly AppointmentFact[] | null |
 }
 
 export function checkAvailabilityFacts(facts: readonly AvailabilityFact[] | null | undefined, f: FactFilter): Checked<AvailabilityFact> {
-  return keep(facts, (a) => typeof a.practitionerId === "string" && whenIn(a, f) && count(a.minutes) && siteOk(a.siteId, f) && practitionerOk(a.practitionerId, f));
+  return keep(
+    facts,
+    (a) =>
+      typeof a.practitionerId === "string" &&
+      whenIn(a, f) &&
+      count(a.minutes) &&
+      (a.bookedMinutes === undefined || (count(a.bookedMinutes) && a.bookedMinutes <= a.minutes)) &&
+      (a.blockedMinutes === undefined || count(a.blockedMinutes)) &&
+      siteOk(a.siteId, f) &&
+      practitionerOk(a.practitionerId, f),
+  );
+}
+
+export function checkVisitFacts(facts: readonly VisitFact[] | null | undefined, f: FactFilter): Checked<VisitFact> {
+  return keep(facts, (v) => typeof v.date === "string" && whenIn(v, f) && typeof v.firstVisit === "boolean" && count(v.appointments) && siteOk(v.siteId, f) && practitionerOk(v.practitionerId, f));
 }
 
 export function checkRevenueFacts(facts: readonly RevenueFact[] | null | undefined, f: FactFilter): Checked<RevenueFact> {

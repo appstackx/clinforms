@@ -45,3 +45,31 @@ licensed wording, Q-K8) and the answers are scored by records into `pms_outcome_
 ## Messages
 Confirmation, cancellation, late-cancellation and "moved" notices are the diary hook's appointment messages (comms);
 after a patient's write the portal runs the due messages so they reach the outbox at once. No outbox of its own.
+
+## M9b follow-ups (polish)
+- **Share with the patient (PORTAL-004).** Record → Attachments → under a file, "Share with the patient": a plain title
+  (the portal lists it), an optional message (encrypted), and optionally an email with a one-time portal link (comms'
+  `portal_link`; the email never names the document). Who: `clinical.view` + `clinical.write` (attachments are
+  clinical – never reception; admins see but do not share by default). The share keeps who and when, the first time
+  the patient opened it, and who withdrew it. In the portal ("Shared with you") the patient reads the message and
+  downloads the file (`/clinics/<clinic>/portal/documents/<share>/file` – the record's file, verified, always a
+  download) while the share stands and the file is not withdrawn from the record. `pms_portal_share_files` (0182)
+  links a share to the records module's `pms_attachments`; nothing is copied.
+- **Completing a form in the clinic (FORM-007).** Record → Forms → "Complete in the clinic" on a waiting form
+  (`patients.edit`): a 30-minute hand-off (`pms_intake_handoffs`, 0182 – only the SHA-256 of the device's secret);
+  the device gets an httpOnly, SameSite=Strict cookie limited to `/clinics/<clinic>/device` and shows ONLY that form
+  (no staff navigation, no other patient data, not even the name). The patient's submit is the ordinary sealed submit
+  ("unverified"), the hand-off marked completed in the same batch; the device then locks on "Please hand the device
+  back". Staff open `/app/clinic/intake/device/<hand-off>` and confirm with THEIR password (the sign-in service's
+  verify-password; 5 tries per 15 minutes) → "Completed in the clinic, verified by <member>" on the signed copy, the
+  PDF and the audit (`pms.intake_response.verify`); a signed consent form then records consent under that member.
+  The browser of a reception PC may still hold a staff session – use the device's guided-access / kiosk lock too.
+- **Signed copy as PDF.** "Download PDF" on the signed copy (`…/forms/<copy>/pdf`): pdf-lib (as the subject-access
+  copy), the same visibility as the screen (health answers only with `clinical.view`), the full fingerprint, the seal
+  check; audited (`pms.intake_response.pdf`).
+- **Preview as patient.** The builder's "Preview as patient" renders the patient's own filler (375 px, the clinic's
+  public header) with the builder's unsaved questions; nothing can be sent.
+- **Write ids.** `pms_intake_responses`, `pms_portal_shares`, `pms_portal_sessions` (0183–0185) and the hand-offs carry
+  a fresh `write_id` per change; their conditional audit rows key on it (`portalAuditWhenWritten`), so two identical
+  writes in the same millisecond audit once. Settings, sites, templates, online bookings and account status still key
+  on the new revision and time (no migration numbers left – see the M9b report).

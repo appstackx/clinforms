@@ -2,8 +2,10 @@
  * Completing intake and consent forms, and what they may change on the patient's record.
  *
  * - The patient completes a copy through their portal sign-in ("verified": the link went to the email address on
- *   the record), through the booking link ("unverified": whoever booked), or in the clinic with a member of staff
- *   ("verified", recorded under that member).
+ *   the record), through the booking link ("unverified": whoever booked), or in the clinic on a clinic device a
+ *   member of staff handed them (stored "unverified" until a member of staff confirms it with their password – the
+ *   hand-off then records who verified it, and a signed consent form records consent from that moment, under that
+ *   member: ./clinic-device.ts).
  * - A signed consent form records consent on the record straight away only when "verified". Everything else a
  *   form may change (contact details, GP, emergency contact) waits for a member of staff to check and apply it.
  */
@@ -14,7 +16,7 @@ import type { PmsActor } from "../../../modules/pms/core/types";
 import type { IntakeResponse } from "../../../modules/pms/portal/types";
 import type { RepoContext } from "../../repos/context";
 import { getPatient, updatePatient } from "../../repos/pms/patients";
-import { getIntakeResponse, markResponseApplied, setResponseOutcome, submitIntakeResponse, type SubmitResult } from "../../repos/pms/portal/intake";
+import { getIntakeResponse, markResponseApplied, setResponseOutcome, submitIntakeResponse, type SubmitOptions, type SubmitResult } from "../../repos/pms/portal/intake";
 import { recordOutcome } from "../../repos/pms/records/outcomes";
 import { outcomeAnswersFrom } from "../../../modules/pms/portal/outcome-forms";
 import { ukToday } from "../../../modules/pms/core/text";
@@ -90,19 +92,29 @@ export async function submitForm(
   expectedRev: number,
   input: { answers: Record<string, unknown>; signatureName?: string | null; trust: "verified" | "unverified" },
   actor: PmsActor,
+  options: SubmitOptions = {},
 ): Promise<PatientSubmitOutcome> {
-  const result = await submitIntakeResponse(ctx, tenantId, responseId, expectedRev, input, actor);
+  const result = await submitIntakeResponse(ctx, tenantId, responseId, expectedRev, input, actor, options);
   if (!result.ok) return result;
   if (result.response.kind === "outcome") {
     const outcomeId = await scoreOutcomeResponse(ctx, tenantId, result.response, actor);
     return { ...result, outcomeId };
   }
   if (input.trust !== "verified") return result;
-  const updates = consentUpdates(result.response);
-  if (updates.length === 0) return result;
-  const done = await patchPatient(ctx, tenantId, result.response.patientId, patchFrom(updates), actor);
-  if (done) await markResponseApplied(ctx, tenantId, responseId, updates.map((u) => u.field), actor);
-  return { ...result, consentRecorded: done };
+  const consentRecorded = await recordVerifiedConsent(ctx, tenantId, result.response, actor);
+  return consentRecorded === null ? result : { ...result, consentRecorded };
+}
+
+/**
+ * A signed consent form whose signer is known (portal sign-in, or staff verified it in the clinic): its consent
+ * fields go on the patient's record under `actor`. Answers null when the form records no consent.
+ */
+export async function recordVerifiedConsent(ctx: RepoContext, tenantId: string, response: IntakeResponse, actor: PmsActor): Promise<boolean | null> {
+  const updates = consentUpdates(response);
+  if (updates.length === 0) return null;
+  const done = await patchPatient(ctx, tenantId, response.patientId, patchFrom(updates), actor);
+  if (done) await markResponseApplied(ctx, tenantId, response.id, updates.map((u) => u.field), actor);
+  return done;
 }
 
 export type ApplyOutcome = { ok: true; fields: RecordField[] } | { ok: false; error: string };

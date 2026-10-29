@@ -18,24 +18,28 @@ export interface PmsModuleInfo {
   sqlite: readonly [number, number];
   /** Postgres twins: supabase/migrations/2026102400NNNN_*.sql with the same NNNN. */
   postgresPrefix: "2026102400";
+  /**
+   * Follow-up numbers past the first ranges (M9b polish, 0180 onwards, handover §19): each number is owned by one
+   * module exactly as its own range is. Numbered in the order the follow-ups were built.
+   */
+  extra?: readonly (readonly [number, number])[];
 }
 
 export const PMS_MODULES: Readonly<Record<PmsModuleId, PmsModuleInfo>> = {
   foundation: { id: "foundation", title: "Foundation: entitlements, shell, shared patient record", sqlite: [100, 109], postgresPrefix: "2026102400" },
-  diary: { id: "diary", title: "Multi-site diary", sqlite: [110, 119], postgresPrefix: "2026102400" },
-  records: { id: "records", title: "Patient record screens and clinical notes", sqlite: [120, 129], postgresPrefix: "2026102400" },
+  diary: { id: "diary", title: "Multi-site diary", sqlite: [110, 119], postgresPrefix: "2026102400", extra: [[180, 181], [189, 189]] },
+  records: { id: "records", title: "Patient record screens and clinical notes", sqlite: [120, 129], postgresPrefix: "2026102400", extra: [[188, 188]] },
   billing: { id: "billing", title: "Invoicing, insurer and MLC accounts, payments", sqlite: [130, 139], postgresPrefix: "2026102400" },
   comms: { id: "comms", title: "Reminders, messages, letters", sqlite: [140, 149], postgresPrefix: "2026102400" },
-  portal: { id: "portal", title: "Online booking, patient portal, intake forms", sqlite: [150, 159], postgresPrefix: "2026102400" },
-  reporting: { id: "reporting", title: "Reporting, clinic set-up and administration", sqlite: [160, 169], postgresPrefix: "2026102400" },
+  portal: { id: "portal", title: "Online booking, patient portal, intake forms", sqlite: [150, 159], postgresPrefix: "2026102400", extra: [[182, 185]] },
+  reporting: { id: "reporting", title: "Reporting, clinic set-up and administration", sqlite: [160, 169], postgresPrefix: "2026102400", extra: [[186, 187]] },
   integration: { id: "integration", title: "Data import and the native connector", sqlite: [170, 179], postgresPrefix: "2026102400" },
 };
 
 /** The module whose range holds a SQLite migration number, or null (numbers below 100 are ClinForms' own). */
 export function moduleForMigration(n: number): PmsModuleId | null {
   for (const id of PMS_MODULE_IDS) {
-    const [lo, hi] = PMS_MODULES[id].sqlite;
-    if (n >= lo && n <= hi) return id;
+    for (const [lo, hi] of [PMS_MODULES[id].sqlite, ...(PMS_MODULES[id].extra ?? [])]) if (n >= lo && n <= hi) return id;
   }
   return null;
 }

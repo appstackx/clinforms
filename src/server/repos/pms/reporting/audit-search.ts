@@ -4,6 +4,7 @@
  * (tenant_id, id) and (tenant_id, user_id, id) indexes and never scans another clinic's rows. Newest first,
  * keyset pages.
  */
+import { sql } from "kysely";
 import type { AuditEntry } from "../../audit";
 import { RepoInputError, assertTenantId, parseJson, type DbContext } from "../../context";
 
@@ -19,6 +20,11 @@ export interface AuditSearch {
   userId?: string | null;
   targetType?: string | null;
   targetId?: string | null;
+  /**
+   * Entries about any of these records (≤ 20): the record itself (target id) or an entry whose detail names it as
+   * its patient ("patientId") – e.g. the patients found by a name search. [] = nothing matches.
+   */
+  relatedIds?: readonly string[] | null;
   /** Older than this id (next page). */
   beforeId?: string | null;
   /** Newer than this id (previous page). */
@@ -36,6 +42,12 @@ export interface AuditSearchPage {
 }
 
 const PREFIX = /^[a-z0-9][a-z0-9_.:-]{0,62}\.$/;
+const RECORD_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/;
+
+/** A value for LIKE … ESCAPE '\\': the wildcards and the escape character itself taken literally. */
+function likeEscape(value: string): string {
+  return value.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
 
 /** The next string after every string that starts with `prefix` ("pms.patient." → "pms.patient/"). */
 function prefixEnd(prefix: string): string {
@@ -47,6 +59,9 @@ export async function searchAudit(ctx: DbContext, tenantId: string, search: Audi
   const limit = Math.min(Math.max(1, Math.floor(search.limit ?? 50)), 200);
   if (search.actions && search.actions.length > 90) throw new RepoInputError("Too many actions in one search.");
   if (search.actionPrefix && !PREFIX.test(search.actionPrefix)) throw new RepoInputError("Not a valid area.");
+  if (search.relatedIds && search.relatedIds.length > 20) throw new RepoInputError("Too many records in one search.");
+  if (search.relatedIds && search.relatedIds.some((id) => !RECORD_ID.test(id))) throw new RepoInputError("Not a valid record id.");
+  const related = search.relatedIds ? Array.from(new Set(search.relatedIds)) : null;
   const base = () => {
     let q = ctx.db.selectFrom("audit_log").selectAll().where("tenant_id", "=", tenantId);
     if (search.lowerId) q = q.where("id", ">=", search.lowerId);
@@ -56,9 +71,14 @@ export async function searchAudit(ctx: DbContext, tenantId: string, search: Audi
     if (search.userId) q = q.where("user_id", "=", search.userId);
     if (search.targetType) q = q.where("target_type", "=", search.targetType);
     if (search.targetId) q = q.where("target_id", "=", search.targetId);
+    if (related && related.length > 0) {
+      // The detail is JSON written by pmsAudit: {"patientId":"pat_…"} (LIKE wildcards in the id escaped).
+      q = q.where((eb) => eb.or([eb("target_id", "in", related), ...related.map((id) => sql<boolean>`detail_json like ${`%"patientId":"${likeEscape(id)}"%`} escape ${"\\"}`)]));
+    }
     return q;
   };
   if (search.actions && search.actions.length === 0) return { entries: [], hasOlder: false, hasNewer: false };
+  if (related && related.length === 0) return { entries: [], hasOlder: false, hasNewer: false };
   const backwards = !search.beforeId && Boolean(search.afterId);
   let q = base();
   if (search.beforeId) q = q.where("id", "<", search.beforeId);

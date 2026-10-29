@@ -21,7 +21,7 @@ import type { PmsPermission } from "../../../modules/pms/core/permissions";
 import { PAYER_TYPES, PmsIdSchema, type PatientInput } from "../../../modules/pms/core/schemas";
 import { formatUkDate, isIsoDate } from "../../../modules/pms/core/text";
 import { DIARY_COPY, STATUS_LABELS } from "../../../modules/pms/diary/copy";
-import { CANCEL_REASONS, isLateCancellation, isOverridableClash } from "../../../modules/pms/diary/rules";
+import { CANCEL_REASONS, isLateCancellation, isOverridableClash, type DiaryClash } from "../../../modules/pms/diary/rules";
 import {
   AppointmentDetailsPatchSchema,
   AppointmentStatusChangeSchema,
@@ -39,6 +39,7 @@ import {
   WaitingListOfferSchema,
   WaitingListPatchSchema,
   WaitingListStatusSchema,
+  OFFER_HOLD_DEFAULT_MINUTES,
 } from "../../../modules/pms/diary/schemas";
 import { addDays, formatHhmm, londonParts, parseHhmm, weekdayName } from "../../../modules/pms/diary/time";
 import { formatAppointmentTime } from "../../../modules/pms/comms/schedule";
@@ -62,6 +63,8 @@ import {
   answerWaitingListOffer,
   getWaitingListEntry,
   getWaitingListOffer,
+  extendOfferHold,
+  offerHoldUntil,
   offerWaitingListSlot,
   setWaitingListStatus,
   updateWaitingListEntry,
@@ -150,7 +153,7 @@ function overrideOf(caller: DiaryCaller, override: unknown, allowPatientOverlap:
 }
 
 /** A refused clash: the message, and whether this member could book over it. */
-function clashAnswer(caller: DiaryCaller, clashes: readonly { resource: "practitioner" | "room" | "patient"; withKind: "appointment" | "block" }[]): { patientOnly: boolean; overridable: boolean } {
+function clashAnswer(caller: DiaryCaller, clashes: readonly Pick<DiaryClash, "resource" | "withKind">[]): { patientOnly: boolean; overridable: boolean } {
   return {
     patientOnly: clashes.every((c) => c.resource === "patient"),
     overridable: clashes.length > 0 && clashes.every(isOverridableClash) && caller.can("diary.override"),
@@ -495,7 +498,11 @@ export async function setWaitingListStatusFor(caller: DiaryCaller, input: unknow
   });
 }
 
-/** Offers a free slot to a waiting patient (recorded; the slot is not held; nothing is sent). */
+/**
+ * Offers a free slot to a waiting patient: recorded, the slot HELD for them (default 2 hours, never past its start)
+ * and the offer sent by text (else email) through comms. A text held for quiet hours moves the hold on, so the
+ * patient still gets the whole hold after the text goes (never past the start).
+ */
 export async function offerWaitingListSlotFor(caller: DiaryCaller, input: unknown): Promise<DiaryActionResult> {
   if (!allowed(caller, "offerWaitingListSlotAction")) return NOT_ALLOWED;
   const { id, rest } = withId(input);
@@ -517,6 +524,12 @@ export async function offerWaitingListSlotFor(caller: DiaryCaller, input: unknow
           caller.actor,
         )
       : null;
+    let holdUntil = r.offer.holdUntil;
+    if (sent?.ok && "heldUntil" in sent && sent.heldUntil && holdUntil) {
+      const minutes = parsed.data.holdMinutes ?? OFFER_HOLD_DEFAULT_MINUTES;
+      const later = offerHoldUntil(new Date(sent.heldUntil).toISOString(), r.offer.startsAt, minutes);
+      if (later > holdUntil && (await extendOfferHold(caller.ctx, caller.tenantId, r.offer.id, later, caller.actor))) holdUntil = later;
+    }
     const how = sent?.ok
       ? "heldUntil" in sent && sent.heldUntil
         ? ` It is quiet hours: the text is held and goes at ${formatAppointmentTime(sent.heldUntil)}.`
@@ -524,7 +537,8 @@ export async function offerWaitingListSlotFor(caller: DiaryCaller, input: unknow
           ? " The text is in the outbox."
           : " The patient has been sent the offer."
       : " The patient could not be messaged – call them.";
-    return { ok: true, message: `Slot offered.${how} It is not held – book it once the patient says yes.`, warnings: [], itemId: r.offer.id, rev: r.entryRev };
+    const held = holdUntil ? ` The slot is held for them until ${formatAppointmentTime(holdUntil)} – book it once they say yes.` : "";
+    return { ok: true, message: `Slot offered.${how}${held}`, warnings: [], itemId: r.offer.id, rev: r.entryRev };
   });
 }
 

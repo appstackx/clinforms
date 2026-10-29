@@ -2,8 +2,10 @@
  * Demonstration billing for the demo clinic (contract §9), after the diary and records seeds: billing settings
  * (payment links on, fictional bank details), a few months of fictional invoices so aged debt has every band
  * (self-pay, insurer, solicitor), payments (card, cash), one insurer remittance with a short payment left, a
- * credit note, a voided invoice, a saved TEST card – and the completed visits of the first half of this week
- * invoiced; the rest (and every missed / late-cancelled fee) left in "Attended, not invoiced". Everything goes through the billing repositories and
+ * credit note, a voided invoice, a saved TEST card – the diary history's past weeks invoiced week by week (issued
+ * on the Friday, most patients paying at the desk that day, insurers paying weeks later, a few left owing) – and
+ * the completed visits of the first half of this week invoiced; the rest (and every missed / late-cancelled fee of
+ * this week) left in "Attended, not invoiced". Everything goes through the billing repositories and
  * services (audited, encrypted, the database's own rules). Refuses a clinic not flagged as a demonstration clinic.
  *
  * Idempotent: invoices carry the import reference "demo-billing-…"; a clinic that has them is left as it is.
@@ -12,6 +14,7 @@
  *   await seedBilling({ db, cipher: getDataCipher() }, slug, { log: (line) => console.log(`  ${line}`) });
  */
 import { addDaysIso } from "../../src/modules/pms/billing/status";
+import { londonToUtcOrThrow, mondayOf } from "../../src/modules/pms/diary/time";
 import { ukToday } from "../../src/modules/pms/core/text";
 import { RepoInputError, type RepoContext } from "../../src/server/repos/context";
 import { createCreditNote, spreadOverLines, voidInvoice } from "../../src/server/repos/pms/billing/credit-notes";
@@ -34,6 +37,8 @@ export interface SeedBillingOptions {
 
 export interface SeedBillingSummary {
   invoices: number;
+  /** Of which for the diary history's past weeks. */
+  historyInvoices: number;
   payments: number;
   uninvoicedLeft: number;
   existed: boolean;
@@ -49,7 +54,7 @@ export async function seedBilling(base: Pick<RepoContext, "db" | "cipher">, tena
   const existing = await ctx.db.selectFrom("pms_invoices").select("id").where("tenant_id", "=", tenantId).where("import_ref", "like", `${REF}-%`).limit(1).executeTakeFirst();
   if (existing) {
     log("Billing: demonstration invoices are there already – nothing added.");
-    return { invoices: 0, payments: 0, uninvoicedLeft: 0, existed: true };
+    return { invoices: 0, historyInvoices: 0, payments: 0, uninvoicedLeft: 0, existed: true };
   }
   const today = ukToday(now);
   const actor: BillingActor = { ...testActor(ctx, tenantId, "owner", { userId: SEED_ACTOR.userId, name: "Demonstration data" }), actor: SEED_ACTOR };
@@ -172,6 +177,70 @@ export async function seedBilling(base: Pick<RepoContext, "db" | "cipher">, tena
   // A saved TEST card for Megan Hart (provider references are stand-ins: card on file works with the local test stub).
   if (megan) await saveCard(ctx, tenantId, { patientId: megan, provider: "stripe", customerRef: "cus_demo_megan_hart", methodRef: "pm_demo_visa_1111", brand: "visa", last4: "1111", expMonth: 8, expYear: 2028 }, SEED_ACTOR);
 
+  // The diary history (scripts/pms/seed-diary.ts, "demo-hist-…"): each past week's chargeable visits invoiced and
+  // issued on its Friday ("now" = Friday 18:30), as the clinic would have; most patients paid at the desk that day,
+  // insurers three weeks later (the last four weeks still open), one patient in eight still owing.
+  const history = await ctx.db
+    .selectFrom("pms_appointments")
+    .select(["id", "starts_on"])
+    .where("tenant_id", "=", tenantId)
+    .where("kind", "=", "appointment")
+    .where("import_ref", "like", "demo-hist-%")
+    .where("status", "in", ["attended", "dna", "late_cancelled"])
+    .orderBy("starts_on")
+    .orderBy("id")
+    .execute();
+  const weeks = new Map<string, string[]>();
+  for (const a of history) weeks.set(mondayOf(a.starts_on), [...(weeks.get(mondayOf(a.starts_on)) ?? []), a.id]);
+  let historyInvoices = 0;
+  let w = 0;
+  for (const [monday, ids] of Array.from(weeks.entries())) {
+    const friday = addDaysIso(monday, 4);
+    if (friday >= today) continue;
+    const at = new Date(londonToUtcOrThrow(friday, 18 * 60 + 30));
+    const weekCtx: RepoContext = { ...base, now: () => at };
+    const weekActor: BillingActor = { ...testActor(weekCtx, tenantId, "owner", { userId: SEED_ACTOR.userId, name: "Demonstration data" }), actor: SEED_ACTOR };
+    const made: string[] = [];
+    for (let i = 0; i < ids.length; i += 40) {
+      const chunk = ids.slice(i, i + 40);
+      const r = await invoiceVisitsFor(weekActor, { appointmentIds: chunk, issue: true });
+      if (r.ok) made.push(...r.value.invoices.map((x) => x.id));
+    }
+    historyInvoices += made.length;
+    const issued = made.length
+      ? await ctx.db
+          .selectFrom("pms_invoices")
+          .select(["id", "patient_id", "bill_to", "payer_referrer_id", "site_id", "total_pence", "paid_pence", "credited_pence"])
+          .where("tenant_id", "=", tenantId)
+          .where("status", "=", "issued")
+          .where("id", "in", made)
+          .orderBy("id")
+          .execute()
+      : [];
+    const owed = (x: (typeof issued)[number]) => Number(x.total_pence) - Number(x.paid_pence) - Number(x.credited_pence);
+    let n = 0;
+    for (const inv of issued.filter((x) => x.bill_to === "patient" && owed(x) > 0)) {
+      if (++n % 8 === 0) continue; // still owing
+      await recordPayment(weekCtx, tenantId, { payerKind: "patient", patientId: inv.patient_id, receivedOn: friday, method: n % 3 === 0 ? "cash" : "card", amountPence: owed(inv), reference: n % 3 === 0 ? "Cash at the desk" : "Card reader", siteId: inv.site_id, allocations: [{ invoiceId: inv.id, amountPence: owed(inv) }] }, SEED_ACTOR);
+      payments += 1;
+    }
+    const paidOn = addDaysIso(friday, 21);
+    if (paidOn <= addDaysIso(today, -7)) {
+      const byPayer = new Map<string, typeof issued>();
+      for (const inv of issued.filter((x) => x.bill_to === "payer" && x.payer_referrer_id && owed(x) > 0)) byPayer.set(inv.payer_referrer_id as string, [...(byPayer.get(inv.payer_referrer_id as string) ?? []), inv]);
+      for (const [payer, list] of Array.from(byPayer.entries())) {
+        for (let i = 0; i < list.length; i += 40) {
+          const part = list.slice(i, i + 40);
+          const allocations = part.map((x) => ({ invoiceId: x.id, amountPence: owed(x) }));
+          const ctxPaid: RepoContext = { ...base, now: () => new Date(londonToUtcOrThrow(paidOn, 12 * 60)) };
+          await recordPayment(ctxPaid, tenantId, { payerKind: "account", payerReferrerId: payer, receivedOn: paidOn, method: "bank_transfer", amountPence: allocations.reduce((a, x) => a + x.amountPence, 0), reference: `REM-${monday.replace(/-/g, "")}-${++w}`, allocations }, SEED_ACTOR);
+          payments += 1;
+        }
+      }
+    }
+  }
+  invoices += historyInvoices;
+
   // This week's chargeable visits: invoice (and issue) the older half, take a few payments, leave the rest.
   const visits = await uninvoicedVisitsFor(actor);
   if (visits.ok && visits.value.visits.length) {
@@ -202,6 +271,6 @@ export async function seedBilling(base: Pick<RepoContext, "db" | "cipher">, tena
   }
   const left = await uninvoicedVisitsFor(actor);
   const uninvoicedLeft = left.ok ? left.value.visits.length : 0;
-  log(`Billing: ${invoices} invoices, ${payments} payments, ${uninvoicedLeft} chargeable visits left to invoice (fictional).`);
-  return { invoices, payments, uninvoicedLeft, existed: false };
+  log(`Billing: ${invoices} invoices (${historyInvoices} for the past weeks), ${payments} payments, ${uninvoicedLeft} chargeable visits left to invoice (fictional).`);
+  return { invoices, historyInvoices, payments, uninvoicedLeft, existed: false };
 }

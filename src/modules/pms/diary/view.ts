@@ -209,6 +209,27 @@ export interface DiaryViewData {
   summary: { appointments: number; bookedPercent: number | null; dna: number } | null;
   /** The signed-in member's practitioner row, when they have one ("My diary"). */
   myPractitionerId: string | null;
+  /** Slots held for waiting patients (open offers, until answered or the hold ends) – drawn so nobody books over them. */
+  holds: DiaryHold[];
+  /** Days the site is closed (Set-up → Sites and hours): the day view shows "Closed – <reason>". */
+  closures: { date: string; reason: string | null }[];
+}
+
+/** A slot offered to a waiting patient and held for them (M9b). */
+export interface DiaryHold {
+  /** The offer's id. */
+  id: string;
+  waitingListId: string;
+  columnKey: string;
+  startsAt: string;
+  endsAt: string;
+  startsOn: string;
+  timeLabel: string;
+  /** "14:20" – when the hold ends by itself. */
+  holdUntilLabel: string;
+  holdUntil: string;
+  /** Only for roles that may see patients. */
+  patientName: string | null;
 }
 
 /** The appointment dialog's data (GET …/diary/api/appointments/[id]): notes decrypted, the patient identified. */
@@ -435,7 +456,21 @@ export interface WaitingListRow {
   waitingDays: number;
   hasNotes: boolean;
   openOffers: number;
+  /** The latest open offer (the slot held for the patient until holdUntilLabel, while held). */
+  offer: WaitingListOpenOffer | null;
   createdAt: string;
+}
+
+/** An entry's open offer as the waiting list shows it. */
+export interface WaitingListOpenOffer {
+  id: string;
+  dateLabel: string;
+  timeLabel: string;
+  practitionerName: string | null;
+  /** True while the hold has not ended. */
+  held: boolean;
+  /** "16:00" (today) or "Thu 29/10 16:00"; null when the offer holds nothing. */
+  holdUntilLabel: string | null;
 }
 
 export interface WaitingListOfferRow {
@@ -449,6 +484,8 @@ export interface WaitingListOfferRow {
   roomName: string | null;
   appointmentId: string | null;
   createdAt: string;
+  held: boolean;
+  holdUntilLabel: string | null;
 }
 
 export interface WaitingListEntryView {

@@ -7,7 +7,8 @@
  *   Past appointments still marked "booked" are "not recorded" and left out of the rates (shown separately).
  * - Utilisation = booked minutes / available minutes. Booked = every appointment that held its slot (upcoming,
  *   not recorded, attended, DNA, late cancellation). Available: a site's or room's opening hours less closures
- *   (a site counts each of its rooms), a practitioner's working time from the diary's rota. None = no rate.
+ *   (a site counts each of its rooms); a practitioner's: the diary's rota inside the opening hours, joined with the
+ *   time actually booked and less blocked time (leave, meetings) – so booked ≤ available. None = no rate.
  * - New patients: first attended appointment ever falls in the period; returning: attended in the period and
  *   seen before. By cases: a patient whose first case opened in the period is new, else returning.
  * - Revenue: invoiced (issued, not void) and credited in the period by issue date; received by payment date.
@@ -270,11 +271,21 @@ export function utilisationByRoom(
   return utilRows(booked, attended, count, available, rooms.map((r) => r.id));
 }
 
-/** By practitioner: available = their working time from the diary's rota (none recorded = no rate). */
+/**
+ * By practitioner: available = their working time from the diary (none recorded = no rate). When the source clipped
+ * the bookings itself (availability facts carry `bookedMinutes`: rota ∪ bookings − blocked time), booked time is
+ * taken from there, so a row never passes 100 %; otherwise from the appointments' own minutes.
+ */
 export function utilisationByPractitioner(facts: readonly AppointmentFact[], practitioners: readonly { id: string }[], availability: readonly AvailabilityFact[]): UtilisationRow[] {
-  const { booked, attended, count } = tally(facts, (f) => f.practitionerId);
+  const tallied = tally(facts, (f) => f.practitionerId);
+  const { attended, count } = tallied;
+  let booked = tallied.booked;
   const sums = new Map<string, number>();
   for (const a of availability) bump(sums, a.practitionerId, Math.max(0, a.minutes));
+  if (availability.some((a) => a.bookedMinutes !== undefined)) {
+    booked = new Map<string, number>();
+    for (const a of availability) bump(booked, a.practitionerId, Math.max(0, Math.min(a.bookedMinutes ?? 0, a.minutes)));
+  }
   const available = new Map<string, number | null>();
   for (const p of practitioners) {
     const m = sums.get(p.id) ?? 0;

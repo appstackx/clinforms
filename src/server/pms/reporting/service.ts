@@ -36,10 +36,12 @@ import {
   loadCaseload,
   loadDebtors,
   loadDirectory,
+  loadNewReturning,
   loadRevenue,
   loadUtilisation,
   type ReportDirectory,
   type ReportRequest,
+  type VisitRow,
 } from "./reports";
 import { siteScopeOf } from "./scope";
 import { reportingSources, type ReportingSources } from "./sources";
@@ -220,15 +222,15 @@ async function utilisationView(b: Built, sources: ReportingSources): Promise<Rep
   const bars = pracs.map((x) => ({ label: shortName(b.dir.practitionerName(x.key)), value: (x.utilisation ?? 0) * 100, display: pct0(x.utilisation), strong: (x.utilisation ?? 0) >= target }));
   const siteRows = r.bySiteRota.filter((x) => x.availableMinutes !== null || x.bookedMinutes > 0);
   const scopeLabel = b.req.siteId ? b.dir.siteName(b.req.siteId) : b.filters.allSites ? "All sites" : "Your sites";
-  const header = ["group", "name", "rota_hours", "booked_hours", "utilisation_percent", "main_site"];
+  const header = ["group", "name", "available_hours", "booked_hours", "utilisation_percent", "main_site"];
   const rows: CsvValue[][] = [
     ...pracs.map((x) => ["practitioner", b.dir.practitionerName(x.key), hoursCsv(x.availableMinutes), hoursCsv(x.bookedMinutes), ratePercentCsv(x.utilisation), mainSite(x.key)]),
     ...(b.req.practitionerId ? [] : siteRows.map((x) => ["site", b.dir.siteName(x.key), hoursCsv(x.availableMinutes), hoursCsv(x.bookedMinutes), ratePercentCsv(x.utilisation), ""])),
   ];
   const tables: ReportTable[] = [
-    { id: "practitioners", title: null, columns: cols(["Practitioner", "Rota hours", "Booked hours", "Utilisation", "Main site"]), rows: pracs.map((x) => ({ cells: [b.dir.practitionerName(x.key), hours(x.availableMinutes), hours(x.bookedMinutes), pct0(x.utilisation), mainSite(x.key)] })), empty: "No rota time or appointments in this period." },
+    { id: "practitioners", title: null, columns: cols(["Practitioner", "Available hours", "Booked hours", "Utilisation", "Main site"]), rows: pracs.map((x) => ({ cells: [b.dir.practitionerName(x.key), hours(x.availableMinutes), hours(x.bookedMinutes), pct0(x.utilisation), mainSite(x.key)] })), empty: "No working time or appointments in this period." },
   ];
-  if (!b.req.practitionerId) tables.push({ id: "sites", title: "By site", columns: cols(["Site", "Rota hours", "Booked hours", "Utilisation"]), rows: siteRows.map((x) => ({ cells: [b.dir.siteName(x.key), hours(x.availableMinutes), hours(x.bookedMinutes), pct0(x.utilisation)] })), empty: "No rota time in this period." });
+  if (!b.req.practitionerId) tables.push({ id: "sites", title: "By site", columns: cols(["Site", "Available hours", "Booked hours", "Utilisation"]), rows: siteRows.map((x) => ({ cells: [b.dir.siteName(x.key), hours(x.availableMinutes), hours(x.bookedMinutes), pct0(x.utilisation)] })), empty: "No working time in this period." });
   return {
     id: "utilisation",
     title: REPORTS.utilisation.title,
@@ -236,13 +238,54 @@ async function utilisationView(b: Built, sources: ReportingSources): Promise<Rep
     notice: null,
     stats: [
       { id: "utilisation", label: b.req.practitionerId ? "Utilisation" : "Average utilisation", value: pct0(total.utilisation), sub: `Target ${Math.round(target * 100)}%`, tone: total.utilisation !== null && total.utilisation < target ? "warn" : "plain" },
-      { id: "rota-hours", label: "Rota hours", value: hours(total.availableMinutes), sub: scopeLabel, tone: "plain" },
-      { id: "unfilled-hours", label: "Unfilled hours", value: hours(Math.max(0, total.availableMinutes - total.bookedMinutes)), sub: "Rota time not booked", tone: "plain" },
+      { id: "rota-hours", label: "Available hours", value: hours(total.availableMinutes), sub: r.blockedMinutes > 0 ? `${scopeLabel} · ${hours(r.blockedMinutes)} h leave and blocked time taken off` : scopeLabel, tone: "plain" },
+      { id: "unfilled-hours", label: "Unfilled hours", value: hours(Math.max(0, total.availableMinutes - total.bookedMinutes)), sub: "Available time not booked", tone: "plain" },
     ],
-    chart: { title: "Booked share of rota hours (%)", bars, max: 100, maxLabel: "100%", note: `Darker bar = at or above the ${Math.round(target * 100)}% target.`, description: describe("Booked share of rota hours", bars) },
+    chart: { title: "Booked share of available hours (%)", bars, max: 100, maxLabel: "100%", note: `Darker bar = at or above the ${Math.round(target * 100)}% target.`, description: describe("Booked share of available hours", bars) },
     tables,
-    footnote: "Booked time includes did-not-attend and late cancellations (they used the time); rota time is the practitioners' working hours inside the sites' opening hours, less closures.",
+    footnote: "Available time = the practitioners' rota inside the sites' opening hours, less closures and blocked time (leave, meetings, training); an appointment outside those hours counts as available time too (it was worked), so utilisation never passes 100%. Booked time includes did-not-attend and late cancellations (they used the time).",
     csv: { header, rows },
+  };
+}
+
+async function patientsView(b: Built, sources: ReportingSources): Promise<ReportView> {
+  const r = await loadNewReturning(ctxOf(b), b.req, sources);
+  if (!r.available) return emptyView("patients", NO_DIARY);
+  const weeks = r.byWeek;
+  const bars = weeks.map((w, i) => ({ label: i === 0 ? `w/c ${weekLabel(w.key as string, true)}` : weekLabel(w.key as string, true), value: w.newPatients, display: n(w.newPatients), strong: false }));
+  const max = scaleMax(bars.map((x) => x.value), null, 5);
+  const share = (x: VisitRow) => pct0(ratio(x.newPatients, x.attended));
+  const cells = (label: string, x: VisitRow) => [label, n(x.attended), n(x.newPatients), n(x.returningVisits), share(x)];
+  const visitCols = (first: string) => cols([first, "Attended", "New patients", "Returning visits", "New share"]);
+  const tables: ReportTable[] = [{ id: "weeks", title: null, columns: visitCols("Week"), rows: weeks.map((w) => ({ cells: cells(weekLabel(w.key as string), w) })), empty: "No attended appointments in this period." }];
+  if (!b.req.practitionerId) {
+    tables.push({ id: "practitioners", title: "By practitioner", columns: visitCols("Practitioner"), rows: r.byPractitioner.map((x) => ({ cells: cells(b.dir.practitionerName(x.key), x) })), empty: "No attended appointments in this period." });
+    if (!b.req.siteId) tables.push({ id: "sites", title: "By site", columns: visitCols("Site"), rows: r.bySite.map((x) => ({ cells: cells(b.dir.siteName(x.key), x) })), empty: "No attended appointments in this period." });
+  }
+  const csvRow = (group: string, name: string, x: VisitRow, seen: number | null = null): CsvValue[] => [group, name, seen, x.attended, x.newPatients, x.returningVisits, ratePercentCsv(ratio(x.newPatients, x.attended))];
+  const own = b.req.practitionerId ? "with this practitioner" : b.req.siteId ? "at this site" : "";
+  return {
+    id: "patients",
+    title: REPORTS.patients.title,
+    description: REPORTS.patients.description,
+    notice: null,
+    stats: [
+      { id: "seen", label: "Patients seen", value: n(r.patientsSeen), sub: `${n(r.total.attended)} attended appointment${r.total.attended === 1 ? "" : "s"}`, tone: "plain" },
+      { id: "new", label: "New patients", value: n(r.newPatients), sub: `${pct0(ratio(r.newPatients, r.patientsSeen))} of patients seen`, tone: "plain" },
+      { id: "returning", label: "Returning patients", value: n(r.returningPatients), sub: "Seen before", tone: "plain" },
+    ],
+    chart: { title: "New patients by week", bars, max, maxLabel: String(max), note: null, description: describe("New patients by week", bars) },
+    tables,
+    footnote: `A new patient is one whose first attended appointment ever (at any site) falls in the period; it counts for the practitioner and site of that appointment${own ? ` (here: ${own})` : ""}. Returning patients were seen in the period and first seen before it${own ? " or elsewhere" : ""}. Arrived and in treatment count as attended; "Completed" = attended.`,
+    csv: {
+      header: ["group", "name", "patients_seen", "attended", "new_patients", "returning_visits", "new_share_percent"],
+      rows: [
+        csvRow("total", "All", r.total, r.patientsSeen),
+        ...weeks.map((w) => csvRow("week", w.key as string, w)),
+        ...(b.req.practitionerId ? [] : r.byPractitioner.map((x) => csvRow("practitioner", b.dir.practitionerName(x.key), x))),
+        ...(b.req.practitionerId || b.req.siteId ? [] : r.bySite.map((x) => csvRow("site", b.dir.siteName(x.key), x))),
+      ],
+    },
   };
 }
 
@@ -430,6 +473,7 @@ export async function reportPageFor(actor: ReportsActor, id: ReportId, params: Q
   if (b.unlinked) view = emptyView(id, UNLINKED);
   else if (id === "attendance") view = await attendanceView(b, sources);
   else if (id === "utilisation") view = await utilisationView(b, sources);
+  else if (id === "patients") view = await patientsView(b, sources);
   else if (id === "caseload") view = await caseloadView(b);
   else if (id === "revenue") view = await revenueView(b, sources);
   else if (id === "debtors") view = await debtorsView(b, sources);

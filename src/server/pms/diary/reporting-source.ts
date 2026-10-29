@@ -9,12 +9,17 @@
  * arrived (incl. "in treatment" = arrived + treatment_started_at) and attended ("Completed" on screen) → attended;
  * dna; late_cancelled → late_cancel; cancelled. Blocked time (kind = block) never counts.
  * Working time = the rota's windows from the diary's own availabilityWindows (clipped to the sites' opening hours
- * and closures – the one opening-hours source), so utilisation follows what the diary and online booking offer.
+ * and closures – the one opening-hours source), so utilisation follows what the diary and online booking offer –
+ * joined with the time actually booked (a booking outside the hours, e.g. after the hours changed, is time the
+ * practitioner worked) and less the practitioner's blocked time (leave, meetings, training…). Booked time is
+ * clipped the same way, so it never passes the available time (utilisation ≤ 100 %).
  */
 import { PostgresAdapter, sql, type Kysely, type RawBuilder } from "kysely";
 import type { Database } from "../../db/schema";
-import type { AppointmentFact, AppointmentOutcome, AttendedPatientsFact, AvailabilityFact } from "../../../modules/pms/reporting/facts";
-import { eachDay } from "../../../modules/pms/reporting/periods";
+import type { AppointmentFact, AppointmentOutcome, AttendedPatientsFact, AvailabilityFact, VisitFact } from "../../../modules/pms/reporting/facts";
+import { dayUtilisation, type Interval } from "../../../modules/pms/reporting/intervals";
+import { addDays, eachDay } from "../../../modules/pms/reporting/periods";
+import { londonParts } from "../../../modules/pms/diary/time";
 import { assertTenantId, num, type RepoContext } from "../../repos/pms/context";
 import { availabilityWindows } from "../../repos/pms/diary/availability";
 import type { DiaryReportingSource, ReportingQuery } from "../reporting/sources";
@@ -89,20 +94,71 @@ async function appointmentFacts(ctx: RepoContext, tenantId: string, q: Reporting
   return out;
 }
 
+/** Pieces of [startsAt, endsAt) per UK date, in minutes after local midnight (a span past midnight is split). */
+function localPieces(startsAt: unknown, endsAt: unknown): { date: string; span: Interval }[] {
+  const start = new Date(startsAt as string).getTime();
+  const end = new Date(endsAt as string).getTime();
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return [];
+  const out: { date: string; span: Interval }[] = [];
+  let at = start;
+  for (let guard = 0; at < end && guard < 400; guard++) {
+    const p = londonParts(at);
+    const left = Math.round((end - at) / 60000);
+    const until = Math.min(1440, p.minute + left);
+    out.push({ date: p.date, span: [p.minute, until] });
+    at += (until - p.minute) * 60000;
+  }
+  return out;
+}
+
 async function availabilityFacts(ctx: RepoContext, tenantId: string, q: ReportingQuery): Promise<AvailabilityFact[]> {
   assertTenantId(tenantId);
   if (q.siteIds && q.siteIds.length === 0) return [];
-  const windows = await availabilityWindows(ctx, tenantId, eachDay(q.from, q.to), { practitionerIds: q.practitionerId ? [q.practitionerId] : undefined });
+  // Bookings that held their slot and the practitioners' blocked time (no patient columns are read). From the day
+  // before the period: a block that started then may run past midnight.
+  const [windows, { rows }] = await Promise.all([
+    availabilityWindows(ctx, tenantId, eachDay(q.from, q.to), { practitionerIds: q.practitionerId ? [q.practitionerId] : undefined }),
+    sql<{ kind: string; site_id: string; practitioner_id: string; starts_at: string; ends_at: string }>`
+      select a.kind, a.site_id, a.practitioner_id, a.starts_at, a.ends_at
+      from pms_appointments a
+      where a.tenant_id = ${tenantId} and a.practitioner_id is not null and a.status <> 'cancelled' and a.kind in ('appointment', 'block')
+        and a.starts_on >= ${addDays(q.from, -1)} and a.starts_on <= ${q.to}${practitionerIs("a.practitioner_id", q.practitionerId)}
+    `.execute(ctx.db),
+  ]);
   const allowed = q.siteIds ? new Set(q.siteIds) : null;
-  const sums = new Map<string, AvailabilityFact>();
+  const inPeriod = (date: string) => date >= q.from && date <= q.to;
+  type Day = { practitionerId: string; siteId: string; date: string; rota: Interval[]; booked: Interval[] };
+  const days = new Map<string, Day>();
+  const day = (practitionerId: string, siteId: string, date: string) => {
+    const key = `${practitionerId}|${siteId}|${date}`;
+    let d = days.get(key);
+    if (!d) days.set(key, (d = { practitionerId, siteId, date, rota: [], booked: [] }));
+    return d;
+  };
   for (const w of windows) {
     if (allowed && !allowed.has(w.siteId)) continue;
-    const key = `${w.practitionerId}|${w.siteId}|${w.date}`;
-    const f = sums.get(key) ?? { practitionerId: w.practitionerId, siteId: w.siteId, month: w.date.slice(0, 7), date: w.date, minutes: 0 };
-    f.minutes += Math.max(0, w.endMinute - w.startMinute);
-    sums.set(key, f);
+    day(w.practitionerId, w.siteId, w.date).rota.push([w.startMinute, w.endMinute]);
   }
-  return Array.from(sums.values());
+  // Blocked time counts against the practitioner wherever it was entered (leave is leave at every site).
+  const blocks = new Map<string, Interval[]>();
+  for (const r of rows) {
+    for (const piece of localPieces(r.starts_at, r.ends_at)) {
+      if (!inPeriod(piece.date)) continue;
+      if (r.kind === "block") {
+        const key = `${r.practitioner_id}|${piece.date}`;
+        blocks.set(key, [...(blocks.get(key) ?? []), piece.span]);
+      } else if (!allowed || allowed.has(r.site_id)) {
+        day(r.practitioner_id, r.site_id, piece.date).booked.push(piece.span);
+      }
+    }
+  }
+  const out: AvailabilityFact[] = [];
+  for (const d of Array.from(days.values())) {
+    const u = dayUtilisation(d.rota, d.booked, blocks.get(`${d.practitionerId}|${d.date}`) ?? []);
+    if (u.available <= 0 && u.blocked <= 0) continue;
+    out.push({ practitionerId: d.practitionerId, siteId: d.siteId, month: d.date.slice(0, 7), date: d.date, minutes: u.available, bookedMinutes: u.booked, blockedMinutes: u.blocked });
+  }
+  return out;
 }
 
 async function attendedPatients(ctx: RepoContext, tenantId: string, q: ReportingQuery): Promise<AttendedPatientsFact> {
@@ -123,5 +179,32 @@ async function attendedPatients(ctx: RepoContext, tenantId: string, q: Reporting
   return { patients: num(rows[0]?.patients ?? 0), newPatients: num(rows[0]?.new_patients ?? 0) };
 }
 
+/**
+ * Attended appointments in the period by UK date, site and practitioner, split by whether each was the patient's
+ * first attended appointment ever (any site, any practitioner) – new vs returning patients.
+ */
+async function visitFacts(ctx: RepoContext, tenantId: string, q: ReportingQuery): Promise<VisitFact[]> {
+  assertTenantId(tenantId);
+  const { rows } = await sql<{ d: string; site_id: string | null; practitioner_id: string | null; first_visit: number | string; n: number | string }>`
+    select a.starts_on as d, a.site_id, a.practitioner_id, case when f.first_at is not null and a.starts_at = f.first_at then 1 else 0 end as first_visit, count(*) as n
+    from pms_appointments a
+    left join (
+      select b.patient_id, min(b.starts_at) as first_at
+      from pms_appointments b
+      where b.tenant_id = ${tenantId} and b.kind = 'appointment' and b.status in ('arrived', 'attended') and b.patient_id is not null and b.starts_on <= ${q.to}
+        and b.patient_id in (
+          select c.patient_id from pms_appointments c
+          where c.tenant_id = ${tenantId} and c.kind = 'appointment' and c.status in ('arrived', 'attended') and c.patient_id is not null
+            and c.starts_on >= ${q.from} and c.starts_on <= ${q.to}
+        )
+      group by b.patient_id
+    ) f on f.patient_id = a.patient_id
+    where a.tenant_id = ${tenantId} and a.kind = 'appointment' and a.status in ('arrived', 'attended')
+      and a.starts_on >= ${q.from} and a.starts_on <= ${q.to}${siteIn("a.site_id", q.siteIds)}${practitionerIs("a.practitioner_id", q.practitionerId)}
+    group by 1, 2, 3, 4
+  `.execute(ctx.db);
+  return rows.map((r) => ({ month: r.d.slice(0, 7), date: r.d, siteId: r.site_id, practitionerId: r.practitioner_id, firstVisit: num(r.first_visit) === 1, appointments: num(r.n) }));
+}
+
 /** The diary's reporting source (registered by default in src/server/pms/reporting/sources.ts). */
-export const DIARY_REPORTING_SOURCE: DiaryReportingSource = { appointmentFacts, availabilityFacts, attendedPatients };
+export const DIARY_REPORTING_SOURCE: DiaryReportingSource = { appointmentFacts, availabilityFacts, attendedPatients, visitFacts };

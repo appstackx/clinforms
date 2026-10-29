@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { APPOINTMENT_STATUS_STYLES, INVOICE_STATUS_STYLES, NOTE_STATUS_STYLES, statusStyle, TONE_CLASSES } from "./status";
-import { blockMinutes, diaryBlockStyle, isCollapsedBlock, minutesOf, type DiaryBlockStatus } from "./diary-block-model";
+import { blockLines, blockMinutes, diaryBlockStyle, isCollapsedBlock, minutesOf, type DiaryBlockStatus } from "./diary-block-model";
 import { pageItems, showingText, totalPagesOf } from "./pagination-model";
 import { AVATAR_COLOURS, avatarColour, initialsOf } from "./avatar-colour";
 import { isPlainKey, isTypingTarget } from "./shortcuts";
@@ -124,6 +124,28 @@ describe("diary block", () => {
     const long = renderToStaticMarkup(createElement(DiaryBlock, { status: "dna", start: "09:00", end: "09:45", title: "Margaret Ellis", detail: "Initial assessment", initial: true }));
     assert.equal(text(long), "09:00–09:45DNA (did not attend)Margaret Ellis+ Initial: Initial assessment");
     assert.doesNotMatch(long, /aria-label=/, "the visible words are the name (label in name)");
+  });
+
+  it("shows only the lines its height fits, at every height (M9b – the Double-booked marker never covers text)", () => {
+    // The grid draws 80 px an hour, less 2 px of gap: 20 min ≈ 25 px, 30 min = 38 px, 45 min = 58 px.
+    assert.equal(blockLines(undefined, 15), 1, "15 minutes or less is always one line");
+    assert.equal(blockLines(25, 20), 1, "20 minutes cannot hold two lines");
+    assert.equal(blockLines(38, 30), 2);
+    assert.equal(blockLines(55, 40), 2);
+    assert.equal(blockLines(58, 45), 3);
+    assert.equal(blockLines(undefined, 60), 3, "the kit's own preview has no height");
+    const text = (html: string) => html.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+    const marker = createElement("span", { "data-double-booked": "true" }, "x");
+    for (const [end, heightPx] of [["09:20", 25], ["09:30", 38], ["09:45", 58], ["10:00", 78]] as const) {
+      const html = renderToStaticMarkup(createElement(DiaryBlock, { status: "booked", start: "09:00", end, title: "Margaret Ellis", detail: "Follow-up", heightPx, marker }));
+      // The marker is in the first line's flow (never absolutely placed over the text) and the name is still there.
+      const firstLine = html.indexOf("data-double-booked");
+      assert.ok(firstLine > 0 && firstLine < html.indexOf("Margaret Ellis") + 200, `${end}: marker in the top line`);
+      assert.doesNotMatch(html, /class="[^"]*absolute/, `${end}: nothing absolutely placed inside the block`);
+      assert.match(text(html), /Margaret Ellis/);
+      const visibleType = /<span class="w-full truncate text-xs/.test(html);
+      assert.equal(visibleType, heightPx >= 56, `${end}: the type shows only when three lines fit`);
+    }
   });
 });
 

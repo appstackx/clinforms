@@ -151,6 +151,8 @@ export interface PmsWaitingListOffersTable {
   created_by: string | null;
   created_at: IsoTimestamp;
   updated_at: IsoTimestamp;
+  /** The slot is held for the patient until this instant while the offer is open (0180); NULL = not held. */
+  hold_until: IsoTimestamp | null;
 }
 
 /** The diary's settings, one row per clinic (migration 0116); no row = every default. */
@@ -164,6 +166,13 @@ export interface PmsDiarySettingsTable {
   updated_at: IsoTimestamp;
 }
 
+/** How far the message run has re-synced the diary's appointments with their planned messages (0189). */
+export interface PmsDiaryMessageSweepsTable {
+  tenant_id: string;
+  synced_to: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
 export interface DiaryTables {
   pms_appointment_series: PmsAppointmentSeriesTable;
   pms_availability: PmsAvailabilityTable;
@@ -171,10 +180,11 @@ export interface DiaryTables {
   pms_waiting_list: PmsWaitingListTable;
   pms_waiting_list_offers: PmsWaitingListOffersTable;
   pms_diary_settings: PmsDiarySettingsTable;
+  pms_diary_message_sweeps: PmsDiaryMessageSweepsTable;
 }
 
 /** Foreign-key order (parents first). */
-export const DIARY_TABLES = ["pms_appointment_series", "pms_availability", "pms_appointments", "pms_waiting_list", "pms_waiting_list_offers", "pms_diary_settings"] as const satisfies readonly (keyof DiaryTables)[];
+export const DIARY_TABLES = ["pms_appointment_series", "pms_availability", "pms_appointments", "pms_waiting_list", "pms_waiting_list_offers", "pms_diary_settings", "pms_diary_message_sweeps"] as const satisfies readonly (keyof DiaryTables)[];
 
 export const DIARY_PRIMARY_KEYS: { readonly [T in (typeof DIARY_TABLES)[number]]: readonly (keyof DiaryTables[T] & string)[] } = {
   pms_appointment_series: ["tenant_id", "id"],
@@ -183,10 +193,11 @@ export const DIARY_PRIMARY_KEYS: { readonly [T in (typeof DIARY_TABLES)[number]]
   pms_waiting_list: ["tenant_id", "id"],
   pms_waiting_list_offers: ["tenant_id", "id"],
   pms_diary_settings: ["tenant_id"],
+  pms_diary_message_sweeps: ["tenant_id"],
 };
 
 /** Timestamp columns (TEXT in SQLite, timestamptz in Postgres) – the D1 → Postgres copy compares them as ISO. */
-export const DIARY_TIMESTAMP_COLUMNS: readonly string[] = ["starts_at", "ends_at", "cancelled_at", "status_at"];
+export const DIARY_TIMESTAMP_COLUMNS: readonly string[] = ["starts_at", "ends_at", "cancelled_at", "status_at", "hold_until", "synced_to"];
 
 /** Every diary table holds one clinic's data (offboarding exports them decrypted, then deletes them). */
 export const DIARY_TENANT_TABLES: readonly (typeof DIARY_TABLES)[number][] = DIARY_TABLES;

@@ -7,9 +7,9 @@
  * and resizes are handled by the screen (onBlockKey) – this component draws the preview it is given.
  */
 import * as React from "react";
-import { AlertTriangle, Ban, CopyPlus, Globe } from "lucide-react";
+import { AlertTriangle, Ban, CalendarClock, CopyPlus, Globe } from "lucide-react";
 import { DOUBLE_BOOKED_LABEL } from "@/modules/pms/diary/copy";
-import type { DiaryCard, DiaryColumn } from "@/modules/pms/diary/view";
+import type { DiaryCard, DiaryColumn, DiaryHold } from "@/modules/pms/diary/view";
 import { formatHhmm } from "@/modules/pms/diary/time";
 import { layoutColumn } from "@/modules/pms/diary/rules";
 import { cn } from "@/lib/utils";
@@ -30,6 +30,10 @@ export interface DiaryGridProps {
   view: "day" | "week";
   columns: DiaryColumn[];
   cards: DiaryCard[];
+  /** Slots held for waiting patients (offers): drawn under the blocks, not bookable, link to the waiting list. */
+  holds?: DiaryHold[];
+  /** Where a hold links to (the waiting list). */
+  holdHref?: string;
   grid: { start: number; end: number };
   /** Column headers: day view shows the resource with avatar and "% booked"; week view the date and count. */
   header: (column: DiaryColumn, index: number) => React.ReactNode;
@@ -66,7 +70,7 @@ interface DragState {
 const GUTTER = 56;
 
 export function DiaryGrid(props: DiaryGridProps) {
-  const { label, view, columns, cards, grid, header, today, nowMinute, selectedId, preview, canBook, compact, onOpen, onBlockKey, onSlot, onDrop, clashAt, blockRef } = props;
+  const { label, view, columns, cards, holds = [], holdHref, grid, header, today, nowMinute, selectedId, preview, canBook, compact, onOpen, onBlockKey, onSlot, onDrop, clashAt, blockRef } = props;
   const height = minutesToPx(grid.end - grid.start);
   const bodyRef = React.useRef<HTMLDivElement>(null);
   const colRefs = React.useRef<(HTMLDivElement | null)[]>([]);
@@ -193,6 +197,34 @@ export function DiaryGrid(props: DiaryGridProps) {
                         style={{ top: minutesToPx(b.top), height: minutesToPx(b.height) }}
                       />
                     ))}
+                    {holds
+                      .filter((h) => h.columnKey === c.key)
+                      .map((h) => {
+                        const span = cardSpan(h, c.date);
+                        const top = Math.max(0, span.start - grid.start);
+                        const len = Math.max(15, Math.min(span.end, grid.end) - Math.max(span.start, grid.start));
+                        const text = `Held${h.patientName ? ` for ${h.patientName}` : " for a waiting patient"} until ${h.holdUntilLabel}`;
+                        const Tag = holdHref ? "a" : "div";
+                        return (
+                          <Tag
+                            key={`hold:${h.id}`}
+                            {...(holdHref ? { href: holdHref } : {})}
+                            data-testid="diary-hold"
+                            title={`${h.timeLabel} · ${text}`}
+                            className="absolute inset-x-1 z-0 flex items-start gap-1 overflow-hidden rounded-[8px] border-2 border-dashed border-[#7C93E8] bg-[#F5F7FE]/90 px-1.5 py-0.5 text-[11px] font-semibold leading-4 text-[#1E3A8A] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                            style={{ top: minutesToPx(top) + 1, height: minutesToPx(len) - 2 }}
+                          >
+                            <CalendarClock className="mt-px h-3 w-3 shrink-0" aria-hidden />
+                            {/* The visible words are the accessible name (label in name); screen readers also get the end time and why. */}
+                            <span className="min-w-0 truncate">
+                              {h.timeLabel.split("–")[0]}
+                              <span className="sr-only">–{h.timeLabel.split("–")[1]},</span> {compact ? "Held" : text}
+                              {compact ? <span className="sr-only"> {text.replace(/^Held/, "")}</span> : null}
+                              <span className="sr-only"> (waiting-list offer – not bookable)</span>
+                            </span>
+                          </Tag>
+                        );
+                      })}
                     {mine.map((card) => {
                       const box = boxOf.get(card.id);
                       if (!box) return null;
@@ -246,17 +278,25 @@ export function DiaryGrid(props: DiaryGridProps) {
                             selected={selectedId === card.id}
                             heightPx={Math.max(18, minutesToPx(box.height) - 2)}
                             marker={
-                              card.doubleBookedWith.length > 0 ? (
-                                // The clash marker of a logged double-booking (Khuram's decision A) – on both blocks, in the
-                                // block's top line so it never covers the text of a short block (handover §13.4 item 3).
-                                <span
-                                  aria-hidden
-                                  data-double-booked="true"
-                                  title={`${DOUBLE_BOOKED_LABEL} with ${card.doubleBookedWith.map((x) => `${x.patientName ?? "another appointment"} ${x.timeLabel}`).join(", ")}`}
-                                  className="inline-flex h-[14px] shrink-0 items-center gap-0.5 rounded-[4px] border border-[#FDBA74] bg-[#FFF7ED] px-0.5 text-[10px] font-semibold leading-[12px] text-[#9A3412]"
-                                >
-                                  <CopyPlus className="h-2.5 w-2.5" />
-                                  {lengthMin >= 60 && !compact ? <span className="hidden xl:inline">{DOUBLE_BOOKED_LABEL}</span> : null}
+                              card.doubleBookedWith.length > 0 || card.hasAlerts || card.source === "online" ? (
+                                // Markers sit IN the block's top line (part of its flow), so they never cover the time,
+                                // the name or the status however short or narrow the block is (handover §13.4 item 3,
+                                // M9b): the logged double-booking (Khuram's decision A, on both blocks), an alert on the
+                                // patient, booked online. Decorative – the sr-only description below says the same.
+                                <span className="inline-flex shrink-0 items-center gap-1">
+                                  {card.doubleBookedWith.length > 0 ? (
+                                    <span
+                                      aria-hidden
+                                      data-double-booked="true"
+                                      title={`${DOUBLE_BOOKED_LABEL} with ${card.doubleBookedWith.map((x) => `${x.patientName ?? "another appointment"} ${x.timeLabel}`).join(", ")}`}
+                                      className="inline-flex h-[14px] shrink-0 items-center gap-0.5 rounded-[4px] border border-[#FDBA74] bg-[#FFF7ED] px-0.5 text-[10px] font-semibold leading-[12px] text-[#9A3412]"
+                                    >
+                                      <CopyPlus className="h-2.5 w-2.5" />
+                                      {lengthMin >= 60 && !compact ? <span className="hidden xl:inline">{DOUBLE_BOOKED_LABEL}</span> : null}
+                                    </span>
+                                  ) : null}
+                                  {card.hasAlerts ? <AlertTriangle aria-hidden className="h-3 w-3 shrink-0 text-[#864E0E]" /> : null}
+                                  {card.source === "online" ? <Globe aria-hidden className="h-3 w-3 shrink-0 text-[#1842B4]" /> : null}
                                 </span>
                               ) : undefined
                             }
@@ -280,12 +320,6 @@ export function DiaryGrid(props: DiaryGridProps) {
                               .filter(Boolean)
                               .join(", ")}
                           </span>
-                          {(card.hasAlerts || card.source === "online") && lengthMin > 15 ? (
-                            <span aria-hidden className="pointer-events-none absolute right-2 top-[22px] flex gap-1 text-[#864E0E]">
-                              {card.hasAlerts ? <AlertTriangle className="h-3 w-3" /> : null}
-                              {card.source === "online" ? <Globe className="h-3 w-3 text-[#1842B4]" /> : null}
-                            </span>
-                          ) : null}
                           {canBook && (card.status === "booked" || card.status === "arrived") ? (
                             <span
                               aria-hidden

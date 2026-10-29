@@ -44,6 +44,7 @@ import {
 } from "../appointments";
 import { availabilityWindows, createAvailability, endAvailability, listAvailability, updateAvailability } from "../availability";
 import { findFreeSlots } from "../slots";
+import { heldSlots } from "../shared";
 import {
   addToWaitingList,
   answerWaitingListOffer,
@@ -52,6 +53,7 @@ import {
   getWaitingListOffer,
   listWaitingList,
   listWaitingListOffers,
+  extendOfferHold,
   offerWaitingListSlot,
   setWaitingListStatus,
   updateWaitingListEntry,
@@ -640,6 +642,78 @@ export function defineDiaryRepoSuite(label: string, factory: () => Promise<Diary
       assert.equal(await getWaitingListOffer(ctx, B, o.offer.id), null);
       assert.deepEqual(await answerWaitingListOffer(ctx, B, o.offer.id, { expectedRev: 3, status: "withdrawn" }, ACTOR_B), { ok: false, reason: "not_found" });
       assert.equal(await countWaitingList(ctx, A, { siteIds: [a.site2] }) >= 0, true);
+    });
+
+    it("offer holds (0180/0181): the offered slot is held for the patient until answered or the hold ends – nobody else can book, move or block over it", async () => {
+      const day = "2027-01-04"; // a Monday, GMT
+      await createAvailability(ctx, A, { practitionerId: a.sarah, siteId: a.site, roomId: a.room1, weekday: 1, startTime: "09:00", endTime: "12:00", validFrom: day, validTo: day }, ACTOR);
+      const entry = await addToWaitingList(ctx, A, { patientId: a.megan, serviceId: a.fu, siteId: a.site }, ACTOR);
+      const offer = await offerWaitingListSlot(ctx, A, entry.id, { expectedRev: 1, siteId: a.site, practitionerId: a.sarah, roomId: a.room1, date: day, startTime: "10:00", holdMinutes: 60 }, ACTOR);
+      assert.ok(offer.ok);
+      assert.equal(offer.offer.holdUntil, new Date(clock + 60 * 60_000).toISOString(), "held for the chosen hour");
+      assert.equal((await listAudit(ctx, A, { action: "pms.waiting_list.offer" })).find((e) => e.detail?.offerId === offer.offer.id)?.detail?.holdUntil, offer.offer.holdUntil);
+      // Someone else: the practitioner and the room are held (the booking check, then the database).
+      const overSarah = await bookAppointment(ctx, A, book(a, { patientId: a.daniel, date: day, startTime: "10:15", roomId: a.room2 }), ACTOR);
+      assert.ok(!overSarah.ok && overSarah.clashes.some((c) => c.withKind === "hold" && c.resource === "practitioner" && c.withId === offer.offer.id));
+      const overRoom = await bookAppointment(ctx, A, book(a, { patientId: a.daniel, practitionerId: a.tom, date: day, startTime: "10:00", roomId: a.room1 }), ACTOR);
+      assert.ok(!overRoom.ok && overRoom.clashes.some((c) => c.withKind === "hold" && c.resource === "room"));
+      const override = await bookAppointment(ctx, A, book(a, { patientId: a.daniel, date: day, startTime: "10:00", roomId: a.room2 }), ACTOR, { allowPractitionerOverlap: true });
+      assert.equal(override.ok, false, "a hold is never overridden (double-booking override is for appointments)");
+      await rejects(offerWaitingListSlot(ctx, A, (await addToWaitingList(ctx, A, { patientId: a.daniel, serviceId: a.fu }, ACTOR)).id, { expectedRev: 1, siteId: a.site, practitionerId: a.sarah, date: day, startTime: "10:00" }, ACTOR), /already held/);
+      const block = await createBlock(ctx, A, { siteId: a.site, practitionerId: a.sarah, date: day, startTime: "09:45", endTime: "10:15", blockKind: "meeting" }, ACTOR);
+      assert.ok(!block.ok && block.clashes.some((c) => c.withKind === "hold"), "no blocked time over a hold");
+      const at = new Date(clock).toISOString();
+      await assert.rejects(
+        suite.db
+          .insertInto("pms_appointments")
+          .values({ tenant_id: A, id: "appt_RAWHOLD000000000000000001", rev: 1, kind: "appointment", site_id: a.site, practitioner_id: a.sarah, room_id: null, patient_id: a.daniel, service_id: a.fu, starts_at: utc(day, "10:10"), ends_at: utc(day, "10:20"), starts_on: day, status: "booked", created_at: at, updated_at: at })
+          .execute(),
+        /pms_appointments_offer_hold/,
+        "the database refuses it even when the repository's check is bypassed",
+      );
+      // Moving someone else's appointment into the held slot is refused too.
+      const daniel = await bookAppointment(ctx, A, book(a, { patientId: a.daniel, date: day, startTime: "11:00", roomId: a.room2 }), ACTOR);
+      assert.ok(daniel.ok);
+      const moved = await moveAppointment(ctx, A, daniel.items[0].id, { expectedRev: 1, date: day, startTime: "10:00" }, ACTOR);
+      assert.ok(!moved.ok && moved.reason === "clash");
+      // Free slots leave the held slot out – except for the patient it is held for.
+      const freeFor = async (patientId?: string) => (await findFreeSlots(ctx, A, { fromDate: day, days: 1, practitionerIds: [a.sarah], serviceId: a.fu, stepMinutes: 30, patientId })).map((x) => x.startsAt.slice(11, 16));
+      assert.ok(!(await freeFor()).includes("10:00"), "held: not offered to anyone else (diary, online booking)");
+      assert.ok((await freeFor(a.megan)).includes("10:00"), "free for the patient it is held for");
+      assert.equal((await heldSlots(ctx, B, { from: utc(day, "00:00"), to: utc(day, "23:59") })).length, 0, "another clinic sees no hold");
+      // A text held for quiet hours moves the hold on (later only, never past the start).
+      const later = new Date(clock + 90 * 60_000).toISOString();
+      assert.equal(await extendOfferHold(ctx, A, offer.offer.id, later, ACTOR), true);
+      assert.equal(await extendOfferHold(ctx, A, offer.offer.id, new Date(clock).toISOString(), ACTOR), false, "never earlier");
+      assert.equal(await extendOfferHold(ctx, A, offer.offer.id, utc(day, "10:30"), ACTOR), false, "never past the start");
+      assert.equal((await getWaitingListOffer(ctx, A, offer.offer.id))?.holdUntil, later);
+      // Expiry releases it by itself.
+      const saved = clock;
+      clock += 91 * 60_000;
+      try {
+        assert.ok((await freeFor()).includes("10:00"), "expired: free again");
+        const after = await bookAppointment(ctx, A, book(a, { patientId: a.daniel, date: day, startTime: "10:00", roomId: a.room2 }), ACTOR);
+        assert.ok(after.ok, "an expired hold no longer stops a booking");
+        assert.ok((await setAppointmentStatus(ctx, A, after.items[0].id, { expectedRev: 1, status: "cancelled", cancelReason: "clinic" }, ACTOR)).ok);
+      } finally {
+        clock = saved;
+      }
+      // Withdrawing releases it at once.
+      const second = await offerWaitingListSlot(ctx, A, entry.id, { expectedRev: 2, siteId: a.site, practitionerId: a.sarah, roomId: a.room1, date: day, startTime: "09:30" }, ACTOR);
+      assert.ok(second.ok);
+      assert.equal(second.offer.holdUntil, new Date(clock + 120 * 60_000).toISOString(), "default: 2 hours");
+      assert.equal((await bookAppointment(ctx, A, book(a, { patientId: a.daniel, date: day, startTime: "09:30", roomId: a.room2 }), ACTOR)).ok, false);
+      assert.ok((await answerWaitingListOffer(ctx, A, second.offer.id, { expectedRev: 3, status: "withdrawn" }, ACTOR)).ok);
+      assert.ok((await bookAppointment(ctx, A, book(a, { patientId: a.daniel, date: day, startTime: "09:30", durationMinutes: 15, roomId: a.room2 }), ACTOR)).ok, "withdrawn: free");
+      // The patient it is held for books it (accepting the offer) – the triggers let exactly that through.
+      const third = await offerWaitingListSlot(ctx, A, entry.id, { expectedRev: 4, siteId: a.site, practitionerId: a.sarah, roomId: a.room1, date: day, startTime: "11:30" }, ACTOR);
+      assert.ok(third.ok);
+      const accepted = await bookAppointment(ctx, A, book(a, { date: day, startTime: "11:30" }), ACTOR, { waitingListId: entry.id, offerId: third.offer.id });
+      assert.ok(accepted.ok, "accepting books the held slot");
+      assert.equal((await getWaitingListOffer(ctx, A, third.offer.id))?.status, "accepted");
+      // A slot in the past cannot be offered.
+      const other = await addToWaitingList(ctx, A, { patientId: a.daniel, serviceId: a.fu }, ACTOR);
+      await rejects(offerWaitingListSlot(ctx, A, other.id, { expectedRev: 1, siteId: a.site, practitionerId: a.sarah, date: "2026-10-01", startTime: "10:00" }, ACTOR), /passed/);
     });
 
     it("site filters: the diary, a patient's list, next appointments, counts and the waiting list by site", async () => {

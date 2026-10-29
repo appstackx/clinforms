@@ -6,11 +6,7 @@ import { requireClinicActor } from "@/server/pms/actor";
 import { patientOr404, patientPath } from "@/server/pms/records/record";
 import { listCasesForPatient } from "@/server/repos/pms/cases";
 import { patientFormsFor } from "@/server/pms/portal/staff";
-import {
-  sendFormAction,
-  sendOutcomeAction,
-  setPortalAccessAction,
-} from "./actions";
+import { sendFormAction, sendOutcomeAction, setPortalAccessAction, startHandoffAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Forms" };
@@ -56,6 +52,7 @@ export default async function PatientFormsPage({
         sendForm={sendFormAction.bind(null, patient.id)}
         sendOutcome={sendOutcomeAction.bind(null, patient.id)}
         setPortal={setPortalAccessAction.bind(null, patient.id)}
+        startHandoff={startHandoffAction.bind(null, patient.id)}
       />
     </div>
   );

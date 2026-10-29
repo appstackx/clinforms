@@ -88,9 +88,9 @@ export const REPORTS_COPY = {
   attendanceDefinition:
     "Rates are out of the appointments that were due: attended, did not attend and late cancellations. Appointments cancelled in good time are left out; past appointments not yet marked are counted as not recorded.",
   utilisationDefinition:
-    "Booked time (including did-not-attend and late cancellations, which still used the time) against available time: opening hours less closures for sites and rooms (a site counts each room), working hours from the diary for practitioners.",
+    "Booked time (including did-not-attend and late cancellations, which still used the time) against available time: opening hours less closures for sites and rooms (a site counts each room); for practitioners the diary's working hours inside the opening hours, less leave and other blocked time, plus any appointment booked outside them – so it never passes 100%.",
   patientsDefinition:
-    "A patient is new when their first case with the clinic opened in the period, and returning when they had an earlier case. Once the diary is in use, new and returning also count attended appointments.",
+    "A patient is new when their first attended appointment ever falls in the period, and returning when they were seen before. Without the diary, new and returning are worked out from cases: a patient whose first case opened in the period is new.",
   revenueDefinition: "Invoiced and credited by the date of the invoice or credit note; received by the date of the payment. Void invoices are left out.",
   debtDefinition: "What is still owed on each invoice after payments and credit notes, by how long it has been due.",
   authorisationsDefinition: "Active authorisations that expire within the days chosen, expired in the last 30 days, or have one session or little value left.",

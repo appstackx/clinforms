@@ -32,7 +32,7 @@ const APP = `${BASE}/app/clinic`;
 const SETUP = `${APP}/setup`;
 const REPORTS = `${APP}/reports`;
 const CLINIC = "riverside-demo";
-const REPORT_IDS = ["attendance", "utilisation", "caseload", "revenue", "debtors", "authorisations"];
+const REPORT_IDS = ["attendance", "utilisation", "patients", "caseload", "revenue", "debtors", "authorisations"];
 
 // The clinic system's TEST clock (src/modules/pms/core/clock.ts – never in a production build).
 const CLOCK_OFFSET = process.env.PMS_TEST_CLOCK === "1" && process.env.PMS_TEST_NOW && process.env.PMS_TEST_NOW_SET_AT ? Date.parse(process.env.PMS_TEST_NOW) - Number(process.env.PMS_TEST_NOW_SET_AT) : 0;
@@ -470,7 +470,7 @@ async function eventually(check, what) {
       await owner.goto(REPORTS);
       await owner.waitForURL(/\/reports\/attendance/);
       const nav = (await owner.locator("nav[aria-label='Reports'] a").allInnerTexts()).map((l) => l.trim());
-      assert(JSON.stringify(nav) === JSON.stringify(["Attendance and DNA", "Utilisation", "Caseload", "Revenue", "Debtors", "Authorisations"]), `reports nav: ${nav.join(", ")}`);
+      assert(JSON.stringify(nav) === JSON.stringify(["Attendance and DNA", "Utilisation", "New and returning patients", "Caseload", "Revenue", "Debtors", "Authorisations"]), `reports nav: ${nav.join(", ")}`);
       for (const id of REPORT_IDS) {
         await owner.goto(`${REPORTS}/${id}?site=all`);
         await owner.waitForSelector(`[data-testid=report-${id}]`);
@@ -504,7 +504,7 @@ async function eventually(check, what) {
       await clinician.goto(REPORTS);
       await clinician.waitForURL(/\/reports\/attendance/);
       const nav = (await clinician.locator("nav[aria-label='Reports'] a").allInnerTexts()).map((l) => l.trim());
-      assert(JSON.stringify(nav) === JSON.stringify(["Attendance and DNA", "Utilisation", "Caseload"]), `clinician reports: ${nav.join(", ")}`);
+      assert(JSON.stringify(nav) === JSON.stringify(["Attendance and DNA", "Utilisation", "New and returning patients", "Caseload"]), `clinician reports: ${nav.join(", ")}`);
       await clinician.goto(`${REPORTS}/caseload?site=all`);
       await clinician.waitForSelector("[data-testid=report-caseload]");
       const text = await clinician.locator("[data-testid=report-caseload]").innerText();
@@ -581,11 +581,15 @@ async function eventually(check, what) {
       ]) {
         const phone = await mk(375, 812);
         await phone.context().addCookies(await page.context().cookies());
-        const urls = [[APP, `375-dashboard-${who}`]];
-        if (who === "owner") urls.push([`${REPORTS}/attendance`, "375-report-attendance"], [`${SETUP}/sites?site=${s.site.id}`, "375-setup-sites"]);
-        for (const [url, name] of urls) {
-          await phone.goto(url);
-          await phone.waitForLoadState("networkidle");
+        // Each page's own content, not "networkidle": a production build prefetches links and the dashboard refreshes
+        // itself, so the network may never go quiet.
+        const urls = [[APP, `375-dashboard-${who}`, "[data-testid=dashboard]"]];
+        if (who === "owner") urls.push([`${REPORTS}/attendance`, "375-report-attendance", "main h1"], [`${SETUP}/sites?site=${s.site.id}`, "375-setup-sites", "main h1"]);
+        for (const [url, name, ready] of urls) {
+          await phone.goto(url, { waitUntil: "load" });
+          await phone.waitForSelector(ready, { timeout: 30000 });
+          await phone.waitForFunction(() => document.fonts ? document.fonts.status === "loaded" : true, null, { timeout: 10000 }).catch(() => {});
+          await phone.waitForTimeout(500);
           const wide = await phone.evaluate(() => document.documentElement.scrollWidth);
           assert(wide <= 376, `${name}: page is ${wide} px wide`);
           await shot(phone, name, true);

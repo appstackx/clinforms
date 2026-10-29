@@ -11,13 +11,14 @@ import { PMS_ID_PATTERN } from "../../../modules/pms/core/ids";
 import { PmsIdSchema } from "../../../modules/pms/core/schemas";
 import { formatUkDate } from "../../../modules/pms/core/text";
 import { BLOCK_KIND_LABELS, DIARY_COPY } from "../../../modules/pms/diary/copy";
-import { findClashes, isOverridableClash, MAX_APPOINTMENT_MINUTES, OCCUPYING_STATUSES, recurringDates, withinWorkingHours, type BlockKind, type DiaryClash, type DiaryItemKind } from "../../../modules/pms/diary/rules";
+import { findClashes, isOverridableClash, MAX_APPOINTMENT_MINUTES, OCCUPYING_STATUSES, recurringDates, withinWorkingHours, type BlockKind, type ClashWithKind, type DiaryClash, type DiaryItemKind } from "../../../modules/pms/diary/rules";
 import { IsoDateSchema } from "../../../modules/pms/core/schemas";
 import { RepeatSchema, TimeSchema } from "../../../modules/pms/diary/schemas";
 import { addMinutesIso, formatHhmm, isoWeekday, weekdayName, formatLondonTime, londonDate, londonParts, londonToUtc, parseHhmm } from "../../../modules/pms/diary/time";
 import type { DiaryRead } from "../../../modules/pms/diary/types";
 import type { BookingCheck, BookingCheckOccurrence } from "../../../modules/pms/diary/view";
 import { availabilityWindows } from "../../repos/pms/diary/availability";
+import { heldSlots } from "../../repos/pms/diary/shared";
 import { findFreeSlots } from "../../repos/pms/diary/slots";
 import { getPractitioner, getRoom, getService } from "../../repos/pms/directory";
 import { getPatientSummaries } from "../../repos/pms/patients";
@@ -39,7 +40,7 @@ export type BookingCheckRequest = z.input<typeof BookingCheckSchema>;
 
 interface Occupant {
   id: string;
-  kind: DiaryItemKind;
+  kind: ClashWithKind;
   status: string;
   startsAt: string;
   endsAt: string;
@@ -100,6 +101,11 @@ export async function checkBookingFor(caller: DiaryCaller, input: unknown): Prom
     for (const r of rows) {
       occupants.push({ id: r.id, kind: r.kind as DiaryItemKind, status: r.status, startsAt: r.starts_at, endsAt: r.ends_at, practitionerId: r.practitioner_id, roomId: r.room_id, patientId: r.patient_id, blockKind: r.block_kind, title: r.title });
     }
+    // Slots held for another waiting patient (open offers, until answered or the hold ends).
+    const holds = await heldSlots(ctx, tenantId, { spans: real, practitionerIds: [q.practitionerId], roomIds: q.roomId ? [q.roomId] : [], exceptPatientId: q.patientId ?? null });
+    for (const h of holds) {
+      occupants.push({ id: h.offerId, kind: "hold", status: "booked", startsAt: h.startsAt, endsAt: h.endsAt, practitionerId: h.practitionerId, roomId: h.roomId, patientId: null, blockKind: null, title: `held for a waiting-list offer until ${formatLondonTime(h.holdUntil)}` });
+    }
   }
   const byId = new Map(occupants.map((o) => [o.id, o]));
   const otherPatients = caller.can("patients.view") ? await getPatientSummaries(ctx, tenantId, occupants.map((o) => o.patientId).filter((id): id is string => id !== null)) : new Map<string, never>();
@@ -111,6 +117,7 @@ export async function checkBookingFor(caller: DiaryCaller, input: unknown): Prom
 
   const describe = (c: DiaryClash): string => {
     const o = byId.get(c.withId);
+    if (c.withKind === "hold") return `${c.resource === "room" ? (room?.name ?? "the room") : practitioner.displayName} – ${o?.title ?? "held for a waiting-list offer"}`;
     if (c.withKind === "block") {
       const what = o?.title?.trim() || (o?.blockKind ? BLOCK_KIND_LABELS[o.blockKind as BlockKind] : "blocked time");
       const who = c.resource === "room" ? (room?.name ?? "the room") : practitioner.displayName;
@@ -128,7 +135,7 @@ export async function checkBookingFor(caller: DiaryCaller, input: unknown): Prom
     if (clashes.length === 0) return { date: s.date, dateLabel, status: "free", note: outsideHours ? "Free – outside working hours" : "Free", patientOnly: false, overridable: false, outsideHours, clashes };
     const main = clashes.find((c) => c.resource !== "patient") ?? clashes[0];
     const patientOnly = clashes.every((c) => c.resource === "patient");
-    const status = main.withKind === "block" ? "unavailable" : "clash";
+    const status = main.withKind === "block" || main.withKind === "hold" ? "unavailable" : "clash";
     const text = describe(main);
     const overridable = clashes.every(isOverridableClash);
     return { date: s.date, dateLabel, status, note: text.charAt(0).toUpperCase() + text.slice(1), patientOnly, overridable, outsideHours, clashes };
@@ -141,7 +148,9 @@ export async function checkBookingFor(caller: DiaryCaller, input: unknown): Prom
     const c = first.clashes.find((x) => x.resource !== "patient") ?? first.clashes[0];
     const o = byId.get(c.withId);
     const span = `${formatLondonTime(c.startsAt)}–${formatLondonTime(c.endsAt)}`;
-    if (c.withKind === "block") {
+    if (c.withKind === "hold") {
+      clashText = `${span} is ${o?.title ?? "held for a waiting-list offer"}. Withdraw the offer on the waiting list to book it for someone else.`;
+    } else if (c.withKind === "block") {
       const what = o?.title?.trim() || (o?.blockKind ? BLOCK_KIND_LABELS[o.blockKind as BlockKind] : "Blocked time");
       clashText = `${c.resource === "room" ? (room?.name ?? "The room") : practitioner.displayName} is not available ${span} (${lower1(what)}).`;
     } else if (c.resource === "patient") {

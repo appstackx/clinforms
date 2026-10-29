@@ -1,5 +1,5 @@
 "use client";
-/** Set-up → Audit trail: filters (dates, area, action, person, record type, record id), the entries, paging, CSV. */
+/** Set-up → Audit trail: filters (dates, area, action, person, record type, record id, patient), the entries, paging, CSV. */
 import * as React from "react";
 import Link from "next/link";
 import { FormField, PmsButton, SelectInput, TextInput } from "@/components/pms/ui";
@@ -19,7 +19,7 @@ function query(p: Partial<Record<string, string | null>>): string {
 const when = (iso: string) => new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
 
 export function AuditTrail({ screen, params }: { screen: AuditScreen; params: AuditSearchParams }) {
-  const base = { from: params.from, to: params.to, area: params.area, action: params.action, user: params.userId, type: params.targetType, record: params.targetId };
+  const base = { from: params.from, to: params.to, area: params.area, action: params.action, user: params.userId, type: params.targetType, record: params.targetId, patient: params.patient };
   return (
     <SetupPage>
       <SetupHeader
@@ -72,9 +72,14 @@ export function AuditTrail({ screen, params }: { screen: AuditScreen; params: Au
                 ))}
               </SelectInput>
             </FormField>
-            <FormField id="au-record" label="Record id (e.g. a patient's)">
+            <FormField id="au-record" label="Record id">
               <TextInput name="record" defaultValue={params.targetId ?? ""} />
             </FormField>
+            {screen.canSearchPatients ? (
+              <FormField id="au-patient" label="Patient" hint="Name, patient number or date of birth">
+                <TextInput name="patient" defaultValue={params.patient ?? ""} data-testid="audit-patient" autoComplete="off" />
+              </FormField>
+            ) : null}
           </SetupGrid>
           <div className="flex justify-end gap-2">
             <Link href={PATH} className={`inline-flex h-9 items-center rounded-[8px] px-3 text-sm font-medium hover:bg-[#F1F5F9] ${setupFocus}`}>
@@ -86,6 +91,13 @@ export function AuditTrail({ screen, params }: { screen: AuditScreen; params: Au
           </div>
         </form>
       </SetupCard>
+      {screen.patient ? (
+        <p className="text-sm text-[#475569]" role="status" data-testid="audit-patient-matches">
+          {screen.patient.patients.length === 0
+            ? `No patient matches “${screen.patient.text}”.`
+            : `Entries about ${screen.patient.patients.length === 1 ? "" : `${screen.patient.patients.length} patients: `}${screen.patient.patients.map((x) => x.label).join(", ")}${screen.patient.more ? " and more – type more of the name to narrow it down" : ""}.`}
+        </p>
+      ) : null}
       <div className="overflow-x-auto rounded-2xl border border-border bg-white">
         <table className="w-full min-w-[760px] border-collapse text-sm" data-testid="audit-rows">
           <caption className="sr-only">Audit entries, newest first</caption>

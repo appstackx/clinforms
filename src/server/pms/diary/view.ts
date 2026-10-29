@@ -9,12 +9,14 @@
 import "server-only";
 import { DIARY_COPY } from "../../../modules/pms/diary/copy";
 import { freeSlots, gridHours, localSpan, occupiesDiary, spansOverlap, type BusySpan, type RotaWindow } from "../../../modules/pms/diary/rules";
-import { formatDayShort, formatHhmm, formatLondonTime, londonRange, weekDates } from "../../../modules/pms/diary/time";
+import { formatDayShort, formatHhmm, formatLondonTime, londonDate, londonRange, weekDates } from "../../../modules/pms/diary/time";
 import type { DiaryItem, DiaryRead } from "../../../modules/pms/diary/types";
-import type { DiaryCard, DiaryColumn, DiaryFreeSlot, DiaryParams, DiaryViewData, DoubleBooking } from "../../../modules/pms/diary/view";
+import type { DiaryCard, DiaryColumn, DiaryFreeSlot, DiaryHold, DiaryParams, DiaryViewData, DoubleBooking } from "../../../modules/pms/diary/view";
 import { nowIso } from "../../repos/context";
 import { listDiary } from "../../repos/pms/diary/appointments";
 import { availabilityWindows } from "../../repos/pms/diary/availability";
+import { heldSlots } from "../../repos/pms/diary/shared";
+import { listClosures } from "../../repos/pms/reporting/opening-hours";
 import { countWaitingList, getWaitingListEntry } from "../../repos/pms/diary/waiting-list";
 import { listPractitioners, listRooms, listServices, listSites } from "../../repos/pms/directory";
 import { getPatientSummaries } from "../../repos/pms/patients";
@@ -187,6 +189,8 @@ export async function loadDiaryView(caller: DiaryCaller, params: DiaryParams, to
       }
     };
     add((await listDiary(ctx, tenantId, { ...range, practitionerIds: Array.from(new Set(windows.map((w) => w.practitionerId))) })).items);
+    // Held slots (waiting-list offers) are not free.
+    for (const h of await heldSlots(ctx, tenantId, { ...range, practitionerIds: Array.from(new Set(windows.map((w) => w.practitionerId))), roomIds: [] })) busy.push(h);
     const roomIds = Array.from(new Set(windows.map((w) => w.roomId).filter((r): r is string => r !== null)));
     if (roomIds.length > 0 && params.view === "week") add((await listDiary(ctx, tenantId, { ...range, roomIds })).items);
     const slots = freeSlots({ windows, busy, durationMinutes: slotMinutes, stepMinutes: slotMinutes, notBefore: nowIso(ctx), limit: 500 });
@@ -269,6 +273,42 @@ export async function loadDiaryView(caller: DiaryCaller, params: DiaryParams, to
     cards.map((c) => localSpan(c, c.startsOn)),
   );
 
+  // Held slots in the columns shown (any role that sees the diary sees the hold; the name only with patients.view).
+  const holdKey = (h: { startsOn: string; practitionerId: string; roomId: string | null }): string =>
+    params.view === "week" ? `d:${h.startsOn}` : params.by === "practitioner" ? `p:${h.practitionerId}` : `r:${h.roomId ?? "none"}`;
+  const heldRaw = site
+    ? (await heldSlots(ctx, tenantId, { ...range, siteIds: params.view === "day" ? [site.id] : scoped ?? undefined })).map((h) => ({ ...h, startsOn: londonDate(h.startsAt) }))
+    : [];
+  const heldPatients = showNames && heldRaw.length > 0 ? await getPatientSummaries(ctx, tenantId, heldRaw.map((h) => h.patientId)) : new Map<string, never>();
+  const holds: DiaryHold[] = heldRaw
+    .filter((h) => keys.has(holdKey(h)) && (params.view === "day" || params.by === "practitioner" ? true : h.roomId === resourceId))
+    .filter((h) => !(params.view === "week" && params.by === "practitioner" && h.practitionerId !== resourceId))
+    .map((h) => {
+      const p = heldPatients.get(h.patientId);
+      return {
+        id: h.offerId,
+        waitingListId: h.waitingListId,
+        columnKey: holdKey(h),
+        startsAt: h.startsAt,
+        endsAt: h.endsAt,
+        startsOn: h.startsOn,
+        timeLabel: `${formatLondonTime(h.startsAt)}–${formatLondonTime(h.endsAt)}`,
+        holdUntil: h.holdUntil,
+        holdUntilLabel: formatLondonTime(h.holdUntil),
+        patientName: p ? patientDisplayName(p) : null,
+      };
+    });
+
+  // Closure days of the site (the day view's "Closed – Christmas" notice; slots are already gone).
+  const closures: DiaryViewData["closures"] = [];
+  if (site) {
+    const found = await listClosures(ctx, tenantId, { from: dates[0], to: dates[dates.length - 1], siteIds: [site.id] });
+    for (const date of dates) {
+      const c = found.find((x) => x.startsOn <= date && x.endsOn >= date);
+      if (c) closures.push({ date, reason: c.reason });
+    }
+  }
+
   let bookingPreset: DiaryViewData["bookingPreset"] = null;
   if (params.bookFromWaitingId && caller.can("diary.book")) {
     const entry = await getWaitingListEntry(ctx, tenantId, params.bookFromWaitingId);
@@ -311,6 +351,8 @@ export async function loadDiaryView(caller: DiaryCaller, params: DiaryParams, to
       bookingPreset,
       summary,
       myPractitionerId: options.practitionerId ?? null,
+      holds,
+      closures,
     },
   };
 }

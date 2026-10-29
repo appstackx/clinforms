@@ -10,7 +10,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, CalendarClock, Check, Plus, Search } from "lucide-react";
 import { createBlockAction, saveWeeklyRotaAction } from "@/app/app/clinic/diary/actions";
-import { addToWaitingListAction, offerWaitingListSlotAction, setWaitingListStatusAction } from "@/app/app/clinic/diary/waiting-list/actions";
+import { addToWaitingListAction, answerWaitingListOfferAction, bookWaitingListOfferAction, offerWaitingListSlotAction, setWaitingListStatusAction } from "@/app/app/clinic/diary/waiting-list/actions";
+import { OFFER_HOLD_CHOICES, OFFER_HOLD_DEFAULT_MINUTES } from "@/modules/pms/diary/schemas";
 import { PRIORITY_LABELS, TIME_OF_DAY_LABELS } from "@/modules/pms/diary/copy";
 import { TIMES_OF_DAY, WAITING_PRIORITIES, type TimeOfDay, type WaitingPriority } from "@/modules/pms/diary/rules";
 import { WEEKDAY_NAMES, parseHhmm } from "@/modules/pms/diary/time";
@@ -352,14 +353,34 @@ function WaitingList({ waiting, site, practitioners, services }: RotaWaitingProp
   const rows = waiting.rows;
   const freed = waiting.freed;
   const open = rows.filter((r) => r.status === "waiting" || r.status === "offered");
+  const [holdMinutes, setHoldMinutes] = React.useState<number>(OFFER_HOLD_DEFAULT_MINUTES);
 
+  // The offered slot is HELD for the patient (nobody else can book over it) until the hold ends, they answer, or
+  // the offer is withdrawn (M9b).
   const offer = async (r: WaitingListRow) => {
     if (!freed) return;
     setBusy(`offer:${r.id}`);
-    const res = await offerWaitingListSlotAction({ id: r.id, expectedRev: r.rev, siteId: freed.siteId, practitionerId: freed.practitionerId, roomId: freed.roomId, date: freed.date, startTime: freed.time });
+    const res = await offerWaitingListSlotAction({ id: r.id, expectedRev: r.rev, siteId: freed.siteId, practitionerId: freed.practitionerId, roomId: freed.roomId, date: freed.date, startTime: freed.time, holdMinutes });
     setBusy(null);
-    // TODO(messages): the comms module sends the offer as a text (outbox by default); until then reception rings.
-    if (res.ok) toast.success(`Slot offered to ${r.patientName ?? "the patient"}. The text is sent once messages are switched on – ring them meanwhile.`);
+    if (res.ok) toast.success(res.message ?? `Slot offered to ${r.patientName ?? "the patient"}.`);
+    else toast.error(res.error);
+    router.refresh();
+  };
+  const answer = async (r: WaitingListRow, status: "declined" | "withdrawn") => {
+    if (!r.offer) return;
+    setBusy(`${status}:${r.id}`);
+    const res = await answerWaitingListOfferAction({ offerId: r.offer.id, expectedRev: r.rev, status });
+    setBusy(null);
+    if (res.ok) toast.success(status === "declined" ? "Offer declined – the slot is free again." : "Offer withdrawn – the slot is free again.");
+    else toast.error(res.error);
+    router.refresh();
+  };
+  const bookOffer = async (r: WaitingListRow) => {
+    if (!r.offer) return;
+    setBusy(`book:${r.id}`);
+    const res = await bookWaitingListOfferAction({ offerId: r.offer.id });
+    setBusy(null);
+    if (res.ok) toast.success(`${r.patientName ?? "The patient"} is booked into the offered slot.`);
     else toast.error(res.error);
     router.refresh();
   };
@@ -399,6 +420,18 @@ function WaitingList({ waiting, site, practitioners, services }: RotaWaitingProp
               Slot freed: {weekdayDate(freed.date)} {freed.time}–{freed.endTime}, {freed.practitionerName}
             </p>
             <p className="text-sm text-[#334155]">From {freed.reason}. Patients matched to it are marked below.</p>
+            {waiting.canEdit ? (
+              <label className="mt-2 flex items-center gap-2 text-sm text-[#334155]">
+                Hold an offered slot for
+                <SelectInput data-testid="offer-hold" value={String(holdMinutes)} onChange={(e) => setHoldMinutes(Number(e.target.value))} className="w-[130px]">
+                  {OFFER_HOLD_CHOICES.map((m) => (
+                    <option key={m} value={m}>
+                      {m < 60 ? `${m} minutes` : m === 60 ? "1 hour" : m < 1440 ? `${m / 60} hours` : "1 day"}
+                    </option>
+                  ))}
+                </SelectInput>
+              </label>
+            ) : null}
           </div>
         ) : null}
         {open.length === 0 ? <p className="text-sm text-[#475569]">Nobody is waiting.</p> : null}
@@ -431,6 +464,35 @@ function WaitingList({ waiting, site, practitioners, services }: RotaWaitingProp
                   {r.waitingDays} {r.waitingDays === 1 ? "day" : "days"}
                 </dd>
               </dl>
+              {r.offer ? (
+                <p data-testid="offer-held" className="flex items-start gap-2 rounded-[8px] border border-dashed border-[#7C93E8] bg-[#F5F7FE] px-2.5 py-1.5 text-sm text-[#1E3A8A]">
+                  <CalendarClock className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+                  <span>
+                    Offered {r.offer.dateLabel} {r.offer.timeLabel}
+                    {r.offer.practitionerName ? ` with ${r.offer.practitionerName}` : ""}.{" "}
+                    {r.offer.held ? <strong>Held until {r.offer.holdUntilLabel}.</strong> : "The hold has ended – the slot can be booked by anyone."}
+                  </span>
+                </p>
+              ) : null}
+              {r.offer && (waiting.canBook || waiting.canEdit) ? (
+                <div className="flex flex-wrap gap-2">
+                  {waiting.canBook ? (
+                    <PmsButton size="sm" loading={busy === `book:${r.id}`} onClick={() => void bookOffer(r)}>
+                      Book offered slot
+                    </PmsButton>
+                  ) : null}
+                  {waiting.canEdit ? (
+                    <>
+                      <PmsButton size="sm" variant="secondary" loading={busy === `declined:${r.id}`} onClick={() => void answer(r, "declined")}>
+                        Patient declined
+                      </PmsButton>
+                      <PmsButton size="sm" variant="ghost" loading={busy === `withdrawn:${r.id}`} onClick={() => void answer(r, "withdrawn")}>
+                        Withdraw offer
+                      </PmsButton>
+                    </>
+                  ) : null}
+                </div>
+              ) : null}
               {waiting.canBook || waiting.canEdit ? (
                 <div className="flex flex-wrap gap-2">
                   {match && waiting.canEdit ? (

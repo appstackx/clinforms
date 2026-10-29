@@ -27,6 +27,19 @@ export function isCollapsedBlock(minutes: number): boolean {
   return Number.isFinite(minutes) && minutes <= COLLAPSE_MAX_MINUTES;
 }
 
+/**
+ * How many text lines a block of this height can show without clipping or overlapping (M9b – every height): one
+ * line (time, name, markers, status icon) below 34 px; two (time + markers + status / name) below 56 px; three
+ * (+ the type) from 56 px. The grid draws 80 px an hour, so 20 minutes (≈25 px) is one line, 30 minutes (38 px) two.
+ */
+export function blockLines(heightPx: number | undefined, minutes: number | null): 1 | 2 | 3 {
+  if (minutes !== null && isCollapsedBlock(minutes)) return 1;
+  if (heightPx === undefined) return 3;
+  if (heightPx < 34) return 1;
+  if (heightPx < 56) return 2;
+  return 3;
+}
+
 /** "09:00" → minutes after midnight; null when not HH:MM. */
 export function minutesOf(time: string): number | null {
   const m = /^(\d{1,2}):(\d{2})$/.exec(time.trim());

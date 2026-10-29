@@ -16,6 +16,7 @@ export const PORTAL_AUDIT_LABELS: Readonly<Record<string, string>> = {
   "pms.portal_share.create": "Document shared with the patient",
   "pms.portal_share.view": "Patient opened a shared document",
   "pms.portal_share.withdraw": "Shared document withdrawn",
+  "pms.portal_share.download": "Patient downloaded a shared document",
   "pms.intake_form.create": "Patient form created",
   "pms.intake_form.update": "Patient form changed",
   "pms.intake_response.request": "Form sent to a patient",
@@ -25,6 +26,10 @@ export const PORTAL_AUDIT_LABELS: Readonly<Record<string, string>> = {
   "pms.intake_response.review": "Completed form checked",
   "pms.intake_response.apply": "Form answers copied to the patient's record",
   "pms.intake_response.score": "Questionnaire scored into the patient's outcomes",
+  "pms.intake_response.verify": "Form completed in the clinic verified by staff",
+  "pms.intake_response.pdf": "Signed form downloaded as a PDF",
+  "pms.intake_handoff.start": "Form handed to the patient on a clinic device",
+  "pms.intake_handoff.end": "Clinic device hand-off ended",
 };
 
 /** Names of the record types its audit rows point at (target_type → label). */

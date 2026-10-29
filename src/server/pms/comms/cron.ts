@@ -11,6 +11,7 @@ import { packageIsOn } from "../../../modules/pms/core/entitlements";
 import { cronAuthorized, cronSecretConfigured } from "../../cron/auth";
 import type { RepoContext } from "../../repos/pms/context";
 import { listEntitlementsByTenant } from "../../repos/pms/entitlements";
+import { reconcileDiaryMessages } from "../diary/message-sync";
 import { runAllDueMessages, type DispatchDeps, type RunSummary } from "./dispatch";
 import { CommsConfigError } from "./providers";
 import { pmsNow, pmsNowMs } from "../../../modules/pms/core/clock";
@@ -65,6 +66,8 @@ export async function handleCommsCron(req: Request, deps: CommsCronDeps): Promis
       if (pmsNowMs() - started > budget) break;
       totals.clinics++;
       try {
+        // First heal any diary write whose message sync failed (M9b – the same run, no other job).
+        await reconcileDiaryMessages(ctx, tenantId);
         const r = await runAllDueMessages(ctx, tenantId, dispatch, { budgetMs: Math.max(1000, budget - (pmsNowMs() - started)) });
         totals.claimed += r.claimed;
         totals.released += r.released;

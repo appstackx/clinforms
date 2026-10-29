@@ -101,7 +101,7 @@ import {
   loadRoomRef,
   loadServiceRef,
   loadSiteRef,
-  occupyingNear,
+  inTheWayNear,
   pendingAuthorisationBookings,
   toItem,
   type AppointmentRow,
@@ -234,7 +234,7 @@ export async function bookAppointment(ctx: RepoContext, tenantId: string, input:
   });
 
   const clashesFor = async (wanted: typeof spans) => {
-    const nearby = await occupyingNear(ctx, tenantId, { spans: wanted, practitionerId: d.practitionerId, roomId: d.roomId ?? null, patientId: d.patientId });
+    const nearby = await inTheWayNear(ctx, tenantId, { spans: wanted, practitionerId: d.practitionerId, roomId: d.roomId ?? null, patientId: d.patientId, exceptPatientId: d.patientId });
     return wanted.flatMap((s) =>
       findClashes({ ...s, practitionerId: d.practitionerId, roomId: d.roomId ?? null, patientId: options.allowPatientOverlap ? null : d.patientId }, nearby).map((c) => ({ ...c, date: s.date })),
     );
@@ -417,7 +417,7 @@ export async function createBlock(ctx: RepoContext, tenantId: string, input: Blo
   const end = londonToUtc(d.date, endMinuteOf(d.endTime));
   if (!end.ok) throw new RepoInputError(DIARY_COPY.gap);
   const span = { startsAt, endsAt: end.iso };
-  const nearby = await occupyingNear(ctx, tenantId, { spans: [span], practitionerId: d.practitionerId ?? null, roomId: d.roomId ?? null });
+  const nearby = await inTheWayNear(ctx, tenantId, { spans: [span], practitionerId: d.practitionerId ?? null, roomId: d.roomId ?? null, exceptPatientId: null });
   const clashes = findClashes({ ...span, practitionerId: d.practitionerId ?? null, roomId: d.roomId ?? null }, nearby);
   if (clashes.length > 0) return { ok: false, reason: "clash", clashes };
   const id = pmsId(P.block, ctx);
@@ -448,7 +448,7 @@ export async function createBlock(ctx: RepoContext, tenantId: string, input: Blo
     ]);
   } catch (err) {
     if (isClashError(err)) {
-      const again = findClashes({ ...span, practitionerId: d.practitionerId ?? null, roomId: d.roomId ?? null }, await occupyingNear(ctx, tenantId, { spans: [span], practitionerId: d.practitionerId ?? null, roomId: d.roomId ?? null }));
+      const again = findClashes({ ...span, practitionerId: d.practitionerId ?? null, roomId: d.roomId ?? null }, await inTheWayNear(ctx, tenantId, { spans: [span], practitionerId: d.practitionerId ?? null, roomId: d.roomId ?? null, exceptPatientId: null }));
       return { ok: false, reason: "clash", clashes: again };
     }
     throw translateDbError(err, MESSAGES);
@@ -485,7 +485,7 @@ async function relocate(ctx: RepoContext, tenantId: string, row: AppointmentRow,
   const check = async () =>
     findClashes(
       { id, ...span, practitionerId: to.practitionerId, roomId: to.roomId, patientId: options.allowPatientOverlap || row.kind === "block" ? null : row.patient_id },
-      await occupyingNear(ctx, tenantId, { spans: [span], practitionerId: to.practitionerId, roomId: to.roomId, patientId: row.kind === "appointment" ? row.patient_id : null, excludeId: id }),
+      await inTheWayNear(ctx, tenantId, { spans: [span], practitionerId: to.practitionerId, roomId: to.roomId, patientId: row.kind === "appointment" ? row.patient_id : null, excludeId: id, exceptPatientId: row.patient_id }),
     );
   // A double-booking the member chose (diary.override, appointments only): practitioner clashes with other
   // appointments are let through for this write and logged.
@@ -708,7 +708,7 @@ export async function setAppointmentStatus(ctx: RepoContext, tenantId: string, i
       const span = { startsAt: row.starts_at, endsAt: row.ends_at };
       const clashes = findClashes(
         { id, ...span, practitionerId: row.practitioner_id, roomId: row.room_id },
-        await occupyingNear(ctx, tenantId, { spans: [span], practitionerId: row.practitioner_id, roomId: row.room_id, excludeId: id }),
+        await inTheWayNear(ctx, tenantId, { spans: [span], practitionerId: row.practitioner_id, roomId: row.room_id, excludeId: id, exceptPatientId: row.patient_id }),
       );
       return { ok: false, reason: "clash", clashes };
     }

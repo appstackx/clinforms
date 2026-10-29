@@ -33,6 +33,13 @@ export async function publicClinicOr404(clinicId: string, need?: "booking" | "po
   return clinic;
 }
 
+/** The clinic of its device page (a form handed to a patient in the clinic): the package is enough. */
+export async function deviceClinicOr404(clinicId: string): Promise<PublicClinic> {
+  const clinic = await loadPublicClinic(publicCtx(), clinicId, { device: true });
+  if (!clinic) notFound();
+  return clinic;
+}
+
 /** The same lookup for server actions (null instead of the 404 page). */
 export async function publicClinicFor(clinicId: unknown): Promise<PublicClinic | null> {
   if (typeof clinicId !== "string") return null;

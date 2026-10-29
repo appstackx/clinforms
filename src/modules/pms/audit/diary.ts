@@ -32,6 +32,7 @@ export const DIARY_AUDIT_LABELS: Readonly<Record<string, string>> = {
   "pms.waiting_list.offer": "Slot offered from the waiting list",
   "pms.waiting_list.offer_decline": "Offered slot declined",
   "pms.waiting_list.offer_withdraw": "Offered slot withdrawn",
+  "pms.waiting_list.offer_hold": "Hold on an offered slot moved on (text held for quiet hours)",
   "pms.diary_settings.update": "Diary settings changed",
 };
 

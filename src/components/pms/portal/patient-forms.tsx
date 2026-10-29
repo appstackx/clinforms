@@ -2,12 +2,14 @@
 
 /**
  * A patient's record → Forms: the forms sent to the patient (waiting / completed and sealed), Send a form (by email
- * with a portal link), Send a questionnaire to the patient's portal (outcome measures – clinicians), portal access.
+ * with a portal link), Send a questionnaire to the patient's portal (outcome measures – clinicians), portal access,
+ * and "Complete in the clinic" on a waiting form (this device then shows only that form to the patient; staff verify
+ * it afterwards with their password).
  */
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import * as React from "react";
-import { ClipboardList, Lock } from "lucide-react";
+import { ClipboardList, Lock, Tablet } from "lucide-react";
 import { PmsButton, PmsNotice, SelectInput, Switch, useToast } from "@/components/pms/ui";
 import { STAFF_PORTAL_PATHS } from "@/modules/pms/portal/paths";
 import { formatWhen } from "@/modules/pms/portal/time";
@@ -24,7 +26,15 @@ export interface PatientFormsViewData {
   canSend: boolean;
   canSendOutcome: boolean;
   measures: { id: OutcomeMeasureId; label: string; problem: string | null }[];
+  handoffs: Record<string, { id: string; state: "on_device" | "to_verify" | "verified" | "not_verified" | "expired"; href: string }>;
 }
+
+const HANDOFF_WORDS: Record<string, string> = {
+  on_device: "On a clinic device now",
+  to_verify: "Completed in the clinic – verify",
+  verified: "Completed in the clinic, verified",
+  not_verified: "Completed in the clinic – not verified",
+};
 
 const STATUS: Record<string, string> = { requested: "Waiting for the patient", submitted: "Completed", cancelled: "Withdrawn" };
 
@@ -36,6 +46,7 @@ export function PatientForms({
   sendForm,
   sendOutcome,
   setPortal,
+  startHandoff,
 }: {
   patientId: string;
   view: PatientFormsViewData;
@@ -44,6 +55,7 @@ export function PatientForms({
   sendForm: (templateId: string) => Promise<Answer>;
   sendOutcome: (measure: string, caseId: string | null) => Promise<Answer>;
   setPortal: (on: boolean) => Promise<Answer>;
+  startHandoff: (responseId: string) => Promise<{ ok: true; path: string } | { ok: false; error: string }>;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -66,6 +78,18 @@ export function PatientForms({
     router.refresh();
   };
   const chosenMeasure = view.measures.find((m) => m.id === measure);
+  const handOver = async (responseId: string) => {
+    setBusy(`hand-${responseId}`);
+    setError(null);
+    const r = await startHandoff(responseId);
+    if (!r.ok) {
+      setBusy(null);
+      setError(r.error);
+      return;
+    }
+    // This device now shows only the form – the record page is replaced in the history.
+    window.location.replace(r.path);
+  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -109,6 +133,21 @@ export function PatientForms({
                     <span className="inline-flex items-center gap-1 text-xs text-[#475569]">
                       <Lock className="h-3.5 w-3.5" aria-hidden="true" /> Clinicians only
                     </span>
+                  ) : null}
+                  {view.handoffs[r.id] && HANDOFF_WORDS[view.handoffs[r.id].state] ? (
+                    view.canSend && (view.handoffs[r.id].state === "to_verify" || view.handoffs[r.id].state === "on_device") ? (
+                      <Link href={view.handoffs[r.id].href} className="rounded-full bg-[#EFF6FF] px-2 py-0.5 text-xs font-medium text-[#1E3A8A] underline-offset-2 hover:underline">
+                        {HANDOFF_WORDS[view.handoffs[r.id].state]}
+                      </Link>
+                    ) : (
+                      <span className="rounded-full bg-[#F1F5F9] px-2 py-0.5 text-xs font-medium text-[#334155]">{HANDOFF_WORDS[view.handoffs[r.id].state]}</span>
+                    )
+                  ) : null}
+                  {view.canSend && r.status === "requested" && r.kind !== "outcome" ? (
+                    <PmsButton size="sm" variant="secondary" loading={busy === `hand-${r.id}`} onClick={() => void handOver(r.id)} aria-label={`Complete in the clinic – ${r.name} (on this device)`}>
+                      <Tablet className="h-4 w-4" aria-hidden="true" />
+                      Complete in the clinic
+                    </PmsButton>
                   ) : null}
                 </li>
               );

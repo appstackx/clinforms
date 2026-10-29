@@ -98,6 +98,8 @@ export const PORTAL_TIMINGS = {
   idleMinutes: 30,
   /** last_seen_at is written at most this often (fewer writes on every page). */
   touchEveryMinutes: 5,
+  /** A form handed to the patient on a clinic device can be completed for this long. */
+  handoffMinutes: 30,
 } as const;
 
 /** Whether a portal session is still usable. */
