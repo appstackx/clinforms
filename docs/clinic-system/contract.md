@@ -269,6 +269,13 @@ invl crn pay acct stmt`; comms `msg mtpl ltr`; portal `bkr ptl ifm ifr`; reporti
   authorisations. `--fresh` replaces it (local only). Server databases: `--env preview --confirm` / `--env production
   --confirm --yes`, only for a clinic flagged as a demonstration clinic (`--mark-demo` flags an EMPTY clinic whose name
   ends "(fictional)").
+- `--resume` (any database): finishes a run that stopped part-way – the clinic data must have loaded completely (audit
+  "pms.demo.seed" for the clinic), then every module seed adds only what is missing (billing: by import reference, by
+  visit not yet on an invoice, and this week's plan kept in audit rows "<clinic>:billing-week:<n>"). It never deletes;
+  `--fresh` stays local-only (clinical records are never cleared on a server). Resume on the day of the stopped run.
+- Server seeds go through the data gateway's limits (100 statements per request, 100 bound parameters per
+  statement); local SQLite has neither. `workers/data-gateway/test/pms-demo-seed-stack.test.ts` (`npm run
+  test:gateway`) runs the whole demo seed on the D1 stand-in (and local workerd D1), and a stopped billing run resumed.
 - Module demo data: `scripts/pms/seed-<m>.ts` exporting `seed<M>(ctx, tenantId)` that refuses a clinic that is not
   flagged demo (`getPmsSettings(...).isDemo`) and uses the seeded directory/patients; the orchestrator wires it into
   `pms:seed-demo` at integration.
