@@ -76,7 +76,7 @@ export function OutcomeFiller({ title, form, submit, doneHref, firstName }: Outc
   return (
     <div>
       <div className="flex items-center gap-2">
-        <button type="button" onClick={() => setI(Math.max(0, i - 1))} disabled={i === 0} aria-label="Previous question" className="-ml-2 flex h-9 w-9 items-center justify-center rounded-[8px] text-foreground disabled:text-[#CBD5E1] focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+        <button type="button" onClick={() => setI(Math.max(0, i - 1))} disabled={i === 0} aria-label="Previous question" className="-ml-3 flex h-11 w-11 items-center justify-center rounded-[8px] text-foreground disabled:text-[#CBD5E1] focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
           <ChevronLeft className="h-[22px] w-[22px]" aria-hidden="true" />
         </button>
         <span className="text-[14px] font-semibold text-foreground">{title}</span>

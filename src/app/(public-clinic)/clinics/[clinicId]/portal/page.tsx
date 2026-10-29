@@ -72,7 +72,7 @@ export default async function PortalPage({ params, searchParams }: { params: { c
               Upcoming
             </h2>
             {clinic.settings.onlineBooking ? (
-              <Link href={paths.portalBook} className="text-[14px] font-medium text-primary-strong underline underline-offset-[3px]">
+              <Link href={paths.portalBook} className="-mr-2 inline-flex min-h-11 items-center rounded-[8px] px-2 text-[14px] font-medium text-primary-strong underline underline-offset-[3px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
                 Book an appointment
               </Link>
             ) : null}

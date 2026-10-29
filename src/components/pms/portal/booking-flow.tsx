@@ -15,6 +15,7 @@ import { Check, ChevronLeft, Clock, Crosshair, MapPin, Search } from "lucide-rea
 import { PmsButton } from "@/components/pms/ui";
 import { formatMiles, milesBetween, type LatLng } from "@/modules/pms/portal/distance";
 import { formatDayDate, formatUkTime, formatWhen } from "@/modules/pms/portal/time";
+import { BOOKING_DETAIL_FIELDS, bookingDetailsErrors } from "@/modules/pms/portal/schemas";
 import type { BookResultView, FlowData, FlowDay, FlowSite, SlotsAnswer } from "@/modules/pms/portal/flow-types";
 
 export type { BookResultView };
@@ -209,6 +210,8 @@ export function BookingFlow({ mode, clinicId, data, portalPath, loadSlots, book,
     if (r.fieldErrors) {
       setFieldErrors(r.fieldErrors);
       go("details");
+      const first = BOOKING_DETAIL_FIELDS.find((f) => r.fieldErrors?.[f]);
+      if (first) window.setTimeout(() => document.getElementById(`bk-${first}`)?.focus(), 0);
     } else if (r.slotGone) {
       setSlot(null);
       go("time");
@@ -216,10 +219,21 @@ export function BookingFlow({ mode, clinicId, data, portalPath, loadSlots, book,
     }
   };
 
-  const detailsComplete = details.firstName.trim() && details.lastName.trim() && details.dateOfBirth && details.phoneMobile.trim() && details.email.trim();
+  // Continue stays enabled: it says what is missing next to each field and moves focus to the first one (M10).
+  const continueFromDetails = () => {
+    const errs = bookingDetailsErrors(details, data.today);
+    const first = BOOKING_DETAIL_FIELDS.find((f) => errs[f]);
+    setFieldErrors(errs as Record<string, string>);
+    if (!first) {
+      setError(null);
+      go("confirm");
+      return;
+    }
+    window.setTimeout(() => document.getElementById(`bk-${first}`)?.focus(), 0);
+  };
   const cta: Partial<Record<Step, { label: string; disabled: boolean; onClick: () => void }>> = {
     time: { label: "Continue", disabled: !slot, onClick: () => go(mode === "public" ? "details" : "confirm") },
-    details: { label: "Continue", disabled: !detailsComplete, onClick: () => go("confirm") },
+    details: { label: "Continue", disabled: false, onClick: continueFromDetails },
     confirm: { label: mode === "move" ? "Move my appointment" : "Confirm booking", disabled: loading || !slot, onClick: () => void submit() },
   };
   const action = cta[step];
@@ -248,14 +262,18 @@ export function BookingFlow({ mode, clinicId, data, portalPath, loadSlots, book,
           id={id}
           name={name}
           value={String(details[name])}
-          onChange={(e) => setDetails((d) => ({ ...d, [name]: e.target.value }))}
+          onChange={(e) => {
+            const value = e.target.value;
+            setDetails((d) => ({ ...d, [name]: value }));
+            if (err) setFieldErrors(({ [name]: _gone, ...rest }) => rest);
+          }}
           aria-invalid={err ? true : undefined}
           aria-describedby={err ? `${id}-err` : undefined}
           className="h-12 w-full rounded-[10px] border border-[#CBD5E1] bg-white px-3 text-[16px] text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary"
           {...props}
         />
         {err ? (
-          <p id={`${id}-err`} role="alert" className="text-[13px] text-destructive-strong">
+          <p id={`${id}-err`} className="text-[13px] text-destructive-strong">
             {err}
           </p>
         ) : null}
@@ -266,13 +284,13 @@ export function BookingFlow({ mode, clinicId, data, portalPath, loadSlots, book,
   return (
     <>
       <div className="border-b border-border bg-white px-4 pb-3 pt-2">
-        <div className="flex h-9 items-center">
+        <div className="flex h-11 items-center">
           {stepIndex > 0 && step !== "done" ? (
-            <button type="button" onClick={back} aria-label="Back" className="-ml-2 flex h-9 w-9 items-center justify-center rounded-[8px] text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+            <button type="button" onClick={back} aria-label="Back" className="-ml-3 flex h-11 w-11 items-center justify-center rounded-[8px] text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
               <ChevronLeft className="h-[22px] w-[22px]" aria-hidden="true" />
             </button>
           ) : homeHref ? (
-            <Link href={homeHref} aria-label="Back to my appointments" className="-ml-2 flex h-9 w-9 items-center justify-center rounded-[8px] text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+            <Link href={homeHref} aria-label="Back to my appointments" className="-ml-3 flex h-11 w-11 items-center justify-center rounded-[8px] text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
               <ChevronLeft className="h-[22px] w-[22px]" aria-hidden="true" />
             </Link>
           ) : null}
@@ -480,10 +498,10 @@ export function BookingFlow({ mode, clinicId, data, portalPath, loadSlots, book,
                   })}
                 </div>
                 <div className="mt-4 flex justify-between">
-                  <PmsButton type="button" variant="secondary" size="sm" disabled={fromDate <= data.today || loading} onClick={() => pracId && void fetchWeek(addDaysIso(fromDate, -7, data.today), pracId)}>
+                  <PmsButton type="button" variant="secondary" size="sm" className="h-11 px-4" disabled={fromDate <= data.today || loading} onClick={() => pracId && void fetchWeek(addDaysIso(fromDate, -7, data.today), pracId)}>
                     Earlier
                   </PmsButton>
-                  <PmsButton type="button" variant="secondary" size="sm" disabled={!week.nextFrom || loading} onClick={() => pracId && week.nextFrom && void fetchWeek(week.nextFrom, pracId)}>
+                  <PmsButton type="button" variant="secondary" size="sm" className="h-11 px-4" disabled={!week.nextFrom || loading} onClick={() => pracId && week.nextFrom && void fetchWeek(week.nextFrom, pracId)}>
                     Later dates
                   </PmsButton>
                 </div>
@@ -503,9 +521,10 @@ export function BookingFlow({ mode, clinicId, data, portalPath, loadSlots, book,
             {slot ? <p className="mt-1 text-[14px] text-[#334155]">{formatWhen(slot.startsAt)}</p> : null}
             <form
               className="mt-4 space-y-4"
+              noValidate
               onSubmit={(e) => {
                 e.preventDefault();
-                if (detailsComplete) go("confirm");
+                continueFromDetails();
               }}
             >
               {field("firstName", "First name", { autoComplete: "given-name", required: true })}
