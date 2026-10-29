@@ -31,6 +31,8 @@ import { clinicAccessOf, readClinicPlans, type ClinicAccess, type ClinicPlan } f
 import { appendAudit, listAudit, type AuditEntry } from "../repos/audit";
 import { RepoInputError, type DbContext } from "../repos/context";
 import { listEntitlementsByTenant, setEntitlement } from "../repos/pms/entitlements";
+import type { Entitlement } from "../../modules/pms/core/types";
+import { isMissingPmsTable } from "../pms/missing-table";
 
 export const PLATFORM_PATH = "/app/platform";
 
@@ -172,9 +174,20 @@ export interface ClinicPackagesView {
   clinic: boolean;
 }
 
-/** Every clinic's packages, on/off as the app applies them (no row = the default). */
+/**
+ * Every clinic's packages, on/off as the app applies them (no row = the default). FAIL-SAFE like
+ * src/server/pms/entitlements.ts clinicPackages: on a database before the clinic system's migrations (no
+ * clinic_entitlements table) every clinic reads as the default – Reports on, the clinic system off – and the platform
+ * page still opens. Any other error still throws.
+ */
 export async function listClinicPackages(db: Kysely<Database>, tenantIds: readonly string[], now = new Date()): Promise<Map<string, ClinicPackagesView>> {
-  const rows = await listEntitlementsByTenant({ db });
+  let rows: Map<string, Entitlement[]>;
+  try {
+    rows = await listEntitlementsByTenant({ db });
+  } catch (err) {
+    if (!isMissingPmsTable(err, "clinic_entitlements")) throw err;
+    rows = new Map();
+  }
   const out = new Map<string, ClinicPackagesView>();
   for (const tenantId of tenantIds) {
     const own = rows.get(tenantId) ?? [];

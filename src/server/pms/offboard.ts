@@ -13,6 +13,9 @@ import type { BatchQuery } from "../db/batch";
 import { PMS_PRIMARY_KEYS, PMS_TENANT_TABLES, type PmsTableName } from "../db/pms-schema";
 import type { Database } from "../db/schema";
 import { decryptField } from "../repos/pms/context";
+import { isMissingPmsTable } from "./missing-table";
+
+export { isMissingPmsTable };
 
 type Row = Record<string, unknown>;
 type AnyDb = Kysely<Record<string, Row>>;
@@ -23,15 +26,25 @@ function loose(db: Kysely<Database>): AnyDb {
   return db as unknown as AnyDb;
 }
 
-/** Rows per clinic-system table for one clinic (tables with no rows are left out). */
+/**
+ * Rows per clinic-system table for one clinic (tables with no rows are left out). FAIL-SAFE for a release that
+ * reaches a database before the clinic system's migrations: a table that does not exist yet holds no rows (any
+ * other error still throws). Offboarding a ClinForms-only clinic therefore works before, during and after them.
+ */
 export async function countPmsRows(db: Kysely<Database>, tenantId: string): Promise<Record<string, number>> {
   const out: Record<string, number> = {};
   for (const table of PMS_TENANT_TABLES) {
-    const row = await loose(db)
-      .selectFrom(table)
-      .select((eb) => eb.fn.countAll<number>().as("n"))
-      .where("tenant_id", "=", tenantId)
-      .executeTakeFirst();
+    let row: { n: number } | undefined;
+    try {
+      row = await loose(db)
+        .selectFrom(table)
+        .select((eb) => eb.fn.countAll<number>().as("n"))
+        .where("tenant_id", "=", tenantId)
+        .executeTakeFirst();
+    } catch (err) {
+      if (isMissingPmsTable(err, table)) continue;
+      throw err;
+    }
     const n = Number(row?.n ?? 0);
     if (n > 0) out[table] = n;
   }
@@ -51,10 +64,20 @@ function decryptRow(cipher: DataCipher, tenantId: string, table: string, row: Ro
   return out;
 }
 
-/** Every clinic-system row of the clinic, decrypted, by table (keyset paging on the primary key). */
-export async function exportPmsData(db: Kysely<Database>, cipher: DataCipher, tenantId: string): Promise<Record<string, Row[]>> {
+/**
+ * Every clinic-system row of the clinic, decrypted, by table (keyset paging on the primary key). `tables`: only these
+ * (offboarding passes the tables countPmsRows found rows in, so a table that does not exist yet is never read).
+ */
+export async function exportPmsData(
+  db: Kysely<Database>,
+  cipher: DataCipher,
+  tenantId: string,
+  options: { tables?: readonly string[] } = {},
+): Promise<Record<string, Row[]>> {
   const out: Record<string, Row[]> = {};
+  const wanted = options.tables ? new Set(options.tables) : null;
   for (const table of PMS_TENANT_TABLES) {
+    if (wanted && !wanted.has(table)) continue;
     const keys = PMS_PRIMARY_KEYS[table as PmsTableName] as readonly string[];
     const rows: Row[] = [];
     if (keys.length === 2 && keys[0] === "tenant_id" && keys[1] === "id") {
@@ -80,11 +103,18 @@ export async function exportPmsData(db: Kysely<Database>, cipher: DataCipher, te
 /**
  * DELETE statements for the clinic's clinic-system rows, children first (send them in the offboarding batch).
  * `keep`: tables left alone (the local demo seed's --fresh keeps the packages and the demo flag).
+ * `only`: just these tables (offboarding: the tables that hold the clinic's rows – one statement per table counts
+ * against the gateway's GATEWAY_MAX_STATEMENTS, and a table that does not exist yet must not be named).
  */
-export function deletePmsQueries(db: Kysely<Database>, tenantId: string, options: { keep?: readonly string[] } = {}): BatchQuery[] {
+export function deletePmsQueries(
+  db: Kysely<Database>,
+  tenantId: string,
+  options: { keep?: readonly string[]; only?: readonly string[] } = {},
+): BatchQuery[] {
   const keep = new Set(options.keep ?? []);
+  const only = options.only ? new Set(options.only) : null;
   return PMS_TENANT_TABLES.slice()
     .reverse()
-    .filter((table) => !keep.has(table))
+    .filter((table) => !keep.has(table) && (!only || only.has(table)))
     .map((table) => loose(db).deleteFrom(table).where("tenant_id", "=", tenantId));
 }

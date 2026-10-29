@@ -13,6 +13,7 @@ import path from "node:path";
 import type { Kysely } from "kysely";
 import type { DataCipher } from "../crypto/envelope";
 import { runBatch, type BatchQuery } from "../db/batch";
+import { GATEWAY_MAX_STATEMENTS } from "../db/dialects/d1-http";
 import { authBool, type Database } from "../db/schema";
 import { captureOutbox, deliverEmail, invitationEmail, type DeliveryResult } from "../email";
 import { appendAudit, listAudit } from "../repos/audit";
@@ -320,6 +321,8 @@ export async function offboardClinic(db: Kysely<Database>, cipher: DataCipher | 
   const invitations = await db.selectFrom("invitation").selectAll().where("organizationId", "=", org.id).execute();
   const keys = await listPartnerKeys({ db }, tenantId);
   const profiles = await listMemberProfiles({ db }, org.id);
+  // Fail-safe: a clinic-system table that does not exist yet (migrations not applied) counts as empty.
+  const pmsCounts = await countPmsRows(db, tenantId);
   const counts = {
     members: members.length,
     invitations: invitations.length,
@@ -330,7 +333,7 @@ export async function offboardClinic(db: Kysely<Database>, cipher: DataCipher | 
     memberProfiles: profiles.length,
     auditRows: await countRows(db, "audit_log", tenantId),
     // The clinic system's rows (patients, cases, diary…), all tables together; per table in the export.
-    clinicSystemRows: Object.values(await countPmsRows(db, tenantId)).reduce((a, b) => a + b, 0),
+    clinicSystemRows: Object.values(pmsCounts).reduce((a, b) => a + b, 0),
   };
   const plan: OffboardPlan = { organizationId: org.id, tenantId, counts, usersToDelete: deleteUserIds.length, usersKept: keep.size };
   if (input.releaseSlug && counts.auditRows > 0) {
@@ -347,7 +350,8 @@ export async function offboardClinic(db: Kysely<Database>, cipher: DataCipher | 
   const reports = await exportEncrypted(db, cipher, "reports", tenantId);
   const files = await listFormFiles(ctx, tenantId);
   const audit = await exportAudit(db, tenantId);
-  const clinicSystem = counts.clinicSystemRows > 0 ? await exportPmsData(db, cipher, tenantId) : null;
+  // Only the tables that hold the clinic's rows are read, and (below) only those are deleted.
+  const clinicSystem = counts.clinicSystemRows > 0 ? await exportPmsData(db, cipher, tenantId, { tables: Object.keys(pmsCounts) }) : null;
 
   // 1. Export (decrypted) and verify it before anything is deleted.
   if (!input.exportDir) throw new RepoInputError("--export-dir is required with --confirm.");
@@ -397,11 +401,75 @@ export async function offboardClinic(db: Kysely<Database>, cipher: DataCipher | 
   }
   exportFiles.push(...fileManifest.map((f) => f.path));
 
-  // 2. Delete the tenant's data, memberships and the accounts that belong to no other clinic – one atomic batch.
-  const now = new Date().toISOString();
+  // 2. Delete the tenant's data, memberships and the accounts that belong to no other clinic – one atomic batch
+  //    (ordered batches only past the gateway's statement limit: offboardBatches).
+  const pmsTables = clinicSystem ? Object.keys(clinicSystem) : [];
+  const queries = offboardDeleteQueries(db, {
+    tenantId,
+    organizationId: org.id,
+    pmsTables,
+    releaseSlug: Boolean(input.releaseSlug),
+    deleteUserIds,
+    now: new Date().toISOString(),
+  });
+  const batches = offboardBatches(queries);
+  for (let i = 0; i < batches.length; i++) {
+    try {
+      await runBatch(db, batches[i]);
+    } catch (err) {
+      if (i === 0) throw err;
+      throw new Error(
+        `Offboarding stopped after ${i} of ${batches.length} delete batches (${err instanceof Error ? err.message : "error"}). The clinic is still open. ` +
+          `Keep the export in ${dir} – it is complete – and run the offboarding again with a NEW --export-dir.`,
+        { cause: err },
+      );
+    }
+  }
+  // Rows written to a clinic-system table that was empty when it was read (a member still working until the batch
+  // above removed every membership) – none in practice; deleted here so nothing of the closed clinic stays behind.
+  const late = await countPmsRows(db, tenantId);
+  const lateRows = Object.values(late).reduce((a, b) => a + b, 0);
+  if (lateRows > 0) {
+    for (const batch of offboardBatches(deletePmsQueries(db, tenantId, { only: Object.keys(late) }))) await runBatch(db, batch);
+  }
+  await appendAudit({ db }, tenantId, {
+    userId: PLATFORM_USER_ID,
+    action: "clinic.offboard",
+    targetType: "organization",
+    targetId: org.id,
+    detail: {
+      ...counts,
+      usersDeleted: deleteUserIds.length,
+      slugReleased: Boolean(input.releaseSlug),
+      deleteBatches: batches.length,
+      ...(lateRows > 0 ? { lateClinicSystemRows: lateRows } : {}),
+    },
+  });
+  return { ...plan, dryRun: false, exportDir: dir, exportFiles };
+}
+
+export interface OffboardDeleteInput {
+  tenantId: string;
+  organizationId: string;
+  /** Clinic-system tables that hold the clinic's rows (countPmsRows / the export): one DELETE each, none for the rest. */
+  pmsTables: readonly string[];
+  releaseSlug: boolean;
+  deleteUserIds: readonly string[];
+  now: string;
+}
+
+/** Ids per `DELETE FROM user WHERE id IN (…)`: D1 allows at most 100 bound parameters per statement. */
+export const OFFBOARD_USER_IDS_PER_STATEMENT = 90;
+
+/**
+ * The offboarding's writes, in order: the clinic system's rows first (children before parents), then ClinForms' own,
+ * memberships, accounts, and LAST the organization (tombstone, or deleted when the id is released) – so a run that
+ * stops part-way leaves the clinic open and can be repeated.
+ */
+export function offboardDeleteQueries(db: Kysely<Database>, input: OffboardDeleteInput): BatchQuery[] {
+  const { tenantId, organizationId, now } = input;
   const queries: BatchQuery[] = [
-    // The clinic system's rows first (children before parents), then ClinForms' own.
-    ...deletePmsQueries(db, tenantId),
+    ...deletePmsQueries(db, tenantId, { only: input.pmsTables }),
     db.deleteFrom("reports").where("tenant_id", "=", tenantId),
     db.deleteFrom("forms").where("tenant_id", "=", tenantId),
     db.deleteFrom("form_file_chunks").where("tenant_id", "=", tenantId),
@@ -419,30 +487,34 @@ export async function offboardClinic(db: Kysely<Database>, cipher: DataCipher | 
           db.deleteFrom("usage_event").where("tenant_id", "=", tenantId),
         ]
       : []),
-    db.deleteFrom("member_profile").where("organization_id", "=", org.id),
+    db.deleteFrom("member_profile").where("organization_id", "=", organizationId),
     db.updateTable("partner_keys").set({ revoked_at: now }).where("tenant_id", "=", tenantId).where("revoked_at", "is", null),
-    db.deleteFrom("invitation").where("organizationId", "=", org.id),
-    db.deleteFrom("member").where("organizationId", "=", org.id),
-    db.updateTable("session").set({ activeOrganizationId: null }).where("activeOrganizationId", "=", org.id),
+    db.deleteFrom("invitation").where("organizationId", "=", organizationId),
+    db.deleteFrom("member").where("organizationId", "=", organizationId),
+    db.updateTable("session").set({ activeOrganizationId: null }).where("activeOrganizationId", "=", organizationId),
   ];
-  for (let i = 0; i < deleteUserIds.length; i += 90) {
+  for (let i = 0; i < input.deleteUserIds.length; i += OFFBOARD_USER_IDS_PER_STATEMENT) {
     // sessions, accounts and two-step secrets go with the user (ON DELETE CASCADE)
-    queries.push(db.deleteFrom("user").where("id", "in", deleteUserIds.slice(i, i + 90)));
+    queries.push(db.deleteFrom("user").where("id", "in", input.deleteUserIds.slice(i, i + OFFBOARD_USER_IDS_PER_STATEMENT)));
   }
   queries.push(
     input.releaseSlug
-      ? db.deleteFrom("organization").where("id", "=", org.id)
-      : db.updateTable("organization").set({ metadata: JSON.stringify({ offboardedAt: now }) }).where("id", "=", org.id),
+      ? db.deleteFrom("organization").where("id", "=", organizationId)
+      : db.updateTable("organization").set({ metadata: JSON.stringify({ offboardedAt: now }) }).where("id", "=", organizationId),
   );
-  await runBatch(db, queries);
-  await appendAudit({ db }, tenantId, {
-    userId: PLATFORM_USER_ID,
-    action: "clinic.offboard",
-    targetType: "organization",
-    targetId: org.id,
-    detail: { ...counts, usersDeleted: deleteUserIds.length, slugReleased: Boolean(input.releaseSlug) },
-  });
-  return { ...plan, dryRun: false, exportDir: dir, exportFiles };
+  return queries;
+}
+
+/**
+ * The writes as gateway batches: ONE atomic batch whenever they fit the gateway's limit (always, in practice: every
+ * clinic-system table plus ClinForms' own come to well under it – asserted by src/server/auth/offboard-batch.test.ts).
+ * Past it (hundreds of member accounts), ordered batches of at most `max` statements, the organization last.
+ */
+export function offboardBatches(queries: readonly BatchQuery[], max: number = GATEWAY_MAX_STATEMENTS): BatchQuery[][] {
+  if (!Number.isInteger(max) || max < 1) throw new Error("offboardBatches: max must be a positive integer.");
+  const out: BatchQuery[][] = [];
+  for (let i = 0; i < queries.length; i += max) out.push(queries.slice(i, i + max));
+  return out;
 }
 
 /* ------------------------------------------------------------------------------------------------
