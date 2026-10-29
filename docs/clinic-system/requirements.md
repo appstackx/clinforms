@@ -238,15 +238,15 @@ backends). Screens uncommitted.
 Letters from templates (comms, M6): start → edit (merge fields, gaps) → sign with the signer's line → A4 print / email
 through the outbox. Two merge-field engines still exist: comms (`src/modules/pms/comms/merge-fields.ts`, plain-text
 letters and messages) and integration (`cs-integration`, Word/RTF resolver, uncommitted) – one must be chosen
-(K2-LTR-007, M9).
+(K2-LTR-007, M9). **M9 (29/10/2026):** comms' list is the one engine; integration's merge-fields is only an alias layer for a clinic's own Word/RTF field names.
 
 - **K2-LTR-001** · MVP · done · comms · FC 2.3-01 — Letter templates with merge fields from patient, case, payer, practitioner, appointments, invoices, clinic and today. AC: letter editor with merge fields (filled on start and on save; gaps visible) (M6, e2e).
-- **K2-LTR-002** · MVP · partial-wt · integration · FC 2.3-02 — A clinic's own Word/RTF letter templates are filled in their own layout using ClinForms' existing RTF/Word engine; unknown field names are reported, never guessed, and can be pointed at a field once. AC: merge-field resolver uncommitted; engine wiring missing; Blue Heart's `<<…>>`-style fields resolve.
+- **K2-LTR-002** · MVP · partial · integration · FC 2.3-02 — A clinic's own Word/RTF letter templates are filled in their own layout using ClinForms' existing RTF/Word engine; unknown field names are reported, never guessed, and can be pointed at a field once. AC: merge-field resolver uncommitted; engine wiring missing; Blue Heart's `<<…>>`-style fields resolve.
 - **K2-LTR-003** · MVP · done · comms · FC 2.3-01 — Recipient: the patient, their GP, the case's payer or referrer, or a typed recipient. AC: `startLetter` tests.
 - **K2-LTR-004** · MVP · done · comms · FC none — A letter cannot be finalised while it contains "[not recorded: …]" or "[[…]]" gaps. AC: repository refuses.
 - **K2-LTR-005** · MVP · partial · comms · FC 2.3-05 — Output: PDF (and Word for Word templates), filed on the patient record, optionally emailed through comms (outbox) or shared to the portal. AC: A4 print / Save as PDF, listed on the record, emailed to the recipient through the outbox, marked posted (M6, e2e); Word output for Word templates (K2-LTR-002) and sharing to the portal (M7): missing.
-- **K2-LTR-006** · MVP · partial · records · FC 2.3-04 — Discharge summary letter from the discharge note. AC: discharge template exists; letter generation from it missing.
-- **K2-LTR-007** · MVP · missing · integration · FC none — One merge-field engine for letters and ClinForms (reconcile comms `merge-fields.ts` and integration `merge-fields.ts`). AC: one list of fields, one resolver, both callers use it.
+- **K2-LTR-006** · MVP · done · records · FC 2.3-04 — Discharge summary letter from the discharge note. AC: discharge template exists; letter generation from it missing.
+- **K2-LTR-007** · MVP · done · integration · FC none — One merge-field engine for letters and ClinForms (reconcile comms `merge-fields.ts` and integration `merge-fields.ts`). AC: one list of fields, one resolver, both callers use it.
 
 ### 3.8 FORM – intake and consent forms
 
@@ -353,13 +353,13 @@ All import code is **uncommitted** in `cs-integration` (no commit on `feat/cs-in
 (`pms_import_batches`, `pms_import_rows`), CSV parser, kinds (patients, cases, appointments, invoices), mapping,
 resolve, issues, importer (check, run, undo pages), batch repository. No import screens.
 
-- **K2-IMP-001** · MVP · partial-wt · integration · FC 2.8-01 — CSV import of patients, cases (payer, referrer), appointments (past and future) and invoices/open balances. AC: domain tests uncommitted; each kind imports a fictional fixture end to end.
-- **K2-IMP-002** · MVP · partial-wt · integration · FC 2.8-01 — Column mapping step (any header naming), saved per clinic; template headers downloadable. AC: mapping tests.
-- **K2-IMP-003** · MVP · partial-wt · integration · FC 2.8-01 — Dry run ("check") with row-level issues; nothing written. AC: issues list per row; counts.
-- **K2-IMP-004** · MVP · partial-wt · integration · FC 2.8-01 — Run in batches of ≤ 40 rows, one audit row per batch; `import_ref` unique per clinic so a re-run never duplicates. AC: re-running the same file creates nothing new.
-- **K2-IMP-005** · MVP · partial-wt · integration · FC 2.8-01 — Undo a batch while nothing depends on it (`undoBlocker`). AC: undo refused once an imported appointment was attended.
-- **K2-IMP-006** · MVP · missing · integration · FC 2.8-01 — Import screens `/app/clinic/import/**` (permission `import.run`). AC: e2e upload → map → check → run → undo.
-- **K2-IMP-007** · MVP · missing · integration · FC 2.8-01 — Treatment authorisations import (code, sessions/value used and remaining, dates). AC: remaining sessions after import equal the source.
+- **K2-IMP-001** · MVP · partial · integration · FC 2.8-01 — CSV import of patients, cases (payer, referrer), appointments (past and future) and invoices/open balances. AC: domain tests uncommitted; each kind imports a fictional fixture end to end.
+- **K2-IMP-002** · MVP · partial · integration · FC 2.8-01 — Column mapping step (any header naming), saved per clinic; template headers downloadable. AC: mapping tests.
+- **K2-IMP-003** · MVP · done · integration · FC 2.8-01 — Dry run ("check") with row-level issues; nothing written. AC: issues list per row; counts.
+- **K2-IMP-004** · MVP · done · integration · FC 2.8-01 — Run in batches of ≤ 40 rows, one audit row per batch; `import_ref` unique per clinic so a re-run never duplicates. AC: re-running the same file creates nothing new.
+- **K2-IMP-005** · MVP · done · integration · FC 2.8-01 — Undo a batch while nothing depends on it (`undoBlocker`). AC: undo refused once an imported appointment was attended.
+- **K2-IMP-006** · MVP · done · integration · FC 2.8-01 — Import screens `/app/clinic/import/**` (permission `import.run`). AC: e2e upload → map → check → run → undo.
+- **K2-IMP-007** · MVP · partial · integration · FC 2.8-01 — Treatment authorisations import (code, sessions/value used and remaining, dates). AC: remaining sessions after import equal the source.
 - **K2-IMP-008** · MVP · missing · integration · FC 2.8-01 — Reconciliation report per import: counts per kind, open balance per payer and patient, future appointments per practitioner per day vs the source totals; owner sign-off recorded. AC: report downloadable; sign-off audited.
 - **K2-IMP-009** · MVP · missing · integration · FC 2.8-02 — Historic clinical notes and documents stay accessible for the retention period: imported as read-only attachments on the patient record (PDF/RTF/DOC), or a documented read-only archive (decision Q-D6). AC: a clinician finds a 2019 note for an imported patient in under a minute.
 - **K2-IMP-010** · MVP · missing · ops · FC 2.8-01 — Formats are confirmed from Dell's real exit export only after the solicitor's advice and gate A; until then fixtures are fictional and written by us (never guessed proprietary formats, never from the current system's screens). AC: written advice on file.
@@ -371,12 +371,12 @@ filed-forms and form-requests repositories, the additive `"native"` in medreport
 to two medreport UI files (`home-screen.tsx`, `studio-events.ts` – **outside the integration module's ownership; need
 Khuram's/the orchestrator's go**). **`src/server/pms/native-connector.ts` does not exist yet.**
 
-- **K2-CF-001** · MVP · missing · integration · FC 2.3-03 — Native connector `src/server/pms/native-connector.ts` implementing medreport's connector interface (all four methods), registered in `src/app/api/_medreport-glue.ts`, for clinics with both packages only, never listed on `GET /connectors`. AC: ClinForms' connector tests pass with `native`; a reports-only clinic never sees it.
-- **K2-CF-002** · MVP · partial-wt · integration · FC 2.3-03 — The connector sends registration, referral, payer and consent from the shared record, and signed notes, outcome scores and appointments through ports; unsigned drafts are never sent. AC: bundle test with a draft and a signed note.
-- **K2-CF-003** · MVP · missing · integration · FC 2.3-03 — "Complete referrer form" on a case opens the existing ClinForms flow with the case's data already loaded (no upload). AC: e2e from case page to approved form.
-- **K2-CF-004** · MVP · partial-wt · integration · FC 2.3-05, 2.3-03 — The approved form is filed back to the patient record and listed there; form requests are tracked per case. AC: filed form visible on the record; audited.
+- **K2-CF-001** · MVP · done · integration · FC 2.3-03 — Native connector `src/server/pms/native-connector.ts` implementing medreport's connector interface (all four methods), registered in `src/app/api/_medreport-glue.ts`, for clinics with both packages only, never listed on `GET /connectors`. AC: ClinForms' connector tests pass with `native`; a reports-only clinic never sees it.
+- **K2-CF-002** · MVP · done · integration · FC 2.3-03 — The connector sends registration, referral, payer and consent from the shared record, and signed notes, outcome scores and appointments through ports; unsigned drafts are never sent. AC: bundle test with a draft and a signed note.
+- **K2-CF-003** · MVP · done · integration · FC 2.3-03 — "Complete referrer form" on a case opens the existing ClinForms flow with the case's data already loaded (no upload). AC: e2e from case page to approved form.
+- **K2-CF-004** · MVP · done · integration · FC 2.3-05, 2.3-03 — The approved form is filed back to the patient record and listed there; form requests are tracked per case. AC: filed form visible on the record; audited.
 - **K2-CF-005** · MVP · done · foundation · FC none — `medreport` never imports `pms`; `pms` imports only medreport's connector types (generated ESLint boundary). AC: `npm run lint` + contract test.
-- **K2-CF-006** · MVP · missing · integration · FC none — A report completed through the native connector counts against the clinic's Reports allowance exactly like any other (main's plan-and-usage rules, `docs/auth.md` "Packages and usage"). AC: usage test.
+- **K2-CF-006** · MVP · partial · integration · FC none — A report completed through the native connector counts against the clinic's Reports allowance exactly like any other (main's plan-and-usage rules, `docs/auth.md` "Packages and usage"). AC: usage test.
 
 ### 3.17 ADM – admin and settings
 
@@ -772,12 +772,12 @@ Generated from the requirement lines above (§3, §5). "FC" = feature-comparison
 | K2-NOTE-010 | Later | missing | feat/cs-records | 2.2-12, 2.2-13, 2.2-16 | Note-writing aids (snippets), medical history carried across cases, goals |
 | K2-NOTE-011 | Later | missing | feat/cs-records | 2.2-19 | Restrict a case to its own practitioner |
 | K2-LTR-001 | MVP | done | feat/cs-comms | 2.3-01 | Letter templates with merge fields from patient, case, payer, practitioner, appointments, … |
-| K2-LTR-002 | MVP | partial-wt | feat/cs-integration | 2.3-02 | A clinic's own Word/RTF letter templates are filled in their own layout using ClinForms' … |
+| K2-LTR-002 | MVP | partial | feat/cs-integration | 2.3-02 | A clinic's own Word/RTF letter templates are filled in their own layout using ClinForms' … |
 | K2-LTR-003 | MVP | done | feat/cs-comms | 2.3-01 | Recipient: the patient, their GP, the case's payer or referrer, or a typed recipient |
 | K2-LTR-004 | MVP | done | feat/cs-comms | – | A letter cannot be finalised while it contains "[not recorded: …]" or "[[…]]" gaps |
 | K2-LTR-005 | MVP | partial | feat/cs-comms | 2.3-05 | Output: PDF (and Word for Word templates), filed on the patient record, optionally … |
-| K2-LTR-006 | MVP | partial | feat/cs-records | 2.3-04 | Discharge summary letter from the discharge note |
-| K2-LTR-007 | MVP | missing | feat/cs-integration | – | One merge-field engine for letters and ClinForms (reconcile comms `merge-fields.ts` and … |
+| K2-LTR-006 | MVP | done | feat/cs-records | 2.3-04 | Discharge summary letter from the discharge note |
+| K2-LTR-007 | MVP | done | feat/cs-integration | – | One merge-field engine for letters and ClinForms (reconcile comms `merge-fields.ts` and … |
 | K2-FORM-001 | MVP | done | feat/cs-portal | 2.2-21 | Starter new-patient intake and consent forms (written for the product) and clinic copies |
 | K2-FORM-002 | MVP | done | feat/cs-portal | 2.2-21 | Staff send a form link to a patient (e.g |
 | K2-FORM-003 | MVP | done | feat/cs-portal | 2.2-21 | Typed e-signature; answers and typed name encrypted; the copy is sealed by a trigger once … |
@@ -839,22 +839,22 @@ Generated from the requirement lines above (§3, §5). "FC" = feature-comparison
 | K2-REP-005 | MVP | done | feat/clinic-system | 2.6-05 | Revenue (invoiced, paid) and outstanding debt by payer type |
 | K2-REP-006 | MVP | done | feat/clinic-system | 2.6-06 | Caseload and the fixed report library (Attendance and DNA, Utilisation, Caseload, Revenue, Debtors, Authorisations) with CSV of every report (`reports.export`, audited, formula-safe); clinicians own caseload (`reports.own`) |
 | K2-REP-007 | Later | missing | feat/cs-reporting | 2.6-07, 2.6-08, 2.6-09 | Clinical reports, outcome exports (national datasets), custom reports |
-| K2-IMP-001 | MVP | partial-wt | feat/cs-integration | 2.8-01 | CSV import of patients, cases (payer, referrer), appointments (past and future) and … |
-| K2-IMP-002 | MVP | partial-wt | feat/cs-integration | 2.8-01 | Column mapping step (any header naming), saved per clinic; template headers downloadable |
-| K2-IMP-003 | MVP | partial-wt | feat/cs-integration | 2.8-01 | Dry run ("check") with row-level issues; nothing written |
-| K2-IMP-004 | MVP | partial-wt | feat/cs-integration | 2.8-01 | Run in batches of ≤ 40 rows, one audit row per batch; `import_ref` unique per clinic so a … |
-| K2-IMP-005 | MVP | partial-wt | feat/cs-integration | 2.8-01 | Undo a batch while nothing depends on it (`undoBlocker`) |
-| K2-IMP-006 | MVP | missing | feat/cs-integration | 2.8-01 | Import screens `/app/clinic/import/**` (permission `import.run`) |
-| K2-IMP-007 | MVP | missing | feat/cs-integration | 2.8-01 | Treatment authorisations import (code, sessions/value used and remaining, dates) |
+| K2-IMP-001 | MVP | partial | feat/cs-integration | 2.8-01 | CSV import of patients, cases (payer, referrer), appointments (past and future) and … |
+| K2-IMP-002 | MVP | partial | feat/cs-integration | 2.8-01 | Column mapping step (any header naming), saved per clinic; template headers downloadable |
+| K2-IMP-003 | MVP | done | feat/cs-integration | 2.8-01 | Dry run ("check") with row-level issues; nothing written |
+| K2-IMP-004 | MVP | done | feat/cs-integration | 2.8-01 | Run in batches of ≤ 40 rows, one audit row per batch; `import_ref` unique per clinic so a … |
+| K2-IMP-005 | MVP | done | feat/cs-integration | 2.8-01 | Undo a batch while nothing depends on it (`undoBlocker`) |
+| K2-IMP-006 | MVP | done | feat/cs-integration | 2.8-01 | Import screens `/app/clinic/import/**` (permission `import.run`) |
+| K2-IMP-007 | MVP | partial | feat/cs-integration | 2.8-01 | Treatment authorisations import (code, sessions/value used and remaining, dates) |
 | K2-IMP-008 | MVP | missing | feat/cs-integration | 2.8-01 | Reconciliation report per import: counts per kind, open balance per payer and patient, … |
 | K2-IMP-009 | MVP | missing | feat/cs-integration | 2.8-02 | Historic clinical notes and documents stay accessible for the retention period: imported … |
 | K2-IMP-010 | MVP | missing | – | 2.8-01 | Formats are confirmed from Dell's real exit export only after the solicitor's advice and … |
-| K2-CF-001 | MVP | missing | feat/cs-integration | 2.3-03 | Native connector `src/server/pms/native-connector.ts` implementing medreport's connector … |
-| K2-CF-002 | MVP | partial-wt | feat/cs-integration | 2.3-03 | The connector sends registration, referral, payer and consent from the shared record, and … |
-| K2-CF-003 | MVP | missing | feat/cs-integration | 2.3-03 | "Complete referrer form" on a case opens the existing ClinForms flow with the case's data … |
-| K2-CF-004 | MVP | partial-wt | feat/cs-integration | 2.3-05, 2.3-03 | The approved form is filed back to the patient record and listed there; form requests are … |
+| K2-CF-001 | MVP | done | feat/cs-integration | 2.3-03 | Native connector `src/server/pms/native-connector.ts` implementing medreport's connector … |
+| K2-CF-002 | MVP | done | feat/cs-integration | 2.3-03 | The connector sends registration, referral, payer and consent from the shared record, and … |
+| K2-CF-003 | MVP | done | feat/cs-integration | 2.3-03 | "Complete referrer form" on a case opens the existing ClinForms flow with the case's data … |
+| K2-CF-004 | MVP | done | feat/cs-integration | 2.3-05, 2.3-03 | The approved form is filed back to the patient record and listed there; form requests are … |
 | K2-CF-005 | MVP | done | feat/clinic-system | – | `medreport` never imports `pms`; `pms` imports only medreport's connector types … |
-| K2-CF-006 | MVP | missing | feat/cs-integration | – | A report completed through the native connector counts against the clinic's Reports … |
+| K2-CF-006 | MVP | partial | feat/cs-integration | – | A report completed through the native connector counts against the clinic's Reports … |
 | K2-ADM-001 | MVP | done | feat/clinic-system | 2.6-10 | Set-up screens (`/app/clinic/setup/**`, Set-up section nav): sites and hours, closures, rooms, services, price lists, referrers and insurers (payer-account editor), practitioners, record templates + retention, billing settings, report targets, audit trail, import (M9) |
 | K2-ADM-002 | MVP | done | feat/clinic-system | 2.6-11, 2.6-12 | Staff: Staff access / Roles and permissions (access module), link a member to a practitioner (Set-up → Practitioners, M8) |
 | K2-ADM-003 | MVP | done | feat/clinic-system | 2.6-11 | Fixed permission matrix (§2) |

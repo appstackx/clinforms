@@ -1,5 +1,9 @@
 # K2 clinic system – handover
 
+> **Update 29/10/2026 (latest – read §18 first):** M9 integration DONE – native ClinForms connector + "Complete
+> referrer form" (filed back to the case and Forms tab), import from the previous system under Set-up, letters Word/PDF +
+> discharge letter + `{{latest_outcomes}}`, insurer claims screen; merged into `feat/clinic-system` `d2b3d59`.
+
 > **Update 28/10/2026 (latest – read §17 first):** M8 set-up + reports + dashboard DONE – Set-up section (sites and
 > hours = the one opening-hours source, rooms, services, prices, payers, practitioners linking, billing settings with bank
 > details, targets, audit trail), six reports with CSV, "Today" per role, test clock for e2e; merged into
@@ -1054,22 +1058,114 @@ utilisation can show >100 % when appointments sit outside the (changed) hours; b
 **M9 integration** (native connector, "Complete referrer form", import) – running in parallel on `feat/cs-integration`;
 it merges second, so it merges `feat/clinic-system` `9b97f96` in first and re-runs the chain (§18).
 
-## 18. M9 integration (28–29/10/2026) – IN PROGRESS (midpoint)
+## 18. M9 integration (28–29/10/2026) – DONE, merged into `feat/clinic-system`
 
-Branch `feat/cs-integration` (worktree `clinforms-wt/cs-integration`, npm ci done incl. workers/data-gateway;
-`.env.local` copied from cs-reporting – the October one did not source cleanly in a shell). Pushed heads so far:
-`bf32e29` letters/billing, `…` back end + native connector, `064862e` import screens, `d1b8870` tests + seed;
-`feat/clinic-system` `9b97f96` (M8) merged in with no conflicts. If you pick this up: `git -C …/cs-integration log`,
-then continue with the e2e `scripts/e2e/pms-integration.cjs` (runner: scratchpad `run-e2e-m9.sh <script> <port> <out> [dev]`,
-ports 3190–3199), the full chain, the merge into `feat/clinic-system`, and §18 final.
+**Heads (all pushed; `main` untouched):** `feat/cs-integration` **`bbcce64`** · `feat/clinic-system` **`d2b3d59`** (merge of
+`feat/cs-integration`, tree identical to it; `feat/clinic-system` was still at M8's `9b97f96`, already merged in).
+M9b polish (`feat/cs-polish`) had not merged when this landed – whoever merges second merges the other in first.
 
-Done so far (details in the commits): review fixes on the October draft (import batch audits now in the same batch as
-the change; appointment import through the diary; 7-day undo; clinical prefill only with clinical.view); native
-connector (`src/server/pms/native-connector.ts`, glue `get("native")` only, never listed); "Complete referrer form" on
-the case (picker of the clinic's ClinForms library → Studio with the case loaded → approve → filed to the case and the
-Forms tab with approver and time); product switch above the Studio; import screens under Set-up → Import data; letters
-Word/PDF, `{{latest_outcomes}}`, discharge letter, one merge-field engine; insurer claims screen; `billing.md`; suite on
-4 backends + 50,000-row import test + 2,000 rows through the D1 stand-in; demo seed (sample forms, Emily Turner walk).
+| Commit on `feat/cs-integration` | What |
+|---|---|
+| `88981bf` | `feat/clinic-system` `caa9b4d` merged into the October draft `b7fd14d` (no conflicts) |
+| `bf32e29` | Letters: one merge-field engine (LTR-007), `{{latest_outcomes}}`, `{{case.discharge_date}}`, discharge letter (LTR-006), Word/PDF output (LTR-002/005); insurer claims screen (BILL-011); `billing.md` |
+| `8994e40` | Back end review fixes; native connector; Complete referrer form; filed forms; ClinForms hand-over/file-back; product switch |
+| `afc18da` | `feat/clinic-system` `9b97f96` (M8) merged in (no conflicts) |
+| `064862e` | Import screens under Set-up → Import data (replaces M8's placeholder; `reporting.import` in SETUP_ORDER) |
+| `d1b8870` | Suite on 4 backends, 50,000-row import test, D1 stand-in at 2,000, demo seed `seed-integration.ts` |
+| `ca8f080` `198e557` `bbcce64` | e2e `pms-integration.cjs`; column matching; neutral source wording for native reports; chain fixes |
+
+### 18.1 Review findings on the October draft (fixed)
+1. **Audit after the change** on every import batch transition (upload, map, approve, cancel, close, check/import/undo
+   finish): now one batch with a conditional audit INSERT on the new revision (`batchAuditWhen`).
+2. **No adapters wired** (records/diary/billing ports were null): records and diary adapters
+   (`src/server/pms/integration/adapters.ts`); billing stays unwired – invoices can be CHECKED, not run.
+3. **Clinical data to ClinForms for anyone**: the bundle now reads signed notes and outcomes only with `clinical.view`,
+   the referral reason only with `patients.referral`; never drafts or notes entered in error.
+4. **No undo window / undo semantics**: 7 days (design); patients and cases archived (import reference released),
+   appointments the import made deleted only if unchanged and nothing points at them; anything changed is kept.
+5. Missing pieces: `native-connector.ts`, glue registration, screens, repo suite, D1 test (all built now).
+6. `"native"` in ClinForms' `ConnectorIdSchema` breaks the forward-compat guard (production cannot read such a report)
+   – listed as `PENDING_SHIM_ON_MAIN` in `scripts/medreport/schema-forward-compat.test.ts` (see decisions).
+
+### 18.2 What is built
+- **Native connector (CF-001/002)** `src/server/pms/native-connector.ts`, registered in `src/app/api/_medreport-glue.ts`
+  (`connectorRegistry()`: `get("native")` only, never in `list()`/tiles). Every call re-checks the signed-in member
+  (same clinic, clinic-system package, `patients.view`, site scope); reads (`pms.native.bundle_read`) and filings
+  (`pms.filed_form.create`) audited; in-process (no HTTP to itself).
+- **Complete referrer form (CF-003/004)**: case page panel "Referrer and insurer forms" → "Complete referrer form" →
+  picker of the clinic's ClinForms library (confirmed forms; the case's insurer/referrer's first) + consent tick →
+  request recorded (`pms_form_requests`: form, title, clinical prefill, status) → in-process launch token →
+  `/app/studio/new?lt=…&form=…` → Studio shows the hand-over banner ("Opened from … When you approve, the form is filed
+  back on the case", "← Back to the record without filing") → approve → **filed automatically once** (native only;
+  "Save to clinic record" stays for a retry) → `pms_filed_forms` (+ request marked filed in the same batch) → case
+  panel and the record's **Forms tab** show "Approved by Priya Shah (PH-DEMO-03) on dd/mm/yyyy at hh:mm · PDF, n KB",
+  View PDF (`clinical.view` only, audited `pms.filed_form.view`). Reception may start a form; ClinForms then gets no
+  clinical prefill.
+- **ClinForms changes (all guarded by connector "native" or the clinic package; other clinics unchanged):** file-back
+  allowed for native, hand-over banner, auto-file, `clinicRecordUrl` for native → the case, "From clinic records" /
+  "from the patient's record in the clinic system" wording, product switch bar above the Studio only for clinics with
+  the clinic system; shell's ClinForms link now `/app/studio`.
+- **Import (IMP-001…007)** Set-up → Import data (`/app/clinic/setup/import`, `settings.import`): kind + CSV (parsed in the
+  browser, sent in parts of 500) → map columns (examples, CamelCase/abbreviated names matched) → check (Ready /
+  Warnings / Errors, issues list, nothing written) → "Import N …" after ticking the issues were seen → progress page by
+  page (resumes after reload) → Done with undo (7 days) → re-run finds every row already in the clinic. Kinds:
+  patients, cases (payer, referrer, authorisation), appointments (into the diary; clash rows skipped); invoices check
+  only. CSV templates per kind.
+- **Letters**: see `bf32e29` (Word = pizzip-built .docx, PDF = @react-pdf with the bundled DejaVu font; buttons in the
+  editor; `/app/clinic/letters/[id]/file?format=pdf|docx`, `messages.letters`, audited `pms.letter.download`).
+- **Claims screen** `/app/clinic/billing/claims` (billing.view; download also reports.export).
+- **Seed** `scripts/pms/seed-integration.ts` (from `seed-demo.ts`): Northfield + Harrow & Pike sample forms in the
+  library (attested, files stored), Emily Turner (sim-int-001) / "Right shoulder – rotator cuff" / Northfield Assurance
+  / NA-55021 / signed note / NPRS. The ClinForms demo-clinic flag (PH-DEMO numbers may approve) is set only by
+  `npm run admin:set-demo-clinic -- --slug riverside-demo --on` (ClinForms staff only – the e2e runner does it).
+
+### 18.3 Results
+Full chain on `ca8f080`, then typecheck, lint, test:pms, test:db, test:medreport again on `198e557` (later commits change only tests, the seed and e2e; `bbcce64` = `d2b3d59`): typecheck, lint green; **test:pms 650/650**; test:medreport 1776 pass / 1 fail / 3
+skipped – the fail is the known timing check `wc-fix2-store.test.ts` R2-SEC-2 (1020 ms vs 1 s under load; 19/19 on
+rerun); **test:db 1050/0/3**; test:auth 134/0; test:site 125/0; **test:gateway 608/0/2** (incl. pms-integration-stack:
+D1 stand-in + local workerd D1 + 2,000 rows); build green.
+Import at scale: **50,000 patients on SQLite** upload 0.8 s, check+import 25 s, re-run check 6 s, undo 35 s; **50,000 on
+PGlite** (measured once, `IMPORT_SCALE_PGLITE_ROWS=50000`): check+import 316 s, re-run 24 s, undo 135 s – the chain runs
+PGlite at 5,000; D1 stand-in 2,000: check+import 0.8 s, undo 1.8 s.
+E2E (fresh `pms:seed-demo -- --fresh` scratch SQLite, production build, ports 3190–3198, servers stopped):
+**pms-integration 14/14** (three runs), pms-records-screens 17/17, pms-billing-screens 21/21 (stub), clinic-system-shell
+10/10, pms-setup-reports 13/13 (dev + test clock, as M8 runs it; in prod mode its 375 px step timed out on
+networkidle). **Forms regression vs `main`** (`forms-regression.cjs` on a build of `origin/main` cae0c3f and of this
+branch, public demo, `compare-form-outputs.ts`): **all 5 files match** (2 PDFs identical, 3 Word files equivalent – only
+ZIP container bytes differ).
+Screenshots: `/private/tmp/claude-501/-Users-khuram-Projects-Appstackx-bh2-handover/ef471414-85b1-422d-bf98-018c56c69aec/scratchpad/k2design/out-integration/`.
+Runner: scratchpad `run-e2e-m9.sh <script> <port> <out> [dev] [ENV=…]`; forms regression `forms-reg.sh <checkout> <port> <out>`
+(a detached `origin/main` worktree at scratchpad `main-ref` – remove it with `git worktree remove` when convenient).
+
+### 18.4 Differences from the design
+- Picker shows the whole confirmed library (case's referrer/insurer first, "for this case" / "other referrer") rather
+  than only the filtered forms; consent is a tick in the picker.
+- ClinForms keeps its own review screen (questions, flags, approve dialog), not the design's single-column form; the
+  hand-over banner and "Approve → filed to the case" behaviour are as drawn. "Send to insurer" on the filed form is not built.
+- Import: no separate "Default site" field (site per row / practitioner's default); undone patients/cases are
+  **archived** (references released), not deleted; no "Download skipped rows"; "Possible duplicate of X" warning by
+  name + DOB not built (duplicates are by the previous system's reference).
+- Letter editor stays plain text (no rich-text toolbar) – Word/PDF downloads added.
+
+### 18.5 Open items
+1. **Shim on `main` for connector id "native"** before the clinic system goes to production (forward-compat guard).
+2. Invoices/opening balances import (billing port), reconciliation report (IMP-008), historic notes/documents archive
+   (IMP-009), mapping saved per clinic (IMP-002), possible-duplicate warning, "Download skipped rows".
+3. Imported future appointments get no confirmation/reminder messages (bulk insert bypasses the comms hook) – decide.
+4. A clinic's own Word/RTF letter templates filled in their layout (rest of LTR-002); portal sharing of letters.
+5. CF-006: usage counting is connector-agnostic in ClinForms (`api/usage.ts`) – no dedicated native usage test yet.
+6. Studio launch skips `assertTenantMayCreate` (trial ended) at launch; the Studio's own create checks still apply.
+7. pms-setup-reports 375 px step in prod mode (networkidle) – M8 owner to check.
+8. `.env.local` of cs-integration replaced by cs-reporting's copy (original backed up in the session scratchpad).
+
+### 18.6 Decisions taken (defaults implemented – Khuram to confirm)
+1. Reception may start "Complete referrer form" but ClinForms gets no clinical notes/outcomes from their account.
+2. Filed referrer forms are clinical: list visible with `patients.view`, file only with `clinical.view`.
+3. Import undo: patients/cases archived (never deleted – contract), appointments deleted when untouched; 7 days.
+4. "Import N" needs a tick that the issues were looked at (replaces the draft's staff sample check).
+5. Native approval auto-files once (design "Approve and file to case").
+6. 50,000-row PGlite run kept out of the everyday chain (8 min); SQLite 50,000 stays in.
+7. `"native"` kept in ClinForms' enum with the guard exception rather than a new connector-id mechanism.
 
 ## 19. M9b polish (28–29/10/2026) – IN PROGRESS (midpoint)
 
