@@ -148,6 +148,7 @@ export const LOCK_REASONS = {
   owner: "Owner always has full access",
   ownerOnly: "Only the owner can change the owner",
   noClinical: "Reception can never see clinical note content",
+  managersOnly: "Only the owner and administrators manage members and permissions",
 } as const;
 
 /** Reception's permissions that are locked off: every clinical permission and clinical letters. */
@@ -164,6 +165,9 @@ export function lockOf(role: PmsRole, permission: AccessPermission): AccessLock 
   if (role === "owner") return { value: true, reason: LOCK_REASONS.owner };
   if (permission === "settings.owner") return { value: false, reason: LOCK_REASONS.ownerOnly };
   if (role === "staff" && RECEPTION_NEVER.has(permission)) return { value: false, reason: LOCK_REASONS.noClinical };
+  // M10 H4: managing access is for the owner and administrators only – a clinician or reception granted it could widen
+  // their own role's rights through the grid.
+  if (permission === "settings.members" && (role === "clinician" || role === "staff")) return { value: false, reason: LOCK_REASONS.managersOnly };
   return null;
 }
 

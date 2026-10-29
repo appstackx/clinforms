@@ -1,7 +1,9 @@
 /**
  * The subject-access copy of one patient's record as a download (PDF or JSON). Rules: ./access.ts.
  *
- *   reports.export – owner / administrator only (clinicians and reception cannot export)
+ *   reports.export AND clinical.view – owner / administrator by default (M10 H1: reports.export alone can be
+ *   granted to reception, and the copy holds every note and outcome; a member who may not see clinical content
+ *   cannot download it)
  *
  * The export itself is recorded in the patient's history (pms.patient.export, with the format – no content).
  */
@@ -32,7 +34,7 @@ export interface ExportOptions {
 }
 
 export async function subjectAccessExportFor(actor: RecordsActor, patientId: string, format: ExportFormat, options: ExportOptions): Promise<Result<ExportFile>> {
-  const denied = guard(actor, "reports.export");
+  const denied = guard(actor, "reports.export", "clinical.view");
   if (denied) return denied;
   if (format !== "pdf" && format !== "json") return fail("invalid", "Choose PDF or JSON.");
   return attempt("subject_access_export", async () => {

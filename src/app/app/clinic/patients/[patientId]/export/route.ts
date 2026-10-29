@@ -1,6 +1,6 @@
 /**
  * GET /app/clinic/patients/[patientId]/export?format=pdf|json – the subject-access copy of the patient's record
- * (UK GDPR Article 15): everything the clinic system holds about this one patient. reports.export (owner /
+ * (UK GDPR Article 15): everything the clinic system holds about this one patient. reports.export + clinical.view (owner /
  * administrator) in clinicRoute and again in the records service; recorded in the patient's history. Always a
  * download, never cached.
  */

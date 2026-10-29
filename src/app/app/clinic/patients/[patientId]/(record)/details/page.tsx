@@ -47,6 +47,8 @@ export default async function PatientDetailsPage({ params }: { params: { patient
   const canEdit = actor.can("patients.edit") && !anonymised;
   const canHold = actor.can("settings.setup");
   const canAnonymise = actor.can("patients.merge");
+  // M10 H1: the copy holds every note and outcome – reports.export AND clinical.view.
+  const canSubjectAccess = actor.can("reports.export") && actor.can("clinical.view");
   const marketing = [patient.marketingEmail ? "email" : null, patient.marketingSms ? "text" : null].filter(Boolean).join(" and ");
 
   return (
@@ -189,9 +191,9 @@ export default async function PatientDetailsPage({ params }: { params: { patient
             ) : null}
           </div>
         </Panel>
-        {actor.can("reports.export") || canAnonymise ? (
+        {canSubjectAccess || canAnonymise ? (
           <Panel title="Data rights">
-            {actor.can("reports.export") ? (
+            {canSubjectAccess ? (
               <>
                 <p className="text-sm text-[#334155]">A copy of everything held about the patient, for a subject access request.</p>
                 <ul className="mt-2 space-y-1 text-sm">

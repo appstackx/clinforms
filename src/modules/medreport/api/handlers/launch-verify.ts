@@ -13,7 +13,8 @@ import "server-only";
  * - a clinic's launch: only that clinic's signed-in member (auth/actor.ts; 401 without a sign-in,
  *   403 TWO_FACTOR_REQUIRED, 403 TENANT_MISMATCH for another clinic's member). The session it returns
  *   narrows the member to the launched episode ("user+launch") while it is sent alongside the sign-in.
- *   Checked BEFORE the token is used up, so a member who signs in first can still open the link.
+ *   Checked BEFORE the token is used up, so a member who signs in first can still open the link. A token naming
+ *   `forUserId` (the host's in-app launch, M10 L7) opens only for that member (403).
  *
  * Each launch token is exchanged ONCE: its `jti` is claimed in the shared store (MedreportDeps.sharedState →
  * launch_token_uses), so a replay is refused on every server instance. A clinic's launch is refused
@@ -66,6 +67,14 @@ export const handleLaunchVerify: MedreportHandler = async (req, _ctx, deps) => {
       throw new HttpError(401, WORDING.server.access.signInTitle, { code: "UNAUTHORIZED", detail: WORDING.server.access.clinicSignInDetail });
     }
     assertActorTenant(actor, claims.tenantId, "launch link");
+    // M10 L7: a launch issued for one member (the host's in-app launch) opens only for that member.
+    if (claims.forUserId && actor.userId !== claims.forUserId) {
+      logEvent("launch_verify_failed", { reason: "other_member" });
+      throw new HttpError(403, "This link was opened for another member", {
+        code: "TENANT_MISMATCH",
+        detail: "Open the form again from the patient's case while signed in as yourself.",
+      });
+    }
   }
 
   if (!claims.jti || !(await claimOnce(deps, `launch:${claims.jti}`, claims.exp * 1000, { requireShared: !demo }))) {

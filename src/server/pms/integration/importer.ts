@@ -365,7 +365,8 @@ async function notClaimed(
       remaining: 0,
       counts: b.counts,
     };
-  if (b.leaseUntil)
+  // M10 L3: an approved import waits while another import of the same kind writes (claimImportStep) – busy, not wrong.
+  if (b.leaseUntil || (doneStatus === "imported" && (b.status === "approved" || b.status === "importing")))
     return {
       status: b.status,
       done: false,

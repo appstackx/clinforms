@@ -47,6 +47,8 @@ import { partnerKeyTenant, verifyPartnerKey } from "@/server/repos/partner-keys"
 import { hitRateLimit, peekRateLimit, resetRateLimit } from "@/server/repos/rate-limits";
 import { dbUsageRecorder } from "@/server/usage/recorder";
 import { createNativeConnector } from "@/server/pms/native-connector";
+import { clinicalAccessFrom, mayReadNativeReport } from "@/server/pms/native-report-access";
+import { hasPackage } from "@/server/pms/entitlements";
 import { tenantDeps } from "./_medreport-tenant";
 
 /** After HTTP to the simulated API fails once, use in-process calls for this long (per instance). */
@@ -235,7 +237,8 @@ function sharedStateForEnv(): SharedStateStore | undefined {
 }
 
 /** The host capabilities of wave 2 (database-backed; see the header). */
-export function hostCapabilities(): Pick<MedreportDeps, "authenticate" | "clinicProfile" | "sharedState" | "audit" | "verifyPartnerKey" | "usage"> {
+export function hostCapabilities(): Pick<MedreportDeps, "authenticate" | "clinicProfile" | "sharedState" | "audit" | "verifyPartnerKey" | "usage" | "mayReadReport" | "restrictsReports"> {
+  const clinicalAccess = clinicalAccessFrom(() => ({ db: getDb() }));
   return {
     authenticate: authenticateMember,
     clinicProfile: (tenantId) => loadClinicProfile(getDb(), tenantId),
@@ -244,6 +247,10 @@ export function hostCapabilities(): Pick<MedreportDeps, "authenticate" | "clinic
     verifyPartnerKey: dbPartnerKeys(getDb),
     // Only ever called for a signed-in clinic member (api/usage.ts skips the public demo), so the demo never needs a database.
     usage: dbUsageRecorder(getDb),
+    // M10 H2: a report drafted from the clinic system's own record with clinical content needs the member's
+    // clinic-system clinical.view; every other report is readable as before (src/server/pms/native-report-access.ts).
+    mayReadReport: (actor, report) => mayReadNativeReport(actor, report, clinicalAccess),
+    restrictsReports: (tenantId) => hasPackage(tenantId, "clinic"),
   };
 }
 

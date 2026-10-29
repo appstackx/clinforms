@@ -100,6 +100,8 @@ export const PORTAL_TIMINGS = {
   touchEveryMinutes: 5,
   /** A form handed to the patient on a clinic device can be completed for this long. */
   handoffMinutes: 30,
+  /** The code that pairs a clinic device with a hand-off works once, for this long (M10 H3). */
+  pairCodeMinutes: 10,
 } as const;
 
 /** Whether a portal session is still usable. */

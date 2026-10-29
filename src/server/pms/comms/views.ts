@@ -57,6 +57,7 @@ import { providerStatus } from "./providers";
 import { clinicContact, composeMessage } from "./render";
 import { signatureLine } from "./letters";
 import { pmsNowMs } from "../../../modules/pms/core/clock";
+import { canResendKind, redactSecretLinks } from "../../../modules/pms/comms/secret-links";
 
 export type CommsActor = RecordsActor;
 
@@ -123,7 +124,7 @@ function messageRow(actor: CommsActor, m: MessageSummary, names: Map<string, str
     summary: summaryOf(kind, sch?.startsAt ?? null),
     state,
     why: state === "held" && m.holdUntil ? `Quiet hours – will send ${formatAppointmentTime(m.holdUntil)}` : state === "failed" ? (ERROR_LABELS[m.errorCode ?? ""] ?? "Not delivered") : state === "outbox" ? "Kept in the outbox – not sent" : m.attempts > 1 && state === "sent" ? `Sent on try ${m.attempts}` : null,
-    canRetry: state === "failed" && actor.can("messages.send") && canSeeMessage(actor, m),
+    canRetry: state === "failed" && actor.can("messages.send") && canSeeMessage(actor, m) && canResendKind(m.kind),
   };
 }
 
@@ -227,7 +228,9 @@ export async function messageDetailFor(actor: CommsActor, messageId: unknown): P
     const names = await namesOf(actor, [m.patientId]);
     const sch = await scheduleByMessageIds(ctx, actor.tenantId, [m.id]);
     const row = messageRow(actor, m, names, sch);
-    return ok({ message: m, patientName: row.patientName, summary: row.summary, why: row.why });
+    // A sign-in link is a key to the patient's portal: staff never see it (M10 C1; copies from before are hidden too).
+    const shown: Message = { ...m, subject: m.subject === null ? null : redactSecretLinks(m.subject), body: redactSecretLinks(m.body) };
+    return ok({ message: shown, patientName: row.patientName, summary: row.summary, why: row.why });
   });
 }
 
@@ -277,7 +280,7 @@ export async function replyThreadFor(actor: CommsActor, replyId: unknown): Promi
       id: m.id,
       direction: m.direction,
       channel: m.channel,
-      text: m.body,
+      text: redactSecretLinks(m.body),
       at: m.sentAt ?? m.createdAt,
       label:
         m.direction === "inbound"
