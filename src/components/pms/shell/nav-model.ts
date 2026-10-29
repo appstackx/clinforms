@@ -33,6 +33,8 @@ export interface ShellNavItem {
   id: string;
   href: string;
   label: string;
+  /** The full name, shown on hover, when the label is a shortened one. */
+  title?: string;
   icon: ShellNavIcon;
   /** Current only on exactly this address (a section's start page, e.g. the overview). */
   exact: boolean;

@@ -152,7 +152,7 @@ export function DataTable<T>({
                         className={cn("px-4 py-2.5 align-middle", col.align === "right" && "text-right", col.numeric && "tabular-nums", col.className)}
                         style={col.truncateAt ? { maxWidth: col.truncateAt } : undefined}
                       >
-                        {col.truncateAt ? <span className="block truncate">{col.cell(row)}</span> : col.cell(row)}
+                        {col.truncateAt ? <TruncatedCell value={col.cell(row)} /> : col.cell(row)}
                       </td>
                     ))}
                   </tr>
@@ -185,5 +185,14 @@ export function DataCard({ title, status, meta, figure, className }: { title: Re
       {meta ? <div className="truncate text-[#475569]">{meta}</div> : null}
       {figure ? <div className="text-base font-semibold tabular-nums">{figure}</div> : null}
     </div>
+  );
+}
+
+/** A cell cut off at its column's width: the full text shows on hover (and stays in the accessible name). */
+function TruncatedCell({ value }: { value: React.ReactNode }) {
+  return (
+    <span className="block truncate" title={typeof value === "string" || typeof value === "number" ? String(value) : undefined}>
+      {value}
+    </span>
   );
 }

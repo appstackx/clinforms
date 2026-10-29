@@ -69,7 +69,7 @@ export function SetupList({ items, label, empty, testId }: { items: SetupListIte
                 setupFocus,
               )}
             >
-              <span className={cn("min-w-0 flex-1 truncate", x.muted && "text-[#64748B]")}>{x.label}</span>
+              <span className={cn("min-w-0 flex-1 truncate", x.muted && "text-[#64748B]")} title={x.label}>{x.label}</span>
               {x.meta ? <span className="shrink-0 text-xs font-normal text-[#475569]">{x.meta}</span> : null}
             </Link>
           </li>

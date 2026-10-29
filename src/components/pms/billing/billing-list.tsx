@@ -346,7 +346,7 @@ function AgedDebt({ aged }: { aged: AgedDebtView }) {
         {aged.largest.length === 0 ? <p className="text-sm text-[#475569]">Nothing overdue.</p> : null}
         {aged.largest.map((d) => (
           <div key={d.key} className="flex items-center gap-2 text-sm">
-            <span className="min-w-0 flex-1 truncate">{d.name}</span>
+            <span className="min-w-0 flex-1 truncate" title={d.name}>{d.name}</span>
             <span className="text-xs text-[#475569]">{d.daysOverdue} days</span>
             <span className="font-semibold tabular-nums">{money(d.amountPence)}</span>
             <Link
