@@ -145,6 +145,8 @@ const navLabels = (page) => page.locator("header nav[aria-label='Clinic'] a").al
     await step("A: /app/clinic shows the demo clinic (figures, sites, practitioners, demo notice)", async () => {
       await a.click("header nav[aria-label='Clinic'] >> text=Clinic system");
       await a.waitForURL(`${BASE}/app/clinic`);
+      // The section's loading skeleton (loading.tsx) shows first on a client navigation: wait for the page itself.
+      await a.locator("[data-testid='dashboard']").waitFor();
       // innerText applies CSS text-transform (the figures' labels are upper case on screen): compare in lower case.
       const text = (await a.locator("main").innerText()).toLowerCase();
       // M8: the start page is "Today" (the dashboard per role) – the owner's figures and cards, the demo notice.
