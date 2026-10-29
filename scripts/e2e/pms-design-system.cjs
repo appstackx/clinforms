@@ -163,13 +163,35 @@ const isoPlus = (iso, n) => new Date(Date.parse(`${iso}T12:00:00Z`) + n * 86400e
         assert((await h.count()) === 1, `missing section ${id}`);
         assert((await h.innerText()).startsWith(title), `${id} heading: ${await h.innerText()}`);
       }
-      const stub = await page.locator("[data-testid=context-menu-stub]").innerText();
-      assert(/Right-click a diary block/.test(stub), "context-menu placeholder text");
+      assert((await page.locator("[data-testid=context-menu-demo] button").count()) >= 1, "the context menu example's diary block");
       assert((await page.locator("[data-testid=s-charts] svg[role=img]").count()) === 3, "three charts");
       await page.screenshot({ path: path.join(OUT, "1440-full.png"), fullPage: true });
     });
 
     await step("axe – 1440 px", async () => axe(page, "1440"));
+
+    await step("context menu: Shift+F10 on the block opens it, arrows skip the disabled item, Enter chooses, focus returns", async () => {
+      const block = page.locator("[data-testid=context-menu-demo] button").first();
+      await block.focus();
+      await page.keyboard.press("Shift+F10");
+      const menu = page.locator("[role=menu][aria-label='Actions for Fatima Begum (fictional)']");
+      await menu.waitFor();
+      await page.waitForFunction(() => document.activeElement && document.activeElement.getAttribute("role") === "menuitem");
+      await page.keyboard.press("End");
+      assert((await page.evaluate(() => document.activeElement.textContent)).includes("Cancel"), "End → the last item");
+      await page.keyboard.press("ArrowUp");
+      assert((await page.evaluate(() => document.activeElement.textContent)).includes("Take payment"), "the disabled item is skipped");
+      await axe(page, "context menu open");
+      await page.screenshot({ path: path.join(OUT, "1440-context-menu-open.png") });
+      await page.keyboard.press("Enter");
+      await menu.waitFor({ state: "detached" });
+      await page.waitForSelector("[data-testid=context-menu-demo] >> text=Chosen: Take payment");
+      assert(await block.evaluate((el) => el === document.activeElement), "focus back on the block");
+      await block.click({ button: "right" });
+      await menu.waitFor();
+      await page.keyboard.press("Escape");
+      await menu.waitFor({ state: "detached" });
+    });
 
     await step("date picker by keyboard: open, move a day, pick, Esc returns focus", async () => {
       const input = page.locator("#ds-pick-date");

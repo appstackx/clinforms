@@ -6,6 +6,7 @@
  * changes and locked banners. Fixed fictional examples only; nothing is saved.
  */
 import * as React from "react";
+import { ContextMenu, isContextMenuKey, pointOf, type ContextMenuItem } from "@/components/pms/ui/context-menu";
 import { ChevronDown, CreditCard, FileText, Info, Printer, UserCheck, UserX, XCircle, Activity, RotateCcw } from "lucide-react";
 import {
   addDays,
@@ -218,15 +219,8 @@ export function PartAShowcase() {
         </div>
       </Section>
 
-      {/* CONTEXT MENU STUB – src/components/pms/ui/context-menu.tsx is built on a separate branch; the lead wires it in
-          here after merging (right-click / Shift+F10 / the Menu key on the block below opens the block's actions). */}
-      <Section id="s-context-menu" title="Context menu" aside="ContextMenu" intro="Right-click a diary block (or focus it and press Shift+F10) for the same actions as its drawer.">
-        <div className={`${card} flex flex-wrap items-start gap-4 p-6`} data-testid="context-menu-stub">
-          <div className="w-[240px] max-w-full">
-            <DiaryBlock status="booked" start="14:15" end="14:45" title="Fatima Begum" detail="Follow-up" />
-          </div>
-          <p className={`${caption} max-w-[360px]`}>Right-click a diary block – the context menu component is added to this example when it lands.</p>
-        </div>
+      <Section id="s-context-menu" title="Context menu" aside="ContextMenu" intro="Right-click a diary block (or focus it and press Shift+F10 or the Menu key) for the same actions as its drawer.">
+        <ContextMenuDemo />
       </Section>
 
       <Section id="s-tooltip" title="Tooltip and popover" aside="PmsTooltip, PmsPopover" intro="Tooltips open on hover and keyboard focus and only repeat what is on screen. A popover holds a little extra detail; Esc closes it and focus returns to its button.">
@@ -412,3 +406,44 @@ export function PartAShowcase() {
   );
 }
 
+
+/** The diary block's context menu (the diary uses the same component with the drawer's actions). */
+function ContextMenuDemo() {
+  const [menu, setMenu] = React.useState<{ x: number; y: number } | null>(null);
+  const [chosen, setChosen] = React.useState<string | null>(null);
+  const items: ContextMenuItem[] = [
+    { key: "open", label: "Open details", onSelect: () => setChosen("Open details") },
+    { key: "arrived", label: "Mark as arrived", onSelect: () => setChosen("Mark as arrived"), separatorBefore: true },
+    { key: "move", label: "Move", shortcut: "M", onSelect: () => setChosen("Move") },
+    { key: "pay", label: "Take payment", onSelect: () => setChosen("Take payment") },
+    { key: "dna", label: "Did not attend", disabled: true, onSelect: () => undefined },
+    { key: "cancel", label: "Cancel…", danger: true, separatorBefore: true, onSelect: () => setChosen("Cancel…") },
+  ];
+  return (
+    <div className={`${card} flex flex-wrap items-start gap-4 p-6`} data-testid="context-menu-demo">
+      <div className="w-[240px] max-w-full">
+        <DiaryBlock
+          status="booked"
+          start="14:15"
+          end="14:45"
+          title="Fatima Begum"
+          detail="Follow-up"
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setMenu({ x: e.clientX, y: e.clientY });
+          }}
+          onKeyDown={(e) => {
+            if (isContextMenuKey(e)) {
+              e.preventDefault();
+              setMenu(pointOf(e.currentTarget));
+            }
+          }}
+        />
+      </div>
+      <p className={`${caption} max-w-[360px]`} role="status">
+        {chosen ? `Chosen: ${chosen}` : "Right-click the block, or focus it and press Shift+F10."}
+      </p>
+      <ContextMenu open={Boolean(menu)} point={menu} label="Actions for Fatima Begum (fictional)" items={items} onClose={() => setMenu(null)} />
+    </div>
+  );
+}
