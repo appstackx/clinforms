@@ -6,7 +6,7 @@
 import * as React from "react";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -26,19 +26,39 @@ const PUBLIC = "src/app/(public-clinic)/clinics/[clinicId]";
 
 const STAFF_SECTIONS = ["", "diary", "patients", "patients/[patientId]", "patients/[patientId]/(record)", "billing", "messages", "letters", "intake", "online-booking", "reports", "setup", "access", "account"];
 const PUBLIC_SECTIONS = ["", "book", "booking", "portal"];
+/**
+ * Public sections whose pages redirect (portal sign-in) or answer 404 (an unknown clinic, link or booking): no
+ * loading skeleton there – it would stream status 200 before the redirect / 404 (M10 decision). Error pages only.
+ */
+const PUBLIC_NO_SKELETON = new Set(["", "booking", "portal"]);
 
-const sections = [...STAFF_SECTIONS.map((s) => path.join(STAFF, s)), ...PUBLIC_SECTIONS.map((s) => path.join(PUBLIC, s))];
+const sections = [...STAFF_SECTIONS.map((s) => [path.join(STAFF, s), true] as const), ...PUBLIC_SECTIONS.map((s) => [path.join(PUBLIC, s), !PUBLIC_NO_SKELETON.has(s)] as const)];
 
 describe("route boundaries – every clinic and public section", () => {
-  for (const dir of sections) {
-    it(`${dir} has loading.tsx and a client error.tsx`, () => {
+  for (const [dir, skeleton] of sections) {
+    it(`${dir} has ${skeleton ? "loading.tsx and " : ""}a client error.tsx`, () => {
       assert.ok(existsSync(path.join(ROOT, dir)), `${dir} exists`);
-      assert.ok(existsSync(path.join(ROOT, dir, "loading.tsx")), `${dir}/loading.tsx`);
+      assert.equal(existsSync(path.join(ROOT, dir, "loading.tsx")), skeleton, `${dir}/loading.tsx`);
       const error = path.join(ROOT, dir, "error.tsx");
       assert.ok(existsSync(error), `${dir}/error.tsx`);
       assert.match(readFileSync(error, "utf8"), /^"use client";/, `${dir}/error.tsx is a client component`);
     });
   }
+});
+
+/** Every staff page that needs a permission checks it in generateMetadata too (src/server/pms/page-gate.ts). */
+function pagesUnder(dir: string): string[] {
+  return readdirSync(path.join(ROOT, dir), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? pagesUnder(path.join(dir, e.name)) : e.name === "page.tsx" ? [path.join(dir, e.name)] : []));
+}
+describe("a page's 404 / redirect is answered before its loading skeleton streams", () => {
+  it("each /app/clinic page with a permission or its own 404 / redirect has a generateMetadata that runs the same check", () => {
+    const missing = pagesUnder(STAFF).filter((f) => {
+      const src = readFileSync(path.join(ROOT, f), "utf8");
+      const gated = /requireClinicActor\(\{ permission:|notFound\(\)|redirect\(/.test(src);
+      return gated && !/export (const|async function|function) generateMetadata/.test(src);
+    });
+    assert.deepEqual(missing, []);
+  });
 });
 
 const boom = Object.assign(new Error("relation pms.secret_table does not exist at db.ts:42"), { digest: "123456789" });

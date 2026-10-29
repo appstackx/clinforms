@@ -1,4 +1,3 @@
-import type { Metadata } from "next";
 import { CaseForm } from "@/components/pms/records/case-forms";
 import { SectionHeader, TextLinkTo } from "@/components/pms/records/ui";
 import { ukToday } from "@/modules/pms/core/text";
@@ -8,9 +7,10 @@ import { currentPractitionerId } from "@/server/pms/actor";
 import { patientOr404, patientPath } from "@/server/pms/records/record";
 import { openCase } from "../actions";
 import { caseContributionFor } from "@/server/pms/billing/views";
+import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Open a case" };
+export const generateMetadata = gatedMetadata({ title: "Open a case" }, "patients.edit");
 
 export default async function NewCasePage({ params }: { params: { patientId: string } }) {
   const actor = await requireClinicActor({ permission: "patients.edit" });

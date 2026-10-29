@@ -1,4 +1,3 @@
-import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Card as Panel } from "@/components/pms/records/ui";
 import {
@@ -53,9 +52,10 @@ import {
   effectiveContributionMode,
 } from "@/modules/pms/billing/excess";
 import { caseContributionFor } from "@/server/pms/billing/views";
+import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Case" };
+export const generateMetadata = gatedMetadata({ title: "Case" }, "patients.view");
 
 /** Keeps a record's current choice in a list of choices even when it is no longer in use (so a save never drops it). */
 function withCurrent(

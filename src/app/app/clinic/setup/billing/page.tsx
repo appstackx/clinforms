@@ -1,10 +1,10 @@
-import type { Metadata } from "next";
 import { BillingSetup } from "@/components/pms/reporting/setup-pages";
 import { requireClinicActor } from "@/server/pms/actor";
 import { billingSettingsFor } from "@/server/pms/reporting/setup";
+import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Billing settings" };
+export const generateMetadata = gatedMetadata({ title: "Billing settings" }, "settings.setup");
 
 /** /app/clinic/setup/billing – Set-up → Billing settings (VAT, numbers, terms, charges, bank details – K2-BILL-013). */
 export default async function BillingSetupPage() {

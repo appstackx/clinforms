@@ -1,10 +1,10 @@
-import type { Metadata } from "next";
 import { PractitionersSetup } from "@/components/pms/reporting/setup-pages";
 import { requireClinicActor } from "@/server/pms/actor";
 import { practitionersScreenFor } from "@/server/pms/reporting/setup";
+import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Practitioners" };
+export const generateMetadata = gatedMetadata({ title: "Practitioners" }, "settings.setup");
 
 /** /app/clinic/setup/practitioners[?practitioner=] – Set-up → Practitioners, incl. linking a member's sign-in (settings.setup). */
 export default async function PractitionersSetupPage({ searchParams }: { searchParams: { practitioner?: string } }) {

@@ -1,12 +1,12 @@
-import type { Metadata } from "next";
 import { OnlineBookingSetup } from "@/components/pms/portal/online-booking-setup";
 import { formatWhen } from "@/modules/pms/portal/time";
 import { requireClinicActor } from "@/server/pms/actor";
 import { directoryView } from "@/server/pms/portal/directory-view";
 import { onlineBookingSetupFor, recentOnlineBookingsFor } from "@/server/pms/portal/staff";
+import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Online booking" };
+export const generateMetadata = gatedMetadata({ title: "Online booking" }, "settings.setup");
 
 /**
  * /app/clinic/online-booking – Set-up → Online booking (settings.setup): the booking page and patient portal on or off,

@@ -1,4 +1,3 @@
-import type { Metadata } from "next";
 import { Card as Panel } from "@/components/pms/records/ui";
 import { ActionForm, Submit } from "@/components/pms/records/form";
 import { DetailList, LinkButton, Pill, TextLinkTo } from "@/components/pms/records/ui";
@@ -13,9 +12,10 @@ import { getPmsSettings } from "@/server/repos/pms/settings";
 import { addClinicalFlag, changeLegalHold, changePatientStatus, endClinicalFlag } from "../../actions";
 import { ClinicalFlagsEditor } from "@/components/pms/records/clinical-flags-editor";
 import { clinicalFlagsFor, patientExtrasFor } from "@/server/pms/records/flags-service";
+import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Patient details", robots: { index: false, follow: false } };
+export const generateMetadata = gatedMetadata({ title: "Patient details", robots: { index: false, follow: false } }, "patients.view");
 
 const yesNo = (v: boolean) => (v ? "Yes" : "No");
 const SOURCE: Record<string, string> = { verbal: "verbally", written: "in writing", online: "online", import: "in the earlier system" };

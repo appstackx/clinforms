@@ -1,11 +1,11 @@
-import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { LetterEditor } from "@/components/pms/comms/letter-editor";
 import { requireClinicActor } from "@/server/pms/actor";
 import { letterFor } from "@/server/pms/comms/views";
+import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Letter" };
+export const generateMetadata = gatedMetadata({ title: "Letter" }, "messages.letters");
 
 /** /app/clinic/letters/[letterId] (design round 3, "Letter editor"). messages.letters – reception gets the 404 page. */
 export default async function LetterPage({ params }: { params: { letterId: string } }) {

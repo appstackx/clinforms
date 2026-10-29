@@ -1,4 +1,3 @@
-import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { SignedFormView } from "@/components/pms/portal/signed-form-view";
 import { STAFF_PORTAL_PATHS } from "@/modules/pms/portal/paths";
@@ -8,9 +7,10 @@ import { requireClinicActor } from "@/server/pms/actor";
 import { patientOr404 } from "@/server/pms/records/record";
 import { patientResponseFor } from "@/server/pms/portal/staff";
 import { applyResponseAction, reviewResponseAction } from "../actions";
+import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Signed form" };
+export const generateMetadata = gatedMetadata({ title: "Signed form" }, "patients.view");
 
 /**
  * One form on the record (design round 3 "Intake forms – signed copy on the record"): "Signed and sealed", the answers

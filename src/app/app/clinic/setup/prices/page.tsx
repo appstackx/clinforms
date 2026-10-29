@@ -1,10 +1,10 @@
-import type { Metadata } from "next";
 import { PricesSetup } from "@/components/pms/reporting/setup-pages";
 import { requireClinicActor } from "@/server/pms/actor";
 import { pricesScreenFor } from "@/server/pms/reporting/setup";
+import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Price lists" };
+export const generateMetadata = gatedMetadata({ title: "Price lists" }, "settings.setup");
 
 /** /app/clinic/setup/prices[?list=] – Set-up → Price lists, incl. insurers' own lists (settings.setup). */
 export default async function PricesSetupPage({ searchParams }: { searchParams: { list?: string } }) {

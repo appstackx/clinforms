@@ -1,4 +1,3 @@
-import type { Metadata } from "next";
 import Link from "next/link";
 import { FileText } from "lucide-react";
 import { PatientAccountCard } from "@/components/pms/billing/patient-billing";
@@ -16,9 +15,10 @@ import { getCaseDetails } from "@/server/pms/records/cases-service";
 import { loadRecordHeader } from "@/server/pms/records/record-header";
 import { patientPath } from "@/server/pms/records/record";
 import { getReferrer } from "@/server/repos/pms/referrers";
+import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Patient record", robots: { index: false, follow: false } };
+export const generateMetadata = gatedMetadata({ title: "Patient record", robots: { index: false, follow: false } }, "patients.view");
 
 const linkClass = "text-sm font-medium text-primary-strong hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary rounded";
 

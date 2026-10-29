@@ -1,4 +1,3 @@
-import type { Metadata } from "next";
 import Link from "next/link";
 import { StatusPill } from "@/components/pms/ui/status-pill";
 import { CLINIC_BASE_PATH } from "@/modules/pms/core/modules";
@@ -10,9 +9,10 @@ import { requireClinicActor } from "@/server/pms/actor";
 import { diaryCallerOf } from "@/server/pms/diary/caller";
 import { loadPatientAppointments } from "@/server/pms/diary/reads";
 import { ScrollRegion } from "@/components/pms/ui/scroll-region";
+import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Appointments" };
+export const generateMetadata = gatedMetadata({ title: "Appointments" }, "diary.view");
 
 /**
  * A patient's record → Appointments (the diary's tab): upcoming soonest first, then past ones newest first, with

@@ -1,4 +1,3 @@
-import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { PatientForm } from "@/components/pms/records/patient-form";
 import { SectionHeader } from "@/components/pms/records/ui";
@@ -9,9 +8,10 @@ import { getAnonymisation } from "@/server/repos/pms/records/anonymise";
 import { savePatientDetails, savePronouns } from "../../actions";
 import { PronounsForm } from "@/components/pms/records/pronouns-form";
 import { patientExtrasFor } from "@/server/pms/records/flags-service";
+import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Edit patient details" };
+export const generateMetadata = gatedMetadata({ title: "Edit patient details" }, "patients.edit");
 
 /** Edit the patient's details (revision-checked: a change made meanwhile by someone else is never overwritten). */
 export default async function EditPatientPage({ params }: { params: { patientId: string } }) {

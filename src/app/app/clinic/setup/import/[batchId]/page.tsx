@@ -1,13 +1,13 @@
-import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ImportBatchScreen } from "@/components/pms/integration/import-batch";
 import { SetupHeader, SetupPage } from "@/components/pms/reporting/setup-kit";
 import { requireClinicActor } from "@/server/pms/actor";
 import { importViewFor } from "@/server/pms/integration/import-service";
+import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Import data" };
+export const generateMetadata = gatedMetadata({ title: "Import data" }, "settings.import");
 
 /** /app/clinic/setup/import/[batchId] – one import: match columns, check, import, done and undo (settings.import). */
 export default async function ImportBatchPage({ params }: { params: { batchId: string } }) {

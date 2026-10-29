@@ -1,11 +1,11 @@
-import type { Metadata } from "next";
 import { RemittanceForm } from "@/components/pms/billing/remittance-form";
 import { ukToday } from "@/modules/pms/core/text";
 import { requireClinicActor } from "@/server/pms/actor";
 import { payerAccountsFor } from "@/server/pms/billing/views";
+import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Allocate an insurer payment" };
+export const generateMetadata = gatedMetadata({ title: "Allocate an insurer payment" }, "billing.pay");
 
 /**
  * /app/clinic/billing/remittances/new (design round 3 "Remittance allocation"): one insurer payment across their

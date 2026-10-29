@@ -1,4 +1,3 @@
-import type { Metadata } from "next";
 import Link from "next/link";
 import { Card as Panel } from "@/components/pms/records/ui";
 import { AttachmentUpload } from "@/components/pms/records/attachment-upload";
@@ -17,9 +16,10 @@ import { ImagePreview } from "@/components/pms/records/image-preview";
 import { ShareWithPatient } from "@/components/pms/portal/share-with-patient";
 import { attachmentSharesFor } from "@/server/pms/portal/staff-shares";
 import { shareAttachmentAction, withdrawShareAction } from "../forms/share-actions";
+import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Attachments" };
+export const generateMetadata = gatedMetadata({ title: "Attachments" }, "clinical.view");
 
 /** Files attached to the patient's record (referral letters, reports, images) – encrypted, never deleted. */
 export default async function AttachmentsPage({ params, searchParams }: { params: { patientId: string }; searchParams: Record<string, string | string[] | undefined> }) {

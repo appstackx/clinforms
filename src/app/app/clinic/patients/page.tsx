@@ -1,13 +1,13 @@
-import type { Metadata } from "next";
 import { PatientList } from "@/components/pms/records/patient-list";
 import { filtersFromParams } from "@/modules/pms/records/patient-list";
 import { ukToday } from "@/modules/pms/core/text";
 import { requireClinicActor } from "@/server/pms/actor";
 import { patientListFor } from "@/server/pms/records/patient-list-service";
 import { registerPatient } from "./actions";
+import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Patients" };
+export const generateMetadata = gatedMetadata({ title: "Patients" }, "patients.view");
 
 /**
  * /app/clinic/patients – the patient list (design round 2, docs/clinic-system/design/round2/patients/). Search and

@@ -1,10 +1,10 @@
-import type { Metadata } from "next";
 import { PatientMessages } from "@/components/pms/comms/patient-messages";
 import { requireClinicActor } from "@/server/pms/actor";
 import { patientMessagesFor, sendFormFor } from "@/server/pms/comms/views";
+import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Messages" };
+export const generateMetadata = gatedMetadata({ title: "Messages" }, "messages.send");
 
 /**
  * A patient's record → Messages (comms' tab): preferences, Send a message (?send=1 opens it – the record's "Send

@@ -1,10 +1,10 @@
-import type { Metadata } from "next";
 import { SitesSetup } from "@/components/pms/reporting/setup-sites";
 import { requireClinicActor } from "@/server/pms/actor";
 import { sitesScreenFor } from "@/server/pms/reporting/setup";
+import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Sites and opening hours" };
+export const generateMetadata = gatedMetadata({ title: "Sites and opening hours" }, "settings.setup");
 
 /**
  * /app/clinic/setup/sites[?site=] – Set-up → Sites and hours (settings.setup): the sites the member works at, one

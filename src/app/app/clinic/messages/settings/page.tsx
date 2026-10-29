@@ -1,12 +1,12 @@
-import type { Metadata } from "next";
 import Link from "next/link";
 import { MESSAGES_PATH } from "@/components/pms/comms/format";
 import { MessageSettingsForm } from "@/components/pms/comms/message-settings";
 import { requireClinicActor } from "@/server/pms/actor";
 import { messageSettingsFor } from "@/server/pms/comms/views";
+import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Message settings" };
+export const generateMetadata = gatedMetadata({ title: "Message settings" }, "messages.templates");
 
 /** /app/clinic/messages/settings – quiet hours, automatic messages, sender, reminders. messages.templates. */
 export default async function MessageSettingsPage() {

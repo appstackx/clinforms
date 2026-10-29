@@ -1,4 +1,3 @@
-import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { ComingSoon } from "@/components/pms/records/ui";
 import { StatusPill } from "@/components/pms/ui";
@@ -7,9 +6,10 @@ import { STAND_IN_COPY, STAND_IN_KEYS, standInPermission } from "@/modules/pms/r
 import { requireClinicActor } from "@/server/pms/actor";
 import { loadRecordHeader } from "@/server/pms/records/record-header";
 import { ScrollRegion } from "@/components/pms/ui/scroll-region";
+import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Patient record", robots: { index: false, follow: false } };
+export const generateMetadata = gatedMetadata({ title: "Patient record", robots: { index: false, follow: false } }, "patients.view");
 
 /**
  * /patients/[id]/tab/<key> – the records module's stand-in for a record tab whose module has not registered its own

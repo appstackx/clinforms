@@ -1,10 +1,10 @@
-import type { Metadata } from "next";
 import { PatientInvoices } from "@/components/pms/billing/patient-billing";
 import { requireClinicActor } from "@/server/pms/actor";
 import { patientInvoicesFor } from "@/server/pms/billing/views";
+import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Invoices" };
+export const generateMetadata = gatedMetadata({ title: "Invoices" }, "billing.view");
 
 /**
  * A patient's record → Invoices (billing's tab): their invoices (to them and to their insurers), what they owe,

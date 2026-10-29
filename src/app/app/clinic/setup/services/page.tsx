@@ -1,10 +1,10 @@
-import type { Metadata } from "next";
 import { ServicesSetup } from "@/components/pms/reporting/setup-pages";
 import { requireClinicActor } from "@/server/pms/actor";
 import { servicesScreenFor } from "@/server/pms/reporting/setup";
+import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Services" };
+export const generateMetadata = gatedMetadata({ title: "Services" }, "settings.setup");
 
 /** /app/clinic/setup/services[?service=] – Set-up → Services: duration, price, bookable online (settings.setup). */
 export default async function ServicesSetupPage({ searchParams }: { searchParams: { service?: string } }) {

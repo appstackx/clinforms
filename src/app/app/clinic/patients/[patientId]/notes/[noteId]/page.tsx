@@ -1,5 +1,4 @@
 import { mayAmendNote } from "@/modules/pms/core/permissions";
-import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AlertTriangle } from "lucide-react";
@@ -20,9 +19,10 @@ import { loadRecordHeader } from "@/server/pms/records/record-header";
 import { noteAuthorOf } from "@/server/pms/records/access";
 import { patientPath } from "@/server/pms/records/record";
 import { amendNoteAction, changeNoteTemplateAction, copyLastNoteAction, discardNoteAction, saveNoteDraftAction } from "../actions";
+import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Clinical note", robots: { index: false, follow: false } };
+export const generateMetadata = gatedMetadata({ title: "Clinical note", robots: { index: false, follow: false } }, "clinical.view");
 
 const lowerFirst = (s: string) => (s ? s.charAt(0).toLowerCase() + s.slice(1) : s);
 const timeOf = (iso: string) => new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(iso));

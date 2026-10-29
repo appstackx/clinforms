@@ -1,4 +1,3 @@
-import type { Metadata } from "next";
 import { FiledFormsList } from "@/components/pms/integration/filed-forms-list";
 import { PatientForms } from "@/components/pms/portal/patient-forms";
 import { filedFormsForPatient } from "@/server/pms/integration/referrer-forms";
@@ -7,9 +6,10 @@ import { patientOr404, patientPath } from "@/server/pms/records/record";
 import { listCasesForPatient } from "@/server/repos/pms/cases";
 import { patientFormsFor } from "@/server/pms/portal/staff";
 import { sendFormAction, sendOutcomeAction, setPortalAccessAction, startHandoffAction } from "./actions";
+import { gatedMetadata } from "@/server/pms/page-gate";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Forms" };
+export const generateMetadata = gatedMetadata({ title: "Forms" }, "patients.view");
 
 /**
  * A patient's record → Forms (portal module; patients.view): forms sent, waiting and signed (the sealed copy opens),
