@@ -146,7 +146,8 @@ function RotaEditor({ rota, sites, rooms, practitioners, site, today }: RotaWait
           <TextInput id="rota-from" type="date" value={from} min={today} onChange={(e) => e.target.value && setFrom(e.target.value)} className="w-[150px]" disabled={!rota.canEdit} />
         </div>
       </div>
-      <div className="overflow-x-auto">
+      {/* A scroll region the keyboard can reach (M10 finding 6): focusable, named, with a focus outline. */}
+      <div tabIndex={0} role="region" aria-label="Weekly working pattern" className="overflow-x-auto focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary">
         <table className="w-full min-w-[760px] text-sm">
           <caption className="sr-only">Working pattern per day</caption>
           <thead className="bg-[#F8FAFC] text-left text-xs text-[#475569]">

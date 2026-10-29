@@ -82,16 +82,18 @@ function SheetPage({ group, index, total, clinic, site, date, printedAt, printed
   const cancelled = group.rows.filter((r) => r.kind === "appointment" && (r.status === "cancelled" || r.status === "late_cancelled"));
   const rooms = Array.from(new Set(appts.map((r) => r.roomName).filter(Boolean)));
   return (
-    <section className="ds-page mx-auto flex min-h-[1000px] w-full max-w-[760px] flex-col rounded-xl border border-border bg-white p-10 text-[#0F172A] shadow-sm" aria-label={`Day sheet, ${group.practitionerName}`}>
-      <header className="flex items-start justify-between gap-6 border-b-2 border-[#0F172A] pb-4">
+    // 375 px (M10 finding 21): narrower padding, the header stacks and long words wrap, so the sheet never scrolls
+    // sideways on a phone; from 640 px (and on paper) it is the design's A4 page.
+    <section className="ds-page mx-auto flex min-h-[1000px] w-full min-w-0 max-w-[760px] flex-col break-words rounded-xl border border-border bg-white p-4 text-[#0F172A] shadow-sm sm:p-10" aria-label={`Day sheet, ${group.practitionerName}`}>
+      <header className="flex flex-col items-start justify-between gap-2 border-b-2 border-[#0F172A] pb-4 sm:flex-row sm:gap-6">
         <div>
           <p className="text-xs text-[#334155]">
             {clinic} · {site}
           </p>
-          <h2 className="text-2xl font-bold">Day sheet – {longDate(date)}</h2>
+          <h2 className="text-xl font-bold sm:text-2xl">Day sheet – {longDate(date)}</h2>
           <p className="font-semibold">{[group.practitionerName, rooms.join(", ") || null, group.hours].filter(Boolean).join(" · ")}</p>
         </div>
-        <p className="text-right text-xs text-[#334155]">
+        <p className="text-xs text-[#334155] sm:text-right">
           {appts.length} {appts.length === 1 ? "appointment" : "appointments"} · {blocked.length} blocked
           <br />
           Printed {printedAt}
@@ -99,22 +101,22 @@ function SheetPage({ group, index, total, clinic, site, date, printedAt, printed
           by {printedBy}
         </p>
       </header>
-      <table className="mt-4 w-full border-collapse text-sm">
+      <table className="mt-4 w-full table-fixed border-collapse text-xs sm:table-auto sm:text-sm">
         <caption className="sr-only">Appointments of {group.practitionerName}</caption>
         <thead>
           <tr className="border-b border-[#0F172A] text-left text-xs">
-            <th scope="col" className="w-16 py-2 font-semibold">Time</th>
+            <th scope="col" className="w-12 py-2 pr-1 font-semibold sm:w-16">Time</th>
             <th scope="col" className="py-2 font-semibold">Patient</th>
             <th scope="col" className="py-2 font-semibold">Service</th>
             <th scope="col" className="py-2 font-semibold">Payer</th>
-            <th scope="col" className="w-24 py-2 font-semibold">Arrived</th>
+            <th scope="col" className="w-[68px] py-2 font-semibold sm:w-24">Arrived</th>
           </tr>
         </thead>
         <tbody>
           {appts.map((r) => (
             <tr key={r.id} className="border-b border-[#CBD5E1] align-top">
               <td className="py-2.5 font-bold tabular-nums">{r.startTime}</td>
-              <td className="py-2.5">
+              <td className="py-2.5 pr-1">
                 <div className="font-semibold">{r.patientName ?? PATIENT_PLACEHOLDER}</div>
                 <div className="text-xs text-[#334155]">
                   {[r.patientNumber !== null ? `No. ${r.patientNumber}` : null, showDob && r.dateOfBirth ? `DOB ${r.dateOfBirth}` : null, r.roomName].filter(Boolean).join(" · ")}
@@ -125,13 +127,13 @@ function SheetPage({ group, index, total, clinic, site, date, printedAt, printed
                   </div>
                 ) : null}
               </td>
-              <td className="py-2.5">
+              <td className="py-2.5 pr-1">
                 {r.serviceName ?? "–"}
                 <div className="text-xs text-[#334155]">
                   {r.startTime}–{r.endTime}
                 </div>
               </td>
-              <td className="py-2.5">{r.payerLabel ?? "–"}</td>
+              <td className="py-2.5 pr-1">{r.payerLabel ?? "–"}</td>
               <td className="py-2.5 text-xs">
                 <span className="inline-flex items-center gap-1">
                   <span aria-hidden className="inline-block h-4 w-4 border border-[#0F172A]" /> <span className="sr-only">Arrived:</span>
