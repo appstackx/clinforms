@@ -20,7 +20,8 @@ import "server-only";
  *   403 TRIAL_ENDED               the clinic's trial has ended: no new report (auth/clinic-access.ts)
  *   404 NOT_FOUND                 the clinic holds no such report – deleted, removed by retention, or another
  *                                 clinic's (never told apart: nothing about another clinic is revealed)
- *   403 CONNECTOR_NOT_AVAILABLE   the record came from the public demo's simulated system
+ *   403 CONNECTOR_NOT_AVAILABLE   the record came from the public demo's simulated system, or (rollback shim, 10/2026)
+ *                                 from a connector this build does not have – a later release's clinic system record
  *   403 SESSION_MISMATCH          a member opened from the clinic system for one episode asks for another
  *   415                           a body that is not JSON
  * Audit: "notes.reused" (target: the earlier report; counts only – never names or notes). Nothing is stored here:
@@ -32,14 +33,21 @@ import "server-only";
 import { AUDIT_ACTIONS, assertActorEpisode } from "../../auth/actor";
 import { assertClinicMayCreate } from "../../auth/clinic-access";
 import { requireConnector } from "../../connectors/handler-support";
+import { isKnownConnectorId } from "../../core/labels";
 import { recordForAnotherForm, reuseSourceOf } from "../../core/reuse";
 import { ReportSchema } from "../../core/schemas";
+import { StoredReportSchema } from "../../core/stored-schemas";
 import type { TraceEntry } from "../../core/types";
 import { WORDING } from "../../core/wording";
 import { HttpError, json, logEvent, problem, type MedreportHandler } from "../http";
 import { STORE_RECORD_ID_PATTERN, type StoreReportReuseResponse } from "../store-contract";
 import { bundleResponseFor } from "./file-import-response";
 import { assertContentType, auditStore, pathParam, reportReadable, requireTenantActor } from "./store-actor";
+
+/** A stored report from a connector this build does not have (see the handler). Neutral words: no vendor's name. */
+const REUSE_UNKNOWN_CONNECTOR_TITLE = "These notes cannot be reused here";
+const REUSE_UNKNOWN_CONNECTOR_DETAIL =
+  "This report was made from the patient's record in the clinic system. Open the patient's case in the clinic system to start another form.";
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
@@ -53,7 +61,18 @@ export const handleStoreReportReuse: MedreportHandler = async (req, ctx, deps) =
   const started = Date.now();
   const stored = await t.store.getReport(t.tenantId, id);
   const parsed = stored ? ReportSchema.safeParse(stored.payload) : null;
-  if (parsed && !parsed.success) {
+  if (stored && parsed && !parsed.success) {
+    // A report a later release stored from a connector this build does not have (the clinic system's own record,
+    // 10/2026: "native"): it reads (core/stored-schemas.ts), but its record cannot be fetched or reused from here.
+    const asRead = StoredReportSchema.safeParse(stored.payload);
+    if (asRead.success && !(isKnownConnectorId(asRead.data.episodeRef.connectorId) && isKnownConnectorId(asRead.data.bundleSnapshot.source.connectorId))) {
+      if (asRead.data.tenantId !== t.tenantId) {
+        logEvent("report_reuse_gone", {});
+        return problem(404, WORDING.server.access.reuseGoneTitle, { code: "NOT_FOUND", detail: WORDING.server.access.reuseGoneDetail });
+      }
+      logEvent("report_reuse_unknown_connector", {});
+      return problem(403, REUSE_UNKNOWN_CONNECTOR_TITLE, { code: "CONNECTOR_NOT_AVAILABLE", detail: REUSE_UNKNOWN_CONNECTOR_DETAIL });
+    }
     logEvent("store_report_unreadable", { id });
     throw new HttpError(500, "The stored report could not be read", { code: "INTERNAL", detail: "Please try again, or contact support." });
   }
