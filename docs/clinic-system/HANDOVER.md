@@ -1485,3 +1485,143 @@ the skeleton – the limit below). The crawl's portal step passed at 375 px; at 
 **Open items (M10 UX):** a missing or out-of-scope record id under a skeleton still returns HTTP 200 with the 404 page
 (no data shown); two back-to-back 15-minute blocks only gain the 2 px gap; the reviewer's `portal.cjs` needs the
 e2e helpers' approach (give the newest link a known secret in the scratch DB) after C1.
+
+### 20.4 Performance (50k clinic) – findings, fixes, before/after table
+
+**Branch:** `feat/cs-m10-perf` (worktree `clinforms-wt/cs-m10-perf`, e2e ports 3230–3239, from `feat/clinic-system` `1db2928`; the
+security merge `8796702` was merged in before the undo work was finished, and the UX merge `ac6d52f` before the final runs), merged `--no-ff` into `feat/clinic-system` as `1d861d9` after
+the security and UX branches. `main` untouched. Findings: scratchpad `m10/perf-findings.md` (reviewer at 842bb02).
+
+**Dataset** (reviewer's `m10-perf-tools/gen.ts`, fictional): 11 sites, 40 practitioners, 38 rooms, 50,000 patients,
+~452k diary rows over 3 years + 6 weeks, ~147k notes, ~100k invoices / 345k lines, 89k payments. Measured with
+`bench.ts` (median of 5 after a warm-up; reports 3 runs, jobs 1) on SQLite (node:sqlite), the D1 stand-in (gateway →
+node:sqlite), local workerd D1 (wrangler `getPlatformProxy`, rows_read from D1's meta) and PGlite. "Before" = 1db2928,
+"after" = this branch with migrations 0210–0213 applied to the copy (no ANALYZE on SQLite/D1, as in production).
+Changes to the bench tool: its working copies are APFS clones, and its runner now points the app's own database
+(`getDb`) at a fresh clone per run. Before that change, every run opened the master dataset directly, applied that
+tree's migrations to it and wrote to it, so the first "before" runs here also had this branch's indexes. Those numbers
+were thrown away, the dataset was cleaned and every SQLite-family run was repeated. Generated DBs were deleted afterwards.
+
+#### Findings – fixed or not
+| # | Finding | Status | What was done |
+|---|---|---|---|
+| A | Free-slot search: 500 items/day cap, a full day offered nothing; 90+90 IN-list parameters | **Fixed** | `listOccupiedSpans` (busy columns only, keyset-paged, practitioners and rooms in groups of 80), read a week at a time while slots are still wanted; `freeSlots` indexes busy time per practitioner/room and stops after the date that fills the limit; `listDiary` refuses > 90 sites+practitioners+rooms instead of silently cutting each list to 90. Test: 577 items on one day still offers its free time; 96 practitioner + 90 room ids read in groups (4 backends). |
+| B | "Attended, not invoiced": 500 oldest per 7-day window, then filtered | **Fixed** | Port method `listUninvoicedVisits` (diary adapter) with billing's own `notOnAnInvoice` predicate (NOT EXISTS on the partial unique index `pms_invoice_lines_appointment`) in the SQL, newest first by keyset, plus the total; Billing tab / Today show the true count, Invoice visits says "Showing the 500 most recent of N". Test: 600 visits in a week, newest listed, total 600, invoicing 2 → 598, two keyset pages (4 backends). |
+| C | Today: 500 per group of 90 sites; serial tiles | **Fixed** | `countDiaryDay` (the whole day by `starts_on`, grouped by site, practitioner and status, with still-to-arrive; sites filtered in code, because with `site_id IN (?…)` bound SQLite/D1 chose the site index and read the sites' whole history) for every figure; clinician list = own day; reception arrivals = booked/arrived ending after now−30 min; overdue = `overdueInvoicesSummary` (all overdue, not a page of 200); invoices to raise = count + 4 longest waiting; each role's tiles start together. Test: 600 appointments today → "600", "240 done · 60 DNA", 90 still to arrive, clinician 20 (4 backends). |
+| D | Aged debt: names of every debtor; site filter through `listInvoicesPage(200)` | **Fixed** | `debtInvoices` returns `site_id` and filters by site in SQL (open invoices only, 2,000 a page); names looked up for the top 8 only; statement ages read one debtor. Test: site-limited member with 230 open invoices → exact total; top 8 named (4 backends). |
+| 1 | `pms_appointments (tenant_id, starts_on)` | **Fixed (0210)** | As `(tenant_id, starts_on, site_id)`: with `site_id IN (…)` and no statistics SQLite otherwise picked `pms_appointments_site_starts` and read the sites' whole history. |
+| 2 | `pms_appointments (tenant_id, updated_at)` | **Fixed (0210)** | For the message sweep. |
+| 3 | `pms_clinical_notes (tenant_id, status, seen_on)` | **Fixed (0211)** | Unsigned notes. |
+| 4 | `pms_invoices (tenant_id, patient_id, status)`, `(created_at)`, `(status, due_on)` | **Fixed differently (0212)** | Partial `pms_invoices_open (tenant_id, status, id) WHERE status='issued' AND balance <> 0` – the queries repeat it as literal SQL (`OPEN_INVOICE`) so SQLite/D1 use it without statistics (checked with EXPLAIN QUERY PLAN); `(tenant_id, created_at)` for the list order. `(patient_id, status)` not added: `pms_invoices_patient (tenant_id, patient_id, created_at)` already serves the per-patient reads. |
+| 5 | `pms_cases_practitioner`, `audit_log_target` | **cases: fixed (0213, foundation range). audit_log: not added** | `audit_log` is a ClinForms table no clinic-system module owns; every ClinForms write would pay for the index and the record History tab takes about 68 ms on local D1 without it (22k audit rows read). Left for the orchestrator to decide. |
+| 6 | Partial index / first_attended_on for the patients report | **Fixed without a new index** | `attendedPatients`: one probe of `pms_appointments_patient_starts` per patient; `visitFacts`: "first" = NOT EXISTS an earlier attended visit (same answer, ties included). |
+| 7 | PRAGMA optimize via a migration | **Not done (decision)** | On new / empty D1 databases it would store statistics for empty tables that mislead the planner as they grow; the indexes above are chosen without statistics. |
+| – | Comms sweep N+1 (907 requests) | **Fixed** | `syncAppointmentsMessages`: settings/rules once, planned messages 90 appointments a read, in-step rows write nothing, writes packed into batches of whole appointments (fallback one by one). Also used by every diary write's sync. Test: 150 rows healed, then an in-step sweep in ≤ 12 statements (4 backends). |
+| – | send-due batching | **Fixed (partly)** | Settings, directory, rules, contact and templates read once per run (`RunCache`); 45 rows per write batch (was 20). Requests 198 → 107. On local workerd the job is still about 12.7 s, but D1's own reported time is 0.15 s. The rest is the local proxy's cost per write batch (SQLite 0.13 s, D1 stand-in 0.16 s). Re-measure on real D1 before go-live. |
+| – | `billingFigures` adds up every invoice | **Fixed** | Three indexed reads: drafts, OPEN invoices, this month. |
+| – | Patients report / appointmentFacts / availabilityFacts | **Patients fixed; availability not moved to SQL** | `availabilityFacts` keeps its exact interval maths in code (union of rota, booked and blocked time per practitioner-day); moving it to SQL would change utilisation figures. It now reads through the starts_on index: utilisation year 1,894 → 1,569 ms on local D1 (rows read 1.04M → 418k). The target for reports (< 5 s) is met. appointmentFacts' 7-column GROUP BY is unchanged. |
+| – | Import undo ~5 statements/row | **Fixed** | `archiveImportedPatients` / `closeImportedCases`: UPDATE … WHERE id IN (≤ 90) AND rev = ? RETURNING id per revision group + one audit row (`pms.patient.import_undo`, `pms.case.import_undo`, `pms.authorisation.import_undo`, count). Only the undo functions in importer.ts changed. Undo of 5,000 patients on local workerd: 363 s → 46 s, longest page 11.8 s → 1.6 s, statements per page 518 → 20. 50,000 on the D1 stand-in: 67 s → 12 s; gateway requests for the whole import 270k → 21k. |
+| – | Patient list exact count; owes money 286k rows | **Owes money: open invoices only; count kept** | Owes-money reads only open invoices; on SQLite/D1 the planner still walks `pms_invoices_patient` (it avoids a sort for the GROUP BY) (166 ms on local D1, within target). The exact count stays (≈ 110 ms on local D1). |
+| – | `copy-d1-to-postgres` LIMIT/OFFSET | **Fixed** | Keyset `(pk…) > (…)` on SQLite, the gateway and Postgres; new gateway test. |
+| extra | found while measuring | **Fixed** | `excessBilledForCase` read every invoice line of the clinic per case (~400 ms each when pricing visits) → lines WHERE invoice_id IN (the case's invoices); clinician's `caseOutcomeFigures` used the start-time index over all history (~700 ms) → the case index. |
+
+#### Before / after (ms; workerd rows_read and gateway requests)
+SQLite, D1 stand-in and local workerd: before = `1db2928`, after = `30f2c83` (this branch with the UX merge), both on
+the same clean copy of the dataset, run back to back with nothing else running. PGlite: before = `1db2928`, after =
+`e0148c6` (before the last two commits, which only change the day counts and the aged-debt page size). Median ms;
+rows_read and requests are per page or job.
+
+| Path | SQLite ms | D1 stand-in ms (requests) | local workerd D1 ms | workerd rows_read | workerd requests | PGlite ms |
+|---|---|---|---|---|---|---|
+| diary day view (site, today) | 5 → 5 | 8 (14) → 6 (14) | 154 → 148 | 3k → 3k | 14 → 14 | 13 → 15 |
+| diary day view (site, past day) | 6 → 4 | 7 (14) → 7 (14) | 158 → 158 | 3k → 3k | 14 → 14 | 9 → 11 |
+| diary day view by room | 6 → 5 | 8 (14) → 7 (14) | 152 → 153 | 3k → 3k | 14 → 14 | 9 → 12 |
+| diary week view (1 practitioner) | 9 → 8 | 11 (15) → 11 (15) | 151 → 163 | 8k → 8k | 15 → 15 | 11 → 15 |
+| diary week view (site) | 10 → 8 | 11 (15) → 11 (15) | 165 → 161 | 8k → 8k | 15 → 15 | 11 → 15 |
+| free-slot search (site, 21 days) | 250 → 6 | 274 (24) → 8 (12) | 486 → 123 | 16k → 7k | 24 → 12 | 286 → 11 |
+| free-slot search (all sites, 28 days) | 2817 → 27 | 2894 (29) → 35 (16) | 3161 → 192 | 31k → 20k | 29 → 16 | 3052 → 72 |
+| online booking slots (week, any practitioner) | 10 → 5 | 12 (16) → 8 (14) | 158 → 138 | 5k → 7k | 16 → 14 | 16 → 12 |
+| patient search name 'hart' | 0 → 0 | 1 (1) → 1 (1) | 9 → 9 | 1k → 1k | 1 → 1 | 1 → 1 |
+| patient search 'amelia ashdown' | 1 → 1 | 1 (1) → 1 (1) | 9 → 10 | 3k → 3k | 1 → 1 | 11 → 12 |
+| patient search phone '900123' | 8 → 7 | 9 (1) → 9 (1) | 18 → 18 | 23k → 23k | 1 → 1 | 12 → 12 |
+| patient search no match 'zzzz' | 16 → 13 | 17 (1) → 17 (1) | 26 → 23 | 50k → 50k | 1 → 1 | 10 → 9 |
+| diary quick patient search 'hart' | 5 → 5 | 7 (2) → 7 (2) | 24 → 23 | 20k → 20k | 2 → 2 | 2 → 1 |
+| patient list page (default) | 34 → 30 | 37 (9) → 35 (10) | 107 → 116 | 118k → 119k | 9 → 10 | 15 → 19 |
+| patient list 'no future appt' | 81 → 81 | 79 (9) → 73 (10) | 155 → 166 | 169k → 169k | 9 → 10 | 32 → 36 |
+| patient list 'owes money' | 94 → 94 | 105 (9) → 90 (10) | 173 → 166 | 286k → 286k | 9 → 10 | 94 → 82 |
+| patient list search 'hart' page 3 | 30 → 34 | 35 (9) → 35 (10) | 102 → 115 | 120k → 120k | 9 → 10 | 14 → 15 |
+| patient search (site-limited admin) 'hart' | 2 → 2 | 2 (1) → 2 (1) | 11 → 12 | 3k → 3k | 1 → 1 | 38 → 42 |
+| record: header (layout) | 2 → 1 | 3 (16) → 3 (16) | 192 → 159 | 301 → 301 | 16 → 16 | 6 → 6 |
+| record: overview tab | 35 → 21 | 38 (28) → 22 (28) | 289 → 283 | 202k → 24k | 28 → 28 | 8 → 10 |
+| record: notes tab | 0 → 0 | 0 (2) → 0 (2) | 19 → 20 | 8 → 8 | 2 → 2 | 1 → 1 |
+| record: appointments tab | 1 → 1 | 2 (6) → 2 (6) | 63 → 60 | 286 → 286 | 6 → 6 | 4 → 3 |
+| record: invoices tab | 0 → 0 | 1 (4) → 1 (4) | 35 → 40 | 31 → 31 | 4 → 4 | 2 → 1 |
+| record: cases tab | 0 → 0 | 0 (3) → 0 (3) | 31 → 28 | 5 → 5 | 3 → 3 | 1 → 1 |
+| record: details tab | 0 → 0 | 1 (7) → 1 (7) | 92 → 91 | 6 → 6 | 7 → 7 | 3 → 2 |
+| record: outcomes tab | 0 → 0 | 0 (2) → 0 (2) | 21 → 20 | 2 → 2 | 2 → 2 | 1 → 1 |
+| record: attachments tab | 0 → 0 | 0 (2) → 0 (2) | 23 → 21 | 2 → 2 | 2 → 2 | 0 → 1 |
+| record: messages tab | 1 → 1 | 1 (7) → 1 (7) | 78 → 81 | 87 → 87 | 7 → 7 | 3 → 2 |
+| record: forms tab | 0 → 0 | 1 (7) → 1 (7) | 67 → 83 | 7 → 7 | 7 → 7 | 3 → 2 |
+| record: history tab | 4 → 4 | 5 (7) → 5 (7) | 59 → 68 | 22k → 22k | 7 → 7 | 6 → 7 |
+| unsigned notes (all) | 49 → 10 | 50 (6) → 12 (6) | 103 → 61 | 295k → 148k | 6 → 6 | 7 → 8 |
+| unsigned notes (mine, clinician) | 1 → 1 | 1 (4) → 1 (4) | 36 → 45 | 92 → 636 | 4 → 4 | 1 → 2 |
+| dashboard owner | 323 → 38 | 326 (26) → 41 (28) | 568 → 277 | 1.22M → 52k | 26 → 28 | 153 → 105 |
+| dashboard admin | 335 → 38 | 327 (26) → 37 (28) | 573 → 273 | 1.22M → 52k | 26 → 28 | 158 → 101 |
+| dashboard clinician | 125 → 3 | 142 (12) → 4 (12) | 237 → 127 | 488k → 4k | 12 → 12 | 26 → 6 |
+| dashboard staff | 303 → 36 | 311 (54) → 35 (27) | 805 → 272 | 871k → 111k | 54 → 27 | 63 → 128 |
+| billing home | 363 → 46 | 364 (20) → 47 (10) | 538 → 121 | 1.27M → 223k | 20 → 10 | 170 → 169 |
+| billing attended, not invoiced | 301 → 44 | 295 (35) → 54 (44) | 609 → 473 | 868k → 111k | 35 → 44 | 36 → 153 |
+| billing aged debt (debtors list) | 92 → 47 | 131 (112) → 64 (8) | 1296 → 170 | 117k → 12k | 112 → 8 | 223 → 128 |
+| report attendance quarter | 147 → 47 | 160 (6) → 60 (6) | 227 → 118 | 486k → 68k | 6 → 6 | 97 → 121 |
+| report attendance year | 306 → 210 | 312 (6) → 179 (6) | 442 → 273 | 585k → 274k | 6 → 6 | 351 → 430 |
+| report attendance year CSV | 269 → 171 | 276 (7) → 217 (7) | 386 → 316 | 585k → 274k | 7 → 7 | 344 → 423 |
+| report utilisation quarter | 440 → 234 | 476 (12) → 261 (12) | 704 → 470 | 939k → 104k | 12 → 12 | 449 → 487 |
+| report utilisation year | 1096 → 926 | 1242 (12) → 1045 (12) | 1894 → 1569 | 1.04M → 418k | 12 → 12 | 1629 → 1837 |
+| report utilisation year CSV | 1084 → 865 | 1216 (13) → 957 (13) | 1925 → 1585 | 1.04M → 418k | 13 → 13 | 1546 → 1813 |
+| report patients quarter | 526 → 93 | 528 (7) → 98 (7) | 608 → 154 | 1.57M → 176k | 7 → 7 | 357 → 210 |
+| report patients year | 750 → 310 | 773 (7) → 316 (7) | 812 → 411 | 2.15M → 645k | 7 → 7 | 674 → 674 |
+| report patients year CSV | 745 → 327 | 778 (8) → 317 (8) | 778 → 379 | 2.15M → 645k | 8 → 8 | 659 → 644 |
+| report caseload quarter | 46 → 58 | 47 (8) → 61 (8) | 127 → 123 | 200k → 200k | 8 → 8 | 27 → 32 |
+| report caseload year | 50 → 60 | 46 (8) → 61 (8) | 115 → 119 | 201k → 201k | 8 → 8 | 25 → 31 |
+| report caseload year CSV | 53 → 46 | 54 (9) → 49 (9) | 131 → 124 | 201k → 201k | 9 → 9 | 23 → 30 |
+| report revenue quarter | 10 → 8 | 10 (8) → 9 (8) | 75 → 74 | 30k → 30k | 8 → 8 | 12 → 19 |
+| report revenue year | 54 → 43 | 52 (8) → 46 (8) | 128 → 123 | 147k → 147k | 8 → 8 | 49 → 65 |
+| report revenue year CSV | 50 → 43 | 54 (9) → 47 (9) | 124 → 128 | 147k → 147k | 9 → 9 | 47 → 61 |
+| report debtors quarter | 36 → 35 | 39 (7) → 36 (7) | 111 → 103 | 113k → 113k | 7 → 7 | 47 → 54 |
+| report debtors year | 35 → 38 | 39 (7) → 41 (7) | 111 → 105 | 113k → 113k | 7 → 7 | 51 → 55 |
+| report debtors year CSV | 38 → 37 | 37 (8) → 42 (8) | 122 → 112 | 113k → 113k | 8 → 8 | 58 → 57 |
+| report authorisations quarter | 2 → 2 | 4 (13) → 4 (13) | 130 → 113 | 1k → 1k | 13 → 13 | 7 → 10 |
+| report authorisations year | 2 → 2 | 3 (13) → 3 (13) | 144 → 133 | 1k → 1k | 13 → 13 | 6 → 10 |
+| report authorisations year CSV | 2 → 2 | 3 (14) → 3 (14) | 155 → 124 | 1k → 1k | 14 → 14 | 7 → 8 |
+| comms run: reconcile sweep | 190 → 10 | 235 (907) → 12 (13) | 10986 → 153 | 441k → 1k | 907 → 13 | 299 → 26 |
+| comms run: send due messages | 157 → 131 | 190 (198) → 159 (107) | 13433 → 12675 | 24k → 23k | 198 → 107 | 646 → 761 |
+
+
+#### Decisions taken (defaults – change any)
+1. Migration numbers: diary 0210, records 0211, billing 0212, foundation 0213 (`extra` in `core/modules.ts`, contract §3); 0214–0219 unused.
+2. No `audit_log` index and no `PRAGMA optimize` migration (above).
+3. "Attended, not invoiced" shows the newest 500 (oldest first) with "Showing the 500 most recent of N"; Today's "Invoices to raise" lists the 4 longest waiting with the full count.
+4. Today's overdue list now shows the 4 longest overdue of ALL overdue invoices (was: of the 200 most recently created).
+5. `listDiary` throws a plain error over 90 IN-list ids instead of silently cutting the list.
+6. Import undo writes one audit row per group of ≤ 90 (count) instead of two rows per record.
+
+#### Open items
+1. send-due on local workerd (about 12.7 s, D1 time 0.15 s): re-measure on real D1.
+2. Owes-money filter still reads the clinic's invoices through the patient index on D1 (fine at 50k, 180 ms).
+3. `audit_log (tenant_id, target_id)` – orchestrator's call.
+4. Utilisation year is the slowest report (1.6 s on local D1) – in-code interval maths kept on purpose.
+
+#### Results
+**Results (final head `ddb6433` = merge `1d861d9`'s tree):** typecheck and lint green; test:pms 780/0, test:medreport
+1786/0 (3 skips), test:db 1185/0/3 (the first run failed 1 test: the new import-undo audit actions had no plain-English
+labels, fixed in `ddb6433`), test:auth 139/0, test:site 155/0, test:gateway 646/0/2; build green. New regression
+tests: free slots on a full day and with 96+90 ids (A), 600 uninvoiced visits in a week (B), 600 appointments today (C),
+aged debt for a site-limited member past 200 invoices (D), sweep of 150 rows with statement counts, and keyset copy
+through the gateway. Each runs on SQLite, PGlite, the D1 stand-in and local workerd where that suite runs.
+E2E (fresh `pms:seed-demo -- --fresh` scratch SQLite each, servers stopped; runner scratchpad `m10perf-e2e.sh`).
+Production build: **pms-billing-screens 21/21** (local payment stub), **pms-polish-reports 8/8**, **pms-setup-reports
+13/13**, **clinic-system-shell 11/11**, **pms-m10-ux 8/8**, **pms-records-screens 17/17**, **pms-integration 14/14**
+(`DEMO_FLAG=1`). `next dev` with the TEST clock at Wed 28/10/2026 10:30 London: **pms-diary-screens 32/32**,
+**pms-messages-screens 18/18**. pms-diary-screens fails 4 steps at the real clock at night (no free slot in the next hour)
+and 2 steps on any day other than the demo Wednesday (hard-coded dates, open item 8 in §19). Running a dev server
+overwrites `.next`, so run the production-build scripts first.
