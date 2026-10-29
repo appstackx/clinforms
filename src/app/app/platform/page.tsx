@@ -298,7 +298,7 @@ export default async function PlatformPage() {
                                       required
                                       autoComplete="off"
                                       spellCheck={false}
-                                      placeholder="Type the clinic id"
+                                      placeholder="Clinic id"
                                       {...(/^[a-z0-9-]+$/.test(c.tenantId) ? { pattern: c.tenantId } : {})}
                                       title={`Type ${c.tenantId} to confirm`}
                                       className="h-8 w-36 rounded-md border border-slate-300 px-2 font-mono text-xs"
