@@ -104,6 +104,7 @@ export async function startDischargeLetterFor(actor: CommsActor, input: unknown)
         practitionerId: me?.id ?? note.practitionerId ?? null,
         recipientKind: "gp",
         bodyFill: (body) => fillDischargeGaps(body, note.sections, outcomes),
+        clinical: true,
       },
       actor.actor,
       actor.name,

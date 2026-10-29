@@ -3,6 +3,7 @@
  * (anything unknown is dropped – never trusted), and the CSV cell rule that stops a spreadsheet from running a
  * cell as a formula (K2-NFR-005).
  */
+import { safeCsvText } from "../core/csv-safe";
 import { PATIENT_STATUSES, PAYER_TYPES } from "../core/schemas";
 import type { PatientStatus, PayerType } from "../core/types";
 
@@ -81,9 +82,7 @@ export function hasNarrowingFilters(f: PatientListFilters): boolean {
 /** One CSV cell: quoted when needed; a leading = + - @ tab or carriage return is defused with an apostrophe. */
 export function csvCell(value: string | number | null | undefined): string {
   if (value === null || value === undefined) return "";
-  let text = String(value);
-  if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`;
-  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  return safeCsvText(String(value));
 }
 
 export function csvLine(cells: readonly (string | number | null | undefined)[]): string {

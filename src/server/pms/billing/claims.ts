@@ -5,7 +5,7 @@
  * Healthcode channel is listed as "not connected" and never sends.
  *
  * Permissions as the invoice CSV: billing.view to look, billing.view + reports.export to download. Site scope from
- * the member (invoices of other sites are left out).
+ * the member (invoices of other sites are left out). The "Diagnosis code" column is blank without clinical.view.
  */
 import "server-only";
 import { z } from "zod";
@@ -115,7 +115,7 @@ export async function claimsFileFor(actor: BillingActor, input: unknown): Promis
     const chosen = parsed.data.includeSent ? all : all.filter((i) => !i.exportedAt);
     if (chosen.length === 0) return fail("invalid", "There are no invoices to claim for this payer and dates.");
     if (chosen.length > MAX_EXPORT_INVOICES) return fail("invalid", `That is ${chosen.length} invoices – at most ${MAX_EXPORT_INVOICES} go in one file. Choose a shorter date range.`);
-    const file = await INSURER_BILLING_CHANNELS.csv.submit(actor.repo(), actor.tenantId, chosen.map((i) => i.id), actor.actor);
+    const file = await INSURER_BILLING_CHANNELS.csv.submit(actor.repo(), actor.tenantId, chosen.map((i) => i.id), actor.actor, { clinical: actor.can("clinical.view") });
     return ok(file);
   });
 }

@@ -42,7 +42,7 @@ import { WORDING } from "../../core/wording";
 import { HttpError, json, logEvent, problem, type MedreportHandler } from "../http";
 import { STORE_RECORD_ID_PATTERN, type StoreReportReuseResponse } from "../store-contract";
 import { bundleResponseFor } from "./file-import-response";
-import { assertContentType, auditStore, pathParam, requireTenantActor } from "./store-actor";
+import { assertContentType, auditStore, pathParam, reportReadable, requireTenantActor } from "./store-actor";
 
 /** A stored report from a connector this build does not have (see the handler). Neutral words: no vendor's name. */
 const REUSE_UNKNOWN_CONNECTOR_TITLE = "These notes cannot be reused here";
@@ -78,7 +78,8 @@ export const handleStoreReportReuse: MedreportHandler = async (req, ctx, deps) =
   }
   const report = parsed?.data;
   // The store is the clinic's own (every read names the tenant); the tenant check is belt and braces.
-  if (!report || report.tenantId !== t.tenantId) {
+  // M10 H2: a report the host keeps from this member reads as gone (MedreportDeps.mayReadReport).
+  if (!report || report.tenantId !== t.tenantId || !(await reportReadable(t.actor, deps, report))) {
     logEvent("report_reuse_gone", {});
     return problem(404, WORDING.server.access.reuseGoneTitle, { code: "NOT_FOUND", detail: WORDING.server.access.reuseGoneDetail });
   }

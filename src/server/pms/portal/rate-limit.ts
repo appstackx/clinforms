@@ -14,10 +14,15 @@ export const PUBLIC_LIMITS = {
   bookingPerClient: { max: 10, windowMs: 60 * 60_000 },
   bookingPerEmail: { max: 3, windowMs: 24 * 60 * 60_000 },
   bookingPerClinic: { max: 300, windowMs: 60 * 60_000 },
+  /** M10 M6: public bookings that reach the patient step (each may create a new patient record), per clinic. */
+  recordsPerClinic: { max: 40, windowMs: 60 * 60_000 },
   signInPerClient: { max: 10, windowMs: 60 * 60_000 },
   signInPerEmail: { max: 5, windowMs: 60 * 60_000 },
   linkPerClient: { max: 30, windowMs: 60 * 60_000 },
   patientWritesPerClient: { max: 60, windowMs: 60 * 60_000 },
+  /** Pairing a clinic device with a code (M10 H3): ~10^11 codes, each valid 10 minutes. */
+  devicePairPerClient: { max: 10, windowMs: 10 * 60_000 },
+  devicePairPerClinic: { max: 60, windowMs: 10 * 60_000 },
 } as const;
 
 export type PublicLimit = keyof typeof PUBLIC_LIMITS;

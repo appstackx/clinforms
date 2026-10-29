@@ -5,7 +5,10 @@
  * actions), and writes through src/server/repos/pms/access.ts (audited, locks refused and audited).
  *
  * Guard rails beyond the permission:
- *   - nobody changes their OWN access here (an admin cannot widen their own rights) – another manager does;
+ *   - nobody changes their OWN access here (an admin cannot widen their own rights) – another manager does; on the
+ *     role grid nobody but the owner changes the row of their own role (M10 H4: an administrator cannot widen what
+ *     administrators may do), and only an administrator or the owner changes administrators (row or member);
+ *   - "Manage members and permissions" itself is locked off for clinicians and reception (core/permissions.ts);
  *   - the owner's access is locked (everything, every site) and nobody but the owner can make or change an owner;
  *   - the owner and one's own account cannot be deactivated.
  */
@@ -85,8 +88,18 @@ export async function loadRolesScreen(actor: ScreenActor): Promise<ScreenResult<
   return { ok: true, value: { overrides, counts, history: changes.map((c) => ({ at: c.at, who: nameOf(c.byUserId), items: c.items })) } };
 }
 
+/** M10 H4: why this manager may not change these role rows (their own role's, or administrators' without being one). */
+export function roleGridRefusal(actor: Pick<ScreenActor, "role">, changes: readonly Pick<RolePermissionChange, "role">[]): string | null {
+  if (actor.role === "owner") return null;
+  if (changes.some((c) => c.role === actor.role)) return "You cannot change the permissions of your own role. Ask the owner.";
+  if (actor.role !== "admin" && changes.some((c) => c.role === "admin")) return "Only the owner or an administrator can change what administrators may do.";
+  return null;
+}
+
 export async function saveRolesFor(actor: ScreenActor, changes: RolePermissionChange[]): Promise<ScreenResult<{ changed: number }>> {
   if (!actor.can("settings.members")) return FORBIDDEN;
+  const refusal = Array.isArray(changes) ? roleGridRefusal(actor, changes) : null;
+  if (refusal) return { ok: false, code: "forbidden", error: refusal };
   try {
     const r = await saveRolePermissions(actor.repo(), actor.tenantId, changes, actor.actor);
     if (!r.ok) return lockedOrConflict(r);
@@ -194,9 +207,11 @@ function professionTitle(profession: string): string {
   return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
-function readOnlyReason(actor: Pick<ScreenActor, "userId" | "role">, member: ClinicMember): string | null {
+export function readOnlyReason(actor: Pick<ScreenActor, "userId" | "role">, member: ClinicMember): string | null {
   if (member.role === "owner") return "The owner always has full access at every site. Ownership is transferred in ClinForms settings.";
   if (member.userId === actor.userId) return "You cannot change your own access. Ask another administrator or the owner.";
+  // M10 H4: a manager who is not an administrator (or the owner) never changes an administrator.
+  if (member.role === "admin" && actor.role !== "owner" && actor.role !== "admin") return "Only the owner or an administrator can change an administrator's access.";
   return null;
 }
 
@@ -286,6 +301,7 @@ export async function saveSigningDetailsFor(actor: ScreenActor, userId: string, 
   if (!actor.can("settings.members")) return FORBIDDEN;
   const member = (await listClinicMembers(actor)).find((m) => m.userId === userId);
   if (!member) return NOT_FOUND;
+  if (member.role === "admin" && actor.role !== "owner" && actor.role !== "admin") return FORBIDDEN;
   if (member.role === "staff") return { ok: false, code: "invalid", error: "Reception never signs clinical notes. Change their role to Clinician first." };
   const checked = checkSigning(
     { registrationBody: String(input.registrationBody ?? ""), registrationNumber: String(input.registrationNumber ?? ""), maySign: input.maySign === true },

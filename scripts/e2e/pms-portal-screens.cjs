@@ -16,7 +16,8 @@
  *   record's Forms tab → reception cannot see health answers → an outcome questionnaire answered in the portal lands
  *   in the record's Outcomes → a reports-only clinic has no public pages (404) → staff screens (set-up, builder).
  *
- * SQLITE_PATH is only READ (appointment status / fee flag). Fictional data only; nothing secret is printed.
+ * SQLITE_PATH is READ, plus one test-only write per portal sign-in (M10 C1: the link's hash – see signInLinkFor).
+ * Otherwise only READ (appointment status / fee flag). Fictional data only; nothing secret is printed.
  */
 const crypto = require("crypto");
 const fs = require("fs");
@@ -135,6 +136,19 @@ function readDb(sql, ...args) {
     db.close();
   }
 }
+
+/** TEST-ONLY write to the scratch database (M10 C1: gives a sign-in link a secret the test knows – its hash only). */
+function writeDb(sql, ...args) {
+  if (!SQLITE || !/^\/(private\/)?(tmp|var\/folders)\//.test(SQLITE)) throw new Error("SQLITE_PATH must be a scratch database under /tmp");
+  const { DatabaseSync } = require("node:sqlite");
+  const db = new DatabaseSync(SQLITE);
+  try {
+    const r = db.prepare(sql).run(...args);
+    if (r.changes !== 1) throw new Error(`expected one row changed, got ${r.changes}`);
+  } finally {
+    db.close();
+  }
+}
 const appointmentOf = (reference) =>
   readDb(
     "SELECT a.id, a.starts_on, a.starts_at, a.site_id, a.practitioner_id, a.service_id, a.status, a.fee_due, a.source, a.patient_id FROM pms_online_bookings b JOIN pms_appointments a ON a.tenant_id = b.tenant_id AND a.id = b.appointment_id WHERE b.tenant_id = ? AND b.reference = ?",
@@ -200,8 +214,13 @@ async function bookOnline(page, { dayIndex = 0, details = null, lastTime = false
   const chloe = { first: "Chloe", last: `Turner-${RUN}`, dob: "1988-07-14", mobile: "07700 900318", email: `chloe.turner.${RUN}@example.com` };
   const s = { reference: null, appt: null, link: null, rebook: null };
 
-  /** The newest "Portal sign-in" email to a patient, read on the outbox (View). */
-  async function signInLinkFor(name) {
+  /**
+   * The newest "Portal sign-in" email to a patient. M10 C1: staff never see the link – the outbox's View shows it
+   * hidden (checked here). The provider's copy is not readable from the browser, so the test gives the newest link a
+   * secret it knows: it writes only that secret's SHA-256 to the scratch database (as the app stores it), then opens
+   * the link like the patient would. `next` is the page the email opens (it is not stored either).
+   */
+  async function signInLinkFor(name, next = null) {
     await owner.goto(`${BASE}/app/clinic/messages`);
     const row = owner.locator(`table tbody tr:has-text("${name}"):has-text("Portal sign-in")`).first();
     await row.waitFor({ timeout: 30000 });
@@ -209,9 +228,17 @@ async function bookOnline(page, { dayIndex = 0, details = null, lastTime = false
     await owner.waitForSelector("[data-testid=message-view]");
     const text = await owner.locator("[data-testid=message-view]").innerText();
     await owner.keyboard.press("Escape");
-    const link = (text.match(/https?:\/\/\S+\/portal\/link\/[A-Za-z0-9_-]{43}(\?next=\S+)?/) || [])[0];
-    assert(link, "a sign-in link in the email");
-    return link;
+    assert(!/\/portal\/link\/[A-Za-z0-9_-]{43}/.test(text) && !/[A-Za-z0-9_-]{43}/.test(text), "staff never see the sign-in secret");
+    assert(/Sign-in link – only in the email sent to the patient/.test(text), "the link is shown hidden");
+    const token = crypto.randomBytes(32).toString("base64url");
+    writeDb(
+      "UPDATE pms_portal_links SET token_hash = ? WHERE tenant_id = ? AND id = (SELECT l.id FROM pms_portal_links l JOIN pms_portal_accounts a ON a.tenant_id = l.tenant_id AND a.id = l.account_id JOIN pms_patients p ON p.tenant_id = a.tenant_id AND p.id = a.patient_id WHERE l.tenant_id = ? AND l.used_at IS NULL AND (p.first_name || ' ' || p.last_name) = ? ORDER BY l.created_at DESC, l.id DESC LIMIT 1)",
+      crypto.createHash("sha256").update(token, "utf8").digest("hex"),
+      CLINIC,
+      CLINIC,
+      name,
+    );
+    return `${PUB}/portal/link/${token}${next ? `?next=${encodeURIComponent(next)}` : ""}`;
   }
   async function portalSignInCount() {
     await owner.goto(`${BASE}/app/clinic/messages`);

@@ -2,6 +2,9 @@
  * The clinic DEVICE's side of a form handed to the patient in the clinic (FORM-007): what the device page shows for
  * the one-time secret in its cookie, and the patient's submit (the ordinary sealed submit of the copy + the hand-off
  * marked completed in the same batch). No staff session is needed or read. Staff side: ./clinic-device.ts.
+ *
+ * M10 H3: the device is PAIRED by the short code staff get on their own screen (`pairDeviceWithCode`) – a browser
+ * that is not signed in; only then does it hold a secret. Attempts are limited per address and per clinic.
  */
 import "server-only";
 import type { IntakeResponse } from "../../../modules/pms/portal/types";
@@ -9,7 +12,12 @@ import type { RepoContext } from "../../repos/context";
 import { findHandoffByToken, handoffCompletedQuery, handoffUsable, type IntakeHandoff } from "../../repos/pms/portal/handoffs";
 import { getIntakeResponse } from "../../repos/pms/portal/intake";
 import { answersFromForm, submitForm } from "./intake-service";
-import { hashSecret, isLinkToken } from "./tokens";
+import { hashSecret, isLinkToken, newSecret } from "./tokens";
+import { createHash } from "node:crypto";
+import { normalisePairingCode } from "../../../modules/pms/portal/pairing-code";
+import { pairDevice } from "../../repos/pms/portal/pairings";
+import { getHandoff } from "../../repos/pms/portal/handoffs";
+import { publicLimits, tooManyMessage, type PublicLimit } from "./rate-limit";
 import { pmsNow } from "../../../modules/pms/core/clock";
 
 /** The device's cookie (httpOnly, SameSite=Strict, limited to /clinics/<clinic>/device). */
@@ -54,4 +62,36 @@ export async function submitOnDevice(ctx: RepoContext, tenantId: string, secret:
   if (result.ok) return { ok: true };
   if (result.reason === "invalid") return { ok: false, error: "Please check the answers marked below.", fieldErrors: result.errors };
   return { ok: false, error: "This form has changed or was already sent. Please hand the device back to a member of staff." };
+}
+
+/** The stored form of a pairing code: SHA-256 of the clinic and the code (a code means nothing in another clinic). */
+export function pairingCodeHash(tenantId: string, code: string): string {
+  return createHash("sha256").update(`pms-device-pair:${tenantId}:${code}`, "utf8").digest("hex");
+}
+
+export const PAIR_REFUSED = "That code is not right, or it has expired or been used. Ask a member of staff for a new code.";
+
+/**
+ * The device types the code from the staff screen: limited per address and per clinic, then paired once. Answers the
+ * device's new secret (for its cookie) and when it stops working.
+ */
+export async function pairDeviceWithCode(
+  ctx: RepoContext,
+  tenantId: string,
+  input: unknown,
+  opts: { clientIp: string | null; limitSecret?: string },
+): Promise<{ ok: true; secret: string; expiresAt: string } | { ok: false; error: string }> {
+  const checks: [PublicLimit, string | null][] = [];
+  if (opts.clientIp) checks.push(["devicePairPerClient", opts.clientIp]);
+  checks.push(["devicePairPerClinic", null]);
+  const limited = await publicLimits(ctx, tenantId, checks, opts.limitSecret);
+  if (!limited.ok) return { ok: false, error: tooManyMessage(limited.retryAfterSeconds) };
+  const code = normalisePairingCode(input);
+  if (!code) return { ok: false, error: PAIR_REFUSED };
+  const secret = newSecret();
+  const handoffId = await pairDevice(ctx, tenantId, pairingCodeHash(tenantId, code), hashSecret(secret));
+  if (!handoffId) return { ok: false, error: PAIR_REFUSED };
+  const h = await getHandoff(ctx, tenantId, handoffId);
+  if (!h) return { ok: false, error: PAIR_REFUSED };
+  return { ok: true, secret, expiresAt: h.expiresAt };
 }

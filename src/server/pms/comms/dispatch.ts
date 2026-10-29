@@ -52,6 +52,7 @@ import {
   type Composed,
 } from "./render";
 import { pmsNow, pmsNowMs } from "../../../modules/pms/core/clock";
+import { NO_RESEND_MESSAGE, canResendKind, redactSecretLinks } from "../../../modules/pms/comms/secret-links";
 
 /** The diary's answer for the run: the current status of these appointments ("booked", "cancelled", …). */
 export type AppointmentStatusReader = (ctx: RepoContext, tenantId: string, appointmentIds: readonly string[]) => Promise<ReadonlyMap<string, string>>;
@@ -97,6 +98,11 @@ interface DraftArgs {
   documentId?: string | null;
   /** Held for the quiet hours until then (UTC ISO): written queued, the provider is not called now. */
   holdUntil?: string | null;
+  /**
+   * What the provider gets when it differs from the stored copy (`composed`): an email carrying a sign-in link is
+   * stored with the link hidden and sent with it (M10 C1 – src/modules/pms/comms/secret-links.ts).
+   */
+  sendAs?: Composed;
 }
 
 function draftFor(a: DraftArgs): OutboundDraft {
@@ -183,7 +189,7 @@ async function deliver(
   );
   if (draft.holdUntil) return { ok: true, messageId: id, status: "queued", heldUntil: draft.holdUntil };
   if (outbox) return { ok: true, messageId: id, status: "outbox" };
-  const outcome = await callProvider(deps, args.channel, id, args.address, args.composed, clinic, sender);
+  const outcome = await callProvider(deps, args.channel, id, args.address, args.sendAs ?? args.composed, clinic, sender);
   await recordSendOutcomes(ctx, tenantId, [{ id, outcome }], actor);
   if (outcome.status === "sent" && args.channel === "sms" && args.composed.segments) await incrementUsage(ctx, tenantId, "sms_segments", args.composed.segments);
   return { ok: true, messageId: id, status: outcome.status };
@@ -254,6 +260,11 @@ export interface DocumentMessageInput {
   values: Record<string, string | null>;
   documentType: DocumentType | null;
   documentId: string | null;
+  /**
+   * Merge fields that are keys (the portal sign-in link): sent to the patient, never stored – the message log keeps
+   * the email with them replaced by HIDDEN_LINK (M10 C1). A message holding one cannot be sent again (Retry).
+   */
+  secretFields?: readonly string[];
 }
 
 /**
@@ -293,6 +304,10 @@ export async function sendDocumentMessage(ctx: RepoContext, tenantId: string, in
     clinic,
     stopUrl: null,
   });
+  const secrets = (input.secretFields ?? []).map((k) => input.values[k]).filter((v): v is string => Boolean(v));
+  const stored: Composed = secrets.length
+    ? { ...composed, subject: composed.subject === null ? null : redactSecretLinks(composed.subject, secrets), text: redactSecretLinks(composed.text, secrets), html: composed.html === null ? null : redactSecretLinks(composed.html, secrets) }
+    : composed;
   return deliver(
     ctx,
     tenantId,
@@ -302,7 +317,8 @@ export async function sendDocumentMessage(ctx: RepoContext, tenantId: string, in
       purpose: "service",
       kind: input.kind,
       address,
-      composed,
+      composed: stored,
+      ...(secrets.length ? { sendAs: composed } : {}),
       templateId: template.standard ? null : template.id,
       appointmentId: null,
       documentType: input.documentType,
@@ -392,6 +408,8 @@ export async function retryMessage(ctx: RepoContext, tenantId: string, id: strin
   const before = await getMessage(ctx, tenantId, id);
   if (!before || before.direction !== "outbound" || !before.toAddress) return { ok: false, reason: "not_found", message: "This message no longer exists in this clinic." };
   if (before.status !== "failed") return { ok: false, reason: "provider_error", message: "Only a message that failed can be sent again." };
+  // The stored copy of a sign-in email has its link hidden (M10 C1): sending it again would send no link.
+  if (!canResendKind(before.kind)) return { ok: false, reason: "provider_error", message: NO_RESEND_MESSAGE };
   if (before.patientId && !before.documentType) {
     const contact = await getMessagingContact(ctx, tenantId, before.patientId);
     const block = contact ? messageBlock(contact, before.channel, before.purpose, { automatic: false, kind: before.kind }) : "archived";

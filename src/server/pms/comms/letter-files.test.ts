@@ -21,6 +21,9 @@ import { claimsFileFor, claimsFor } from "../billing/claims";
 import { fillDischargeGaps, letterFileFor, startDischargeLetterFor } from "./letter-files";
 import { letterBlocks } from "./letter-output";
 import { letterFor } from "./views";
+import { saveLetterFor, startLetterFor } from "./writes";
+import { createLetterTemplate } from "../../repos/pms/comms/letters";
+import { createDraftInvoice, issueInvoice } from "../../repos/pms/billing/invoices";
 
 const A = "riverside-a";
 const B = "harbour-b";
@@ -149,6 +152,33 @@ describe("letter files, discharge letter and claims on SQLite", () => {
     assert.equal(!backwards.ok && backwards.code, "invalid");
     const elsewhere = await claimsFor(other, { payerReferrerId: ids.insurer });
     assert.equal(!elsewhere.ok && elsewhere.code, "not_found");
+  });
+
+  it("M10 M3: {{latest_outcomes}} is filled in only for a member with clinical.view", async () => {
+    const t = await createLetterTemplate(ctx, A, { name: "Progress to the insurer", recipientKind: "referrer", subject: "Progress: {{patient.full_name}}", body: "Dear {{recipient.name}},\n\nScores: {{latest_outcomes}}\n\n{{author.name}}" }, owner.actor);
+    const officeAdmin = testActor(ctx, A, "admin", { userId: "user_admin_07", name: "Office Admin" }, { exceptions: { "clinical.view": false, "messages.letters": true } });
+    assert.ok(officeAdmin.can("messages.letters") && !officeAdmin.can("clinical.view"));
+    const hidden = value(await startLetterFor(officeAdmin, { patientId: ids.megan, templateId: t.id, caseId: ids.case }));
+    const hiddenView = value(await letterFor(officeAdmin, hidden.id));
+    assert.doesNotMatch(hiddenView.letter.body, /NPRS|7\/10|2\/10/, "no outcome scores without clinical.view");
+    // Typed into the draft afterwards: still not filled in.
+    value(await saveLetterFor(officeAdmin, { id: hidden.id, rev: hiddenView.letter.rev, body: `${hiddenView.letter.body}\n{{latest_outcomes}}` }));
+    assert.doesNotMatch(value(await letterFor(officeAdmin, hidden.id)).letter.body, /NPRS/);
+    const shown = value(await startLetterFor(owner, { patientId: ids.megan, templateId: t.id, caseId: ids.case }));
+    assert.match(value(await letterFor(owner, shown.id)).letter.body, /NPRS 7\/10 → 2\/10/);
+  });
+
+  it("M10 L5: the claims file's Diagnosis code column is blank without clinical.view", async () => {
+    const draft = await createDraftInvoice(ctx, A, { patientId: ids.megan, caseId: ids.case, billTo: "payer", diagnosisCode: "S13.4", lines: [{ kind: "item", description: "Follow-up (fictional)", unitPricePence: 4800 }] }, owner.actor);
+    const issued = await issueInvoice(ctx, A, draft.invoice.id, 1, {}, owner.actor);
+    assert.ok(issued.ok);
+    const q = { payerReferrerId: ids.insurer, from: "2026-10-01", until: "2026-10-31", includeSent: true };
+    const exporter = testActor(ctx, A, "admin", { userId: "user_admin_08", name: "Billing Admin" }, { exceptions: { "clinical.view": false, "reports.export": true, "billing.view": true } });
+    const blank = value(await claimsFileFor(exporter, q));
+    assert.doesNotMatch(blank.body, /S13\.4/);
+    assert.match(blank.body.split("\n")[0], /Diagnosis code/, "the column stays (blank)");
+    const full = value(await claimsFileFor(owner, q));
+    assert.match(full.body, /S13\.4/);
   });
 
   it("every statement named its clinic", () => {

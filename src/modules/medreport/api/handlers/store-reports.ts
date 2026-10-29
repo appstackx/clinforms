@@ -89,7 +89,7 @@ import {
   type StoreReportResponse,
 } from "../store-contract";
 import type { StoredReportMeta, TenantStore } from "../store-port";
-import { assertContentType, auditStore, jsonWithRev, pathParam, problemWith, requireTenantActor, takeNewData, type TenantActor } from "./store-actor";
+import { assertContentType, auditStore, jsonWithRev, pathParam, problemWith, reportReadable, requireTenantActor, takeNewData, type TenantActor } from "./store-actor";
 import { assertClinicMayCreate } from "../../auth/clinic-access";
 import { recordUsage, usageEpisodeFp, usageEpisodeOfReport } from "../usage";
 
@@ -1081,12 +1081,30 @@ async function markSuperseded(t: TenantActor, v2: Report): Promise<void> {
   }
 }
 
+const reportNotFound = () => problem(404, "Report not found", { code: "NOT_FOUND", detail: "This report is not in the clinic's records." });
+
+/**
+ * M10 H2: a write to a report the member may not read (MedreportDeps.mayReadReport) – the stored copy, or the body
+ * itself – is answered 404 before anything is compared or returned (a 409 would hand back the stored copy).
+ */
+async function writeRefused(t: TenantActor, deps: Parameters<MedreportHandler>[2], id: string, body: Report | null): Promise<boolean> {
+  if (!deps.mayReadReport) return false;
+  if (body && !(await reportReadable(t.actor, deps, body))) return true;
+  if (deps.restrictsReports && !(await deps.restrictsReports(t.tenantId).catch(() => true))) return false;
+  const row = await t.store.getReport(t.tenantId, id);
+  if (!row) return false;
+  const parsed = StoredReportSchema.safeParse(row.payload);
+  return parsed.success ? !(await reportReadable(t.actor, deps, parsed.data)) : false;
+}
+
 export const handleStoreReportGet: MedreportHandler = async (req, ctx, deps) => {
   const t = await requireTenantActor(req, deps);
   const id = pathParam(ctx.params, "id", STORE_RECORD_ID_PATTERN);
   const stored = await t.store.getReport(t.tenantId, id);
-  if (!stored) return problem(404, "Report not found", { code: "NOT_FOUND", detail: "This report is not in the clinic's records." });
+  if (!stored) return reportNotFound();
   const body: StoreReportResponse = { rev: stored.rev, updatedAt: stored.updatedAt, report: parseStoredReport(stored.payload, id) };
+  // M10 H2: a report the host keeps from this member (a clinic-system report with clinical content) reads as missing.
+  if (!(await reportReadable(t.actor, deps, body.report))) return reportNotFound();
   // WC design 8: an approved version 2 makes sure version 1 reads as superseded (idempotent retry).
   if (body.report.status === "signed" && body.report.amends) await markSuperseded(t, body.report);
   return jsonWithRev(body, stored.rev);
@@ -1110,6 +1128,7 @@ export const handleStoreReportPut: MedreportHandler = async (req, ctx, deps) => 
   if (new TextEncoder().encode(JSON.stringify(report)).byteLength > STORE_MAX_RECORD_BYTES) {
     return problem(413, "This report is too large to store", { code: "PAYLOAD_TOO_LARGE" });
   }
+  if (await writeRefused(t, deps, id, report)) return reportNotFound();
   const refused = await checkReceipt(report, t.tenantId);
   if (refused) return refused;
 
@@ -1221,6 +1240,7 @@ export const handleStoreReportDelete: MedreportHandler = async (req, ctx, deps) 
   const t = await requireTenantActor(req, deps, { write: true });
   const id = pathParam(ctx.params, "id", STORE_RECORD_ID_PATTERN);
   const ifMatch = readIfMatch(req);
+  if (await writeRefused(t, deps, id, null)) return reportNotFound();
   const before = await t.store.getReportMeta(t.tenantId, id);
   if (before && ifMatch !== null && before.rev !== ifMatch) {
     return conflict(await currentCopy(t.store, t.tenantId, id), "Someone saved this report after you opened it. The stored copy was loaded.");

@@ -160,8 +160,23 @@ export async function manageContext(ctx: RepoContext, clinic: PublicClinic, toke
   const paths = clinicPublicPaths(clinic.tenantId);
   const forms = (await listResponsesForAppointment(ctx, clinic.tenantId, booking.appointmentId))
     .filter((r) => r.patientId === booking.patientId)
-    .map((r) => ({ id: r.id, name: r.name, kind: r.kind, status: r.status, before: appointment.when, submittedAt: r.submittedAt, href: paths.manageForm(token, r.id) }));
+    .map((r) => ({ id: r.id, name: r.name, kind: r.kind, status: r.status, before: appointment.when, submittedAt: r.submittedAt, href: paths.manageFormPage(r.id) }));
   return { booking, appointment, forms, token };
+}
+
+/**
+ * A form through a booking's manage link (M10 M5): an unanswered copy to fill in, or – once sent – its name only. The
+ * answers are never returned here (a booking matched to an existing record would show that patient's answers to
+ * whoever holds the link); the patient reads their copies in the portal.
+ */
+export type ManageFormView = { state: "fill"; manage: ManageContext; response: IntakeResponse } | { state: "sent"; manage: ManageContext; name: string };
+
+export async function manageFormView(ctx: RepoContext, clinic: PublicClinic, token: string, responseId: string, now: Date = pmsNow()): Promise<ManageFormView | null> {
+  const m = await manageContext(ctx, clinic, token, now);
+  if (!m) return null;
+  const r = await patientForm(ctx, clinic, { patientId: m.booking.patientId, appointmentId: m.booking.appointmentId }, responseId);
+  if (!r || r.kind === "outcome") return null;
+  return r.status === "submitted" ? { state: "sent", manage: m, name: r.name } : { state: "fill", manage: m, response: r };
 }
 
 /** A form copy of this patient (portal) – or, through a manage link, of that booking's appointment. */

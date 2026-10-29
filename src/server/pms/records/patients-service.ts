@@ -13,6 +13,7 @@ import { ukToday } from "../../../modules/pms/core/text";
 import type { CaseSummary, Patient, PatientStatus, PatientSummary } from "../../../modules/pms/core/types";
 import type { AnonymiseCheck } from "../../../modules/pms/records/anonymise";
 import { listCasesForPatient } from "../../repos/pms/cases";
+import { endPortalAccessForEmailChange } from "../../repos/pms/portal/accounts";
 import { createPatient, searchPatients, setPatientLegalHold, setPatientStatus, updatePatient } from "../../repos/pms/patients";
 import { anonymiseEligibility, anonymisePatient, getAnonymisation, type AnonymiseResult } from "../../repos/pms/records/anonymise";
 import { findPossibleDuplicates, type PossibleDuplicate } from "../../repos/pms/records/duplicates";
@@ -101,7 +102,12 @@ export async function updatePatientFor(actor: RecordsActor, patientId: string, e
     const patient = await editable(actor, patientId);
     if ("ok" in patient) return patient;
     const saved = await updatePatient(actor.repo(), actor.tenantId, patient.id, expectedRev, patch, actor.actor);
-    return saved.ok ? ok({ rev: saved.rev }) : saveFailure(saved);
+    if (!saved.ok) return saveFailure(saved);
+    // M10 L7: a new email address ends the patient's portal sessions and unused sign-in links (portal module).
+    if (patch.email !== undefined && (patch.email ?? "").trim().toLowerCase() !== (patient.email ?? "").trim().toLowerCase()) {
+      await endPortalAccessForEmailChange(actor.repo(), actor.tenantId, patient.id, actor.actor);
+    }
+    return ok({ rev: saved.rev });
   });
 }
 

@@ -11,13 +11,16 @@
  *   email with a portal link through the outbox) → reception cannot reach attachments → Megan signs in from that
  *   email and sees the document, downloads the PDF (content-type, %PDF) → the record shows "opened" → withdraw →
  *   the patient's page and the file are gone (404).
- *   FORM-007 – "Complete in the clinic" on her waiting health questionnaire → the device shows ONLY that form (no
- *   staff navigation, not even her name) → she fills it in → the device locks on "hand back" → a wrong password is
- *   refused → the member verifies with their password → the signed copy says "Completed in the clinic, verified by …".
+ *   FORM-007 (M10 H3) – "Complete in the clinic" on her waiting health questionnaire → the STAFF screen shows a code →
+ *   a separate browser that is not signed in opens the device page and enters it (a wrong code is refused; the code
+ *   works once) → the device shows ONLY that form (no staff navigation or /app link, not even her name, no staff
+ *   session) → she fills it in → the device locks on "hand back" → on the staff screen a wrong password is refused →
+ *   the member verifies with their password → the signed copy says "Completed in the clinic, verified by …".
  *   PDF – "Download PDF" of the sealed copy returns a PDF (content-type, %PDF) for the clinician and for reception.
  *   Preview – the builder's "Preview as patient" shows the patient's form (unsaved wording included), nothing sendable.
  *
- * SQLITE_PATH is only READ (ids, the hand-off row). Fictional data only; nothing secret is printed.
+ * SQLITE_PATH is READ, plus one test-only write per portal sign-in (M10 C1: the link's hash – see signInLinkFor).
+ * Otherwise only READ (ids, the hand-off row). Fictional data only; nothing secret is printed.
  */
 const crypto = require("crypto");
 const fs = require("fs");
@@ -139,6 +142,19 @@ function readDb(sql, ...args) {
   }
 }
 
+/** TEST-ONLY write to the scratch database (M10 C1: gives a sign-in link a secret the test knows – its hash only). */
+function writeDb(sql, ...args) {
+  if (!SQLITE || !/^\/(private\/)?(tmp|var\/folders)\//.test(SQLITE)) throw new Error("SQLITE_PATH must be a scratch database under /tmp");
+  const { DatabaseSync } = require("node:sqlite");
+  const db = new DatabaseSync(SQLITE);
+  try {
+    const r = db.prepare(sql).run(...args);
+    if (r.changes !== 1) throw new Error(`expected one row changed, got ${r.changes}`);
+  } finally {
+    db.close();
+  }
+}
+
 /** A small PDF made by hand (one page, "Home exercise plan (fictional)"). */
 function samplePdf() {
   const objs = [
@@ -183,8 +199,13 @@ function samplePdf() {
   const s = { ownerPassword: null, megan: null, shareTitle: `Your exercise plan ${RUN}`, docUrl: null, fileUrl: null, tablet: null, handoffUrl: null, copyUrl: null };
   const OWNER_NAME = "Helen Ward (fictional)";
 
-  /** The newest "Portal sign-in" email to a patient, read on the outbox (View). */
-  async function signInLinkFor(name) {
+  /**
+   * The newest "Portal sign-in" email to a patient. M10 C1: staff never see the link – the outbox's View shows it
+   * hidden (checked here). The provider's copy is not readable from the browser, so the test gives the newest link a
+   * secret it knows: it writes only that secret's SHA-256 to the scratch database (as the app stores it), then opens
+   * the link like the patient would. `next` is the page the email opens (it is not stored either).
+   */
+  async function signInLinkFor(name, next = null) {
     await owner.goto(`${BASE}/app/clinic/messages`);
     const row = owner.locator(`table tbody tr:has-text("${name}"):has-text("Portal sign-in")`).first();
     await row.waitFor({ timeout: 30000 });
@@ -192,10 +213,18 @@ function samplePdf() {
     await owner.waitForSelector("[data-testid=message-view]");
     const text = await owner.locator("[data-testid=message-view]").innerText();
     await owner.keyboard.press("Escape");
-    const link = (text.match(/https?:\/\/\S+\/portal\/link\/[A-Za-z0-9_-]{43}(\?next=\S+)?/) || [])[0];
-    assert(link, "a sign-in link in the email");
+    assert(!/\/portal\/link\/[A-Za-z0-9_-]{43}/.test(text) && !/[A-Za-z0-9_-]{43}/.test(text), "staff never see the sign-in secret");
+    assert(/Sign-in link – only in the email sent to the patient/.test(text), "the link is shown hidden");
     assert(!text.includes(s.shareTitle), "the email does not name the document");
-    return link;
+    const token = crypto.randomBytes(32).toString("base64url");
+    writeDb(
+      "UPDATE pms_portal_links SET token_hash = ? WHERE tenant_id = ? AND id = (SELECT l.id FROM pms_portal_links l JOIN pms_portal_accounts a ON a.tenant_id = l.tenant_id AND a.id = l.account_id JOIN pms_patients p ON p.tenant_id = a.tenant_id AND p.id = a.patient_id WHERE l.tenant_id = ? AND l.used_at IS NULL AND (p.first_name || ' ' || p.last_name) = ? ORDER BY l.created_at DESC, l.id DESC LIMIT 1)",
+      crypto.createHash("sha256").update(token, "utf8").digest("hex"),
+      CLINIC,
+      CLINIC,
+      name,
+    );
+    return `${PUB}/portal/link/${token}${next ? `?next=${encodeURIComponent(next)}` : ""}`;
   }
   const attachmentsUrl = () => `${BASE}/app/clinic/patients/${s.megan}/attachments`;
   const formsUrl = () => `${BASE}/app/clinic/patients/${s.megan}/forms`;
@@ -234,7 +263,8 @@ function samplePdf() {
     });
 
     await step("2. the patient signs in from that email and sees the document; Download returns the PDF", async () => {
-      const link = await signInLinkFor("Megan Hart");
+      const share = readDb("SELECT id FROM pms_portal_shares WHERE tenant_id = ? AND patient_id = ? ORDER BY shared_at DESC LIMIT 1", CLINIC, s.megan);
+      const link = await signInLinkFor("Megan Hart", `/clinics/${CLINIC}/portal/documents/${share.id}`);
       assert(/next=/.test(link), "the link opens the document");
       await phone.goto(link);
       await phone.waitForSelector("h1:has-text('Sign in to your patient portal')");
@@ -277,27 +307,57 @@ function samplePdf() {
       assert(!(await phone.locator("main").innerText()).includes(s.shareTitle), "no longer listed");
     });
 
-    await step("4. FORM-007: 'Complete in the clinic' → the device shows ONLY that form (no staff navigation, no patient name)", async () => {
-      const tabletCtx = await browser.newContext({ viewport: { width: 820, height: 1180 }, storageState: await owner.context().storageState() });
+    await step("4. FORM-007 + M10 H3: 'Complete in the clinic' → the staff screen shows a code → a separate, signed-out device enters it and shows ONLY that form", async () => {
+      await owner.goto(formsUrl());
+      await owner.waitForSelector("h2:has-text('Forms')");
+      const button = owner.getByRole("button", { name: /Complete in the clinic – Health questionnaire/ }).first();
+      await button.waitFor();
+      await shot(owner, "1440-06-forms-tab-complete-in-clinic");
+      await button.click();
+      await owner.waitForURL(/\/app\/clinic\/intake\/device\/ihd_/, { timeout: 30000 });
+      s.handoffUrl = owner.url();
+      assert(!(await owner.context().cookies(`${PUB}/device`)).some((c) => c.name === "pms_device"), "nothing for the device in the staff browser");
+      await owner.click("button:has-text('Show a code for the device')");
+      const code = (await owner.locator("[data-testid=pairing-code]").innerText()).trim();
+      assert(/^[A-Z2-9]{4}-[A-Z2-9]{4}$/.test(code), `a pairing code: ${code}`);
+      await shot(owner, "1440-06b-staff-pairing-code");
+      await axe(owner, "hand-off – pairing code (1440)");
+      // The clinic device: its own browser context, never signed in.
+      const tabletCtx = await browser.newContext({ viewport: { width: 820, height: 1180 } });
       s.tablet = watch(await tabletCtx.newPage());
       failPages.push(["tablet", s.tablet]);
-      await s.tablet.goto(formsUrl());
-      await s.tablet.waitForSelector("h2:has-text('Forms')");
-      const button = s.tablet.getByRole("button", { name: /Complete in the clinic – Health questionnaire/ }).first();
-      await button.waitFor();
-      await shot(s.tablet, "820-06-forms-tab-complete-in-clinic");
-      await button.click();
-      await s.tablet.waitForURL(`${PUB}/device`, { timeout: 30000 });
-      await s.tablet.waitForSelector("text=/Part 1 of/");
+      await s.tablet.goto(`${PUB}/device`);
+      await s.tablet.waitForSelector("#dv-code");
+      assert((await s.tablet.locator("a[href^='/app']").count()) === 0, "no staff links on the device");
+      await shot(s.tablet, "820-06c-device-enter-code");
+      await axe(s.tablet, "clinic device – enter code (820)");
+      await s.tablet.fill("#dv-code", "ZZZZ-ZZZZ");
+      await s.tablet.click("button:has-text('Show the form')");
+      await s.tablet.waitForSelector("text=/That code is not right/");
+      await s.tablet.fill("#dv-code", code.toLowerCase());
+      await s.tablet.click("button:has-text('Show the form')");
+      await s.tablet.waitForSelector("text=/Part 1 of/", { timeout: 30000 });
       const text = await s.tablet.locator("body").innerText();
       assert(!/Megan|Hart/.test(text), "no patient name on the device");
       assert((await s.tablet.locator("a[href^='/app']").count()) === 0, "no staff links on the device");
       assert(!/Clinic navigation|Patients|Diary/.test(await s.tablet.locator("body").innerText()), "no staff navigation");
+      const staffCookies = (await tabletCtx.cookies(BASE)).filter((c) => /session|auth/i.test(c.name));
+      assert(staffCookies.length === 0, `no staff session on the device: ${staffCookies.map((c) => c.name)}`);
+      const into = await s.tablet.request.get(`${BASE}/app/clinic`, { maxRedirects: 0 });
+      assert(into.status() >= 300 && into.status() < 400, `the device cannot open the staff app: ${into.status()}`);
       await shot(s.tablet, "820-07-device-form");
       await axe(s.tablet, "clinic device – form (820)");
+      // The code worked once: another browser cannot use it.
+      const other = await browser.newContext({ viewport: { width: 820, height: 1180 } });
+      const op = await other.newPage();
+      await op.goto(`${PUB}/device`);
+      await op.fill("#dv-code", code);
+      await op.click("button:has-text('Show the form')");
+      await op.waitForSelector("text=/That code is not right/");
+      await other.close();
     });
 
-    await step("5. the patient fills it in on the device → the device locks on 'hand back to staff'", async () => {
+    await step("5. the patient fills it in on the device → the device locks on 'hand back to staff' (no link into the staff app)", async () => {
       const t = s.tablet;
       await t.fill("#q-problem", "Stiff right shoulder reaching overhead (fictional).");
       await t.locator("fieldset:has-text('When did it start?') label:has-text('2 to 6 weeks ago') input").check();
@@ -305,7 +365,7 @@ function samplePdf() {
       await t.click("button:has-text('Send')");
       await t.waitForSelector("h1:has-text('Thank you – your form has been sent')", { timeout: 30000 });
       assert(/hand the device back to a member of staff/.test(await t.locator("main").innerText()), "hand back");
-      assert((await t.locator("a[href^='/app']").count()) === 1, "only the staff verify link");
+      assert((await t.locator("a[href^='/app']").count()) === 0, "no link into the staff app");
       await shot(t, "820-08-device-hand-back");
       await axe(t, "clinic device – hand back (820)");
       await t.goBack().catch(() => {});
@@ -313,22 +373,19 @@ function samplePdf() {
       assert(!(await t.locator("#q-problem").count()), "the form is not shown again");
     });
 
-    await step("6. staff verify: a wrong password is refused; their password → 'Completed in the clinic, verified by …'", async () => {
-      const t = s.tablet;
-      await t.click("a:has-text('Staff: verify and finish')");
-      await t.waitForSelector("text=Check it was the right patient");
-      s.handoffUrl = t.url();
-      assert(/Megan Hart/.test(await t.locator("main").innerText()), "the staff page names the patient");
-      await t.fill("#ho-pw", "not-the-password");
-      await t.click("button:has-text('Verify and finish')");
-      await t.waitForSelector("text=That password is not right.");
-      await shot(t, "820-09-verify-wrong-password");
-      await axe(t, "hand-off verify (820)");
-      await t.fill("#ho-pw", s.ownerPassword);
-      await t.click("button:has-text('Verify and finish')");
-      await t.waitForSelector(`text=/Completed in the clinic, verified by ${OWNER_NAME.replace(/[()]/g, ".")}/`, { timeout: 30000 });
-      s.copyUrl = t.url();
-      await owner.goto(s.copyUrl);
+    await step("6. staff verify on THEIR screen: a wrong password is refused; their password → 'Completed in the clinic, verified by …'", async () => {
+      await owner.goto(s.handoffUrl);
+      await owner.waitForSelector("text=Check it was the right patient", { timeout: 30000 });
+      assert(/Megan Hart/.test(await owner.locator("main").innerText()), "the staff page names the patient");
+      await owner.fill("#ho-pw", "not-the-password");
+      await owner.click("button:has-text('Verify and finish')");
+      await owner.waitForSelector("text=That password is not right.");
+      await shot(owner, "1440-09-verify-wrong-password");
+      await axe(owner, "hand-off verify (1440)");
+      await owner.fill("#ho-pw", s.ownerPassword);
+      await owner.click("button:has-text('Verify and finish')");
+      await owner.waitForSelector(`text=/Completed in the clinic, verified by ${OWNER_NAME.replace(/[()]/g, ".")}/`, { timeout: 30000 });
+      s.copyUrl = owner.url();
       await owner.waitForSelector("text=Completed and sealed.");
       const text = await owner.locator("main").innerText();
       assert(new RegExp(`Completed in the clinic, verified by ${OWNER_NAME.replace(/[()]/g, ".")}`).test(text) && /Stiff right shoulder/.test(text), "verified line and the answers");
@@ -338,8 +395,8 @@ function samplePdf() {
       assert(h && h.status === "verified" && h.verified_by && h.completed_at && h.verified_at, `hand-off row ${JSON.stringify(h)}`);
       const a = readDb("SELECT COUNT(*) AS n FROM audit_log WHERE tenant_id = ? AND action = 'pms.intake_response.verify'", CLINIC);
       assert(a.n === 1, `one verify audit row: ${a.n}`);
-      const cookies = await t.context().cookies(`${PUB}/device`);
-      assert(!cookies.some((c) => c.name === "pms_device" && c.value), "the device's secret is cleared");
+      await s.tablet.goto(`${PUB}/device`);
+      await s.tablet.waitForSelector("h1:has-text('All done')");
       await jess.goto(formsUrl());
       await jess.waitForSelector("text=Completed in the clinic, verified");
     });

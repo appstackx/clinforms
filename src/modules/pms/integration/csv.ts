@@ -9,6 +9,7 @@
  *   length of one field. Rows shorter than the header are padded with ""; longer rows are an error (the columns
  *   would not line up).
  */
+import { safeCsvText } from "../core/csv-safe";
 
 export type CsvDelimiter = "," | ";" | "\t";
 
@@ -172,9 +173,7 @@ export function parseCsv(input: string, options: { delimiter?: CsvDelimiter; lim
 /** One CSV field, quoted when it needs to be; formula-looking values are prefixed with ' (spreadsheet safety). */
 export function csvField(value: string | number | null | undefined, delimiter: CsvDelimiter = ","): string {
   if (value === null || value === undefined) return "";
-  let s = String(value);
-  if (/^[=+\-@\t\r]/.test(s) && !/^-?\d+(\.\d+)?$/.test(s)) s = `'${s}`;
-  return /["\r\n]/.test(s) || s.includes(delimiter) ? `"${s.replace(/"/g, '""')}"` : s;
+  return safeCsvText(String(value), { delimiter, keepNumbers: true });
 }
 
 /** Rows → CSV text with CRLF line ends. */

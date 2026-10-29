@@ -185,7 +185,10 @@ const wideOnes = (page) =>
       assert(/Never/.test(reception) && /Reception can never see clinical note content/.test(reception), `reception clinical cell: ${reception}`);
       assert((await row("Change the owner").locator("td").nth(1).innerText()).includes("Only the owner can change the owner"), "change the owner is locked for admins");
       assert((await row("View the diary").locator("td").nth(0).innerText()).includes("Always"), "owner always");
-      assert((await o.locator("tbody input[type=checkbox]").count()) === 26 * 3 - 4 - 3, "editable cells: all but owner, reception clinical (4) and change the owner (3)");
+      // M10 H4: "Manage members and permissions" is locked off for clinicians and reception (2 more locked cells).
+      const managers = await row("Manage members and permissions").locator("td").nth(2).innerText();
+      assert(/Only the owner and administrators manage members and permissions/.test(managers), `clinician manage-members cell: ${managers}`);
+      assert((await o.locator("tbody input[type=checkbox]").count()) === 26 * 3 - 4 - 3 - 2, "editable cells: all but owner, reception clinical (4), change the owner (3) and manage members for clinician and reception (2)");
       assert(await o.locator("button:has-text('No changes')").isDisabled(), "nothing to save yet");
     });
 
