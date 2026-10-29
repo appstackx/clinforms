@@ -7,6 +7,7 @@
  * LOCAL (default: the current environment, e.g. node --env-file=.env.local → local SQLite):
  *   npm run pms:seed-demo                        # creates the clinic if missing (owner invitation link printed once)
  *   npm run pms:seed-demo -- --fresh             # replace the clinic's demonstration data (local databases only)
+ *   npm run pms:seed-demo -- --resume            # finish a run that stopped part-way (any database; adds only what is missing)
  *   options: --slug riverside-demo --name "Riverside Physiotherapy (fictional)" --owner-email … --app-url http://localhost:3180
  *            --patients 200 --seed 2026
  *
@@ -14,17 +15,14 @@
  *   --env preview     needs --confirm; the clinic must exist and be a demonstration clinic
  *   --env production  needs --confirm --yes (and Khuram's go); the clinic must exist and be a demonstration clinic
  *   --mark-demo       flags an EMPTY clinic whose name ends "(fictional)" as a demonstration clinic first
+ *   --resume          the clinic data loaded completely before (audit "pms.demo.seed"): keep it and finish the module
+ *                     data (set-up, diary, records, billing, messages, portal, integration – each adds only what is
+ *                     missing). Never deletes; --fresh stays local-only (clinical records are never cleared on a server).
  * Without --confirm on a server database it only checks and says what it would do.
  */
 import { DEMO_CLINIC } from "./demo-data";
-import { seedDiary } from "./seed-diary";
-import { seedSetup } from "./seed-setup";
 import { assertDemoClinic, seedDemoClinic } from "./seed-lib";
-import { seedBilling } from "./seed-billing";
-import { seedComms } from "./seed-comms";
-import { seedPortal } from "./seed-portal";
-import { seedIntegration } from "./seed-integration";
-import { seedRecords } from "./seed-records";
+import { seedDemoModules } from "./seed-modules";
 import { createClinic } from "../../src/server/auth/platform";
 import { getDataCipher } from "../../src/server/crypto";
 import { getDb, getDbKind } from "../../src/server/db";
@@ -39,6 +37,8 @@ void runCli(async () => {
   const confirm = flag(args, "confirm");
   const fresh = flag(args, "fresh");
   const markDemo = flag(args, "mark-demo");
+  const resume = flag(args, "resume");
+  if (fresh && resume) throw new CliError("Choose either --fresh or --resume.");
   const patients = Number(str(args, "patients") ?? 200);
   const seed = Number(str(args, "seed") ?? 2026);
   if (!Number.isInteger(patients) || patients < 2 || patients > 2000) throw new CliError("--patients must be 2–2000.");
@@ -54,7 +54,7 @@ void runCli(async () => {
       const org = await db.selectFrom("organization").select("name").where("slug", "=", slug).executeTakeFirst();
       if (!org) throw new CliError(`No clinic "${slug}" on ${target}: create it first (npm run admin:create-clinic).`);
       console.log(`CHECK ONLY – nothing changed. ${org.name} (${slug}) on ${target}.`);
-      console.log(`Run again with --confirm${target === "production" ? " --yes" : ""}${markDemo ? " --mark-demo" : ""} to load ${patients} fictional patients.`);
+      console.log(`Run again with --confirm${target === "production" ? " --yes" : ""}${markDemo ? " --mark-demo" : ""}${resume ? " --resume" : ""} to ${resume ? "finish loading the" : `load ${patients}`} fictional ${resume ? "demonstration data" : "patients"}.`);
       return;
     }
   }
@@ -77,16 +77,10 @@ void runCli(async () => {
   }
   const summary = await seedDemoClinic(
     { db, cipher: getDataCipher(), now: pmsNow },
-    { tenantId: slug, markDemo: markDemo || local, fresh, patients, seed, log: (line) => console.log(`  ${line}`) },
+    { tenantId: slug, markDemo: markDemo || local, fresh, resume, patients, seed, log: (line) => console.log(`  ${line}`) },
   );
-  // Module demonstration data (contract §9): the diary first, then clinical records for the seeded cases, then
-  // billing (invoices for part of the diary week, payments, a remittance).
-  await seedSetup({ db, cipher: getDataCipher(), now: pmsNow }, slug, { log: (line) => console.log(`  ${line}`) });
-  await seedDiary({ db, cipher: getDataCipher(), now: pmsNow }, slug, { log: (line) => console.log(`  ${line}`) });
-  await seedRecords({ db, cipher: getDataCipher(), now: pmsNow }, slug, { log: (line) => console.log(`  ${line}`) });
-  await seedBilling({ db, cipher: getDataCipher() }, slug, { log: (line) => console.log(`  ${line}`) });
-  await seedComms({ db, cipher: getDataCipher() }, slug, { log: (line) => console.log(`  ${line}`) });
-  await seedPortal({ db, cipher: getDataCipher(), now: pmsNow }, slug, { log: (line) => console.log(`  ${line}`) });
-  await seedIntegration({ db, cipher: getDataCipher(), now: pmsNow }, slug, { log: (line) => console.log(`  ${line}`) });
+  // Module demonstration data (contract §9): set-up, the diary, clinical records for the seeded cases, billing,
+  // messages, the portal and integration (scripts/pms/seed-modules.ts) – each adds only what is missing.
+  await seedDemoModules({ db, cipher: getDataCipher(), now: pmsNow }, slug, { log: (line) => console.log(`  ${line}`) });
   console.log(`Done: ${summary.patients} patients, ${summary.cases} cases, ${summary.authorisations} authorisations in ${slug} (fictional data). The clinic system is on for this clinic.`);
 });

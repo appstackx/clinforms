@@ -5,6 +5,9 @@
  * Safety (contract §9): the clinic must be flagged as a demonstration clinic (pms_settings.is_demo) – or be
  * flaggable: its name ends "(fictional)" and it holds no patients, reports or forms yet – and must hold no
  * clinic-system patients (a second run is refused; locally `fresh` clears the clinic's clinic-system rows first).
+ * `resume` (any database, also a server): a clinic whose clinic data was loaded completely (the audit row
+ * "pms.demo.seed" for the clinic) is left as it is, so the module seeds (each idempotent) can finish a run that stopped
+ * part-way. Nothing is deleted. A clinic with patients but no such row (stopped inside this step) is still refused.
  */
 import type { Kysely } from "kysely";
 import { ukToday } from "../../src/modules/pms/core/text";
@@ -34,6 +37,8 @@ export interface SeedOptions {
   markDemo?: boolean;
   /** LOCAL ONLY: remove the clinic's clinic-system rows before seeding (the caller checks it is a local database). */
   fresh?: boolean;
+  /** Leave a completely loaded clinic as it is (a second run then only finishes the module seeds). */
+  resume?: boolean;
   patients?: number;
   seed?: number;
   now?: Date;
@@ -88,8 +93,35 @@ export async function seedDemoClinic(ctx: RepoContext, options: SeedOptions): Pr
     await runBatch(db, queries);
     log("Cleared the clinic's earlier demonstration data.");
   }
+  if (options.fresh && options.resume) throw new RepoInputError("Choose either fresh or resume.");
   if ((await countPatients(ctx, tenantId, "any")) > 0) {
-    throw new RepoInputError(`"${tenantId}" already has clinic-system patients. Locally, run again with --fresh to replace the demonstration data.`);
+    if (options.resume) {
+      const loaded = await db
+        .selectFrom("audit_log")
+        .select("detail_json")
+        .where("tenant_id", "=", tenantId)
+        .where("action", "=", "pms.demo.seed")
+        .where("target_id", "=", tenantId)
+        .orderBy("at", "desc")
+        .limit(1)
+        .executeTakeFirst();
+      if (!loaded) throw new RepoInputError(`"${tenantId}" has clinic-system patients but its demonstration data was not loaded completely: it cannot be resumed.`);
+      const d = JSON.parse(loaded.detail_json ?? "{}") as Partial<Omit<SeedSummary, "tenantId">>;
+      log("Clinic data: loaded already – resuming with the module data.");
+      return {
+        tenantId,
+        sites: Number(d.sites ?? 0),
+        rooms: Number(d.rooms ?? 0),
+        practitioners: Number(d.practitioners ?? 0),
+        services: Number(d.services ?? 0),
+        referrers: Number(d.referrers ?? 0),
+        priceLists: Number(d.priceLists ?? 0),
+        patients: Number(d.patients ?? 0),
+        cases: Number(d.cases ?? 0),
+        authorisations: Number(d.authorisations ?? 0),
+      };
+    }
+    throw new RepoInputError(`"${tenantId}" already has clinic-system patients. Run again with --resume to finish the module data, or locally with --fresh to replace the demonstration data.`);
   }
   await setEntitlement(ctx, tenantId, "clinic", { status: "trial", priceSource: "design_partner", note: "Demonstration clinic (fictional data)" }, SEED_ACTOR);
 
