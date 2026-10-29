@@ -161,27 +161,32 @@ async function availabilityFacts(ctx: RepoContext, tenantId: string, q: Reportin
   return out;
 }
 
+/**
+ * A patient's first attended appointment ever (any site, any practitioner): one probe of the index
+ * pms_appointments_patient_starts per patient (walks that patient's diary from the start to the first attended
+ * visit) – never a scan of the whole clinic's history. `column` is the patient id of the outer query.
+ */
+function firstAttended(tenantId: string, column: string, field: "starts_at" | "starts_on"): RawBuilder<unknown> {
+  return sql`(select x.${sql.raw(field)} from pms_appointments x where x.tenant_id = ${tenantId} and x.patient_id = ${sql.ref(column)} and x.kind = 'appointment' and x.status in ('arrived', 'attended') order by x.starts_at, x.id limit 1)`;
+}
+
 async function attendedPatients(ctx: RepoContext, tenantId: string, q: ReportingQuery): Promise<AttendedPatientsFact> {
   assertTenantId(tenantId);
   const { rows } = await sql<{ patients: number | string; new_patients: number | string | null }>`
-    select count(*) as patients, sum(case when f.first_on >= ${q.from} then 1 else 0 end) as new_patients
+    select count(*) as patients, sum(case when ${firstAttended(tenantId, "p.patient_id", "starts_on")} >= ${q.from} then 1 else 0 end) as new_patients
     from (
-      select a.patient_id, min(a.starts_on) as first_on
-      from pms_appointments a
-      where a.tenant_id = ${tenantId} and a.kind = 'appointment' and a.status in ('arrived', 'attended') and a.patient_id in (
-        select b.patient_id from pms_appointments b
-        where b.tenant_id = ${tenantId} and b.kind = 'appointment' and b.status in ('arrived', 'attended') and b.patient_id is not null
-          and b.starts_on >= ${q.from} and b.starts_on <= ${q.to}${siteIn("b.site_id", q.siteIds)}${practitionerIs("b.practitioner_id", q.practitionerId)}
-      )
-      group by a.patient_id
-    ) f
+      select distinct b.patient_id from pms_appointments b
+      where b.tenant_id = ${tenantId} and b.kind = 'appointment' and b.status in ('arrived', 'attended') and b.patient_id is not null
+        and b.starts_on >= ${q.from} and b.starts_on <= ${q.to}${siteIn("b.site_id", q.siteIds)}${practitionerIs("b.practitioner_id", q.practitionerId)}
+    ) p
   `.execute(ctx.db);
   return { patients: num(rows[0]?.patients ?? 0), newPatients: num(rows[0]?.new_patients ?? 0) };
 }
 
 /**
  * Attended appointments in the period by UK date, site and practitioner, split by whether each was the patient's
- * first attended appointment ever (any site, any practitioner) – new vs returning patients.
+ * first attended appointment ever (any site, any practitioner) – new vs returning patients. The first visit is
+ * looked up once per patient seen in the period (firstAttended), not by grouping the clinic's whole history.
  */
 async function visitFacts(ctx: RepoContext, tenantId: string, q: ReportingQuery): Promise<VisitFact[]> {
   assertTenantId(tenantId);
@@ -189,15 +194,12 @@ async function visitFacts(ctx: RepoContext, tenantId: string, q: ReportingQuery)
     select a.starts_on as d, a.site_id, a.practitioner_id, case when f.first_at is not null and a.starts_at = f.first_at then 1 else 0 end as first_visit, count(*) as n
     from pms_appointments a
     left join (
-      select b.patient_id, min(b.starts_at) as first_at
-      from pms_appointments b
-      where b.tenant_id = ${tenantId} and b.kind = 'appointment' and b.status in ('arrived', 'attended') and b.patient_id is not null and b.starts_on <= ${q.to}
-        and b.patient_id in (
-          select c.patient_id from pms_appointments c
-          where c.tenant_id = ${tenantId} and c.kind = 'appointment' and c.status in ('arrived', 'attended') and c.patient_id is not null
-            and c.starts_on >= ${q.from} and c.starts_on <= ${q.to}
-        )
-      group by b.patient_id
+      select p.patient_id, ${firstAttended(tenantId, "p.patient_id", "starts_at")} as first_at
+      from (
+        select distinct c.patient_id from pms_appointments c
+        where c.tenant_id = ${tenantId} and c.kind = 'appointment' and c.status in ('arrived', 'attended') and c.patient_id is not null
+          and c.starts_on >= ${q.from} and c.starts_on <= ${q.to}
+      ) p
     ) f on f.patient_id = a.patient_id
     where a.tenant_id = ${tenantId} and a.kind = 'appointment' and a.status in ('arrived', 'attended')
       and a.starts_on >= ${q.from} and a.starts_on <= ${q.to}${siteIn("a.site_id", q.siteIds)}${practitionerIs("a.practitioner_id", q.practitionerId)}
