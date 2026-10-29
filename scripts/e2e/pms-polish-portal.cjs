@@ -17,7 +17,8 @@
  *   PDF – "Download PDF" of the sealed copy returns a PDF (content-type, %PDF) for the clinician and for reception.
  *   Preview – the builder's "Preview as patient" shows the patient's form (unsaved wording included), nothing sendable.
  *
- * SQLITE_PATH is only READ (ids, the hand-off row). Fictional data only; nothing secret is printed.
+ * SQLITE_PATH is READ, plus one test-only write per portal sign-in (M10 C1: the link's hash – see signInLinkFor).
+ * Otherwise only READ (ids, the hand-off row). Fictional data only; nothing secret is printed.
  */
 const crypto = require("crypto");
 const fs = require("fs");
@@ -139,6 +140,19 @@ function readDb(sql, ...args) {
   }
 }
 
+/** TEST-ONLY write to the scratch database (M10 C1: gives a sign-in link a secret the test knows – its hash only). */
+function writeDb(sql, ...args) {
+  if (!SQLITE || !/^\/(private\/)?(tmp|var\/folders)\//.test(SQLITE)) throw new Error("SQLITE_PATH must be a scratch database under /tmp");
+  const { DatabaseSync } = require("node:sqlite");
+  const db = new DatabaseSync(SQLITE);
+  try {
+    const r = db.prepare(sql).run(...args);
+    if (r.changes !== 1) throw new Error(`expected one row changed, got ${r.changes}`);
+  } finally {
+    db.close();
+  }
+}
+
 /** A small PDF made by hand (one page, "Home exercise plan (fictional)"). */
 function samplePdf() {
   const objs = [
@@ -183,8 +197,13 @@ function samplePdf() {
   const s = { ownerPassword: null, megan: null, shareTitle: `Your exercise plan ${RUN}`, docUrl: null, fileUrl: null, tablet: null, handoffUrl: null, copyUrl: null };
   const OWNER_NAME = "Helen Ward (fictional)";
 
-  /** The newest "Portal sign-in" email to a patient, read on the outbox (View). */
-  async function signInLinkFor(name) {
+  /**
+   * The newest "Portal sign-in" email to a patient. M10 C1: staff never see the link – the outbox's View shows it
+   * hidden (checked here). The provider's copy is not readable from the browser, so the test gives the newest link a
+   * secret it knows: it writes only that secret's SHA-256 to the scratch database (as the app stores it), then opens
+   * the link like the patient would. `next` is the page the email opens (it is not stored either).
+   */
+  async function signInLinkFor(name, next = null) {
     await owner.goto(`${BASE}/app/clinic/messages`);
     const row = owner.locator(`table tbody tr:has-text("${name}"):has-text("Portal sign-in")`).first();
     await row.waitFor({ timeout: 30000 });
@@ -192,10 +211,18 @@ function samplePdf() {
     await owner.waitForSelector("[data-testid=message-view]");
     const text = await owner.locator("[data-testid=message-view]").innerText();
     await owner.keyboard.press("Escape");
-    const link = (text.match(/https?:\/\/\S+\/portal\/link\/[A-Za-z0-9_-]{43}(\?next=\S+)?/) || [])[0];
-    assert(link, "a sign-in link in the email");
+    assert(!/\/portal\/link\/[A-Za-z0-9_-]{43}/.test(text) && !/[A-Za-z0-9_-]{43}/.test(text), "staff never see the sign-in secret");
+    assert(/Sign-in link – only in the email sent to the patient/.test(text), "the link is shown hidden");
     assert(!text.includes(s.shareTitle), "the email does not name the document");
-    return link;
+    const token = crypto.randomBytes(32).toString("base64url");
+    writeDb(
+      "UPDATE pms_portal_links SET token_hash = ? WHERE tenant_id = ? AND id = (SELECT l.id FROM pms_portal_links l JOIN pms_portal_accounts a ON a.tenant_id = l.tenant_id AND a.id = l.account_id JOIN pms_patients p ON p.tenant_id = a.tenant_id AND p.id = a.patient_id WHERE l.tenant_id = ? AND l.used_at IS NULL AND (p.first_name || ' ' || p.last_name) = ? ORDER BY l.created_at DESC, l.id DESC LIMIT 1)",
+      crypto.createHash("sha256").update(token, "utf8").digest("hex"),
+      CLINIC,
+      CLINIC,
+      name,
+    );
+    return `${PUB}/portal/link/${token}${next ? `?next=${encodeURIComponent(next)}` : ""}`;
   }
   const attachmentsUrl = () => `${BASE}/app/clinic/patients/${s.megan}/attachments`;
   const formsUrl = () => `${BASE}/app/clinic/patients/${s.megan}/forms`;
@@ -234,7 +261,8 @@ function samplePdf() {
     });
 
     await step("2. the patient signs in from that email and sees the document; Download returns the PDF", async () => {
-      const link = await signInLinkFor("Megan Hart");
+      const share = readDb("SELECT id FROM pms_portal_shares WHERE tenant_id = ? AND patient_id = ? ORDER BY shared_at DESC LIMIT 1", CLINIC, s.megan);
+      const link = await signInLinkFor("Megan Hart", `/clinics/${CLINIC}/portal/documents/${share.id}`);
       assert(/next=/.test(link), "the link opens the document");
       await phone.goto(link);
       await phone.waitForSelector("h1:has-text('Sign in to your patient portal')");

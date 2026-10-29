@@ -35,6 +35,8 @@ import { deviceState, submitOnDevice } from "../../../../pms/portal/device-flow"
 import { patientShare, portalHome } from "../../../../pms/portal/portal-views";
 import { recordVerifiedConsent } from "../../../../pms/portal/intake-service";
 import { newSecret } from "../../../../pms/portal/tokens";
+import { HIDDEN_LINK, hasSecretLink } from "../../../../../modules/pms/comms/secret-links";
+import { clearTestOutbox, testOutbox } from "../../../../pms/comms/providers/test";
 import {
   cancelIntakeResponse,
   countResponsesByTemplate,
@@ -96,12 +98,19 @@ export function definePortalSuite(label: string, factory: () => Promise<PortalSu
     const ids: Record<string, string> = {};
     let clinicA: PublicClinic;
     const deps = (over: Partial<FlowDeps> = {}): FlowDeps => ({ ctx, now: now(), origin: ORIGIN, clientIp: "203.0.113.7", limitSecret: SECRET, ...over });
-    /** The secret of the newest portal sign-in email for a patient (comms' message log). */
-    const latestLinkToken = async (patientId: string): Promise<string> => {
+    /**
+     * The secret of the newest portal sign-in email for a patient: from what the (test) email provider was handed –
+     * the message log keeps the email with the link hidden (M10 C1), so nobody at the clinic can sign in with it.
+     */
+    const latestLinkToken = async (patientId: string, address: string): Promise<string> => {
       const message = (await listMessages(ctx, A, { patientId, kind: "portal_link", limit: 50 }))[0];
-      const body = message ? (await getMessage(ctx, A, message.id))?.body : null;
-      const token = body ? /\/portal\/link\/([A-Za-z0-9_-]{43})/.exec(body)?.[1] : null;
-      assert.ok(token, "a sign-in link in the outbox");
+      const stored = message ? await getMessage(ctx, A, message.id) : null;
+      assert.ok(stored, "a sign-in email in the message log");
+      assert.ok(stored.body.includes(HIDDEN_LINK) && !hasSecretLink(stored.body) && !/[A-Za-z0-9_-]{43}/.test(stored.body), "the stored copy has no sign-in secret");
+      const sent = testOutbox.email.filter((e) => e.to.toLowerCase() === address.toLowerCase() && e.messageId === stored.id).pop();
+      const token = sent ? /\/portal\/link\/([A-Za-z0-9_-]{43})/.exec(sent.text)?.[1] : null;
+      assert.ok(token, "the provider got the email with the link");
+      assert.ok(sent && sent.html.includes(token as string), "and in the HTML");
       return token as string;
     };
     const ellie = { firstName: "Ellie", lastName: "Sample", dateOfBirth: "1990-04-02", email: "ellie.sample@example.com", phoneMobile: "07700 900205", reminders: true, paying: "self" };
@@ -335,11 +344,15 @@ export function definePortalSuite(label: string, factory: () => Promise<PortalSu
     });
 
     it("portal sign-in: same answer for everyone; a one-time link through comms to the address on the record; sessions expire", async () => {
-      const unknown = await requestSignInLink(clinicA, { email: "nobody@example.com" }, deps());
+      const provider = process.env.CLINIC_EMAIL_PROVIDER;
+      process.env.CLINIC_EMAIL_PROVIDER = "test";
+      clearTestOutbox();
+      try {
+        const unknown = await requestSignInLink(clinicA, { email: "nobody@example.com" }, deps());
       const known = await requestSignInLink(clinicA, { email: "MEGAN.HART@example.com" }, deps());
       assert.deepEqual(unknown, { ok: true });
       assert.deepEqual(known, unknown, "no patient-existence leak");
-      const token = await latestLinkToken(ids.megan);
+      const token = await latestLinkToken(ids.megan, "megan.hart@example.com");
       assert.equal((await listMessages(ctx, A, { kind: "portal_link", limit: 50 })).length, 2, "Megan's record and the typo record share the address – one link each, none for the unknown address");
       const raw = await ctx.db.selectFrom("pms_portal_links").select("token_hash").where("tenant_id", "=", A).execute();
       assert.ok(raw.every((l) => l.token_hash !== token) && raw.some((l) => l.token_hash === hashSecret(token)), "only the hash is stored");
@@ -366,6 +379,10 @@ export function definePortalSuite(label: string, factory: () => Promise<PortalSu
       assert.equal(await setPortalAccountStatus(ctx, A, account.id, "disabled", STAFF), true);
       assert.equal(await setPortalAccountStatus(ctx, A, account.id, "disabled", STAFF), false);
       assert.equal(await setPortalAccountStatus(ctx, A, account.id, "active", STAFF), true);
+      } finally {
+        if (provider === undefined) delete process.env.CLINIC_EMAIL_PROVIDER;
+        else process.env.CLINIC_EMAIL_PROVIDER = provider;
+      }
     });
 
     it("portal booking: the signed-in patient's own record; staff check the online bookings", async () => {
