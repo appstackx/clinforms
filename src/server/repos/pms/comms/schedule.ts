@@ -64,6 +64,8 @@ export interface SyncResult {
   kept: number;
 }
 
+export type AppointmentNotify = "none" | "confirmation" | "moved" | "cancelled" | "late_cancelled" | "dna";
+
 /**
  * Brings an appointment's planned messages in line with the appointment (see the file comment). `notify` asks for
  * a booking confirmation, a "moved" or a "cancelled" notice besides the reminders.
@@ -73,17 +75,94 @@ export async function syncAppointmentMessages(
   tenantId: string,
   input: AppointmentForMessages,
   actor: PmsActor,
-  options: { notify?: "none" | "confirmation" | "moved" | "cancelled" | "late_cancelled" | "dna" } = {},
+  options: { notify?: AppointmentNotify } = {},
 ): Promise<SyncResult> {
+  const [result] = await syncAppointmentsMessages(ctx, tenantId, [{ appointment: input, notify: options.notify }], actor);
+  return result;
+}
+
+/** Statements per write batch (the gateway takes at most 100): appointments are packed whole into batches. */
+const SYNC_BATCH_STATEMENTS = 90;
+
+/**
+ * syncAppointmentMessages for many appointments at once (the message run's sweep, a series): the settings and
+ * rules are read once, the planned messages of 90 appointments per read, and only appointments out of step write
+ * anything – their changes and audit rows packed into batches of whole appointments (each appointment's changes
+ * stay atomic with its audit row). A batch the database refuses is written again one appointment at a time.
+ * Results in the order of `items`.
+ */
+export async function syncAppointmentsMessages(
+  ctx: DbContext,
+  tenantId: string,
+  items: readonly { appointment: AppointmentForMessages; notify?: AppointmentNotify }[],
+  actor: PmsActor,
+): Promise<SyncResult[]> {
   assertTenantId(tenantId);
-  const appt = parseInput(AppointmentForMessagesSchema, input, "Appointment");
-  const notify = parseInput(AppointmentNotifySchema, options.notify ?? "none", "Notify");
+  const parsed = items.map((it) => ({
+    appt: parseInput(AppointmentForMessagesSchema, it.appointment, "Appointment"),
+    notify: parseInput(AppointmentNotifySchema, it.notify ?? "none", "Notify"),
+  }));
+  if (parsed.length === 0) return [];
   const at = nowIso(ctx);
-  const [settings, rules, existing] = await Promise.all([
+  const ids = Array.from(new Set(parsed.map((p) => p.appt.id)));
+  const [settings, rules, ...found] = await Promise.all([
     getCommsSettings(ctx, tenantId),
     listReminderRules(ctx, tenantId, { activeOnly: true }),
-    ctx.db.selectFrom(T).selectAll().where("tenant_id", "=", tenantId).where("appointment_id", "=", appt.id).limit(500).execute(),
+    ...Array.from({ length: Math.ceil(ids.length / 90) }, (_, i) =>
+      ctx.db
+        .selectFrom(T)
+        .selectAll()
+        .where("tenant_id", "=", tenantId)
+        .where("appointment_id", "in", ids.slice(i * 90, i * 90 + 90))
+        .limit(10_000)
+        .execute(),
+    ),
   ]);
+  const byAppointment = new Map<string, Row[]>();
+  for (const r of found.flat()) {
+    if (!r.appointment_id) continue;
+    const list = byAppointment.get(r.appointment_id);
+    if (list) list.push(r);
+    else byAppointment.set(r.appointment_id, [r]);
+  }
+  const plans = parsed.map((p) => planSync(ctx, tenantId, p.appt, p.notify, settings, rules, byAppointment.get(p.appt.id) ?? [], at, actor));
+  // Pack the appointments that write into batches; a refused batch is retried appointment by appointment.
+  const writing = plans.filter((p) => p.queries.length > 0);
+  let batch: BatchQuery[][] = [];
+  let size = 0;
+  const flush = async () => {
+    if (batch.length === 0) return;
+    const group = batch;
+    batch = [];
+    size = 0;
+    try {
+      await writeWithAudit(ctx, group.flat(), MESSAGES);
+    } catch (err) {
+      if (group.length === 1) throw err;
+      for (const one of group) await writeWithAudit(ctx, one, MESSAGES);
+    }
+  };
+  for (const p of writing) {
+    if (size + p.queries.length > SYNC_BATCH_STATEMENTS) await flush();
+    batch.push(p.queries);
+    size += p.queries.length;
+  }
+  await flush();
+  return plans.map((p) => p.result);
+}
+
+/** One appointment's changes (and audit row, when anything changes) – pure apart from building the queries. */
+function planSync(
+  ctx: DbContext,
+  tenantId: string,
+  appt: AppointmentForMessages,
+  notify: AppointmentNotify,
+  settings: Awaited<ReturnType<typeof getCommsSettings>>,
+  rules: Awaited<ReturnType<typeof listReminderRules>>,
+  existing: readonly Row[],
+  at: string,
+  actor: PmsActor,
+): { queries: BatchQuery[]; result: SyncResult } {
   // Moved before its booking confirmation went out: the confirmation goes for the new time instead of a "moved"
   // notice (the patient has not heard of the old time yet).
   const confirmationPending = existing.some((r) => r.kind === "confirmation" && (r.status === "pending" || r.status === "processing"));
@@ -193,9 +272,8 @@ export async function syncAppointmentMessages(
         detail: { appointmentId: appt.id, planned, cancelled, refreshed, notify, active: appt.active },
       }),
     );
-    await writeWithAudit(ctx, queries, MESSAGES);
   }
-  return { planned, cancelled, kept };
+  return { queries, result: { planned, cancelled, kept } };
 }
 
 /** Planned messages of an appointment (all statuses, by due time). */

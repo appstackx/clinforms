@@ -28,7 +28,7 @@ import type { AppointmentForMessages } from "../../../modules/pms/comms/schemas"
 import { logAuthEvent } from "../../email/log";
 import { assertTenantId, nowIso, type RepoContext } from "../../repos/context";
 import { isOn } from "../../repos/pms/context";
-import { syncAppointmentMessages } from "../../repos/pms/comms/schedule";
+import { syncAppointmentsMessages, type AppointmentNotify } from "../../repos/pms/comms/schedule";
 import { SYSTEM_ACTOR, dispatchDepsFromEnv, sendAppointmentNotice, type DispatchDeps, type SendResult } from "../comms/dispatch";
 
 export type DiaryMessageEvent = "booked" | "moved" | "changed" | "status" | "cancelled" | "series";
@@ -84,6 +84,7 @@ export async function syncDiaryMessages(
 ): Promise<void> {
   try {
     const rows = await readAppointments(ctx, tenantId, ids);
+    const batch: { appointment: AppointmentForMessages; notify: AppointmentNotify }[] = [];
     for (const r of rows) {
       if (r.kind !== "appointment" || !r.patient_id) continue;
       const active = r.status === "booked";
@@ -94,8 +95,10 @@ export async function syncDiaryMessages(
         notify = before && Date.parse(before) !== Date.parse(r.starts_at) ? "moved" : "none";
       } else if (event === "status" && r.status === "dna") notify = "dna";
       else if (event === "cancelled") notify = r.status === "late_cancelled" ? "late_cancelled" : r.status === "cancelled" ? "cancelled" : "none";
-      await syncAppointmentMessages(ctx, tenantId, snapshotOf({ ...r, patient_id: r.patient_id }), actor, { notify });
+      batch.push({ appointment: snapshotOf({ ...r, patient_id: r.patient_id }), notify });
     }
+    // One sync for all of them (a series, a bulk change): settings and planned messages read once, writes batched.
+    await syncAppointmentsMessages(ctx, tenantId, batch, actor);
   } catch (err) {
     logAuthEvent("pms.diary_message_sync_failed", { event, error: err instanceof Error ? err.name : "error" });
   }
@@ -187,6 +190,7 @@ export async function reconcileDiaryMessages(ctx: RepoContext, tenantId: string,
         existing.set(f.appointment_id, set);
       }
     }
+    const batch: { appointment: AppointmentForMessages; notify: AppointmentNotify }[] = [];
     for (const r of rows) {
       if (!r.patient_id) continue;
       const kinds = existing.get(r.id) ?? new Set<string>();
@@ -194,9 +198,11 @@ export async function reconcileDiaryMessages(ctx: RepoContext, tenantId: string,
       if (r.status === "booked" && isOn(r.confirmation_requested) && !kinds.has("confirmation")) notify = "confirmation";
       else if ((r.status === "cancelled" || r.status === "late_cancelled") && !kinds.has(r.status) && r.cancelled_at && new Date(r.cancelled_at).toISOString() > from) notify = r.status;
       else if (r.status === "dna" && !kinds.has("dna")) notify = "dna";
-      const result = await syncAppointmentMessages(ctx, tenantId, snapshotOf({ ...r, patient_id: r.patient_id }), actor, { notify });
-      if (result.planned > 0 || result.cancelled > 0) fixed++;
+      batch.push({ appointment: snapshotOf({ ...r, patient_id: r.patient_id }), notify });
     }
+    // Every row is checked against its planned messages in memory; only rows out of step write (in batches) – an
+    // unchanged diary costs a handful of reads, not three requests per appointment.
+    for (const result of await syncAppointmentsMessages(ctx, tenantId, batch, actor)) if (result.planned > 0 || result.cancelled > 0) fixed++;
     const syncedTo = rows.length === SWEEP_LIMIT ? new Date(rows[rows.length - 1].updated_at).toISOString() : now;
     await ctx.db
       .insertInto("pms_diary_message_sweeps")
