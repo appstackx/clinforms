@@ -581,11 +581,15 @@ async function eventually(check, what) {
       ]) {
         const phone = await mk(375, 812);
         await phone.context().addCookies(await page.context().cookies());
-        const urls = [[APP, `375-dashboard-${who}`]];
-        if (who === "owner") urls.push([`${REPORTS}/attendance`, "375-report-attendance"], [`${SETUP}/sites?site=${s.site.id}`, "375-setup-sites"]);
-        for (const [url, name] of urls) {
-          await phone.goto(url);
-          await phone.waitForLoadState("networkidle");
+        // Each page's own content, not "networkidle": a production build prefetches links and the dashboard refreshes
+        // itself, so the network may never go quiet.
+        const urls = [[APP, `375-dashboard-${who}`, "[data-testid=dashboard]"]];
+        if (who === "owner") urls.push([`${REPORTS}/attendance`, "375-report-attendance", "main h1"], [`${SETUP}/sites?site=${s.site.id}`, "375-setup-sites", "main h1"]);
+        for (const [url, name, ready] of urls) {
+          await phone.goto(url, { waitUntil: "load" });
+          await phone.waitForSelector(ready, { timeout: 30000 });
+          await phone.waitForFunction(() => document.fonts ? document.fonts.status === "loaded" : true, null, { timeout: 10000 }).catch(() => {});
+          await phone.waitForTimeout(500);
           const wide = await phone.evaluate(() => document.documentElement.scrollWidth);
           assert(wide <= 376, `${name}: page is ${wide} px wide`);
           await shot(phone, name, true);
