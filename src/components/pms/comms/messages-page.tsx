@@ -130,6 +130,14 @@ function ProviderNotice({ mode }: { mode: MessagesHomeView["mode"] }) {
       </PmsNotice>
     );
   }
+  if (mode.sms === "mailpit" || mode.email === "mailpit") {
+    const where = (m: typeof mode.sms) => (m === "mailpit" ? "a local Mailpit inbox on this computer" : m === "test" ? "a test service" : "the outbox (not sent)");
+    return (
+      <PmsNotice tone="info" title="Local test inbox (Mailpit)">
+        Emails go to {where(mode.email)}; texts go to {where(mode.sms)}. Nothing reaches a patient.
+      </PmsNotice>
+    );
+  }
   if (mode.sms === "test" || mode.email === "test") {
     return (
       <PmsNotice tone="info" title="Test mode">

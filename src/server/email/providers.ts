@@ -4,10 +4,14 @@
  *                other apps; optional CLINFORMS_EMAIL_REPLY_TO = where replies go (one address, checked);
  *   log        – development: the message is printed to the server console (never on a Vercel deployment);
  *   none       – nothing is sent (the default until a MailerSend key exists). Invitation and reset links are
- *                then shown to the clinic administrator who asked for them, to pass on.
+ *                then shown to the clinic administrator who asked for them, to pass on;
+ *   mailpit    – LOCAL TESTING ONLY: the message goes to a local Mailpit inbox (MAILPIT_URL, default
+ *                http://localhost:8026) through its HTTP send API. Refused (treated as none) on any Vercel environment,
+ *                and with NODE_ENV=production unless MAILPIT_URL is localhost / 127.0.0.1 (see ./mailpit.ts).
  */
 import { EmailParams, MailerSend, Recipient, Sender } from "mailersend";
 import { logAuthEvent } from "./log";
+import { mailpitBaseUrl, mailpitRefusal, mailpitSend } from "./mailpit";
 import type { DeliveryResult, EmailMessage, EmailProvider, EmailProviderName } from "./types";
 
 export const SENDER_NAME = "ClinForms";
@@ -39,7 +43,9 @@ export function resolveEmailProviderName(env: Env = process.env): EmailProviderN
   if (!raw || raw === "none") return "none";
   if (raw === "mailersend") return "mailersend";
   if (raw === "log") return onVercelDeployment(env) ? "none" : "log";
-  throw new EmailConfigError(`CLINFORMS_EMAIL_PROVIDER must be mailersend, log or none (got "${raw}").`);
+  // Local testing only: refused (treated as none) on any Vercel environment and on a non-local production run.
+  if (raw === "mailpit") return mailpitRefusal(env) ? "none" : "mailpit";
+  throw new EmailConfigError(`CLINFORMS_EMAIL_PROVIDER must be mailersend, log or none (or mailpit, local only) (got "${raw}").`);
 }
 
 const EMAIL_ADDRESS = /^[^\s@<>",;]+@[^\s@<>",;]+\.[^\s@<>",;]+$/;
@@ -151,9 +157,49 @@ export const noneProvider: EmailProvider = {
   },
 };
 
+/** Local Mailpit sender address when no MailerSend sender is configured. */
+export const MAILPIT_DEFAULT_FROM = "no-reply@clinforms.local";
+
+/**
+ * LOCAL TESTING ONLY (resolveEmailProviderName never picks it on Vercel or a non-local production run; this function
+ * refuses too, so it cannot be built by mistake). The whole message, link included, goes to the local Mailpit inbox.
+ */
+export function mailpitProviderFor(env: Env = process.env, fetchImpl?: typeof fetch): EmailProvider {
+  const refusal = mailpitRefusal(env);
+  if (refusal) throw new EmailConfigError(`CLINFORMS_EMAIL_PROVIDER=mailpit: ${refusal}`);
+  const base = mailpitBaseUrl(env) as URL;
+  const from = env.MAILERSEND_FROM_EMAIL || env.CLINFORMS_EMAIL_FROM || MAILPIT_DEFAULT_FROM;
+  const replyTo = replyToAddress(env);
+  return {
+    name: "mailpit",
+    async send(message) {
+      const result = await mailpitSend(
+        base,
+        {
+          From: { Email: from, Name: SENDER_NAME },
+          To: [{ Email: message.to.email, ...(message.to.name ? { Name: message.to.name } : {}) }],
+          ...(replyTo ? { ReplyTo: [{ Email: replyTo, Name: SENDER_NAME }] } : {}),
+          Subject: message.subject,
+          Text: message.text,
+          HTML: message.html,
+          Tags: ["clinforms", message.kind],
+        },
+        { fetchImpl },
+      );
+      if (result.ok) {
+        logAuthEvent("email.sent", { provider: "mailpit", kind: message.kind });
+        return { status: "sent", provider: "mailpit" };
+      }
+      logAuthEvent("email.failed", { provider: "mailpit", kind: message.kind, status: result.status });
+      return { status: "failed", provider: "mailpit" };
+    },
+  };
+}
+
 export function createEmailProvider(env: Env = process.env): EmailProvider {
   const name = resolveEmailProviderName(env);
   if (name === "mailersend") return mailerSendProvider(env);
   if (name === "log") return logProviderFor(env);
+  if (name === "mailpit") return mailpitProviderFor(env);
   return noneProvider;
 }

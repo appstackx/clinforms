@@ -2,7 +2,7 @@
 
 export type EmailKind = "invitation" | "password_reset" | "two_factor_enabled";
 
-export type EmailProviderName = "mailersend" | "log" | "none";
+export type EmailProviderName = "mailersend" | "log" | "mailpit" | "none";
 
 export interface EmailRecipient {
   email: string;
