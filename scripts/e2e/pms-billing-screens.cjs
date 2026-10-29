@@ -341,7 +341,11 @@ const invoiceIdOf = (url) => (url.match(/\/invoices\/([^/?#]+)/) || [])[1];
       await axe(owner, "remittance");
       await owner.click("[data-testid=remit-save]");
       await owner.waitForURL(/tab=remittances/);
-      assert((await owner.locator("main").innerText()).includes(`BW-RA-${RUN}`), "listed");
+      // The section's loading skeleton (M10) shows first – wait for the list rather than reading it at once.
+      const listed = await owner
+        .waitForFunction((ref) => (document.querySelector("main")?.innerText ?? "").includes(ref), `BW-RA-${RUN}`, { timeout: 20000 })
+        .then(() => true, () => false);
+      assert(listed, "listed");
     });
 
     await step("print: the A4 invoice and the patient statement (balance, ages, how to pay)", async () => {
