@@ -50,6 +50,8 @@ export interface PatientListProps {
   filters: PatientListFilters;
   practitioners: { id: string; name: string }[];
   myPractitionerId: string | null;
+  /** The Site filter's choices (the member's sites; empty = one site only, no filter). */
+  sites?: { id: string; name: string }[];
   canCreate: boolean;
   canExport: boolean;
   canSeeUnsigned: boolean;
@@ -118,7 +120,7 @@ function AddFilter({ label, options, onPick }: { label: string; options: { value
 }
 
 export function PatientList(props: PatientListProps) {
-  const { rows, total, page, pageSize, today, filters, practitioners, myPractitionerId, canCreate, canExport, canSeeUnsigned, canSeeBalance = false, failed, registerAction } = props;
+  const { rows, total, page, pageSize, today, filters, practitioners, myPractitionerId, sites = [], canCreate, canExport, canSeeUnsigned, canSeeBalance = false, failed, registerAction } = props;
   const router = useRouter();
   const pathname = usePathname();
   const [pending, startTransition] = useTransition();
@@ -149,9 +151,10 @@ export function PatientList(props: PatientListProps) {
   }, [filters.q]);
 
   const pracName = useMemo(() => new Map(practitioners.map((p) => [p.id, p.name])), [practitioners]);
+  const siteName = filters.siteId ? sites.find((x) => x.id === filters.siteId)?.name ?? null : null;
   const exportHref = `/app/clinic/patients/export?${paramsFromFilters({ ...filters, page: 1 }).toString()}`;
   const statusWord = filters.status === "active" ? "active" : filters.status === "any" ? "" : filters.status;
-  const subtitle = failed ? "All sites" : pending ? "Loading…" : `${total.toLocaleString("en-GB")}${statusWord ? ` ${statusWord}` : " patients"} · all sites`;
+  const subtitle = failed ? "All sites" : pending ? "Loading…" : `${total.toLocaleString("en-GB")}${statusWord ? ` ${statusWord}` : " patients"} · ${siteName ?? "all sites"}`;
   const openNew = (name?: string) => {
     setPrefill(name);
     setDrawer(true);
@@ -222,6 +225,11 @@ export function PatientList(props: PatientListProps) {
         ) : (
           <AddFilter label="Practitioner" options={practitioners.map((p) => ({ value: p.id, label: p.name }))} onPick={(v) => go({ practitionerId: v })} />
         )}
+        {filters.siteId && siteName ? (
+          <FilterChip onRemove={() => go({ siteId: null })}>Site: {siteName}</FilterChip>
+        ) : sites.length > 1 ? (
+          <AddFilter label="Site" options={sites.map((x) => ({ value: x.id, label: x.name }))} onPick={(v) => go({ siteId: v })} />
+        ) : null}
         {filters.payer ? (
           <FilterChip onRemove={() => go({ payer: null })}>Payer: {PAYER_TYPE_LABELS[filters.payer]}</FilterChip>
         ) : (

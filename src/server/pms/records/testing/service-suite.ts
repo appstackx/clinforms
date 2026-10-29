@@ -22,7 +22,7 @@ import { loadPdfjs, pdfjsDocumentParams } from "../../../../modules/medreport/fo
 import { listAudit } from "../../../repos/audit";
 import type { RepoContext } from "../../../repos/context";
 import { createCase } from "../../../repos/pms/cases";
-import { createPractitioner, setPractitionerSigning } from "../../../repos/pms/directory";
+import { createPractitioner, createSite, setPractitionerSigning } from "../../../repos/pms/directory";
 import { createPatient } from "../../../repos/pms/patients";
 import { createReferrer } from "../../../repos/pms/referrers";
 import { setPmsDemoFlag } from "../../../repos/pms/settings";
@@ -436,6 +436,18 @@ export function defineRecordsServiceSuite(label: string, factory: () => Promise<
       assert.deepEqual(await ids2({ sort: "desc" }), [...asc].reverse());
       assert.ok(!(await ids2({}).then((x) => x)).includes(ids.otherPatient));
       assert.ok(!value(await patientListFor(otherClinician, { ...DEFAULT_PATIENT_FILTERS })).rows.some((r) => r.id === ids.megan), "another clinic lists only its own");
+      // The Site filter (M10): patients with a case or an appointment at the site; honoured only within the member's scope.
+      const north = await createSite(ctx, A, { name: "North Site (fictional)" }, staff.actor);
+      const south = await createSite(ctx, A, { name: "South Site (fictional)" }, staff.actor);
+      await ctx.db.updateTable("pms_cases").set({ site_id: north.id }).where("tenant_id", "=", A).where("id", "=", ids.case).execute();
+      assert.deepEqual(await ids2({ siteId: north.id }), [ids.megan]);
+      assert.deepEqual(await ids2({ siteId: south.id }), []);
+      assert.ok(value(await patientListFor(staff, { ...DEFAULT_PATIENT_FILTERS })).sites.some((x) => x.id === north.id));
+      const southOnly = testActor(ctx, A, "staff", { userId: "user_reception_03", name: "Priya Shah" }, { siteIds: [south.id] });
+      const southView = value(await patientListFor(southOnly, { ...DEFAULT_PATIENT_FILTERS, siteId: north.id }));
+      assert.ok(!southView.rows.some((r) => r.id === ids.megan), "a site outside the member's scope is never listed through the filter");
+      assert.deepEqual(southView.sites, [], "one site in scope: no Site filter");
+      await ctx.db.updateTable("pms_cases").set({ site_id: null }).where("tenant_id", "=", A).where("id", "=", ids.case).execute();
       // CSV: owners and administrators only; audited with counts.
       assert.deepEqual(await patientCsvFor(staff, DEFAULT_PATIENT_FILTERS), refused);
       assert.deepEqual(await patientCsvFor(sarah, DEFAULT_PATIENT_FILTERS), refused);

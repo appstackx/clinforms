@@ -11,7 +11,7 @@ export const metadata: Metadata = { title: "Patients" };
 
 /**
  * /app/clinic/patients – the patient list (design round 2, docs/clinic-system/design/round2/patients/). Search and
- * filters are in the URL (?q, status, practitioner, payer, nofuture, seen, sort, page); the shell's "/" search lands
+ * filters are in the URL (?q, status, practitioner, payer, site, nofuture, seen, sort, page); the shell's "/" search lands
  * here with ?q=. patients.view; New patient needs patients.edit, Export CSV reports.export.
  */
 export default async function PatientsPage({ searchParams }: { searchParams: Record<string, string | string[] | undefined> }) {
@@ -43,6 +43,7 @@ export default async function PatientsPage({ searchParams }: { searchParams: Rec
       filters={filters}
       practitioners={view?.practitioners ?? []}
       myPractitionerId={view?.myPractitionerId ?? null}
+      sites={view?.sites ?? []}
       canCreate={actor.can("patients.edit")}
       canExport={actor.can("reports.export")}
       canSeeUnsigned={actor.can("clinical.view")}
