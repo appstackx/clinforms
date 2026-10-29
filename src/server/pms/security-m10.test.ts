@@ -18,6 +18,9 @@ import { retryMessageFor } from "./comms/writes";
 import { clearTestOutbox, testOutbox } from "./comms/providers/test";
 import { sendSignInLink } from "./portal/portal-auth";
 import { clinicalAccessFrom } from "./native-report-access";
+import { TRIAL_ENDED_MESSAGE, referrerFormsFor, startReferrerFormFor, type ReferrerFormDeps } from "./integration/referrer-forms";
+import { createCase } from "../repos/pms/cases";
+import type { ClinicProfile } from "../../modules/medreport/api/deps";
 import { saveRolePermissions } from "../repos/pms/access";
 import { readOnlyReason, roleGridRefusal, saveRolesFor } from "./access-screens";
 import { lockOf } from "../../modules/pms/core/permissions";
@@ -137,6 +140,25 @@ describe("M10 security", () => {
       assert.notEqual(readOnlyReason({ userId: "user_c", role: "clinician" }, adminMember), null);
       assert.equal(readOnlyReason({ userId: "user_a", role: "admin" }, adminMember), null);
       assert.equal(readOnlyReason({ userId: "user_o", role: "owner" }, adminMember), null);
+    });
+  });
+
+  describe("M1: the native launch keeps ClinForms' trial-ended rule", () => {
+    it("trial ended → no button (with the reason) and no launch, nothing written; trial running → as before", async () => {
+      const kase = await createCase(ctx, A, { patientId: ids.megan, title: "Neck pain (fictional)", openedOn: "2026-10-01" }, OWNER);
+      const ended: ReferrerFormDeps = { packageOn: async () => true, clinicProfile: async () => ({ trial: { state: "ended" } }) as unknown as ClinicProfile };
+      const running: ReferrerFormDeps = { packageOn: async () => true, clinicProfile: async () => ({ trial: { state: "active" } }) as unknown as ClinicProfile };
+      const clin = testActor(ctx, A, "clinician", { userId: "user_clin", name: "Sarah Reid (fictional)" });
+      const panel = await referrerFormsFor(clin, ids.megan, kase.id, ended);
+      assert.ok(panel.ok);
+      assert.deepEqual(panel.ok && [panel.value.canStart, panel.value.cannotStartReason], [false, TRIAL_ENDED_MESSAGE]);
+      const start = await startReferrerFormFor(clin, { patientId: ids.megan, caseId: kase.id, formId: "frm_any", consentRecorded: true }, ended);
+      assert.deepEqual(start, { ok: false, code: "forbidden", error: TRIAL_ENDED_MESSAGE });
+      assert.equal((await g.db.selectFrom("pms_form_requests").select("id").where("tenant_id", "=", A).execute()).length, 0, "no request recorded");
+      const open = await referrerFormsFor(clin, ids.megan, kase.id, running);
+      assert.ok(open.ok && open.value.canStart && open.value.cannotStartReason === null);
+      const notBlocked = await startReferrerFormFor(clin, { patientId: ids.megan, caseId: kase.id, formId: "frm_any", consentRecorded: true }, running);
+      assert.equal(!notBlocked.ok && notBlocked.code, "invalid", "goes on to the form check");
     });
   });
 

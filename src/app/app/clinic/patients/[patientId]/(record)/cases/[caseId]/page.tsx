@@ -161,6 +161,7 @@ export default async function CasePage({
         <ReferrerFormsPanel
           caseSummary={caseSummary}
           canStart={forms.value.canStart}
+          cannotStartReason={forms.value.cannotStartReason}
           clinForms={forms.value.clinForms}
           clinicalPrefill={forms.value.clinicalPrefill}
           library={forms.value.library}

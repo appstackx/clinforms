@@ -34,6 +34,8 @@ export interface PanelFiledForm {
 export interface ReferrerFormsPanelProps {
   caseSummary: string;
   canStart: boolean;
+  /** Why no form can be started although ClinForms is on (its trial has ended). */
+  cannotStartReason?: string | null;
   clinForms: boolean;
   clinicalPrefill: boolean;
   library: PanelLibraryForm[];
@@ -47,6 +49,7 @@ export interface ReferrerFormsPanelProps {
 export function ReferrerFormsPanel({
   caseSummary,
   canStart,
+  cannotStartReason = null,
   clinForms,
   clinicalPrefill,
   library,
@@ -97,6 +100,11 @@ export function ReferrerFormsPanel({
         ) : null}
       </div>
       <p className="mt-1 text-xs text-[#475569]">{caseSummary}</p>
+      {clinForms && cannotStartReason ? (
+        <p className="mt-3 text-sm text-[#334155]" data-testid="referrer-forms-refused">
+          {cannotStartReason}
+        </p>
+      ) : null}
       {!clinForms ? (
         <p className="mt-3 text-sm text-[#334155]">
           Completing a referrer&apos;s own form from this case needs ClinForms,

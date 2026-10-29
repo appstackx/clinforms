@@ -39,6 +39,34 @@ import { patientVisibleInScope } from "../access";
 import type { ClinicActor } from "../actor";
 import { hasPackage } from "../entitlements";
 import { NATIVE_CONNECTOR_ID } from "./bundle";
+import { assertTenantMayCreate } from "../../../modules/medreport/auth/clinic-access";
+import type { ClinicProfile } from "../../../modules/medreport/api/deps";
+import { HttpError } from "../../../modules/medreport/api/http";
+import { loadClinicProfile } from "../../auth/medreport-actor";
+import { getDb } from "../../db";
+
+/** What the panel and the launch read outside the clinic system (tests replace them). */
+export interface ReferrerFormDeps {
+  /** Whether the clinic has a package (default: the entitlements table). */
+  packageOn?: (tenantId: string, pkg: "reports" | "clinic") => Promise<boolean>;
+  /** ClinForms' clinic profile with its trial (default: loadClinicProfile on the app's database). */
+  clinicProfile?: (tenantId: string) => Promise<ClinicProfile | null>;
+}
+
+/** M10 M1: the words when ClinForms' trial has ended (the partner launch answers 403 TRIAL_ENDED). */
+export const TRIAL_ENDED_MESSAGE = "Your ClinForms trial has ended, so no new forms can be started. Ask the clinic owner to choose a plan.";
+
+/** null when ClinForms may start a form for this clinic; else the reason (its trial has ended). */
+async function launchRefusal(tenantId: string, deps: ReferrerFormDeps): Promise<string | null> {
+  const clinicProfile = deps.clinicProfile ?? ((t: string) => loadClinicProfile(getDb(), t));
+  try {
+    await assertTenantMayCreate({ clinicProfile } as Parameters<typeof assertTenantMayCreate>[0], tenantId, "launch");
+    return null;
+  } catch (err) {
+    if (err instanceof HttpError) return TRIAL_ENDED_MESSAGE;
+    throw err;
+  }
+}
 
 export type ReferrerFormsActor = Pick<
   ClinicActor,
@@ -75,8 +103,10 @@ export interface FiledFormRow extends FiledFormSummary {
 export interface ReferrerFormsPanel {
   /** ClinForms (the Reports package) is on for the clinic. */
   clinForms: boolean;
-  /** The member may start "Complete referrer form" (patients.view, both packages). */
+  /** The member may start "Complete referrer form" (patients.view, both packages, ClinForms' trial not ended). */
   canStart: boolean;
+  /** Why not, when ClinForms is on but no form can be started (M10 M1: the trial has ended). */
+  cannotStartReason: string | null;
   /** The member may see clinical notes: ClinForms gets the signed notes and outcome scores. */
   clinicalPrefill: boolean;
   /** The member may open the filed files. */
@@ -141,12 +171,14 @@ export async function referrerFormsFor(
   actor: ReferrerFormsActor,
   patientId: string,
   caseId: string,
+  deps: ReferrerFormDeps = {},
 ): Promise<Result<ReferrerFormsPanel>> {
   if (!actor.can("patients.view")) return fail("forbidden", FORBIDDEN);
   const c = await caseInScope(actor, patientId, caseId);
   if (!c) return fail("not_found", NOT_FOUND);
   const ctx = actor.repo();
-  const clinForms = await hasPackage(actor.tenantId, "reports");
+  const clinForms = await (deps.packageOn ?? hasPackage)(actor.tenantId, "reports");
+  const refusal = clinForms ? await launchRefusal(actor.tenantId, deps) : null;
   const [payer, referrer, filed, meta] = await Promise.all([
     c.payerReferrerId
       ? getReferrer(ctx, actor.tenantId, c.payerReferrerId)
@@ -177,7 +209,8 @@ export async function referrerFormsFor(
     ok: true,
     value: {
       clinForms,
-      canStart: clinForms,
+      canStart: clinForms && refusal === null,
+      cannotStartReason: refusal,
       clinicalPrefill: actor.can("clinical.view"),
       canOpenFiles: actor.can("clinical.view"),
       library,
@@ -200,6 +233,7 @@ export interface StartReferrerFormInput {
 export async function startReferrerFormFor(
   actor: ReferrerFormsActor,
   input: StartReferrerFormInput,
+  deps: ReferrerFormDeps = {},
 ): Promise<Result<{ url: string; requestId: string }>> {
   if (!actor.can("patients.view")) return fail("forbidden", FORBIDDEN);
   const c = await caseInScope(
@@ -208,8 +242,11 @@ export async function startReferrerFormFor(
     String(input.caseId ?? ""),
   );
   if (!c) return fail("not_found", NOT_FOUND);
-  if (!(await hasPackage(actor.tenantId, "reports")))
+  if (!(await (deps.packageOn ?? hasPackage)(actor.tenantId, "reports")))
     return fail("forbidden", "ClinForms is not switched on for this clinic.");
+  // M10 M1: the same trial-ended rule as ClinForms' partner launch (api/handlers/launch.ts) – before anything is written.
+  const refusal = await launchRefusal(actor.tenantId, deps);
+  if (refusal) return fail("forbidden", refusal);
   const ctx = actor.repo();
   const form = (await listFormMeta(ctx, actor.tenantId)).find(
     (f) => f.id === input.formId && f.status === "confirmed",
