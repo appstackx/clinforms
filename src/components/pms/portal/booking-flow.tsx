@@ -553,7 +553,7 @@ export function BookingFlow({ mode, clinicId, data, portalPath, loadSlots, book,
                 <input id="bk-website" tabIndex={-1} autoComplete="off" value={details.website} onChange={(e) => setDetails((d) => ({ ...d, website: e.target.value }))} />
               </div>
               <p className="text-[13px] text-[#475569]">Health questions come in a separate questionnaire that only your practitioner reads.</p>
-              <button type="submit" className="sr-only">
+              <button type="submit" tabIndex={-1} aria-hidden="true" className="sr-only">
                 Continue
               </button>
             </form>
