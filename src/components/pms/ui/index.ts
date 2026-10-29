@@ -43,3 +43,6 @@ export { niceMax, dataMax, axisTicks, stackSegments, SERIES_STYLES, type ChartKi
 export { Breadcrumb, BackLink, parentOf, type BreadcrumbProps, type BreadcrumbItem } from "./breadcrumb";
 export { SegmentedControl, type SegmentedControlProps, type SegmentOption } from "./segmented-control";
 export { UnsavedChangesBanner, LockedBanner, useWarnBeforeLeaving, unsavedText, type UnsavedChangesBannerProps, type LockedBannerProps } from "./banners";
+export { ContextMenu, isContextMenuKey, pointOf, type ContextMenuItem, type ContextMenuProps } from "./context-menu";
+export { nextMenuIndex, typeaheadIndex, placeMenu, type MenuKey } from "./menu-model";
+export { useModalLayer, inertOutside } from "./modal-layer";

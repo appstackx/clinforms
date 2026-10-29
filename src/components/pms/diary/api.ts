@@ -22,6 +22,7 @@ async function read<T>(url: string, init?: RequestInit): Promise<ApiResult<T>> {
 
 export const diaryApi = {
   appointment: <T>(id: string) => read<T>(`${API}/appointments/${encodeURIComponent(id)}`),
+  appointmentHistory: <T>(id: string) => read<T>(`${API}/appointments/${encodeURIComponent(id)}/history`),
   searchPatients: <T>(q: string) => read<T>(`${API}/patients`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ q }) }),
   bookingOptions: <T>(patientId: string) => read<T>(`${API}/patients/${encodeURIComponent(patientId)}`),
   bookingCheck: <T>(params: Record<string, string | number | null | undefined>) => {

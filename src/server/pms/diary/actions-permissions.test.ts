@@ -25,6 +25,7 @@ function files(dir: string, name: string): string[] {
 
 /** Route (relative to the diary folder) → method → the permission clinicRoute() must ask for. */
 const ROUTES: Record<string, Record<string, string>> = {
+  "api/appointments/[appointmentId]/history/route.ts": { GET: "diary.view" },
   "api/appointments/[appointmentId]/route.ts": { GET: "diary.view" },
   "api/booking-check/route.ts": { GET: "diary.book" },
   "api/day-sheet/route.ts": { GET: "diary.view" },

@@ -133,3 +133,53 @@ export function ukToIso(value: string): string | null {
 export function bookedText(percent: number | null): string | null {
   return percent === null ? null : `${percent}% booked`;
 }
+
+/**
+ * Whether a keyboard move from one column to another changes the practitioner or the site (the move asks for a
+ * second Enter then). Rooms of the same practitioner and days at the same site do not.
+ */
+export function crossesResource(from: Pick<DiaryColumn, "practitionerId" | "siteId"> | undefined, to: Pick<DiaryColumn, "practitionerId" | "siteId"> | undefined): boolean {
+  if (!from || !to) return false;
+  if (from.siteId !== to.siteId) return true;
+  return Boolean(from.practitionerId && to.practitionerId && from.practitionerId !== to.practitionerId);
+}
+
+/**
+ * The start (local minutes) of the first free slot of a practitioner on a date – the booking form's default time,
+ * so "New appointment" never opens on a clash. Free slots are never in the past (the server leaves those out).
+ * null when the practitioner has no free slot shown that day (no column, no rota, fully booked).
+ */
+export function firstFreeStart(columns: readonly Pick<DiaryColumn, "date" | "practitionerId" | "freeSlots">[], practitionerId: string | null | undefined, date: string): number | null {
+  if (!practitionerId) return null;
+  let best: number | null = null;
+  for (const c of columns) {
+    if (c.date !== date) continue;
+    for (const s of c.freeSlots) {
+      if (s.practitionerId !== practitionerId && c.practitionerId !== practitionerId) continue;
+      if (best === null || s.startMinute < best) best = s.startMinute;
+    }
+  }
+  return best;
+}
+
+/** The smallest pointer target (WCAG 2.5.8, target size minimum). */
+export const MIN_TARGET_PX = 24;
+
+/**
+ * How far a short block's hit area reaches above and below its drawn edges so it is at least 24 px tall – centred,
+ * so the block stays drawn at its time. Each side takes at most half of the free space to the neighbour on that
+ * side (the neighbour's own hit area takes the other half), so two hit areas never overlap; back-to-back 15-minute
+ * blocks therefore get what the gaps allow (a known limit, recorded in the M10 report).
+ */
+export function hitArea(heightPx: number, gapAbovePx: number, gapBelowPx: number): { above: number; below: number } {
+  const need = Math.max(0, MIN_TARGET_PX - heightPx);
+  if (need === 0) return { above: 0, below: 0 };
+  const maxAbove = Math.max(0, gapAbovePx / 2);
+  const maxBelow = Math.max(0, gapBelowPx / 2);
+  let above = Math.min(need / 2, maxAbove);
+  let below = Math.min(need - above, maxBelow);
+  // One side short of room: the other side takes the rest if it can.
+  above = Math.min(maxAbove, need - below);
+  below = Math.min(maxBelow, need - above);
+  return { above, below };
+}

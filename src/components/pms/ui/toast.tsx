@@ -69,7 +69,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 
 function ToastViewport({ items, onDismiss }: { items: ToastItem[]; onDismiss: (id: number) => void }) {
   return (
-    <div className="pointer-events-none fixed bottom-4 right-4 z-[60] flex w-[min(360px,calc(100vw-32px))] flex-col gap-2">
+    <div data-modal-keep className="pointer-events-none fixed bottom-4 right-4 z-[60] flex w-[min(360px,calc(100vw-32px))] flex-col gap-2">
       {/* Two live regions, present before any toast appears, so screen readers announce what is added. */}
       <div role="status" aria-live="polite" className="flex flex-col gap-2">
         {items.filter((t) => t.tone === "success").map((t) => (

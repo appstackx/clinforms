@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { DiaryCard } from "@/modules/pms/diary/view";
-import { clampLength, clampStart, clashInColumn, hourMarks, longDate, minutesToPx, offRotaBands, snap, startTimeOptions, ukToIso, weekdayDate, weekRange } from "./grid-model";
+import { clampLength, clampStart, clashInColumn, crossesResource, firstFreeStart, hitArea, hourMarks, longDate, minutesToPx, offRotaBands, snap, startTimeOptions, ukToIso, weekdayDate, weekRange } from "./grid-model";
 
 const card = (id: string, start: string, end: string, status: DiaryCard["status"] = "booked", columnKey = "p:1"): DiaryCard =>
   ({ id, kind: "appointment", status, columnKey, startsAt: `2026-10-27T${start}:00.000Z`, endsAt: `2026-10-27T${end}:00.000Z` }) as DiaryCard;
@@ -45,5 +45,36 @@ describe("diary grid model", () => {
     assert.equal(ukToIso("31/02/1988"), null);
     assert.equal(startTimeOptions()[0], "07:00");
     assert.equal(startTimeOptions().at(-1), "20:45");
+  });
+
+  it("keyboard moves across practitioners or sites ask to confirm; same practitioner, same site do not", () => {
+    assert.equal(crossesResource({ practitionerId: "p1", siteId: "s1" }, { practitionerId: "p2", siteId: "s1" }), true);
+    assert.equal(crossesResource({ practitionerId: "p1", siteId: "s1" }, { practitionerId: "p1", siteId: "s2" }), true);
+    assert.equal(crossesResource({ practitionerId: "p1", siteId: "s1" }, { practitionerId: "p1", siteId: "s1" }), false);
+    assert.equal(crossesResource({ practitionerId: null, siteId: "s1" }, { practitionerId: null, siteId: "s1" }), false);
+  });
+
+  it("New appointment opens on the practitioner's first free slot of the day", () => {
+    const slot = (startMinute: number, practitionerId = "p1") => ({ startMinute, endMinute: startMinute + 30, startsAt: "", practitionerId, roomId: null });
+    const cols = [
+      { date: "2026-11-02", practitionerId: "p1", freeSlots: [slot(600), slot(570)] },
+      { date: "2026-11-02", practitionerId: "p2", freeSlots: [slot(540, "p2")] },
+      { date: "2026-11-03", practitionerId: "p1", freeSlots: [slot(480)] },
+    ];
+    assert.equal(firstFreeStart(cols, "p1", "2026-11-02"), 570);
+    assert.equal(firstFreeStart(cols, "p2", "2026-11-02"), 540);
+    assert.equal(firstFreeStart(cols, "p3", "2026-11-02"), null);
+    assert.equal(firstFreeStart(cols, null, "2026-11-02"), null);
+  });
+
+  it("short blocks get a 24 px hit area centred on them, never into a neighbour's half of the gap", () => {
+    assert.deepEqual(hitArea(18, 100, 100), { above: 3, below: 3 });
+    assert.deepEqual(hitArea(38, 100, 100), { above: 0, below: 0 });
+    // Back-to-back below (2 px gap): the rest goes above.
+    assert.deepEqual(hitArea(18, 100, 2), { above: 5, below: 1 });
+    // Back-to-back on both sides: what the gaps allow.
+    assert.deepEqual(hitArea(18, 2, 2), { above: 1, below: 1 });
+    const free = hitArea(18, 100, 100);
+    assert.ok(18 + free.above + free.below >= 24);
   });
 });

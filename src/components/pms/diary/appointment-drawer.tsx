@@ -9,71 +9,82 @@
  * screen shows the undo toast.
  */
 import * as React from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Activity, AlertTriangle, CalendarCheck, CalendarX2, CreditCard, MessageSquare, Move, Repeat, User, UserCheck, UserX, X, XCircle, CheckCircle2, Ban } from "lucide-react";
-import { cancelAppointmentAction, cancelSeriesAction, setAppointmentStatusAction, startTreatmentAction } from "@/app/app/clinic/diary/actions";
+import { AlertTriangle, CalendarX2, ChevronDown, History, Repeat, X } from "lucide-react";
+import { cancelAppointmentAction, cancelSeriesAction } from "@/app/app/clinic/diary/actions";
 import { CLINIC_BASE_PATH } from "@/modules/pms/core/modules";
 import { formatPence, formatUkDate } from "@/modules/pms/core/text";
-import { BLOCK_KIND_LABELS, CANCEL_REASON_LABELS, DOUBLE_BOOKED_LABEL } from "@/modules/pms/diary/copy";
-import { CANCEL_REASONS, type AppointmentStatus, type BlockKind, type CancelReason } from "@/modules/pms/diary/rules";
+import { CANCEL_REASON_LABELS, DOUBLE_BOOKED_LABEL } from "@/modules/pms/diary/copy";
+import { CANCEL_REASONS, type CancelReason } from "@/modules/pms/diary/rules";
 import { londonDate } from "@/modules/pms/diary/time";
-import type { DiaryActionResult } from "@/modules/pms/diary/types";
 import type { AppointmentDetailsView } from "@/modules/pms/diary/view";
 import { cn } from "@/lib/utils";
 import { PmsButton } from "../ui/button";
 import { Checkbox, SelectInput } from "../ui/inputs";
 import { FlagPill, StatusPill } from "../ui/status-pill";
 import { Kbd } from "../ui/keyboard-hint";
+import { useModalLayer } from "../ui/modal-layer";
 import { TakePaymentDialog } from "../billing/take-payment-dialog";
 import { SendMessageDialog } from "../comms/send-message-dialog";
 import { diaryApi } from "./api";
+import { useAppointmentActions, type DrawerPanel, type DrawerPermissions, type StatusUndo } from "./appointment-actions";
 import { weekdayDate } from "./grid-model";
 
-export interface DrawerPermissions {
-  book: boolean;
-  /** billing.pay: "Take payment" opens billing's take-payment dialog for the patient. */
-  pay?: boolean;
-  /** clinical.write: "Start treatment" also opens the clinical note for the appointment. */
-  clinical: boolean;
-  /** messages.send: "Send message" opens the comms module's send form for the patient (COMMS-011). */
-  message?: boolean;
-}
+export type { DrawerPermissions, DrawerPanel } from "./appointment-actions";
 
 export interface AppointmentDrawerProps {
   id: string | null;
   /** Bumped by the screen after a change so the open drawer reloads. */
   version: number;
   can: DrawerPermissions;
+  /** Open on one of its panels (the block's context menu: Cancel…, Take payment, Send message). */
+  initialPanel?: DrawerPanel | null;
   onClose: () => void;
   /** A status change or cancellation worked: the screen refreshes and offers Undo. */
-  onChanged: (message: string, undo: { id: string; rev: number; status: AppointmentStatus } | null) => void;
+  onChanged: (message: string, undo: StatusUndo | null) => void;
   onError: (message: string) => void;
   onMove: (id: string) => void;
   onRebook: (details: AppointmentDetailsView) => void;
 }
 
-const fullName = (d: AppointmentDetailsView) => d.patient?.name ?? (d.kind === "block" ? (d.title || (d.blockKind ? BLOCK_KIND_LABELS[d.blockKind as BlockKind] : "Blocked time")) : "Appointment");
+interface HistoryRow {
+  id: string;
+  when: string;
+  who: string;
+  what: string;
+  detail: string | null;
+}
 
-export function AppointmentDrawer({ id, version, can, onClose, onChanged, onError, onMove, onRebook }: AppointmentDrawerProps) {
+export function AppointmentDrawer({ id, version, can, initialPanel = null, onClose, onChanged, onError, onMove, onRebook }: AppointmentDrawerProps) {
   const router = useRouter();
   const [details, setDetails] = React.useState<AppointmentDetailsView | null>(null);
   const [loadError, setLoadError] = React.useState<string | null>(null);
-  const [busy, setBusy] = React.useState<string | null>(null);
   const [cancelOpen, setCancelOpen] = React.useState(false);
   const [reason, setReason] = React.useState<CancelReason>("patient");
   const [charge, setCharge] = React.useState(true);
   const [seriesOpen, setSeriesOpen] = React.useState(false);
   const [payOpen, setPayOpen] = React.useState(false);
   const [messageOpen, setMessageOpen] = React.useState(false);
+  const [historyOpen, setHistoryOpen] = React.useState(false);
+  const [history, setHistory] = React.useState<{ id: string; rows: HistoryRow[] | null; error: string | null } | null>(null);
+  const [mounted, setMounted] = React.useState(false);
   const closeRef = React.useRef<HTMLButtonElement>(null);
   const panelRef = React.useRef<HTMLElement>(null);
+  const titleId = React.useId();
+
+  React.useEffect(() => setMounted(true), []);
 
   React.useEffect(() => {
     setCancelOpen(false);
     setSeriesOpen(false);
+    setPayOpen(false);
+    setMessageOpen(false);
     if (!id) {
       setDetails(null);
+      setHistoryOpen(false);
+      setHistory(null);
       return;
     }
     let live = true;
@@ -88,7 +99,37 @@ export function AppointmentDrawer({ id, version, can, onClose, onChanged, onErro
     };
   }, [id, version]);
 
-  // Focus moves into the drawer when it opens; Esc closes it (the screen returns focus to the block).
+  // The context menu's Cancel… / Take payment / Send message open the drawer on that panel once it has loaded.
+  const panelUsed = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    if (!id || !initialPanel || !details || details.id !== id) return;
+    const key = `${id}:${initialPanel}`;
+    if (panelUsed.current === key) return;
+    panelUsed.current = key;
+    if (initialPanel === "cancel") setCancelOpen(true);
+    else if (initialPanel === "pay") setPayOpen(true);
+    else setMessageOpen(true);
+  }, [id, initialPanel, details]);
+  React.useEffect(() => {
+    if (!id) panelUsed.current = null;
+  }, [id]);
+
+  // The history of changes loads when it is first opened, and again after a change while it is open.
+  React.useEffect(() => {
+    if (!id || !historyOpen) return;
+    let live = true;
+    void diaryApi.appointmentHistory<HistoryRow[]>(id).then((r) => {
+      if (!live) return;
+      setHistory(r.ok ? { id, rows: r.data, error: null } : { id, rows: null, error: r.error });
+    });
+    return () => {
+      live = false;
+    };
+  }, [id, historyOpen, version]);
+
+  // Modal (WCAG 2.4.11 / 2.4.3): the page behind is inert while the drawer is open, Tab stays inside, focus moves
+  // into it when it opens; Esc closes it and the screen returns focus to the block that opened it.
+  useModalLayer(panelRef, Boolean(id) && mounted);
   React.useEffect(() => {
     if (id) window.setTimeout(() => closeRef.current?.focus(), 0);
   }, [id]);
@@ -97,39 +138,25 @@ export function AppointmentDrawer({ id, version, can, onClose, onChanged, onErro
   React.useEffect(() => {
     if (!id) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape" || e.defaultPrevented || document.querySelector("[role=dialog],[role=alertdialog]")) return;
+      if (e.key !== "Escape" || e.defaultPrevented || document.querySelector("[role=dialog]:not([data-appointment-drawer]),[role=alertdialog]")) return;
       onClose();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [id, onClose]);
 
-  if (!id) return null;
-  const d = details && details.id === id ? details : null;
+  const d = id && details && details.id === id ? details : null;
+  const { actions: specs, busy, run, name } = useAppointmentActions(d, can, {
+    onChanged,
+    onError,
+    onMove,
+    onRebook,
+    onDone: () => setCancelOpen(false),
+    openPanel: (panel) => (panel === "cancel" ? setCancelOpen(true) : panel === "pay" ? setPayOpen(true) : setMessageOpen(true)),
+  });
 
-  const run = async (label: string, work: () => Promise<DiaryActionResult>, okMessage: (r: Extract<DiaryActionResult, { ok: true }>) => string, undo?: (r: Extract<DiaryActionResult, { ok: true }>) => { id: string; rev: number; status: AppointmentStatus } | null) => {
-    setBusy(label);
-    const r = await work();
-    setBusy(null);
-    if (!r.ok) {
-      onError([r.error, ...(r.clashes ?? [])].join(" "));
-      if (r.conflict) router.refresh();
-      return;
-    }
-    setCancelOpen(false);
-    onChanged(okMessage(r), undo ? undo(r) : null);
-  };
+  if (!id || !mounted) return null;
 
-  const setStatus = (to: AppointmentStatus, message: string) =>
-    d &&
-    run(
-      to,
-      () => setAppointmentStatusAction({ id: d.id, expectedRev: d.rev, status: to }),
-      () => message,
-      (r) => ({ id: d.id, rev: r.rev ?? d.rev + 1, status: d.status }),
-    );
-
-  const name = d ? fullName(d) : "";
   const fee = d?.pricePence ?? null;
   const isLate = d ? d.lateIfCancelledNow && reason !== "clinic" && reason !== "practitioner_unavailable" : false;
 
@@ -143,127 +170,70 @@ export function AppointmentDrawer({ id, version, can, onClose, onChanged, onErro
       (r) => ({ id: d.id, rev: r.rev ?? d.rev + 1, status: "booked" }),
     );
 
-  /** Start treatment (or, once in treatment, open the note again): the status, and the clinician's note. */
-  const startTreatment = async () => {
-    if (!d) return;
-    setBusy("treat");
-    const r = await startTreatmentAction({ id: d.id });
-    setBusy(null);
-    if (!r.ok) {
-      onError(r.error);
-      if (r.conflict) router.refresh();
-      return;
+  // Touch targets: 44 px on a phone (design rule), the design's 40 px from 768 px.
+  const BUTTON = "h-11 w-full justify-center md:h-10";
+  const actions: React.ReactNode[] = specs.map((x) => {
+    const Icon = x.icon;
+    if (x.href) {
+      return (
+        <PmsButton key={x.key} asChild variant="secondary" className={BUTTON}>
+          <Link href={x.href}>
+            <Icon className="h-4 w-4" aria-hidden />
+            {x.label}
+          </Link>
+        </PmsButton>
+      );
     }
-    if (d.status === "arrived") onChanged(`${name} – treatment started`, { id: d.id, rev: r.rev ?? d.rev + 1, status: "arrived" });
-    if (d.patient && r.noteId) router.push(`${CLINIC_BASE_PATH}/patients/${d.patient.id}/notes/${r.noteId}`);
-  };
-
-  const action = (key: string, label: string, Icon: React.ComponentType<{ className?: string }>, onClick: () => void, opts: { primary?: boolean; danger?: boolean; kbd?: string } = {}) => (
-    <PmsButton
-      key={key}
-      variant={opts.primary ? "primary" : "secondary"}
-      className={cn("h-10 w-full justify-center", opts.danger && "text-destructive-strong")}
-      onClick={onClick}
-      loading={busy === key}
-      disabled={busy !== null && busy !== key}
-    >
-      <Icon className="h-4 w-4" aria-hidden />
-      {label}
-      {opts.kbd ? <Kbd className={cn("ml-1", opts.primary && "border-white/50 bg-transparent text-white")}>{opts.kbd}</Kbd> : null}
-    </PmsButton>
-  );
-
-  const openRecord = d?.patient ? (
-    <PmsButton key="record" asChild variant="secondary" className="h-10 w-full justify-center">
-      <Link href={`${CLINIC_BASE_PATH}/patients/${d.patient.id}`}>
-        <User className="h-4 w-4" aria-hidden />
-        Open record
-      </Link>
-    </PmsButton>
-  ) : null;
-  // Billing (M5): the take-payment dialog for the patient (billing.pay); left out without the permission.
-  const sendMessage =
-    d?.kind === "appointment" && d.patient && can.message ? (
-      <PmsButton key="message" variant="secondary" className="h-10 w-full justify-center" onClick={() => setMessageOpen(true)} data-testid="drawer-send-message">
-        <MessageSquare className="h-4 w-4" aria-hidden />
-        Send message
+    return (
+      <PmsButton
+        key={x.key}
+        variant={x.primary ? "primary" : "secondary"}
+        className={cn(BUTTON, x.danger && "text-destructive-strong")}
+        onClick={x.run}
+        loading={busy === x.key}
+        disabled={busy !== null && busy !== x.key}
+        data-testid={x.testId}
+      >
+        <Icon className="h-4 w-4" aria-hidden />
+        {x.label}
+        {x.kbd ? <Kbd className={cn("ml-1", x.primary && "border-white/50 bg-transparent text-white")}>{x.kbd}</Kbd> : null}
       </PmsButton>
-    ) : null;
-  const takePayment =
-    d?.kind === "appointment" && d.patient && can.pay ? (
-      <PmsButton key="pay" variant="secondary" className="h-10 w-full justify-center" onClick={() => setPayOpen(true)} data-testid="drawer-take-payment">
-        <CreditCard className="h-4 w-4" aria-hidden />
-        Take payment
-      </PmsButton>
-    ) : null;
-
-  const actions: React.ReactNode[] = [];
-  if (d && can.book && d.kind === "appointment") {
-    const s = d.status;
-    // The server leaves out what the time of day does not allow yet (seen only from 60 minutes before the start,
-    // did not attend only after it) – never offer a button the server would refuse.
-    const allowed = (to: AppointmentStatus) => d.nextStatuses.includes(to);
-    const complete = (primary: boolean) => action("attended", "Completed", CheckCircle2, () => setStatus("attended", `${name} marked as completed`), { primary });
-    if (s === "booked") {
-      if (allowed("arrived")) actions.push(action("arrived", "Arrived", UserCheck, () => setStatus("arrived", `${name} marked as arrived`), { primary: true, kbd: "A" }));
-      if (allowed("dna")) actions.push(action("dna", "Did not attend", UserX, () => setStatus("dna", `${name} marked as DNA`), { kbd: "D" }));
-      actions.push(action("cancel", "Cancel…", XCircle, () => setCancelOpen(true), { danger: true }));
-      if (d.canMove) actions.push(action("move", "Move", Move, () => onMove(d.id), { kbd: "M" }));
-      if (allowed("attended")) actions.push(complete(false));
-      if (!allowed("arrived")) {
-        actions.push(
-          <p key="future-note" data-testid="future-status-note" className="text-[13px] leading-5 text-[#475569]">
-            Arrived and Completed open 60 minutes before the start time.
-          </p>,
-        );
-      }
-    } else if (s === "arrived") {
-      actions.push(action("treat", "Start treatment", Activity, () => void startTreatment(), { primary: true }));
-      actions.push(complete(false));
-      actions.push(action("cancel", "Cancel…", XCircle, () => setCancelOpen(true), { danger: true }));
-      actions.push(action("booked", "Undo arrival", CalendarCheck, () => setStatus("booked", "Arrival removed")));
-    } else if (s === "in_treatment") {
-      if (can.clinical) actions.push(action("treat", "Open note", Activity, () => void startTreatment(), { primary: true }));
-      actions.push(complete(!can.clinical));
-      actions.push(action("arrived", "Undo start of treatment", CalendarCheck, () => setStatus("arrived", "Back to arrived")));
-    } else if (s === "attended") {
-      const back: AppointmentStatus = d.treatmentStarted ? "in_treatment" : "arrived";
-      actions.push(action(back, "Undo completed", CalendarCheck, () => setStatus(back, "Completion removed")));
-    } else if (s === "dna") {
-      actions.push(action("booked", "Undo DNA", CalendarCheck, () => setStatus("booked", "DNA removed")));
-      if (allowed("attended")) actions.push(complete(false));
-    } else {
-      actions.push(action("booked", "Restore booking", CalendarCheck, () => setStatus("booked", "Booking restored")));
-    }
-  }
-  if (d?.kind === "appointment") {
-    if (openRecord) actions.push(openRecord);
-    if (sendMessage) actions.push(sendMessage);
-    if (takePayment) actions.push(takePayment);
-    if (can.book && d.patient && (d.status === "dna" || d.status === "cancelled" || d.status === "late_cancelled" || d.status === "booked" || d.status === "arrived")) {
-      actions.push(action("rebook", "Rebook", Repeat, () => onRebook(d)));
-    }
-  }
-  if (d && can.book && d.kind === "block") {
-    if (d.status === "booked") actions.push(action("cancelled", "Remove blocked time", Ban, () => setStatus("cancelled", "Blocked time removed"), { danger: true }));
-    else actions.push(action("booked", "Restore blocked time", CalendarCheck, () => setStatus("booked", "Blocked time restored")));
+    );
+  });
+  if (d && can.book && d.kind === "appointment" && d.status === "booked" && !d.nextStatuses.includes("arrived")) {
+    // After Move (or Cancel… when Move is not offered), as before: where Arrived / Completed would be.
+    const at = specs.findIndex((x) => x.key === "record");
+    const note = (
+      <p key="future-note" data-testid="future-status-note" className="text-[13px] leading-5 text-[#475569]">
+        Arrived and Completed open 60 minutes before the start time.
+      </p>
+    );
+    actions.splice(at < 0 ? actions.length : at, 0, note);
   }
 
   const statusLabel = d && d.kind === "appointment" ? undefined : "Blocked";
-  return (
+  return createPortal(
+    <>
+    {/* The page behind is inert; a click on it closes the drawer (like the kit's side drawer). */}
+    <div aria-hidden data-modal-keep data-testid="drawer-overlay" className="fixed inset-0 z-40 bg-[rgba(15,23,42,0.18)]" onClick={onClose} />
     <aside
       ref={panelRef}
+      role="dialog"
+      aria-modal="true"
       aria-label="Appointment details"
-      className="fixed inset-y-0 right-0 z-40 flex w-full max-w-[400px] flex-col border-l border-border bg-white text-sm shadow-[-12px_0_32px_rgba(15,23,42,0.14)]"
+      aria-describedby={titleId}
+      data-appointment-drawer
+      tabIndex={-1}
+      className="fixed inset-y-0 right-0 z-40 flex w-full max-w-[400px] flex-col border-l border-border bg-white text-sm shadow-[-12px_0_32px_rgba(15,23,42,0.14)] focus:outline-none"
     >
       <div className="flex items-start gap-3 border-b border-border px-5 py-4">
         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
           {d?.patient ? (
             <Link href={`${CLINIC_BASE_PATH}/patients/${d.patient.id}`} className="truncate text-lg font-semibold text-foreground hover:underline">
-              <h2 className="inline">{name}</h2>
+              <h2 id={titleId} className="inline">{name}</h2>
             </Link>
           ) : (
-            <h2 className="truncate text-lg font-semibold text-foreground">{d ? name : "Loading…"}</h2>
+            <h2 id={titleId} className="truncate text-lg font-semibold text-foreground">{d ? name : "Loading…"}</h2>
           )}
           {d ? (
             <div className="flex flex-wrap items-center gap-1.5">
@@ -278,7 +248,7 @@ export function AppointmentDrawer({ id, version, can, onClose, onChanged, onErro
           type="button"
           aria-label="Close details"
           onClick={onClose}
-          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] text-[#334155] hover:bg-[#F1F5F9] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[8px] text-[#334155] md:h-8 md:w-8 hover:bg-[#F1F5F9] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
         >
           <X className="h-[18px] w-[18px]" aria-hidden />
         </button>
@@ -422,6 +392,44 @@ export function AppointmentDrawer({ id, version, can, onClose, onChanged, onErro
             )}
           </div>
         ) : null}
+        {d ? (
+          <div className="flex flex-col gap-2" data-testid="drawer-history">
+            <button
+              type="button"
+              aria-expanded={historyOpen}
+              aria-controls={`${titleId}-history`}
+              onClick={() => setHistoryOpen((o) => !o)}
+              className="flex min-h-[44px] items-center gap-2 rounded-[8px] text-left text-xs font-semibold uppercase tracking-[0.04em] text-[#475569] hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary md:min-h-[32px]"
+            >
+              <History className="h-4 w-4" aria-hidden />
+              History of changes
+              <ChevronDown className={cn("ml-auto h-4 w-4 transition-transform motion-reduce:transition-none", historyOpen && "rotate-180")} aria-hidden />
+            </button>
+            {historyOpen ? (
+              <div id={`${titleId}-history`}>
+                {!history || history.id !== d.id ? (
+                  <p className="text-[#475569]">Loading…</p>
+                ) : history.error ? (
+                  <p role="alert" className="text-destructive-strong">{history.error}</p>
+                ) : history.rows && history.rows.length > 0 ? (
+                  <ol className="flex flex-col gap-2 border-l-2 border-[#E2E8F0] pl-3">
+                    {history.rows.map((r) => (
+                      <li key={r.id} className="flex flex-col">
+                        <span className="font-medium text-foreground">{r.what}</span>
+                        <span className="text-xs text-[#475569]">
+                          <span className="tabular-nums">{r.when}</span> · {r.who}
+                          {r.detail ? ` · ${r.detail}` : ""}
+                        </span>
+                      </li>
+                    ))}
+                  </ol>
+                ) : (
+                  <p className="text-[#475569]">Nothing recorded yet.</p>
+                )}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </div>
       {d && (d.bookedBy || d.confirmationRequested) ? (
         <div className="border-t border-border px-5 py-3 text-xs text-[#475569]">
@@ -446,6 +454,8 @@ export function AppointmentDrawer({ id, version, can, onClose, onChanged, onErro
         />
       ) : null}
     </aside>
+    </>,
+    document.body,
   );
 }
 
