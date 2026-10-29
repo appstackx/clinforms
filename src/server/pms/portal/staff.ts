@@ -46,6 +46,7 @@ import { commsLinkOrigin } from "../comms/links";
 import { clinicCompletionOf, clinicCompletionWords } from "./clinic-device";
 import { applyToRecord } from "./intake-service";
 import { sendSignInLink } from "./portal-auth";
+import { bookingNeedsHumanCheck } from "./human-check";
 import { pmsNow } from "../../../modules/pms/core/clock";
 
 export type StaffResult<T = undefined> = { ok: true; value: T; message?: string } | { ok: false; error: string; fieldErrors?: Record<string, string> };
@@ -102,6 +103,9 @@ export async function onlineBookingSetupFor(actor: ClinicActor): Promise<StaffRe
 
 export async function saveBookingSettingsFor(actor: ClinicActor, expectedRev: number, input: BookingSettingsInput): Promise<StaffResult<{ rev: number }>> {
   if (!can(actor, "settings.setup")) return { ok: false, error: FORBIDDEN };
+  // M10 M6: on production, booking for new patients is switched on only with the bot check in place.
+  const needsCheck = bookingNeedsHumanCheck();
+  if (needsCheck && input.onlineBooking === true && input.newPatients !== false) return { ok: false, error: needsCheck };
   try {
     const r = await updateBookingSettings(actor.repo(), actor.tenantId, expectedRev, input, actor.actor);
     if (!r.ok) return { ok: false, error: r.reason === "conflict" ? CONFLICT : GONE };
@@ -408,8 +412,9 @@ export async function applyResponseFor(actor: ClinicActor, patientId: string, re
 export async function setPortalAccessFor(actor: ClinicActor, patientId: string, on: boolean): Promise<StaffResult> {
   if (!can(actor, "patients.edit")) return { ok: false, error: FORBIDDEN };
   const ctx = actor.repo();
-  const account = on ? await ensurePortalAccount(ctx, actor.tenantId, patientId, actor.actor) : await getPortalAccountForPatient(ctx, actor.tenantId, patientId);
-  if (!account) return { ok: true, value: undefined };
+  // M10 L6: switching access OFF for a patient with no portal account yet creates the account, disabled – so a later
+  // sign-in request cannot quietly create an active one.
+  const account = (await getPortalAccountForPatient(ctx, actor.tenantId, patientId)) ?? (await ensurePortalAccount(ctx, actor.tenantId, patientId, actor.actor));
   await setPortalAccountStatus(ctx, actor.tenantId, account.id, on ? "active" : "disabled", actor.actor);
   return { ok: true, value: undefined, message: on ? "Portal access switched on." : "Portal access switched off – the patient is signed out." };
 }

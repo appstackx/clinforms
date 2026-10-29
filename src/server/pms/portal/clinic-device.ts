@@ -29,7 +29,8 @@ import { randomBytes } from "node:crypto";
 import { endHandoff, getHandoff, handoffForResponse, handoffUsable, startHandoff, verifyHandoff, type IntakeHandoff } from "../../repos/pms/portal/handoffs";
 import { getIntakeResponse } from "../../repos/pms/portal/intake";
 import { getAuth } from "../../auth/auth";
-import { requestHeaders, throttle } from "../../auth/session";
+import { requestHeaders } from "../../auth/session";
+import { hitRateLimit } from "../../repos/rate-limits";
 import type { ClinicActor } from "../actor";
 import { recordVerifiedConsent } from "./intake-service";
 import { memberNames } from "./staff-names";
@@ -169,9 +170,22 @@ export async function endHandoffFor(actor: ClinicActor, handoffId: string): Prom
 
 export type PasswordCheck = (actor: ClinicActor, password: string) => Promise<"ok" | "wrong" | "throttled">;
 
+/**
+ * 5 tries per 15 minutes per member – FAIL CLOSED (M10 L7): if the counter cannot be written, no password is checked.
+ * Local to the clinic system; ClinForms' own sign-in throttle (src/server/auth/session.ts) stays fail-open.
+ */
+export async function handoffAttemptAllowed(ctx: Pick<RepoContext, "db"> & Partial<RepoContext>, userId: string, max = 5, windowMs = 15 * 60_000): Promise<boolean> {
+  try {
+    const hit = await hitRateLimit(ctx as RepoContext, `pms:handoff-verify:${userId}`, windowMs);
+    return hit.count <= max;
+  } catch {
+    return false;
+  }
+}
+
 /** The signed-in member's own password, through the sign-in service (5 tries per 15 minutes per member). */
 export async function checkStaffPassword(actor: ClinicActor, password: string): Promise<"ok" | "wrong" | "throttled"> {
-  if (!(await throttle("handoff-verify", actor.userId, 5, 15 * 60_000))) return "throttled";
+  if (!(await handoffAttemptAllowed(actor.repo(), actor.userId))) return "throttled";
   try {
     const r = await getAuth().api.verifyPassword({ body: { password }, headers: requestHeaders() });
     return r && (r as { status?: boolean }).status === true ? "ok" : "wrong";

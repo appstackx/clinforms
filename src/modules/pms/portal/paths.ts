@@ -20,8 +20,18 @@ export function clinicPublicPaths(tenantId: string) {
     portalAppointment: (appointmentId: string) => `${root}/portal/appointments/${encodeURIComponent(appointmentId)}`,
     portalForm: (responseId: string) => `${root}/portal/forms/${encodeURIComponent(responseId)}`,
     portalDocument: (shareId: string) => `${root}/portal/documents/${encodeURIComponent(shareId)}`,
+    /**
+     * The "manage this booking" link (shown once after booking). M10 L7: opening it swaps the secret for a cookie
+     * (limited to `${root}/booking`) and redirects to manageHome, so the secret leaves the address bar and history.
+     */
     manage: (token: string) => `${root}/booking/${encodeURIComponent(token)}`,
-    manageForm: (token: string, responseId: string) => `${root}/booking/${encodeURIComponent(token)}/forms/${encodeURIComponent(responseId)}`,
+    /** The link that opens one of the booking's forms (swaps the secret for the cookie first). */
+    manageForm: (token: string, responseId: string) => `${root}/booking/${encodeURIComponent(token)}?form=${encodeURIComponent(responseId)}`,
+    /** The booking's own pages, read with the manage cookie. */
+    manageHome: `${root}/booking/manage`,
+    manageMove: `${root}/booking/manage/move`,
+    manageFormPage: (responseId: string) => `${root}/booking/manage/forms/${encodeURIComponent(responseId)}`,
+    manageCookiePath: `${root}/booking`,
     /** A clinic device showing one form handed to the patient (its cookie is limited to this path). */
     device: `${root}/device`,
     portalDocumentFile: (shareId: string) => `${root}/portal/documents/${encodeURIComponent(shareId)}/file`,

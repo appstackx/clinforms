@@ -17,6 +17,9 @@ import { HARROW_PIKE_FORM } from "../../modules/medreport/forms/samples/maps/har
 import { completedSampleReport } from "../../../scripts/medreport/form-sample-answers";
 import { member, storeDeps, storeFetch } from "../../../scripts/medreport/store-harness";
 import { mayReadNativeReport, nativeReportIsClinical } from "./native-report-access";
+import { handleLaunchVerify } from "../../modules/medreport/api/handlers/launch-verify";
+import { bindHandler } from "../../modules/medreport/api/http";
+import { createLaunchToken } from "../../modules/medreport/auth/launch-token";
 
 const A = "riverside-a";
 
@@ -120,5 +123,29 @@ describe("M10 H2: native reports with clinical content need clinical.view", () =
       assert.equal(ra.status, rb.status, "render answers the same");
     }
     assert.deepEqual(reads, [], "the clinic-system access is only read for native reports");
+  });
+});
+
+describe("M10 L7: a launch issued for one member opens only for that member", () => {
+  it("another member of the same clinic is refused; the member it names gets the session; partner launches unchanged", async () => {
+    const used = new Set<string>();
+    const actors: Record<string, AuthContext> = { a: member(A, { userId: "user-a" }), b: member(A, { userId: "user-b" }) };
+    const deps: MedreportDeps = {
+      ...storeDeps(createMemoryTenantStore(), actors),
+      sharedState: {
+        hit: async () => ({ count: 1, resetAt: new Date(Date.now() + 60_000).toISOString() }),
+        peek: async () => ({ count: 0, resetAt: new Date(Date.now() + 60_000).toISOString() }),
+        reset: async () => undefined,
+        claimOnce: async (id: string) => (used.has(id) ? false : (used.add(id), true)),
+      } as unknown as MedreportDeps["sharedState"],
+    };
+    const verify = (who: string, token: string) =>
+      bindHandler(handleLaunchVerify, () => deps)(new Request("http://localhost/api/reports/v1/launch/verify", { method: "POST", headers: { "content-type": "application/json", cookie: `member=${who}`, origin: "http://localhost" }, body: JSON.stringify({ token }) }), { params: {} });
+    const base = { tenantId: A, connectorId: "native" as const, patientId: "pat_1", episodeId: "case_1", clinician: { name: "Sarah Reid (fictional)", hcpc: "PH-DEMO-01" } };
+    const forA = createLaunchToken({ ...base, forUserId: "user-a" }).token;
+    assert.equal((await verify("b", forA)).status, 403, "another member");
+    assert.equal((await verify("a", forA)).status, 200, "the member it was issued for (not used up by the refusal)");
+    const partner = createLaunchToken(base).token;
+    assert.equal((await verify("b", partner)).status, 200, "a launch naming no member: as before");
   });
 });

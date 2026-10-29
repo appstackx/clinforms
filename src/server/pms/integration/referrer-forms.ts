@@ -294,6 +294,8 @@ export async function startReferrerFormFor(
       patientId: c.patientId,
       episodeId: c.id,
       clinician,
+      // M10 L7: only this member can redeem the launch (ClinForms' /launch/verify checks it).
+      forUserId: actor.userId,
     });
     const url = `${STUDIO_NEW_PATH}?lt=${encodeURIComponent(issued.token)}&form=${encodeURIComponent(form.id)}`;
     return { ok: true, value: { url, requestId: request.id } };

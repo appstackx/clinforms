@@ -6,13 +6,13 @@
  */
 import { cookies, headers } from "next/headers";
 import { clinicPublicPaths } from "@/modules/pms/portal/paths";
-import { clientIp } from "@/server/auth/session";
+import { trustedClientIp } from "@/server/pms/portal/human-check";
 import { DEVICE_COOKIE, pairDeviceWithCode, submitOnDevice } from "@/server/pms/portal/device-flow";
 import { deviceClinicOr404, publicCtx } from "@/server/pms/portal/public-page";
 
 export async function devicePairAction(clinicId: string, code: string): Promise<{ ok: true } | { ok: false; error: string }> {
   const clinic = await deviceClinicOr404(String(clinicId));
-  const ip = clientIp(headers());
+  const ip = trustedClientIp(headers());
   const r = await pairDeviceWithCode(publicCtx(), clinic.tenantId, typeof code === "string" ? code : "", { clientIp: ip });
   if (!r.ok) return r;
   cookies().set(DEVICE_COOKIE, r.secret, {

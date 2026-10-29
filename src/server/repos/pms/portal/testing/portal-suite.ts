@@ -32,7 +32,8 @@ import { getPortalShare, listSharesForPatient, markShareViewed, recordShareDownl
 import { endHandoff, findHandoffByToken, getHandoff, handoffForResponse, startHandoff, verifyHandoff } from "../handoffs";
 import { putAttachment, withdrawAttachment } from "../../records/attachments";
 import { deviceState, submitOnDevice } from "../../../../pms/portal/device-flow";
-import { patientShare, portalHome } from "../../../../pms/portal/portal-views";
+import { manageFormView, patientShare, portalHome } from "../../../../pms/portal/portal-views";
+import { publicLimit } from "../../../../pms/portal/rate-limit";
 import { recordVerifiedConsent } from "../../../../pms/portal/intake-service";
 import { newSecret } from "../../../../pms/portal/tokens";
 import { HIDDEN_LINK, hasSecretLink } from "../../../../../modules/pms/comms/secret-links";
@@ -297,7 +298,9 @@ export function definePortalSuite(label: string, factory: () => Promise<PortalSu
       assert.equal(a1?.patientId, ids.megan, "matched to Megan's record");
       assert.notEqual(a2?.patientId, ids.megan, "a different date of birth makes a new record (staff merge it)");
       assert.equal((await getPatient(ctx, A, ids.megan))?.phoneMobile, "07700 900123", "a match never changes the record");
-      assert.equal(existing.visit.formIds.length, 0, "the new-patient forms only go to new patients");
+      // M10 M4: the same forms whether or not the details matched a record – the answer never tells who is a patient.
+      assert.equal(existing.visit.formIds.length, typo.visit.formIds.length, "the same forms for a matched and a new record");
+      assert.equal(existing.visit.formIds.length, 3);
       assert.equal((await getOnlineBookingForAppointment(ctx, A, existing.visit.appointmentId))?.patientMatch, "existing");
     });
 
@@ -640,6 +643,33 @@ export function definePortalSuite(label: string, factory: () => Promise<PortalSu
       assert.equal(audit.filter((e) => e.action === "pms.intake_handoff.end" && e.targetId === copy.id).length, 1, "the replaced hand-off");
       assert.equal(audit.filter((e) => e.action === "pms.intake_handoff.end" && e.targetId === other.id).length, 1);
       assert.ok(!JSON.stringify(audit.filter((e) => e.action.startsWith("pms.intake_")).map((e) => e.detail)).includes("Sam"));
+    });
+
+    it("M10 M5: a manage link shows a sent form as 'Sent' – never its answers", async () => {
+      const sent = (await listResponsesForPatient(ctx, A, ids.ellie, { status: "submitted" })).find((c) => c.appointmentId === ids.ellieAppt);
+      assert.ok(sent, "a form of the booking already sent");
+      const v = await manageFormView(ctx, clinicA, ids.ellieManage, sent!.id, now());
+      assert.equal(v?.state, "sent");
+      const text = JSON.stringify(v && v.state === "sent" ? { name: v.name, state: v.state } : v);
+      assert.ok(!/Ellie Sample|"answers"|share_gp|signatureName/.test(text), "no answers, no signature");
+      assert.equal(v && "response" in v, false, "the copy itself is not handed to the page");
+      const open = (await listResponsesForPatient(ctx, A, ids.ellie, { status: "requested" })).find((c) => c.appointmentId === ids.ellieAppt);
+      if (open) assert.equal((await manageFormView(ctx, clinicA, ids.ellieManage, open.id, now()))?.state, "fill");
+      assert.equal(await manageFormView(ctx, clinicA, "x".repeat(43), sent!.id, now()), null, "a wrong link opens nothing");
+    });
+
+    it("M10 M6: production refuses public booking without the bot check; at most 40 bookings an hour reach the patient step", async () => {
+      const cat = await bookingCatalogue(ctx, A, now());
+      const slots = (await findSlots(ctx, A, clinicA.settings, cat, { siteId: ids.site, serviceId: ids.ia, practitionerId: ids.james, fromDate: "2026-11-03", days: 14, now: now() })).slots;
+      assert.ok(slots.length > 0, "a free slot");
+      const input = { siteId: ids.site, serviceId: ids.ia, practitionerId: ids.james, startsAt: slots[slots.length - 1].startsAt, firstName: "Cap", lastName: "Test", dateOfBirth: "1985-05-05", email: "cap.test@example.com", phoneMobile: "07700 900777" };
+      const prod = await bookFromPublicPage(clinicA, input, deps({ env: { VERCEL_ENV: "production" } }));
+      assert.deepEqual(prod, { ok: false, error: "Online booking is closed at the moment. Please contact the clinic." });
+      for (let i = 0; i < 40; i++) await publicLimit(ctx, A, "recordsPerClinic", null, SECRET);
+      const before = await countPmsRows(ctx.db, A);
+      const capped = await bookFromPublicPage(clinicA, input, deps({ clientIp: "203.0.113.77" }));
+      assert.ok(!capped.ok && /Too many attempts/.test(capped.error), JSON.stringify(capped));
+      assert.deepEqual(await countPmsRows(ctx.db, A), before, "no record made");
     });
 
     it("every write was audited under its own clinic – ids and counts only", async () => {

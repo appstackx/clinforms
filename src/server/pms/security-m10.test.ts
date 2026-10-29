@@ -26,6 +26,16 @@ import type { DiaryCaller } from "./diary/caller";
 import { SITE_SCOPED_MESSAGE, listImportsFor, startImportFor } from "./integration/import-service";
 import type { ClinicProfile } from "../../modules/medreport/api/deps";
 import { saveRolePermissions } from "../repos/pms/access";
+import { bookingNeedsHumanCheck, humanCheckRequired, trustedClientIp } from "./portal/human-check";
+import { saveBookingSettingsFor, setPortalAccessFor } from "./portal/staff";
+import type { ClinicActor } from "./actor";
+import { createSignInLink, getPortalAccountForPatient, setPortalAccountStatus, signInWithLink } from "../repos/pms/portal/accounts";
+import { readPortalSession } from "./portal/portal-auth";
+import { hashSecret, newSecret } from "./portal/tokens";
+import { getPatient } from "../repos/pms/patients";
+import { updatePatientFor } from "./records/patients-service";
+import { handoffAttemptAllowed } from "./portal/clinic-device";
+import { paddedMs } from "./portal/timing";
 import { readOnlyReason, roleGridRefusal, saveRolesFor } from "./access-screens";
 import { lockOf } from "../../modules/pms/core/permissions";
 import { testActor, type RecordsActor, type Result } from "./records/access";
@@ -195,6 +205,96 @@ describe("M10 security", () => {
       assert.equal((await startImportFor(admin, { kind: "patients", fileName: "p.csv" } as never)).ok, false);
       const full = testActor(ctx, A, "admin", { userId: "user_admin_imp2", name: "Admin (fictional)" });
       assert.equal((await listImportsFor(full)).ok, true);
+    });
+  });
+
+  describe("M6: booking spam – the bot check on production, the platform's client address", () => {
+    it("production needs Turnstile for public booking; preview and local do not", () => {
+      assert.equal(humanCheckRequired({ VERCEL_ENV: "production" }), true);
+      assert.equal(humanCheckRequired({ VERCEL_ENV: "preview" }), false);
+      assert.match(bookingNeedsHumanCheck({ VERCEL_ENV: "production" }) ?? "", /bot check/);
+      assert.equal(bookingNeedsHumanCheck({ VERCEL_ENV: "production", NEXT_PUBLIC_CLINIC_TURNSTILE_SITE_KEY: "site", CLINIC_TURNSTILE_SECRET: "secret" }), null);
+      assert.equal(bookingNeedsHumanCheck({}), null);
+    });
+    it("the client address is the platform's, not the first client-written hop", () => {
+      const h = (o: Record<string, string>) => new Headers(o);
+      assert.equal(trustedClientIp(h({ "x-forwarded-for": "6.6.6.6, 203.0.113.9", "x-real-ip": "203.0.113.9" }), { VERCEL: "1" }), "203.0.113.9");
+      assert.equal(trustedClientIp(h({ "x-forwarded-for": "6.6.6.6, 203.0.113.9" }), { VERCEL: "1" }), "203.0.113.9", "the last hop");
+      assert.equal(trustedClientIp(h({ "x-forwarded-for": "6.6.6.6, 198.51.100.1" }), {}), "198.51.100.1");
+      assert.equal(trustedClientIp(h({}), {}), "local");
+    });
+    it("staff cannot switch booking for new patients on in production without it", async () => {
+      const owner2 = { ...testActor(ctx, A, "owner", { userId: "user_owner", name: "Helen Ward (fictional)" }), siteIds: null } as unknown as ClinicActor;
+      const r = await withEnv({ VERCEL_ENV: "production" }, () => saveBookingSettingsFor(owner2, 0, { onlineBooking: true, newPatients: true } as never));
+      assert.equal(r.ok, false);
+      assert.match(!r.ok ? r.error : "", /bot check/);
+    });
+  });
+
+  describe("L6: switching portal access off for a patient with no account yet", () => {
+    it("creates the account, disabled", async () => {
+      const pat = (await createPatient(ctx, A, { firstName: "Nia", lastName: "Noaccount", dateOfBirth: "1990-01-01", email: "nia@example.com" }, OWNER)).id;
+      assert.equal(await getPortalAccountForPatient(ctx, A, pat), null);
+      const clinicOwner = { ...testActor(ctx, A, "owner", { userId: "user_owner", name: "Helen Ward (fictional)" }), siteIds: null } as unknown as ClinicActor;
+      const r = await setPortalAccessFor(clinicOwner, pat, false);
+      assert.ok(r.ok);
+      assert.equal((await getPortalAccountForPatient(ctx, A, pat))?.status, "disabled");
+    });
+  });
+
+  describe("L7: portal and launch hardening", () => {
+    it("a new email address on the record ends the patient's portal sessions and unused links", async () => {
+      const pat = (await createPatient(ctx, A, { firstName: "Ivy", lastName: "Mailchange", dateOfBirth: "1992-02-02", email: "ivy.old@example.com" }, OWNER)).id;
+      const account = await ensurePortalAccount(ctx, A, pat, OWNER);
+      const link = newSecret();
+      await createSignInLink(ctx, A, account.id, hashSecret(link), new Date(clock + 3_600_000).toISOString(), OWNER);
+      const spare = newSecret();
+      await createSignInLink(ctx, A, account.id, hashSecret(spare), new Date(clock + 3_600_000).toISOString(), OWNER);
+      const secret = newSecret();
+      const signed = await signInWithLink(ctx, A, hashSecret(link), hashSecret(secret), new Date(clock + 3_600_000).toISOString());
+      assert.ok(signed.ok);
+      if (!signed.ok) return;
+      const cookie = `${signed.session.id}.${secret}`;
+      assert.equal((await readPortalSession(ctx, A, cookie, now()))?.patientId, pat);
+      assert.equal((await signInWithLink(ctx, A, hashSecret(link), hashSecret(newSecret()), new Date(clock + 3_600_000).toISOString())).ok, false, "a link works once");
+      const staffMember = testActor(ctx, A, "staff", { userId: "user_rec_mail", name: "Jess (fictional)" });
+      const p = await getPatient(ctx, A, pat);
+      value(await updatePatientFor(staffMember, pat, p?.rev ?? 0, { email: "ivy.new@example.com" }));
+      assert.equal(await readPortalSession(ctx, A, cookie, now()), null, "signed out");
+      assert.equal((await signInWithLink(ctx, A, hashSecret(spare), hashSecret(newSecret()), new Date(clock + 3_600_000).toISOString())).ok, false, "the unused link to the old address stops working");
+      // Another edit that keeps the address changes nothing.
+      const s2 = newSecret();
+      const l2 = newSecret();
+      await createSignInLink(ctx, A, account.id, hashSecret(l2), new Date(clock + 3_600_000).toISOString(), OWNER);
+      const again = await signInWithLink(ctx, A, hashSecret(l2), hashSecret(s2), new Date(clock + 3_600_000).toISOString());
+      assert.ok(again.ok);
+      const p2 = await getPatient(ctx, A, pat);
+      value(await updatePatientFor(staffMember, pat, p2?.rev ?? 0, { phoneMobile: "07700 900555" }));
+      assert.ok(again.ok && (await readPortalSession(ctx, A, `${again.session.id}.${s2}`, now())), "still signed in");
+    });
+
+    it("a sign-in link on a switched-off account opens no session and is not used up", async () => {
+      const pat = (await createPatient(ctx, A, { firstName: "Otto", lastName: "Off", dateOfBirth: "1970-07-07", email: "otto@example.com" }, OWNER)).id;
+      const account = await ensurePortalAccount(ctx, A, pat, OWNER);
+      const link = newSecret();
+      await createSignInLink(ctx, A, account.id, hashSecret(link), new Date(clock + 3_600_000).toISOString(), OWNER);
+      await setPortalAccountStatus(ctx, A, account.id, "disabled", OWNER);
+      assert.equal((await signInWithLink(ctx, A, hashSecret(link), hashSecret(newSecret()), new Date(clock + 3_600_000).toISOString())).ok, false);
+      const sessions = await g.db.selectFrom("pms_portal_sessions").select("id").where("tenant_id", "=", A).where("account_id", "=", account.id).execute();
+      assert.equal(sessions.length, 0);
+    });
+
+    it("the hand-off password throttle fails closed", async () => {
+      const broken = { db: { insertInto: () => { throw new Error("db down"); } } } as never;
+      assert.equal(await handoffAttemptAllowed(broken, "user_x"), false);
+      for (let i = 0; i < 5; i++) assert.equal(await handoffAttemptAllowed(ctx, "user_throttle"), true);
+      assert.equal(await handoffAttemptAllowed(ctx, "user_throttle"), false, "the sixth try in 15 minutes");
+    });
+
+    it("public answers are padded: at least the floor, slower ones rounded up to the second", () => {
+      assert.equal(paddedMs(2500, 300), 2500);
+      assert.equal(paddedMs(2500, 2600), 3000);
+      assert.equal(paddedMs(1500, 1501), 2000);
     });
   });
 
