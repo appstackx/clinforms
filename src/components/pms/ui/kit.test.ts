@@ -12,6 +12,8 @@ import { blockLines, blockMinutes, diaryBlockStyle, isCollapsedBlock, minutesOf,
 import { pageItems, showingText, totalPagesOf } from "./pagination-model";
 import { AVATAR_COLOURS, avatarColour, initialsOf } from "./avatar-colour";
 import { isPlainKey, isTypingTarget } from "./shortcuts";
+import { nextMenuIndex, placeMenu, typeaheadIndex } from "./menu-model";
+import { isContextMenuKey } from "./context-menu";
 import { StatusPill } from "./status-pill";
 import { DiaryBlock } from "./diary-block";
 import { APPOINTMENT_STATUSES } from "@/modules/pms/diary/rules";
@@ -208,3 +210,37 @@ describe("keyboard shortcuts", () => {
     assert.equal(isPlainKey({ key: "?", ctrlKey: true }, "?"), false);
   });
 });
+
+describe("context menu (roving focus, keys, placement)", () => {
+  const off = [false, true, false, false];
+  it("↑ ↓ skip disabled items and wrap round; Home / End go to the first / last enabled item", () => {
+    assert.equal(nextMenuIndex(-1, "ArrowDown", off), 0);
+    assert.equal(nextMenuIndex(0, "ArrowDown", off), 2);
+    assert.equal(nextMenuIndex(3, "ArrowDown", off), 0);
+    assert.equal(nextMenuIndex(0, "ArrowUp", off), 3);
+    assert.equal(nextMenuIndex(2, "ArrowUp", off), 0);
+    assert.equal(nextMenuIndex(2, "Home", [true, false, false]), 1);
+    assert.equal(nextMenuIndex(0, "End", [false, false, true]), 1);
+    assert.equal(nextMenuIndex(0, "ArrowDown", [true, true]), -1);
+    assert.equal(nextMenuIndex(-1, "ArrowDown", []), -1);
+  });
+  it("type-ahead finds the next enabled item by its first letter", () => {
+    const labels = ["Open details", "Arrived", "Did not attend", "Cancel…", "Open record"];
+    assert.equal(typeaheadIndex(0, "o", labels, [false, false, false, false, false]), 4);
+    assert.equal(typeaheadIndex(4, "O", labels, [false, false, false, false, false]), 0);
+    assert.equal(typeaheadIndex(0, "z", labels, [false, false, false, false, false]), -1);
+  });
+  it("opens from Shift+F10 or the menu key only", () => {
+    const k = (key: string, shiftKey = false, ctrlKey = false) => isContextMenuKey({ key, shiftKey, ctrlKey, altKey: false, metaKey: false });
+    assert.equal(k("ContextMenu"), true);
+    assert.equal(k("F10", true), true);
+    assert.equal(k("F10"), false);
+    assert.equal(k("F10", true, true), false);
+    assert.equal(k("m"), false);
+  });
+  it("stays on the screen", () => {
+    assert.deepEqual(placeMenu({ x: 100, y: 100 }, { width: 200, height: 150 }, { width: 1440, height: 900 }), { left: 100, top: 100 });
+    assert.deepEqual(placeMenu({ x: 1400, y: 850 }, { width: 200, height: 150 }, { width: 1440, height: 900 }), { left: 1232, top: 700 });
+  });
+});
+

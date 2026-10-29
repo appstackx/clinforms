@@ -28,3 +28,6 @@ export { PmsAvatar, type PmsAvatarProps, type AvatarSize } from "./pms-avatar";
 export { avatarColour, initialsOf, AVATAR_COLOURS, type AvatarColour } from "./avatar-colour";
 export { Kbd, KeyboardHint, ShortcutsSheet, type ShortcutsSheetProps } from "./keyboard-hint";
 export { GLOBAL_SHORTCUTS, DIARY_SHORTCUTS, isTypingTarget, isPlainKey, type Shortcut, type ShortcutGroup } from "./shortcuts";
+export { ContextMenu, isContextMenuKey, pointOf, type ContextMenuItem, type ContextMenuProps } from "./context-menu";
+export { nextMenuIndex, typeaheadIndex, placeMenu, type MenuKey } from "./menu-model";
+export { useModalLayer, inertOutside } from "./modal-layer";
