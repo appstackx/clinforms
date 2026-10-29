@@ -14,7 +14,8 @@
  *   9. no analytics request was made (no consent was given in this browser)
  *  10. sign out from the account menu → /login; /app/studio → /login again
  *  11. the public demo at /reports still has its demo tools and fictional-data footer
- *  FLOW=complete adds: paste fictional notes → check the data → built-in report → review opens under
+ *  FLOW=complete adds: the owner's signing details (test number ZZ0002, may sign – an approving clinician is
+ *  required since 10/2026), paste fictional notes → check the data → built-in report → review opens under
  *  /app/studio/<id> and says "Saved" (with drafting off – a new clinic's default – via "Open for review").
  *
  * Run (app started against the preview database, e.g.
@@ -217,6 +218,19 @@ async function assertTenantPage(page, where) {
     });
 
     if (FLOW === "complete") {
+      // Since approvals name an approving clinician (10/2026), "Draft the built-in report" stays disabled until a member
+      // who may sign is chosen: the new owner adds their own signing details first (HCPC-format test number ZZ0002 –
+      // not a real registration – as in plan-usage.cjs), then the Studio defaults the approver to them.
+      await step("complete: the owner adds their signing details (test number ZZ0002, may sign)", async () => {
+        await page.goto(`${BASE}/app/settings/members`);
+        const me = page.locator("li", { has: page.locator("summary:has-text('Manage')") }).first();
+        await me.locator("summary:has-text('Manage')").click();
+        await me.locator("input[name=jobTitle]").fill("Physiotherapist (fictional)");
+        await me.locator("input[name=hcpcNumber]").fill("ZZ0002");
+        await me.locator("input[name=canSign]").check();
+        await me.locator("button:has-text('Save signing details')").click();
+        await me.locator("text=Saved.").waitFor({ timeout: 20000 });
+      });
       await step("complete: paste fictional notes → check the data → built-in report → review under /app/studio", async () => {
         await page.goto(`${BASE}/app/studio/new`);
         await page.fill(
@@ -244,7 +258,10 @@ async function assertTenantPage(page, where) {
         await page.waitForSelector("text=Which referrer form?");
         await page.click("button:has-text('No form from the referrer? Use a built-in report')");
         await page.locator("button[role=radio]:has-text('Written for')").first().click();
-        await page.click("button:has-text('Draft the built-in report')");
+        // The approving clinician: the owner themselves (pre-selected once they may sign; chosen here if not).
+        const approver = page.locator("#approver-picker");
+        if ((await approver.count()) && !(await approver.inputValue())) await approver.selectOption({ index: 1 });
+        await page.click("button:has-text('Draft the built-in report'):not([disabled])", { timeout: 20000 });
         // With drafting from the notes switched off (a new clinic's default) nothing is drafted: the wizard says
         // so and offers "Open for review" instead of opening the review by itself.
         const opened = page.waitForURL(/\/app\/studio\/rpt_/, { timeout: 90000 }).then(() => "review");
@@ -269,6 +286,8 @@ async function assertTenantPage(page, where) {
       await page.click("[data-studio-account] summary");
       await page.click("[data-studio-account] button:has-text('Sign out')");
       await page.waitForURL(/\/login/);
+      // Sign-out ends in a client-side move to /login (and a refresh): let it settle, else the next goto is interrupted.
+      await page.waitForLoadState("networkidle");
       await page.goto(`${BASE}/app/studio/forms`);
       assert(page.url() === `${BASE}/login?next=%2Fapp%2Fstudio%2Fforms`, `at ${page.url()}`);
     });

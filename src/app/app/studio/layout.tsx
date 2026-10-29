@@ -9,7 +9,7 @@ import { getAuth } from "@/server/auth/auth";
 import { currentPath, requestHeaders } from "@/server/auth/session";
 import { resolveStudioAccess } from "@/server/auth/studio-access";
 import { getDb } from "@/server/db";
-import { hasPackage } from "@/server/pms/entitlements";
+import { clinicPackages } from "@/server/pms/entitlements";
 import { TenantHost } from "./tenant-host";
 
 export const dynamic = "force-dynamic";
@@ -34,8 +34,10 @@ export default async function TenantStudioLayout({ children }: { children: React
   if (access.kind === "redirect") redirect(access.to);
   const { context } = access;
   // A clinic with the Reports package switched off (a clinic-system-only clinic) has no Studio.
-  if (!(await hasPackage(context.tenantId, "reports"))) notFound();
-  const clinicSystem = await hasPackage(context.tenantId, "clinic");
+  // Both packages in one read (src/server/pms/entitlements.ts, never throws: Reports on, clinic system off if unreadable).
+  const packages = await clinicPackages(context.tenantId);
+  if (!packages.reports) notFound();
+  const clinicSystem = packages.clinic;
   return (
     <>
       {clinicSystem ? <ProductSwitchBar clinicSystemName={CLINIC_SYSTEM_NAME} clinicHref="/app/clinic" /> : null}

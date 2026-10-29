@@ -49,7 +49,10 @@ ClinForms, switched on per clinic. Demo first (fictional data only); onboarding 
   - A future second domain (e.g. `app.<newbrand>.co.uk`): add its host to `BRANDS.clinic.hosts` – same deployment,
     same code, same pages and database. On that host the product name is the placeholder, `/` and the other public
     pages redirect to sign-in (`src/middleware.ts`), and members land on `/app/clinic`. Locally:
-    `http://clinic.localhost:3180`.
+    `http://clinic.localhost:3180`. **Also add the host to the middleware matcher's host pattern** (`config.matcher`
+    in `src/middleware.ts`, written out because Next reads it statically): the public pages run the middleware ONLY
+    on an app-only brand's hosts, so ClinForms' public site never runs it (as on `main`).
+    `src/server/auth/middleware.test.ts` fails until the pattern and `BRANDS` agree.
   - **Before a second domain goes live** (not in this sprint): Better Auth takes one base URL today, so sign-in on a
     second host needs `trustedOrigins` + a per-request base URL (as for previews), invitation and reset links per
     brand, and a decision on whether one account spans both hosts (cookies are host-only: signing in on one host does
@@ -173,7 +176,8 @@ invl crn pay acct stmt`; comms `msg mtpl ltr`; portal `bkr ptl ifm ifr`; reporti
   plan code, price source, limits, start/end). **No row = default: reports ON, clinic OFF.** Migration 0100 wrote
   an explicit `reports = active` row for every existing clinic. `clinic_usage_counters` (monthly, per metric:
   `forms_completed`, `practitioners_active`, `sms_segments`, … – `incrementUsage`).
-- Switch: platform page `/app/platform` → **Packages** (On/Off; off = paused, nothing deleted), or
+- Switch: platform page `/app/platform` → **Packages switched on** (On/Off; off = paused, nothing deleted; switching
+  **Reports off** needs the clinic id typed – checked on the server, `setClinicPackageAsPlatform`), or
   `npm run admin:set-entitlement -- --slug <id> --package clinic|reports --on|--off [--status trial] [--env preview|production]`
   – a preview unless `--confirm` (production also `--yes`, and only with Khuram's go). Audited in the clinic's trail
   (`clinic.package_change`, by "ClinForms support") and the platform's (`platform.entitlement_set`).
@@ -181,7 +185,9 @@ invl crn pay acct stmt`; comms `msg mtpl ltr`; portal `bkr ptl ifm ifr`; reporti
   no activity filter group. `reports` off → no Studio (404), no Studio navigation item, the Report API refuses the
   members (`NO_CLINIC`) – so a clinic-system-only clinic never reaches the drafting service.
 - Fail-safe: if the package table cannot be read, ClinForms keeps Reports on and the clinic system off
-  (`clinicPackages`). **Deploy order:** apply migrations `0100`+ before the code that reads them.
+  (`clinicPackages`); the platform page's list (`listClinicPackages`) and the offboarding's counts (`countPmsRows`)
+  read a missing clinic-system table as the defaults / empty (`isMissingPmsTable`; other errors still throw).
+  **Deploy order:** apply migrations `0100`+ before the code that reads them.
 
 ## 6. Routes, actors, permissions, navigation
 
@@ -271,6 +277,13 @@ table, `_enc` columns as plain fields) and deletes them in the same atomic batch
 `<M>_TENANT_TABLES` (`src/server/pms/offboard.ts`). List every per-clinic table there; give encrypted columns an `id`
 row key (the AAD needs it).
 
+The batch names **only the tables that hold the clinic's rows** (a ClinForms-only clinic sends no clinic-system
+statement): the data gateway takes at most `GATEWAY_MAX_STATEMENTS` (100, `src/server/db/dialects/d1-http.ts`, equal to
+the Worker's `LIMITS.maxStatements` – cross-checked). Worst case today (every table, `--release-slug`): 92 statements +
+1 per 90 accounts – one atomic batch up to 720 accounts (`src/server/auth/offboard-batch.test.ts` fails when new
+tables eat the headroom below 450). Past the limit, `offboardBatches` sends ordered batches with the organization's
+tombstone last (a stop part-way leaves the clinic open: keep the export, run again with a new `--export-dir`).
+
 ## 11. Providers (SMS, email, payments)
 
 Interfaces in the module's server folder (`src/server/pms/comms/providers/*`, `src/server/pms/billing/payments/*`),
@@ -291,3 +304,21 @@ no clinical detail (PECR + confidentiality); marketing only with recorded opt-in
 - UK formats: dates DD/MM/YYYY (`formatUkDate`), times 24 h Europe/London, money `formatPence`, UK postcodes and
   phone numbers (`normalisePostcode`, `isPlausiblePhone`).
 - Copy: plain UK English, neutral; never vendor/technology names; the product name only through `src/lib/brand.ts`.
+
+## 13. Stylesheet size (M10 review, 29/10/2026) – one global stylesheet, on purpose
+
+Tailwind scans the clinic system's files with ClinForms' (`tailwind.config.ts` content), so the ONE global stylesheet
+carries both. Measured with Tailwind 3.4.19, minified, gzip -9 (scratch configs, 29/10): all sources 108.4 kB / 19.2 kB
+gzip; without `src/components/pms`, `src/modules/pms`, `src/app/app/clinic`, `src/app/(public-clinic)` 73.8 kB /
+13.6 kB; the clinic system's files alone 60.1 kB / 11.9 kB. So ~5.6 kB gzip more on a first visit to any page,
+then cached (hashed, immutable).
+
+A separate clinic-area stylesheet (a second CSS file with its own `@config`, imported by `src/app/app/clinic/layout.tsx`
+and the public clinic pages) is **not done**: (1) the same utility would be emitted in both files and the later file
+wins regardless of Tailwind's order – classes from shared components (`src/components/ui`, `account/shell`) combined
+with clinic-area classes could then resolve differently (e.g. `p-2` re-declared after a shared `px-3`); (2) clinic-system
+components are also used outside the clinic area (`ProductSwitchBar` in the Studio layout, the platform page's package
+table, the (clinic) layout's navigation), so the split needs a hand-kept exception list; (3) client navigation between
+`/app` and `/app/clinic` would add/remove a stylesheet (Next 14 app-router CSS ordering on navigation is a known source
+of flicker/order bugs). Each of these needs a visual re-check of every ClinForms and clinic-system screen for 5.6 kB.
+Revisit if the clinic system's share grows substantially or a second domain gets its own layout.

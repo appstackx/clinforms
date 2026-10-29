@@ -107,14 +107,23 @@ export async function setAccessRequestContactedAction(form: FormData): Promise<v
   revalidatePath(PLATFORM_PATH);
 }
 
-/** Switches a clinic's package on or off (package = reports | clinic, on = 1 | 0). Nothing is deleted. */
+/**
+ * Switches a clinic's package on or off (package = reports | clinic, on = 1 | 0). Nothing is deleted. Reports off
+ * also needs confirmTenantId = the clinic id (typed by the administrator), else nothing changes.
+ */
 export async function setClinicPackageAction(form: FormData): Promise<void> {
   const admin = await platformActionAdmin();
   if (!admin) return;
   const pkg = String(form.get("package") ?? "");
   if (!isEntitlementPackageId(pkg)) return;
   try {
-    await setClinicPackageAsPlatform(getDb(), admin, { tenantId: String(form.get("tenantId") ?? ""), package: pkg, on: form.get("on") === "1" });
+    await setClinicPackageAsPlatform(getDb(), admin, {
+      tenantId: String(form.get("tenantId") ?? ""),
+      package: pkg,
+      on: form.get("on") === "1",
+      // Switching Reports off: the clinic id typed again (checked on the server, setClinicPackageAsPlatform).
+      confirmTenantId: String(form.get("confirmTenantId") ?? ""),
+    });
   } catch (err) {
     if (!(err instanceof RepoInputError)) logAuthEvent("platform.set_package_failed", { error: err instanceof Error ? err.name : "error" });
   }

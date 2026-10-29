@@ -4,7 +4,7 @@
  */
 import assert from "node:assert/strict";
 import { after, describe, it } from "node:test";
-import { signGatewayRequest } from "../../../src/server/db/dialects/d1-http";
+import { GATEWAY_MAX_BODY_BYTES, GATEWAY_MAX_STATEMENTS, signGatewayRequest } from "../../../src/server/db/dialects/d1-http";
 import { SIG_HEADER, TS_HEADER, signRequest } from "../src/auth";
 import { handleRequest, mapDatabaseError } from "../src/index";
 import { LIMITS, checkSql } from "../src/validate";
@@ -36,6 +36,10 @@ async function call(req: Request): Promise<{ status: number; body: any }> {
 }
 
 describe("gateway: routing and auth", () => {
+  it("the app's mirrored limits equal the Worker's (the app's offboarding batch is sized against them)", () => {
+    assert.equal(GATEWAY_MAX_STATEMENTS, LIMITS.maxStatements);
+    assert.equal(GATEWAY_MAX_BODY_BYTES, LIMITS.maxBodyBytes);
+  });
   it("serves /v1/health without auth and nothing else", async () => {
     assert.deepEqual(await call(new Request(`${BASE}/v1/health`)), { status: 200, body: { ok: true } });
     assert.equal((await call(new Request(`${BASE}/v1/nope`))).status, 404);
