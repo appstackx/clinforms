@@ -29,6 +29,11 @@ export default async function InvoiceVisitsPage() {
         <h1 className="text-2xl font-semibold text-foreground">Invoice visits</h1>
         <p className="text-sm text-[#475569]">Visits up to today that don&apos;t have an invoice yet.</p>
       </div>
+      {r.ok && r.value.total > r.value.visits.length ? (
+        <p className="text-sm text-[#475569]" role="status">
+          Showing the {r.value.visits.length.toLocaleString("en-GB")} most recent of {r.value.total.toLocaleString("en-GB")} visits to invoice. Invoice these, then come back for the rest.
+        </p>
+      ) : null}
       {r.ok ? <VisitsTable visits={r.value.visits} mode="stepper" today={r.value.until} from={r.value.from} until={r.value.until} /> : <p role="alert">{r.error}</p>}
     </div>
   );
