@@ -151,3 +151,20 @@ export function postgresConfigFromEnv(env: Readonly<Record<string, string | unde
     max: env.DATABASE_POOL_MAX ? Math.max(1, Number(env.DATABASE_POOL_MAX) || 3) : undefined,
   };
 }
+
+/**
+ * Is this a Postgres ON THIS MACHINE (e.g. the Docker `k2-pg` test database)? A postgres:// URL whose host is a
+ * loopback address (and no libpq `?host=` override). Supabase is never on a loopback address. Used to let local-only
+ * scripts and tests touch it; never a reason to relax anything for a server database.
+ */
+export function isLoopbackPostgresUrl(raw: string | undefined): boolean {
+  if (!raw) return false;
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "postgres:" && url.protocol !== "postgresql:") return false;
+    if (url.searchParams.has("host") || url.searchParams.has("hostaddr")) return false;
+    return url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "[::1]" || url.hostname === "::1";
+  } catch {
+    return false;
+  }
+}

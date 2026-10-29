@@ -32,6 +32,7 @@ const BASE = process.env.BASE || "http://localhost:3186";
 const OUT = process.env.E2E_OUT || path.resolve(__dirname, "../../.e2e-out/pms-prototype-a");
 const SEED_LOG = process.env.SEED_LOG;
 const SQLITE = process.env.SQLITE_PATH || process.env.CLINFORMS_SQLITE_PATH || "";
+const { openScratchDb } = require("./scratch-db.cjs"); // SQLITE_PATH, or E2E_DATABASE_URL (a local Postgres)
 const RUN = crypto.randomBytes(3).toString("hex");
 const DIARY = `${BASE}/app/clinic/diary`;
 const SIGNING_NUMBER = "PH-DEMO-08";
@@ -124,9 +125,7 @@ async function invite(owner, email, role) {
 
 /** Links the member with `email` to a seeded practitioner (scratch SQLite only – see the top of this file). */
 function linkPractitioner(email, practitionerId, displayName) {
-  if (!SQLITE || !/^\/(private\/)?(tmp|var\/folders)\//.test(SQLITE)) throw new Error("SQLITE_PATH must be a scratch database under /tmp");
-  const { DatabaseSync } = require("node:sqlite");
-  const db = new DatabaseSync(SQLITE);
+  const db = openScratchDb();
   try {
     const user = db.prepare('SELECT id FROM "user" WHERE email = ?').get(email);
     if (!user) throw new Error("no such member");

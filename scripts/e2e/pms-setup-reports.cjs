@@ -26,6 +26,7 @@ const BASE = process.env.BASE || "http://localhost:3185";
 const OUT = process.env.E2E_OUT || path.resolve(__dirname, "../../.e2e-out/pms-setup-reports");
 const SEED_LOG = process.env.SEED_LOG;
 const SQLITE = process.env.SQLITE_PATH || "";
+const { openScratchDb } = require("./scratch-db.cjs"); // SQLITE_PATH, or E2E_DATABASE_URL (a local Postgres)
 const AXE = require.resolve("axe-core/axe.min.js");
 const RUN = crypto.randomBytes(3).toString("hex");
 const APP = `${BASE}/app/clinic`;
@@ -130,9 +131,7 @@ async function axe(page, label) {
 }
 
 function scratchDb() {
-  if (!SQLITE || !/^\/(private\/)?(tmp|var\/folders)\//.test(SQLITE)) throw new Error("SQLITE_PATH must be a scratch database under /tmp");
-  const { DatabaseSync } = require("node:sqlite");
-  return new DatabaseSync(SQLITE);
+  return openScratchDb();
 }
 function query(sql, ...args) {
   const db = scratchDb();
@@ -149,8 +148,8 @@ function limitToSite(email, siteId) {
     const user = db.prepare('SELECT id FROM "user" WHERE email = ?').get(email);
     if (!user) throw new Error("no such member");
     const at = new Date().toISOString();
-    db.prepare("INSERT INTO pms_member_access (tenant_id, user_id, active, all_sites, rev, updated_by, created_at, updated_at) VALUES (?, ?, 1, 0, 1, NULL, ?, ?) ON CONFLICT (tenant_id, user_id) DO UPDATE SET all_sites = 0, rev = rev + 1, updated_at = excluded.updated_at").run(CLINIC, user.id, at, at);
-    db.prepare("INSERT OR REPLACE INTO pms_member_sites (tenant_id, user_id, site_id, works_at, can_see, updated_at) VALUES (?, ?, ?, 1, 0, ?)").run(CLINIC, user.id, siteId, at);
+    db.prepare("INSERT INTO pms_member_access (tenant_id, user_id, active, all_sites, rev, updated_by, created_at, updated_at) VALUES (?, ?, 1, 0, 1, NULL, ?, ?) ON CONFLICT (tenant_id, user_id) DO UPDATE SET all_sites = 0, rev = pms_member_access.rev + 1, updated_at = excluded.updated_at").run(CLINIC, user.id, at, at);
+    db.prepare("INSERT INTO pms_member_sites (tenant_id, user_id, site_id, works_at, can_see, updated_at) VALUES (?, ?, ?, 1, 0, ?) ON CONFLICT (tenant_id, user_id, site_id) DO UPDATE SET works_at = 1, can_see = 0, updated_at = excluded.updated_at").run(CLINIC, user.id, siteId, at);
   } finally {
     db.close();
   }

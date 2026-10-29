@@ -31,6 +31,7 @@ const BASE = process.env.BASE || "http://localhost:3174";
 const OUT = process.env.E2E_OUT || path.resolve(__dirname, "../../.e2e-out/pms-polish-portal");
 const SEED_LOG = process.env.SEED_LOG;
 const SQLITE = process.env.SQLITE_PATH || process.env.CLINFORMS_SQLITE_PATH || "";
+const { openScratchDb } = require("./scratch-db.cjs"); // SQLITE_PATH, or E2E_DATABASE_URL (a local Postgres)
 const CLINIC = process.env.CLINIC_SLUG || "riverside-demo";
 const RUN = crypto.randomBytes(3).toString("hex");
 const AXE = require.resolve("axe-core/axe.min.js");
@@ -132,9 +133,7 @@ async function axe(page, label, include = null) {
 }
 
 function readDb(sql, ...args) {
-  if (!SQLITE || !/^\/(private\/)?(tmp|var\/folders)\//.test(SQLITE)) throw new Error("SQLITE_PATH must be a scratch database under /tmp");
-  const { DatabaseSync } = require("node:sqlite");
-  const db = new DatabaseSync(SQLITE, { readOnly: true });
+  const db = openScratchDb({ readOnly: true });
   try {
     return db.prepare(sql).get(...args);
   } finally {
@@ -144,9 +143,7 @@ function readDb(sql, ...args) {
 
 /** TEST-ONLY write to the scratch database (M10 C1: gives a sign-in link a secret the test knows – its hash only). */
 function writeDb(sql, ...args) {
-  if (!SQLITE || !/^\/(private\/)?(tmp|var\/folders)\//.test(SQLITE)) throw new Error("SQLITE_PATH must be a scratch database under /tmp");
-  const { DatabaseSync } = require("node:sqlite");
-  const db = new DatabaseSync(SQLITE);
+  const db = openScratchDb();
   try {
     const r = db.prepare(sql).run(...args);
     if (r.changes !== 1) throw new Error(`expected one row changed, got ${r.changes}`);

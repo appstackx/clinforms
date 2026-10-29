@@ -26,6 +26,7 @@ const BASE = process.env.BASE || "http://localhost:3195";
 const OUT = process.env.E2E_OUT || path.resolve(__dirname, "../../.e2e-out/pms-messages");
 const SEED_LOG = process.env.SEED_LOG;
 const SQLITE = process.env.SQLITE_PATH || "";
+const { openScratchDb } = require("./scratch-db.cjs"); // SQLITE_PATH, or E2E_DATABASE_URL (a local Postgres)
 const CRON_SECRET = process.env.CRON_SECRET || "";
 const HOOK_SECRET = process.env.CLINIC_SMS_WEBHOOK_SECRET || "";
 const AXE = require.resolve("axe-core/axe.min.js");
@@ -134,9 +135,7 @@ async function axe(page, label) {
 }
 
 function scratchDb() {
-  if (!SQLITE || !/^\/(private\/)?(tmp|var\/folders)\//.test(SQLITE)) throw new Error("SQLITE_PATH must be a scratch database under /tmp");
-  const { DatabaseSync } = require("node:sqlite");
-  return new DatabaseSync(SQLITE);
+  return openScratchDb();
 }
 function query(sql, ...args) {
   const db = scratchDb();
@@ -288,10 +287,11 @@ async function recordRows(page, patientId) {
     await step("choose patients and a free slot two working days ahead (diary view)", async () => {
       const pats = query(
         `SELECT id, first_name, last_name, phone_mobile, email FROM pms_patients WHERE tenant_id = ? AND status = 'active' AND phone_mobile LIKE '07700 900%' AND email IS NOT NULL
-           AND reminder_sms = 1 AND reminder_email = 1 AND id NOT IN (SELECT patient_id FROM pms_appointments WHERE tenant_id = ? AND patient_id IS NOT NULL AND starts_at > datetime('now'))
+           AND reminder_sms = 1 AND reminder_email = 1 AND id NOT IN (SELECT patient_id FROM pms_appointments WHERE tenant_id = ? AND patient_id IS NOT NULL AND starts_at > ?)
            ORDER BY import_ref DESC LIMIT 2`,
         CLINIC,
         CLINIC,
+        new Date().toISOString(), // real now (was SQLite's datetime('now')): portable to Postgres
       );
       assert(pats.length === 2, "two patients with a mobile and email, no future appointment");
       [s.x, s.y] = pats;

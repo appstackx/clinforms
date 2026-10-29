@@ -184,6 +184,8 @@ const navLabels = (page) => page.locator("header nav[aria-label='Clinic'] a").al
       await a.keyboard.type("Hart");
       await a.keyboard.press("Enter");
       await a.waitForURL(/\/app\/clinic\/patients\?q=Hart/);
+      // The list streams in behind the route's loading skeleton (slower on Postgres): wait for it, then read.
+      await a.locator("main >> text=Megan Hart").first().waitFor({ timeout: 15000 }).catch(() => {});
       assert((await a.locator("main").innerText()).includes("Megan Hart"), "the search finds Megan Hart (the records list shows first name first)");
       await a.click("button[aria-haspopup='menu']");
       const menu = await a.locator("[role='menu'][aria-label='Account']").innerText();
@@ -227,7 +229,15 @@ const navLabels = (page) => page.locator("header nav[aria-label='Clinic'] a").al
       await shot(a, "a-04-platform-packages");
       // Switching ON asks nothing; switching OFF asks for confirmation (below).
       await row.locator("form", { has: a.locator("input[name=package][value=clinic]") }).locator("button").click();
-      await a.waitForFunction(() => /harbour-clinic[\s\S]*On[\s\S]*On/.test(document.querySelector("main").innerText));
+      // Harbour's OWN clinic-system state (the row after it – Riverside, both on – matched a page-wide pattern at once).
+      const harbourClinicState = (want) =>
+        a.waitForFunction((w) => {
+          const tr = Array.from(document.querySelectorAll("tr")).filter((t) => t.innerText.includes("harbour-clinic")).pop();
+          const form = tr && Array.from(tr.querySelectorAll("form")).find((f) => f.querySelector("input[name=package][value=clinic]"));
+          const pill = form && form.querySelector("span.rounded-full");
+          return !!pill && (pill.innerText.trim() === "On") === w;
+        }, want, { timeout: 15000 });
+      await harbourClinicState(true);
       await b.goto(`${BASE}/app`);
       const labels = await navLabels(b);
       assert(labels.includes("Clinic system"), `B nav after switching on: ${labels.join(", ")}`);
@@ -238,7 +248,7 @@ const navLabels = (page) => page.locator("header nav[aria-label='Clinic'] a").al
       a.once("dialog", (d) => d.accept());
       await a.goto(`${BASE}/app/platform`);
       await a.locator("tr", { hasText: "harbour-clinic" }).last().locator("form", { has: a.locator("input[name=package][value=clinic]") }).locator("button").click();
-      await a.waitForTimeout(800);
+      await harbourClinicState(false);
       await b.goto(`${BASE}/app`);
       assert(JSON.stringify(await navLabels(b)) === JSON.stringify(CLINFORMS_NAV), "B back to ClinForms' navigation");
       assert((await b.goto(`${BASE}/app/clinic`)).status() === 404, "B /app/clinic is 404 again");

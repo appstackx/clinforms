@@ -14,6 +14,7 @@ import { NodeSqliteDialect, openSqliteDatabase } from "../../../db/dialects/sqli
 import { applyPostgresMigrations, applySqliteMigrations } from "../../../db/migrations";
 import type { Database } from "../../../db/schema";
 import { createPglite, pgliteMigrationClient } from "../../../db/testing/pglite";
+import { createRealPgDb, realPgTestUrl } from "../../../db/testing/real-pg";
 
 export interface QueryLog {
   readonly statements: string[];
@@ -55,7 +56,14 @@ export function createGuardedSqliteDb(): GuardedDb {
   return { db, log, close: () => db.destroy() };
 }
 
+/** PGlite – or, with CLINFORMS_TEST_PG_URL, a fresh database on a real local Postgres (db/testing/real-pg.ts). */
 export async function createGuardedPgliteDb(): Promise<GuardedDb> {
+  const realUrl = realPgTestUrl();
+  if (realUrl) {
+    const { log, onEvent } = makeLog();
+    const real = await createRealPgDb(realUrl, onEvent);
+    return { db: real.db, log, close: real.close };
+  }
   const pglite = await createPglite();
   await applyPostgresMigrations(pgliteMigrationClient(pglite));
   const { log, onEvent } = makeLog();
