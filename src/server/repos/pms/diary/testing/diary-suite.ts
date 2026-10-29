@@ -33,6 +33,7 @@ import {
   getDiaryItem,
   listDiary,
   listFeesDue,
+  listOccupiedSpans,
   listPatientAppointments,
   moveAppointment,
   nextAppointmentsFor,
@@ -850,6 +851,54 @@ export function defineDiaryRepoSuite(label: string, factory: () => Promise<Diary
       assert.equal(cleared.treatment_started_at, null);
       const actions = (await listAudit(ctx, A, { limit: 500 })).filter((e) => e.targetId === id).map((e) => e.action);
       assert.ok(actions.includes("pms.appointment.start_treatment") && actions.includes("pms.appointment.attend") && actions.includes("pms.appointment.status_undo"));
+    });
+
+    it("M10 scale: a day with more than 500 diary items still offers its free time; busy time is read whole, in groups within D1's parameters", async () => {
+      // A third clinic, so the other tests' diaries do not matter. Monday 07/12/2026 (GMT: UK time = UTC).
+      const C = "riverside-scale";
+      const day = "2026-12-07";
+      const site = (await createSite(ctx, C, { name: "Scale site (fictional)", code: "SCA" }, ACTOR)).id;
+      const room = (await createRoom(ctx, C, { siteId: site, name: "Room 1" }, ACTOR)).id;
+      const p = (await createPractitioner(ctx, C, { displayName: "Pat Quill", registrationNumber: "PH-DEMO-05", defaultSiteId: site }, ACTOR)).id;
+      const q = (await createPractitioner(ctx, C, { displayName: "Quinn Rowe", registrationNumber: "PH-DEMO-06", defaultSiteId: site }, ACTOR)).id;
+      const fu = (await createService(ctx, C, { name: "Follow-up", durationMinutes: 30 }, ACTOR)).id;
+      const patient = (await createPatient(ctx, C, { firstName: "Ivy", lastName: "Marston" }, ACTOR)).id;
+      await createAvailability(ctx, C, { practitionerId: p, siteId: site, roomId: room, weekday: 1, startTime: "09:00", endTime: "17:00", validFrom: "2026-11-30" }, ACTOR);
+      await createAvailability(ctx, C, { practitionerId: q, siteId: site, weekday: 1, startTime: "09:00", endTime: "17:00", validFrom: "2026-11-30" }, ACTOR);
+      // 576 five-minute blocks outside the working hours (Pat's, Quinn's and the room's own) + one appointment.
+      const blocks: Parameters<typeof bulkCreateDiaryItems>[2] = [];
+      for (const who of [{ practitionerId: p, roomId: null }, { practitionerId: q, roomId: null }, { practitionerId: null, roomId: room }]) {
+        for (const [from, to] of [
+          [0, 9 * 60],
+          [17 * 60, 24 * 60],
+        ]) {
+          for (let m = from; m < to; m += 5) {
+            const startsAt = new Date(Date.parse(`${day}T00:00:00.000Z`) + m * 60_000).toISOString();
+            blocks.push({ kind: "block", siteId: site, ...who, startsAt, endsAt: new Date(Date.parse(startsAt) + 5 * 60_000).toISOString(), status: "booked", blockKind: "admin" });
+          }
+        }
+      }
+      blocks.push({ kind: "appointment", siteId: site, practitionerId: p, roomId: room, patientId: patient, serviceId: fu, startsAt: utc(day, "09:00"), endsAt: utc(day, "09:30"), status: "booked" });
+      assert.equal((await bulkCreateDiaryItems(ctx, C, blocks, ACTOR, { source: "test" })).length, 577);
+      const range = londonDayRange(day);
+      assert.equal((await listDiary(ctx, C, { ...range, practitionerIds: [p, q], roomIds: [room] })).truncated, true, "more than a list's 500");
+      const slots = await findFreeSlots(ctx, C, { fromDate: day, days: 1, serviceId: fu, stepMinutes: 30, limit: 6 });
+      assert.deepEqual(
+        slots.map((s) => `${s.startsAt.slice(11, 16)} ${s.practitionerId === p ? "Pat" : "Quinn"}`),
+        ["09:00 Quinn", "09:30 Pat", "09:30 Quinn", "10:00 Pat", "10:00 Quinn", "10:30 Pat"],
+        "the busy day offers its free time (Pat is booked 09:00–09:30)",
+      );
+      // All sites, four weeks: the same day is offered (the search no longer gives up on a full day).
+      const month = await findFreeSlots(ctx, C, { fromDate: day, days: 28, serviceId: fu, stepMinutes: 30, limit: 50 });
+      assert.equal(month[0].startsAt, utc(day, "09:00"));
+      assert.equal(new Set(month.map((s) => s.date)).size, 2, "50 slots: Monday 07/12 (31) and Monday 14/12");
+      // Many practitioners and rooms at once (D1 binds at most 100 parameters): read in groups, nothing dropped.
+      const manyP = [...Array.from({ length: 94 }, (_, i) => `prac_NONE${String(i).padStart(4, "0")}`), p, q];
+      const manyR = [...Array.from({ length: 89 }, (_, i) => `room_NONE${String(i).padStart(4, "0")}`), room];
+      const busy = await listOccupiedSpans(ctx, C, { ...range, practitionerIds: manyP, roomIds: manyR });
+      assert.equal(busy.complete, true);
+      assert.equal(busy.spans.length, 577, "every block and the appointment, each once");
+      await rejects(listDiary(ctx, C, { ...range, practitionerIds: manyP, roomIds: manyR }), /at most 90/);
     });
 
     it("every clinic-system statement named tenant_id", () => {
