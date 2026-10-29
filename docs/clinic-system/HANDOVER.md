@@ -1385,3 +1385,103 @@ they check the hidden text, then give the newest link a known secret in the scra
 SMS webhook replay check uses the message id only (not live – leave); a theoretical same-millisecond double use of
 one sign-in link by its own holder could open two sessions (L7 batch); Turnstile itself is still not configured
 anywhere (production booking is therefore refused until it is).
+
+### 20.2 Accessibility, UX, design and production findings and fixes
+
+**Branch:** `feat/cs-m10-ux` from `feat/clinic-system` `1db2928`, worktree
+`/Users/khuram/Projects/Appstackx/clinforms-wt/cs-m10-ux`, e2e ports 3220–3229. Helper branches (pushed, merged in):
+`feat/cs-m10-ux-routes` `3f7895e`, `-prod` `989979d`, `-ds` `e9278b5`, `-diary` `a4c0dff`. `main` untouched; no
+production action; **no migrations**.
+
+**UX (all fixed):**
+
+| # | Finding | Fix |
+|---|---|---|
+| 1 | Appointment drawer not modal | role=dialog, aria-modal; page inert except toasts; Esc returns focus to the block |
+| 2 | Take payment `?pay=1` ignored when the Invoices tab is already open | Opens the dialog from a useEffect, then clears `?pay=1` |
+| 3 | Keyboard move/resize | Across practitioners or sites needs a second Enter; out-of-hours warning in the live hint; focus goes to the moved block. Drag-and-drop unchanged (keeps Undo) |
+| 4 | Records header contrast | Text #475569 |
+| 5 | Set-up sideways scroll escaped its box | Scroll box `relative` (Services table, SetupCard, set-up nav) |
+| 6 | Scroll regions not reachable by keyboard | Kit `ScrollRegion` (named region, tabIndex=0 only while it overflows); about 19 places, incl. print roots and the letter editor |
+| 7 | 15-minute blocks too small to hit | Invisible hit area to ≥ 24 px, neighbours split the space (`hitArea` in grid-model.ts) |
+| 8 | Phone diary on closed days | "Closed – reason" and holds shown; New appointment hidden |
+| 9 | Reports nav label too long | "New and returning" (full name on hover); test keeps every nav label ≤ 20 characters |
+| 10 | Dashboard at 375 px; truncation without tooltips | Badge and button stack under the text below sm; full names on hover (set-up lists, payers, table cells) |
+| 11 | Booking "Your details": Continue disabled with no reason | Continue stays enabled; per-field message with aria-invalid/aria-describedby; focus to the first problem; the server's own schema (`bookingDetailsErrors`) |
+| 12 | Focus lost after a payment | Returns to the opener, falling back to the Invoices tab's Take payment |
+| 13 | No loading/error states | loading.tsx + error.tsx for every clinic section; public: book has both, clinic home / booking links / portal error.tsx only |
+| 14 | Touch targets on mobile | 44 px: booking Back, Earlier/Later dates, portal Sign out, Book an appointment, outcome Back, drawer actions/close, booking-dialog inputs |
+| 15 | Design-system page incomplete | Every Part A component from the kit (spec: K2-SCREENS-PROMPT.md; the k2-designs exports have no Part A screens) + a live context menu |
+| 16 | No context menu on diary blocks | Kit `ContextMenu`: right-click, Shift+F10 or the Menu key; same actions as the drawer |
+| 17 | Recurring series not marked | Icon in the block's top line, with screen-reader text |
+| 18 | Drawer had no change history | "History of changes" from `GET /app/clinic/diary/api/appointments/[id]/history`; redacted for reception like the record's History |
+| 19 | Patient list had no Site filter | Patients with a case or appointment at the site; only sites in the member's scope; in the export and its audit |
+| 20 | New appointment opened at a fixed time | Opens on the first free slot (the grid's slot steps) |
+| 21 | Day sheet overflowed at 375 px | Fixed |
+
+**Rules:** short days are DD/MM ("Fri 30/10") in the diary, waiting-list offers and the portal short form; record
+History, attachments, consent and audit show "29/10/2026 00:51" (ClinForms' `activityTime` untouched). "Clinic
+system" in `activity-copy.ts` and medreport `view-model.ts` was kept (on main; it means a third-party system, so
+`CLINIC_SYSTEM_NAME` would be wrong) – comments only.
+
+**Production (all fixed except 6, documented):**
+- **2** Offboarding deletes only the non-empty clinic-system tables; one atomic batch while it fits
+  `GATEWAY_MAX_STATEMENTS`, otherwise ordered batches with the tombstone last (tested at the limit).
+- **3** `countPmsRows`, `exportPmsData`, `listClinicPackages` treat a missing table as empty (SQLite and PGlite with
+  only 0001–0008).
+- **4** Reports switch-off on the platform page needs the clinic id typed (checked on the server too).
+- **5** Studio layout reads the packages once; the clinic layout's read moved inside its Promise.all.
+- **6** Global CSS **not split** – contract §13: 19.2 kB gzip now, 13.6 kB without the clinic-system files; a split
+  risks class-order conflicts and Next 14 CSS-order bugs.
+- **7** Middleware matcher back to main's coverage; public pages match only on the `clinic\.localhost` host; a test
+  keeps the pattern in step with brand.ts.
+- **8** `tenant-studio.cjs FLOW=complete` adds the owner's signing details first (15/15 on K2).
+
+**Added:** the loading skeletons turned forbidden pages into HTTP 200 (streamed 404 page). The clinic shell layout
+(above every skeleton) now checks the page's permission by address (`x-clinforms-path`) against
+`src/modules/pms/core/page-permissions.ts` (61 pages + report access; a test keeps it in step with the pages) and
+answers a real 404. The member is read once per request through React `cache` (plain call where React has none –
+node tests). A permission check in generateMetadata did not work on Next 14.2.35 (undone).
+
+**Crawl follow-ups (after the reviewer's crawl was re-run on `79c501c`):** authorisation "expires …" text on the
+Cases tab at #475569 (was 4.48:1 on #F8FAFC); the booking details' hidden Enter-submit button taken out of the tab
+order (`d18c1bc`).
+
+**Decisions taken (safe defaults – change any):** reports off needs the clinic id typed; split offboarding batches
+are ordered, not atomic (only above about 720 accounts); CSS not split; no loading skeleton on public pages that
+redirect or 404; Site filter = a case or appointment at the site, an out-of-scope site is ignored, desktop only;
+keyboard-only move confirmation; first free slot uses the grid's slot steps; time picker is a native select; "New
+and returning" nav label; generic "Clinic system" phrases kept.
+
+### 20.3 M10 results and merge
+
+**Merge:** `origin/feat/clinic-system` `8796702` (security, §20.1) merged into `feat/cs-m10-ux` as `363ad7d` with no
+conflicts (the booking-link `error.tsx` sits at `booking/`, so it covers the new `booking/manage/`); crawl follow-ups
+`d18c1bc`. **Merged** `--no-ff` into `feat/clinic-system` as **`ac6d52f`** (same tree as `d18c1bc`) and pushed.
+
+**Chain on `d18c1bc`:** build, typecheck and lint green; test:pms 770/0, test:db 1175/0/3, test:auth 139/0, test:site
+155/0, test:gateway 629/0/2, test:medreport 1786/0/3. (`typecheck:gateway` reports one `pdfjs-dist` declaration error
+in `src/modules/medreport/forms/pdfjs.ts`, a file unchanged since main – not from M10.) On `79c501c` before the merge:
+the same chain green; the earlier gateway failures were ENOSPC, and medreport's only failure (R2-SEC-2 "under a
+second", 1001 ms) passes alone.
+
+**E2E on the merged head** (fresh `pms:seed-demo -- --fresh` scratch SQLite each, servers stopped). Production build:
+pms-polish-portal 9/9, pms-portal-screens 15/15, clinic-system-access 13/13, pms-m10-ux 8/8. `next dev` with the TEST
+clock at Wed 28/10/2026 10:30 London: pms-diary-screens 32/32. Before the merge (`0b2b6ff`/`79c501c`) every other
+script also passed: clinic-system-shell 11/11, pms-records-screens 17/17, pms-billing-screens 21/21 (local payment
+stub), pms-prototype-b 6/6, pms-polish 9/9, pms-integration 14/14, pms-setup-reports 13/13, pms-design-system 14/14,
+tenant-studio FLOW=complete 15/15, pms-prototype-a 10/10, pms-messages-screens 18/18, pms-polish-reports 8/8.
+Runner: scratchpad `m10-e2e.sh` / `m10fix/prod-batch.sh` (`MODE=dev E2E_DAY=2026-10-28` for dev).
+
+**Reviewer crawl** (`m10fix/crawl-run.sh`, every clinic page × owner/admin/clinician/reception × 1440/375, axe WCAG
+2.2 AA, on `79c501c`): no horizontal scroll; access denials as expected. Remaining axe: **target-size** on the diary
+for 15-minute blocks with an appointment directly above AND below (only the 2 px gaps are free; the 18 px button is
+what axe measures – the 24 px hit span is not a target to axe). Passing it needs a taller time scale (≥ 26 px per 15
+minutes); left as a known limit (keyboard, drawer and context menu reach every block). The contrast finding is fixed
+(`d18c1bc`). `letter-new` "Page not found" is the crawl opening it without `?patient=` (404 by design, 200 status under
+the skeleton – the limit below). The crawl's portal step passed at 375 px; at 1440 it reused the spent sign-in link
+(tool artifact) – and after C1 the tool cannot read sign-in links from Messages at all.
+
+**Open items (M10 UX):** a missing or out-of-scope record id under a skeleton still returns HTTP 200 with the 404 page
+(no data shown); two back-to-back 15-minute blocks only gain the 2 px gap; the reviewer's `portal.cjs` needs the
+e2e helpers' approach (give the newest link a known secret in the scratch DB) after C1.
