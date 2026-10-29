@@ -20,6 +20,10 @@ import { sendSignInLink } from "./portal/portal-auth";
 import { clinicalAccessFrom } from "./native-report-access";
 import { TRIAL_ENDED_MESSAGE, referrerFormsFor, startReferrerFormFor, type ReferrerFormDeps } from "./integration/referrer-forms";
 import { createCase } from "../repos/pms/cases";
+import { createSite } from "../repos/pms/directory";
+import { loadBookingOptions } from "./diary/reads";
+import type { DiaryCaller } from "./diary/caller";
+import { SITE_SCOPED_MESSAGE, listImportsFor, startImportFor } from "./integration/import-service";
 import type { ClinicProfile } from "../../modules/medreport/api/deps";
 import { saveRolePermissions } from "../repos/pms/access";
 import { readOnlyReason, roleGridRefusal, saveRolesFor } from "./access-screens";
@@ -159,6 +163,38 @@ describe("M10 security", () => {
       assert.ok(open.ok && open.value.canStart && open.value.cannotStartReason === null);
       const notBlocked = await startReferrerFormFor(clin, { patientId: ids.megan, caseId: kase.id, formId: "frm_any", consentRecorded: true }, running);
       assert.equal(!notBlocked.ok && notBlocked.code, "invalid", "goes on to the form check");
+    });
+  });
+
+  describe("L2: the booking form's options respect the member's sites", () => {
+    it("a patient outside the sites gives nothing; cases at other sites are left out", async () => {
+      const siteA = (await createSite(ctx, A, { name: "Bletchley (fictional)" }, OWNER)).id;
+      const siteB = (await createSite(ctx, A, { name: "Towcester (fictional)" }, OWNER)).id;
+      const onlyB = (await createPatient(ctx, A, { firstName: "Ola", lastName: "Bee", dateOfBirth: "1980-02-02" }, OWNER)).id;
+      const both = (await createPatient(ctx, A, { firstName: "Abe", lastName: "Both", dateOfBirth: "1981-03-03" }, OWNER)).id;
+      await createCase(ctx, A, { patientId: onlyB, title: "B only (fictional)", openedOn: "2026-10-01", siteId: siteB }, OWNER);
+      const atA = await createCase(ctx, A, { patientId: both, title: "At A (fictional)", openedOn: "2026-10-01", siteId: siteA }, OWNER);
+      await createCase(ctx, A, { patientId: both, title: "At B (fictional)", openedOn: "2026-10-01", siteId: siteB }, OWNER);
+      const reception = testActor(ctx, A, "staff", { userId: "user_rec_a", name: "Jess (fictional)" });
+      const scoped: DiaryCaller = { tenantId: A, actor: reception.actor, can: reception.can, ctx, siteIds: new Set([siteA]) };
+      const everywhere: DiaryCaller = { ...scoped, siteIds: null };
+      const hidden = await loadBookingOptions(scoped, onlyB);
+      assert.deepEqual(hidden.ok && hidden.data, { cases: [], authorisations: [] });
+      const mine = await loadBookingOptions(scoped, both);
+      assert.deepEqual(mine.ok && mine.data.cases.map((c) => c.id), [atA.id]);
+      const all = await loadBookingOptions(everywhere, both);
+      assert.equal(all.ok && all.data.cases.length, 2, "every site: both cases");
+    });
+  });
+
+  describe("M2: imports only for members who see every site", () => {
+    it("a site-limited member with settings.import is refused by every import function", async () => {
+      const admin = testActor(ctx, A, "admin", { userId: "user_admin_imp", name: "Admin (fictional)" }, { siteIds: ["site_x"] });
+      const r = await listImportsFor(admin);
+      assert.deepEqual(r, { ok: false, code: "forbidden", error: SITE_SCOPED_MESSAGE });
+      assert.equal((await startImportFor(admin, { kind: "patients", fileName: "p.csv" } as never)).ok, false);
+      const full = testActor(ctx, A, "admin", { userId: "user_admin_imp2", name: "Admin (fictional)" });
+      assert.equal((await listImportsFor(full)).ok, true);
     });
   });
 
