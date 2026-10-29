@@ -5,6 +5,7 @@ import { BILLING_PATH, date, focusRing, money } from "@/components/pms/billing/f
 import { PmsNotice, pmsButtonVariants } from "@/components/pms/ui";
 import { requireClinicActor } from "@/server/pms/actor";
 import { claimsFor } from "@/server/pms/billing/claims";
+import { ScrollRegion } from "@/components/pms/ui/scroll-region";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Insurer claims" };
@@ -97,7 +98,7 @@ export default async function ClaimsPage({ searchParams }: { searchParams: Recor
               {v.rows.length === 0 ? (
                 <p className="text-sm text-[#475569]">No issued invoices to claim for this payer and dates.</p>
               ) : (
-                <div className="overflow-x-auto">
+                <ScrollRegion label="Claims" className="relative overflow-x-auto">
                   <table className="w-full min-w-[560px] text-sm" data-testid="claims-table">
                     <thead>
                       <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-[#475569]">
@@ -124,7 +125,7 @@ export default async function ClaimsPage({ searchParams }: { searchParams: Recor
                       ))}
                     </tbody>
                   </table>
-                </div>
+                </ScrollRegion>
               )}
               {v.rows.length > v.maxPerFile ? <p className="text-sm text-[#864E0E]">At most {v.maxPerFile} invoices go in one file – choose a shorter date range.</p> : null}
             </section>

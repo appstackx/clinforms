@@ -17,6 +17,7 @@ import type { TakePaymentMethod } from "@/modules/pms/billing/schemas";
 import type { TakePaymentView } from "@/modules/pms/billing/view";
 import { cn } from "@/lib/utils";
 import { PmsButton, useToast } from "@/components/pms/ui";
+import { useReturnFocus } from "@/components/pms/ui/return-focus";
 import { date, focusRing, money, parsePounds, poundsText } from "./format";
 
 export interface TakePaymentDialogProps {
@@ -28,6 +29,8 @@ export interface TakePaymentDialogProps {
   /** Paid towards this invoice first (opened from an invoice). */
   invoiceId?: string | null;
   onDone?: () => void;
+  /** Where focus goes on close when the element that opened the dialog has gone (e.g. a link that navigated). */
+  returnFocusTo?: React.RefObject<HTMLElement | null>;
 }
 
 const METHODS: { key: TakePaymentMethod; label: string; icon: React.ComponentType<{ className?: string }>; hint: (v: TakePaymentView) => string }[] = [
@@ -38,7 +41,8 @@ const METHODS: { key: TakePaymentMethod; label: string; icon: React.ComponentTyp
   { key: "payment_link", label: "Payment link", icon: Link2, hint: () => "Patient pays by text or email" },
 ];
 
-export function TakePaymentDialog({ open, onOpenChange, patientId, context, invoiceId, onDone }: TakePaymentDialogProps) {
+export function TakePaymentDialog({ open, onOpenChange, patientId, context, invoiceId, onDone, returnFocusTo }: TakePaymentDialogProps) {
+  const returnFocus = useReturnFocus(open, returnFocusTo);
   const toast = useToast();
   const [view, setView] = React.useState<TakePaymentView | null>(null);
   const [loadError, setLoadError] = React.useState<string | null>(null);
@@ -163,6 +167,7 @@ export function TakePaymentDialog({ open, onOpenChange, patientId, context, invo
           data-testid="take-payment"
           className="fixed inset-0 z-50 flex flex-col bg-white text-sm focus:outline-none md:inset-auto md:left-1/2 md:top-1/2 md:max-h-[calc(100dvh-32px)] md:w-[calc(100vw-32px)] md:max-w-[720px] md:-translate-x-1/2 md:-translate-y-1/2 md:rounded-xl md:shadow-[0_24px_48px_rgba(15,23,42,0.24)]"
           onPointerDownOutside={(e) => e.preventDefault()}
+          {...returnFocus}
         >
           <div className="flex items-start gap-3 border-b border-border px-4 py-3 md:px-5 md:py-4">
             <DialogPrimitive.Close asChild>

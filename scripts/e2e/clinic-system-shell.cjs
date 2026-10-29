@@ -12,7 +12,8 @@
  * filter on the activity page); A's navigation has the clinic system, /app/clinic shows the demo clinic's figures,
  * the shell (design v1: product switch, left navigation by role, site switcher, "/" patient search, user menu, "?"
  * shortcuts) works, works by keyboard (skip link) and at 375 px without sideways scrolling (navigation behind "Menu"); the platform page switches B's package on
- * (B then sees it) and off again; on an app-only brand host the public pages go to sign-in. Nothing secret is
+ * (B then sees it) and off again; switching B's Reports off needs B's clinic id typed (a wrong id, sent past the
+ * browser's check, is refused by the server); on an app-only brand host the public pages go to sign-in. Nothing secret is
  * printed (random passwords, codes in memory). Screenshots: E2E_OUT (default .e2e-out/clinic-system).
  */
 const crypto = require("crypto");
@@ -145,6 +146,8 @@ const navLabels = (page) => page.locator("header nav[aria-label='Clinic'] a").al
     await step("A: /app/clinic shows the demo clinic (figures, sites, practitioners, demo notice)", async () => {
       await a.click("header nav[aria-label='Clinic'] >> text=Clinic system");
       await a.waitForURL(`${BASE}/app/clinic`);
+      // The section's loading skeleton (loading.tsx) shows first on a client navigation: wait for the page itself.
+      await a.locator("[data-testid='dashboard']").waitFor();
       // innerText applies CSS text-transform (the figures' labels are upper case on screen): compare in lower case.
       const text = (await a.locator("main").innerText()).toLowerCase();
       // M8: the start page is "Today" (the dashboard per role) – the owner's figures and cards, the demo notice.
@@ -239,6 +242,42 @@ const navLabels = (page) => page.locator("header nav[aria-label='Clinic'] a").al
       await b.goto(`${BASE}/app`);
       assert(JSON.stringify(await navLabels(b)) === JSON.stringify(CLINFORMS_NAV), "B back to ClinForms' navigation");
       assert((await b.goto(`${BASE}/app/clinic`)).status() === 404, "B /app/clinic is 404 again");
+    });
+
+    await step("platform page: switching Reports off needs the clinic id typed (checked on the server too)", async () => {
+      const reportsForm = () => a.locator("tr", { hasText: "harbour-clinic" }).last().locator("form", { has: a.locator("input[name=package][value=reports]") });
+      const state = async () => (await reportsForm().locator("span.rounded-full").innerText()).trim();
+      await a.goto(`${BASE}/app/platform`);
+      assert((await state()) === "On", "Reports starts on");
+      const typed = reportsForm().locator("input[name=confirmTenantId]");
+      assert((await typed.count()) === 1 && (await typed.getAttribute("required")) !== null, "a required clinic-id field");
+      // Not one click: without the id the browser does not submit.
+      await reportsForm().locator("button").click();
+      assert(await typed.evaluate((el) => !el.validity.valid), "the empty field blocks the submit");
+      // The wrong id, past the browser's check: the server refuses, Reports stays on.
+      await reportsForm().evaluate((f) => (f.noValidate = true));
+      await typed.fill("harbour");
+      a.once("dialog", (d) => d.accept());
+      await reportsForm().locator("button").click();
+      await a.waitForTimeout(800);
+      await a.goto(`${BASE}/app/platform`);
+      assert((await state()) === "On", "the wrong id changes nothing");
+      assert((await b.goto(`${BASE}/app/studio`)).status() === 200, "B keeps its Studio");
+      // The right id: off; B's Studio is the 404 page. Then on again (no id needed).
+      await reportsForm().locator("input[name=confirmTenantId]").fill("harbour-clinic");
+      a.once("dialog", (d) => d.accept());
+      await reportsForm().locator("button").click();
+      await a.waitForTimeout(800);
+      await a.goto(`${BASE}/app/platform`);
+      assert((await state()) === "Off", "the clinic id typed: Reports off");
+      assert((await b.goto(`${BASE}/app/studio`)).status() === 404, "B's Studio is the 404 page");
+      await shot(a, "a-05-platform-reports-off");
+      assert((await reportsForm().locator("input[name=confirmTenantId]").count()) === 0, "switching on needs no id");
+      await reportsForm().locator("button").click();
+      await a.waitForTimeout(800);
+      await a.goto(`${BASE}/app/platform`);
+      assert((await state()) === "On", "Reports on again");
+      assert((await b.goto(`${BASE}/app/studio`)).status() === 200, "B's Studio is back");
     });
 
     await step("brand by host: an app-only brand's public pages go to sign-in; ClinForms' stay public", async () => {

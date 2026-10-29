@@ -18,6 +18,8 @@ export type ReportGroup = (typeof REPORT_GROUPS)[number];
 export interface ReportInfo {
   id: ReportId;
   title: string;
+  /** A shorter label for the left navigation when the title would be cut off there (the title shows on hover). */
+  navLabel?: string;
   /** One line under the title. */
   description: string;
   href: string;
@@ -26,6 +28,12 @@ export interface ReportInfo {
   ownCaseload: boolean;
   /** Filters offered besides the site. */
   filters: { period: boolean; practitioner: boolean; service: boolean };
+}
+
+/** What the left navigation shows for a report (kept short enough to fit the 240 px rail). */
+export const NAV_LABEL_MAX = 20;
+export function reportNavLabel(r: Pick<ReportInfo, "title" | "navLabel">): string {
+  return r.navLabel ?? r.title;
 }
 
 export const REPORTS_PATH = `${CLINIC_BASE_PATH}/reports`;
@@ -56,6 +64,7 @@ export const REPORTS: Readonly<Record<ReportId, ReportInfo>> = {
   patients: {
     id: "patients",
     title: "New and returning patients",
+    navLabel: "New and returning",
     description: "Patients seen, and how many came for the first time.",
     href: `${REPORTS_PATH}/patients`,
     group: "Appointments",

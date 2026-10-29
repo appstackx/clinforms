@@ -5,8 +5,10 @@
  *
  *   /app/**          no session cookie → /login?next=…; otherwise pass the path on to the layout
  *   auth pages       noindex header
- *   public pages     unchanged on ClinForms' hosts; on a host whose brand has no public site (src/lib/brand.ts,
- *                    e.g. a future second domain for the clinic system) → the brand's sign-in / app start page
+ *   public pages     on a host whose brand has no public site (src/lib/brand.ts, e.g. a future second domain for
+ *                    the clinic system) → the brand's sign-in / app start page. On ClinForms' hosts the matcher
+ *                    does not match them at all (as before the clinic system); the code below passes them through
+ *                    regardless.
  *
  * The matcher deliberately does NOT include /api, /reports or /pms-sandbox (the public demo and the
  * sandbox's own server-to-server calls must never be redirected).
@@ -46,6 +48,27 @@ export function middleware(req: NextRequest): NextResponse {
   return res;
 }
 
+/*
+ * The matcher: main's coverage (/app and the auth pages) plus the public pages ONLY on an app-only brand's hosts
+ * (M10 review: on ClinForms' own hosts the public site no longer runs the middleware at all, exactly as before the
+ * clinic system). Next reads this object statically, so the host pattern is written out here: it must list every
+ * host (and dev host) of every brand whose publicSite is false in src/lib/brand.ts, dots escaped, joined with "|" –
+ * src/server/auth/middleware.test.ts fails until it does. Matched against the Host header without its port.
+ */
 export const config = {
-  matcher: ["/app", "/app/:path*", "/login", "/two-factor", "/accept-invite", "/reset-password", "/", "/demo", "/privacy", "/cookies", "/terms", "/security", "/request-access"],
+  matcher: [
+    "/app",
+    "/app/:path*",
+    "/login",
+    "/two-factor",
+    "/accept-invite",
+    "/reset-password",
+    { source: "/", has: [{ type: "host", value: "clinic\\.localhost" }] },
+    { source: "/demo", has: [{ type: "host", value: "clinic\\.localhost" }] },
+    { source: "/privacy", has: [{ type: "host", value: "clinic\\.localhost" }] },
+    { source: "/cookies", has: [{ type: "host", value: "clinic\\.localhost" }] },
+    { source: "/terms", has: [{ type: "host", value: "clinic\\.localhost" }] },
+    { source: "/security", has: [{ type: "host", value: "clinic\\.localhost" }] },
+    { source: "/request-access", has: [{ type: "host", value: "clinic\\.localhost" }] },
+  ],
 };

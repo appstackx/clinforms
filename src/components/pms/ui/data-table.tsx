@@ -4,6 +4,7 @@ import { ArrowUpDown, ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Pagination, type PaginationProps } from "./pagination";
 import { SkeletonBar } from "./skeleton";
+import { ScrollRegion } from "./scroll-region";
 
 export type SortDirection = "asc" | "desc";
 
@@ -105,7 +106,7 @@ export function DataTable<T>({
       {showRows ? (
         <>
           {/* md and up: the table, scrolling inside its own box when narrower than minWidth. */}
-          <div className="hidden overflow-x-auto md:block">
+          <ScrollRegion label={label} className="relative hidden overflow-x-auto md:block">
             <table className="w-full border-collapse text-sm" style={{ minWidth }}>
               <caption className="sr-only">{label}</caption>
               <thead>
@@ -151,14 +152,14 @@ export function DataTable<T>({
                         className={cn("px-4 py-2.5 align-middle", col.align === "right" && "text-right", col.numeric && "tabular-nums", col.className)}
                         style={col.truncateAt ? { maxWidth: col.truncateAt } : undefined}
                       >
-                        {col.truncateAt ? <span className="block truncate">{col.cell(row)}</span> : col.cell(row)}
+                        {col.truncateAt ? <TruncatedCell value={col.cell(row)} /> : col.cell(row)}
                       </td>
                     ))}
                   </tr>
                 ))}
               </tbody>
             </table>
-          </div>
+          </ScrollRegion>
           {/* Phones: one card per row. */}
           <ul className="flex flex-col gap-3 p-4 md:hidden" aria-label={label}>
             {rows.map((row) => (
@@ -184,5 +185,14 @@ export function DataCard({ title, status, meta, figure, className }: { title: Re
       {meta ? <div className="truncate text-[#475569]">{meta}</div> : null}
       {figure ? <div className="text-base font-semibold tabular-nums">{figure}</div> : null}
     </div>
+  );
+}
+
+/** A cell cut off at its column's width: the full text shows on hover (and stays in the accessible name). */
+function TruncatedCell({ value }: { value: React.ReactNode }) {
+  return (
+    <span className="block truncate" title={typeof value === "string" || typeof value === "number" ? String(value) : undefined}>
+      {value}
+    </span>
   );
 }

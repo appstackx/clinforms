@@ -194,7 +194,11 @@ const londonParts = (ms) => {
       await owner.goto(`${REPORTS}/attendance?site=all`);
       await owner.waitForSelector("[data-testid=report-attendance]");
       const nav = (await owner.locator("nav[aria-label='Reports'] a").allInnerTexts()).map((l) => l.trim());
-      assert(nav.length === 7 && nav[2] === "New and returning patients", `reports nav: ${nav.join(", ")}`);
+      assert(nav.length === 7 && nav[2] === "New and returning", `reports nav: ${nav.join(", ")}`);
+      // M10: the shorter navigation label fits the rail; the full name is on hover.
+      const navLink = owner.locator("nav[aria-label='Reports'] a").nth(2);
+      assert((await navLink.getAttribute("title")) === "New and returning patients", "the full report name on hover");
+      assert(await navLink.locator("span.truncate").evaluate((el) => el.scrollWidth <= el.clientWidth), "the label is not cut off");
       await owner.goto(`${REPORTS}/patients?site=all`);
       await owner.waitForSelector("[data-testid=report-patients]");
       const [seen, fresh, returning] = [await statValue(owner, "seen"), await statValue(owner, "new"), await statValue(owner, "returning")];

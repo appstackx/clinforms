@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { canonicalJson, checkAnswers, consentComplete, definitionProblems, recordUpdates, signatureMatchesPatient, signatureNameProblem, visibleAnswers, answerText, type FormDefinition } from "./forms";
 import { BOOKING_REFERENCE_PATTERN, bookingReference, changeRefusalMessage, isLateCancellation, manageLinkExpiry, patientChangeRights, sessionUsable } from "./policy";
-import { BookingSettingsInputSchema, BookingSiteInputSchema, FormDefinitionSchema, IntakeTemplateInputSchema, PortalSignInSchema, publicBookingSchema } from "./schemas";
+import { BookingSettingsInputSchema, BookingSiteInputSchema, FormDefinitionSchema, IntakeTemplateInputSchema, PortalSignInSchema, bookingDetailsErrors, publicBookingSchema } from "./schemas";
 import { outcomeAnswersFrom, outcomeFormProblem, outcomeQuestionnaire } from "./outcome-forms";
 import { MEASURES, scoreOutcome } from "../records/outcomes";
 import { formatMiles, milesBetween } from "./distance";
@@ -34,7 +34,8 @@ describe("UK time", () => {
     assert.equal(hhmmToMinutes("24:00"), 1440);
     assert.equal(hhmmToMinutes("9.30"), null);
     assert.equal(formatDateLong("2026-10-26"), "Monday 26 October 2026");
-    assert.equal(formatDateLong("2026-10-26", { short: true }), "Mon 26 Oct");
+    assert.equal(formatDateLong("2026-10-26", { short: true }), "Mon 26/10");
+    assert.equal(formatDateLong("2026-11-02", { short: true, withYear: true }), "Mon 02/11/2026");
     assert.equal(formatUkTime("2026-07-01T08:00:00.000Z"), "09:00");
     assert.equal(formatUkDateTime("2026-10-26T09:30:00.000Z"), "Monday 26 October 2026 at 09:30");
   });
@@ -155,6 +156,16 @@ describe("intake forms", () => {
 });
 
 describe("inputs", () => {
+  it("\"Your details\" says what is missing next to each field (M10: Continue was disabled with no message)", () => {
+    const empty = bookingDetailsErrors({ firstName: "", lastName: " ", dateOfBirth: "", phoneMobile: "", email: "" }, "2026-10-26");
+    assert.deepEqual(Object.keys(empty), ["firstName", "lastName", "dateOfBirth", "phoneMobile", "email"]);
+    assert.equal(empty.firstName, "Enter your first name");
+    assert.equal(empty.phoneMobile, "Enter a mobile number");
+    const bad = bookingDetailsErrors({ firstName: "Ellie", lastName: "Sample", dateOfBirth: "2027-01-01", phoneMobile: "12", email: "ellie@" }, "2026-10-26");
+    assert.deepEqual(Object.keys(bad).sort(), ["dateOfBirth", "email", "phoneMobile"]);
+    assert.equal(bad.dateOfBirth, "Enter a date of birth in the past");
+    assert.deepEqual(bookingDetailsErrors({ firstName: "Ellie", lastName: "Sample", dateOfBirth: "1990-05-04", phoneMobile: "07700 900205", email: "ellie@example.com" }, "2026-10-26"), {});
+  });
   it("the public booking request", () => {
     const schema = publicBookingSchema("2026-10-26");
     const ok = schema.safeParse({

@@ -18,6 +18,7 @@ import { ConfirmDialog, FormField, PmsButton, PmsNotice, TextArea, TextInput, pm
 import { saveLetterAction, signLetterAction, voidLetterAction } from "@/app/app/clinic/letters/actions";
 import { LETTERS_PATH, MESSAGES_PATH, focusRing } from "./format";
 import { LetterSheet } from "./letter-sheet";
+import { ScrollRegion } from "@/components/pms/ui/scroll-region";
 
 export function LetterEditor({ view }: { view: LetterEditorView }) {
   const router = useRouter();
@@ -210,9 +211,9 @@ export function LetterEditor({ view }: { view: LetterEditorView }) {
               </div>
             </div>
           ) : (
-            <div className="overflow-x-auto rounded-2xl bg-[#E2E8F0] p-4" data-testid="letter-a4">
+            <ScrollRegion label="Letter preview" className="relative overflow-x-auto rounded-2xl bg-[#E2E8F0] p-4" data-testid="letter-a4">
               {sheet}
-            </div>
+            </ScrollRegion>
           )}
 
           {error ? <PmsNotice tone="error" title={error} /> : null}

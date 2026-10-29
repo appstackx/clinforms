@@ -5,7 +5,7 @@
  * with ?pay=1 – the record's "Take payment" button).
  */
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import * as React from "react";
 import { CreditCard } from "lucide-react";
 import { saveTestCardAction } from "@/app/app/clinic/billing/actions";
@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { PmsButton, StatusPill, useToast } from "@/components/pms/ui";
 import { BILLING_PATH, date, focusRing, money } from "./format";
 import { TakePaymentDialog } from "./take-payment-dialog";
+import { ScrollRegion } from "@/components/pms/ui/scroll-region";
 
 export function PatientAccountCard({ patientId, account, canPay }: { patientId: string; account: PatientAccountView; canPay: boolean }) {
   const router = useRouter();
@@ -73,7 +74,16 @@ export function PatientAccountCard({ patientId, account, canPay }: { patientId: 
 
 export function PatientInvoices({ patientId, rows, balancePence, canPay, openPay }: { patientId: string; rows: InvoiceRowView[]; balancePence: number; canPay: boolean; openPay: boolean }) {
   const router = useRouter();
+  const pathname = usePathname();
   const [open, setOpen] = React.useState(openPay && canPay);
+  const payButton = React.useRef<HTMLButtonElement>(null);
+  // The record header's "Take payment" links here with ?pay=1 – also while this tab is already open, when only the
+  // query changes and this component stays mounted. Open the dialog, then drop ?pay=1 so the next click opens it again.
+  React.useEffect(() => {
+    if (!openPay) return;
+    if (canPay) setOpen(true);
+    router.replace(pathname, { scroll: false });
+  }, [openPay, canPay, pathname, router]);
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -84,7 +94,7 @@ export function PatientInvoices({ patientId, rows, balancePence, canPay, openPay
           </p>
         </div>
         {canPay ? (
-          <PmsButton onClick={() => setOpen(true)} data-testid="invoices-take-payment">
+          <PmsButton ref={payButton} onClick={() => setOpen(true)} data-testid="invoices-take-payment">
             <CreditCard aria-hidden />
             Take payment
           </PmsButton>
@@ -93,7 +103,7 @@ export function PatientInvoices({ patientId, rows, balancePence, canPay, openPay
       {rows.length === 0 ? (
         <p className="text-sm text-[#475569]">No invoices yet.</p>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-border bg-white">
+        <ScrollRegion label="Invoices" className="relative overflow-x-auto rounded-xl border border-border bg-white">
           <table className="w-full min-w-[720px] text-sm">
             <caption className="sr-only">Invoices</caption>
             <thead className="bg-[#F8FAFC] text-left text-xs font-semibold text-[#334155]">
@@ -127,9 +137,9 @@ export function PatientInvoices({ patientId, rows, balancePence, canPay, openPay
               ))}
             </tbody>
           </table>
-        </div>
+        </ScrollRegion>
       )}
-      <TakePaymentDialog open={open} onOpenChange={setOpen} patientId={patientId} context="patient record" onDone={() => router.refresh()} />
+      <TakePaymentDialog open={open} onOpenChange={setOpen} patientId={patientId} context="patient record" onDone={() => router.refresh()} returnFocusTo={payButton} />
     </div>
   );
 }

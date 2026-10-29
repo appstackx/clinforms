@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { auditIdRange, clinicSystemAuditAreas, ulidLowerBound, ulidTime, ulidTimePart } from "./audit-search";
-import { REPORTS, REPORT_IDS, isReportId, reportAccess, reportsFor } from "./catalogue";
+import { NAV_LABEL_MAX, REPORTS, REPORT_IDS, isReportId, reportAccess, reportNavLabel, reportsFor } from "./catalogue";
 import { PAYER_TYPE_LABELS, labelOf } from "./copy";
 import { csvCell, penceToPounds, rateToPercent, reportFileName, toCsv } from "./csv";
 import type { AppointmentFact, DebtFact, RevenueFact } from "./facts";
@@ -446,6 +446,11 @@ describe("audit ids and areas", () => {
 });
 
 describe("report catalogue", () => {
+  it("every report's navigation label fits the rail (M10: \"New and returning patie…\" was cut off)", () => {
+    for (const id of REPORT_IDS) assert.ok(reportNavLabel(REPORTS[id]).length <= NAV_LABEL_MAX, `${id}: ${reportNavLabel(REPORTS[id])}`);
+    assert.equal(reportNavLabel(REPORTS.patients), "New and returning");
+    assert.equal(REPORTS.patients.title, "New and returning patients");
+  });
   it("every report has a page under the reports area", () => {
     for (const id of REPORT_IDS) {
       assert.equal(REPORTS[id].id, id);

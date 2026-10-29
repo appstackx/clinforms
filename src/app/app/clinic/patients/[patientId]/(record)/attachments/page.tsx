@@ -7,7 +7,7 @@ import { EmptyState, Pill, SectionHeader } from "@/components/pms/records/ui";
 import { formatUkDate } from "@/modules/pms/core/text";
 import { ATTACHMENT_TYPES, MAX_ATTACHMENTS_PER_PATIENT, formatBytes } from "@/modules/pms/records/attachments";
 import { NOTE_TYPE_LABELS } from "@/modules/pms/records/templates";
-import { activityTime } from "@/server/admin/activity";
+import { formatUkDateTime } from "@/modules/pms/core/access";
 import { requireClinicActor } from "@/server/pms/actor";
 import { patientOr404, patientPath } from "@/server/pms/records/record";
 import { getPatientAttachments } from "@/server/repos/pms/records/attachments";
@@ -56,7 +56,7 @@ export default async function AttachmentsPage({ params, searchParams }: { params
                     )}
                     <p className="text-sm text-[#334155]">{f.description ?? ""}</p>
                     <p className="text-xs text-muted-foreground">
-                      {ATTACHMENT_TYPES[f.type].label} · {formatBytes(f.sizeBytes)} · added {activityTime(f.createdAt)}
+                      {ATTACHMENT_TYPES[f.type].label} · {formatBytes(f.sizeBytes)} · added {formatUkDateTime(f.createdAt)}
                       {f.noteId && noteLabel[f.noteId] ? (
                         <>
                           {" · note "}
@@ -66,7 +66,7 @@ export default async function AttachmentsPage({ params, searchParams }: { params
                         </>
                       ) : null}
                     </p>
-                    {f.status === "withdrawn" ? <p className="mt-1 text-xs text-[#334155]">Withdrawn{f.withdrawnAt ? ` ${activityTime(f.withdrawnAt)}` : ""}: {f.withdrawnReason ?? ""}</p> : null}
+                    {f.status === "withdrawn" ? <p className="mt-1 text-xs text-[#334155]">Withdrawn{f.withdrawnAt ? ` ${formatUkDateTime(f.withdrawnAt)}` : ""}: {f.withdrawnReason ?? ""}</p> : null}
                   </div>
                   {f.status === "withdrawn" ? <Pill>Withdrawn</Pill> : f.type === "jpeg" || f.type === "png" ? <ImagePreview href={patientPath(patient.id, `attachments/${f.id}`)} name={f.fileName} /> : null}
                 </div>

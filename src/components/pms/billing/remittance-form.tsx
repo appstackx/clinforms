@@ -17,6 +17,7 @@ import type { RemittanceInvoiceView } from "@/modules/pms/billing/view";
 import { cn } from "@/lib/utils";
 import { PmsButton, useToast } from "@/components/pms/ui";
 import { BILLING_PATH, date, focusRing, money, parsePounds, poundsText } from "./format";
+import { ScrollRegion } from "@/components/pms/ui/scroll-region";
 
 interface Row {
   on: boolean;
@@ -187,7 +188,7 @@ export function RemittanceForm({ payers, initialPayer, today, canWriteOff }: { p
           {invoices === null ? <p className="px-4 py-6 text-sm text-[#475569]">Loading…</p> : null}
           {invoices && invoices.length === 0 ? <p className="px-4 py-6 text-sm text-[#475569]">{payerName} has no open invoices.</p> : null}
           {list.length > 0 ? (
-            <div className="overflow-x-auto">
+            <ScrollRegion label="Remittance lines" className="relative overflow-x-auto">
               <table className="w-full min-w-[820px] text-sm" data-testid="remit-table">
                 <caption className="sr-only">Open invoices</caption>
                 <thead className="border-y border-border bg-[#F8FAFC] text-left text-xs font-semibold text-[#334155]">
@@ -267,7 +268,7 @@ export function RemittanceForm({ payers, initialPayer, today, canWriteOff }: { p
                   })}
                 </tbody>
               </table>
-            </div>
+            </ScrollRegion>
           ) : null}
         </section>
 

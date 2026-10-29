@@ -9,6 +9,7 @@ import { ukToday } from "@/modules/pms/core/text";
 import { requireClinicActor } from "@/server/pms/actor";
 import { statementFor } from "@/server/pms/billing/views";
 import { getPmsSettings } from "@/server/repos/pms/settings";
+import { ScrollRegion } from "@/components/pms/ui/scroll-region";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Statement" };
@@ -39,11 +40,11 @@ export default async function PrintStatementPage({ searchParams }: { searchParam
           <EmailStatementButton who={patient ? { patientId: patient } : { payerReferrerId: account }} from={from} until={until} />
         </div>
       ) : null}
-      <div className="print-root overflow-x-auto">
+      <ScrollRegion label="Statement" className="print-root overflow-x-auto">
         <div className="mx-auto w-fit shadow-[0_8px_24px_rgba(15,23,42,0.12)]">
           <PrintStatementSheet clinic={r.value.clinic} statement={r.value.statement} printedBy={r.value.printedBy} printedAt={r.value.printedAt} demo={settings.isDemo} />
         </div>
-      </div>
+      </ScrollRegion>
     </div>
   );
 }

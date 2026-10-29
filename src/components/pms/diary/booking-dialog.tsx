@@ -21,6 +21,9 @@ import { PmsAvatar } from "../ui/pms-avatar";
 import { diaryApi } from "./api";
 import { startTimeOptions, ukToIso, weekdayDate } from "./grid-model";
 
+/** Inputs are 44 px tall on a phone (the design's touch-target rule), the kit's 36 px from 768 px. */
+const TOUCH_INPUT = "h-11 md:h-9";
+
 export interface BookingPreset {
   date: string;
   time: string;
@@ -386,7 +389,7 @@ export function BookingDialog(props: BookingDialogProps) {
                       <label htmlFor="bk-search" className="font-medium text-foreground">
                         Search by name, DOB or phone
                       </label>
-                      <div className="flex h-9 items-center gap-2 rounded-[8px] border border-primary bg-white px-2.5 focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-primary">
+                      <div className="flex h-11 items-center gap-2 rounded-[8px] border border-primary bg-white px-2.5 md:h-9 focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-primary">
                         <Search className="h-4 w-4 text-[#64748B]" aria-hidden />
                         <input
                           id="bk-search"
@@ -443,19 +446,19 @@ export function BookingDialog(props: BookingDialogProps) {
                   ) : (
                     <div className="grid grid-cols-2 gap-3">
                       <Field id="np-f" label="First name" error={fieldErrors.firstName}>
-                        <TextInput id="np-f" value={np.firstName} onChange={(e) => setNp({ ...np, firstName: e.target.value })} autoComplete="off" />
+                        <TextInput className={TOUCH_INPUT} id="np-f" value={np.firstName} onChange={(e) => setNp({ ...np, firstName: e.target.value })} autoComplete="off" />
                       </Field>
                       <Field id="np-l" label="Last name" error={fieldErrors.lastName}>
-                        <TextInput id="np-l" value={np.lastName} onChange={(e) => setNp({ ...np, lastName: e.target.value })} autoComplete="off" />
+                        <TextInput className={TOUCH_INPUT} id="np-l" value={np.lastName} onChange={(e) => setNp({ ...np, lastName: e.target.value })} autoComplete="off" />
                       </Field>
                       <Field id="np-d" label="Date of birth" error={fieldErrors.dateOfBirth}>
-                        <TextInput id="np-d" value={np.dob} placeholder="DD/MM/YYYY" inputMode="numeric" onChange={(e) => setNp({ ...np, dob: e.target.value })} />
+                        <TextInput className={TOUCH_INPUT} id="np-d" value={np.dob} placeholder="DD/MM/YYYY" inputMode="numeric" onChange={(e) => setNp({ ...np, dob: e.target.value })} />
                       </Field>
                       <Field id="np-m" label="Mobile" error={fieldErrors.phoneMobile}>
-                        <TextInput id="np-m" type="tel" value={np.mobile} onChange={(e) => setNp({ ...np, mobile: e.target.value })} />
+                        <TextInput className={TOUCH_INPUT} id="np-m" type="tel" value={np.mobile} onChange={(e) => setNp({ ...np, mobile: e.target.value })} />
                       </Field>
                       <Field id="np-e" label="Email" error={fieldErrors.email} className="col-span-2">
-                        <TextInput id="np-e" type="email" value={np.email} onChange={(e) => setNp({ ...np, email: e.target.value })} />
+                        <TextInput className={TOUCH_INPUT} id="np-e" type="email" value={np.email} onChange={(e) => setNp({ ...np, email: e.target.value })} />
                       </Field>
                       <Checkbox className="col-span-2" checked={np.reminders} onChange={(e) => setNp({ ...np, reminders: e.target.checked })} label="Patient agrees to appointment reminders by text and email" />
                       {duplicates.length > 0 ? (
@@ -479,7 +482,7 @@ export function BookingDialog(props: BookingDialogProps) {
                   <h3 className="mt-2 font-semibold text-foreground">2. Case and payer</h3>
                   <div className="grid grid-cols-2 gap-3">
                     <Field id="bk-case" label="Case">
-                      <SelectInput id="bk-case" value={caseId} onChange={(e) => setCaseId(e.target.value)} disabled={Boolean(preset.rebookOf)}>
+                      <SelectInput className={TOUCH_INPUT} id="bk-case" value={caseId} onChange={(e) => setCaseId(e.target.value)} disabled={Boolean(preset.rebookOf)}>
                         {can.createPatient ? <option value="new">New case</option> : <option value="new">No case</option>}
                         {options.cases.map((c) => (
                           <option key={c.id} value={c.id}>
@@ -490,7 +493,7 @@ export function BookingDialog(props: BookingDialogProps) {
                     </Field>
                     <Field id="bk-pay" label="Payer">
                       {caseId === "new" ? (
-                        <SelectInput id="bk-pay" value={payerId} onChange={(e) => setPayerId(e.target.value)} disabled={!can.createPatient}>
+                        <SelectInput className={TOUCH_INPUT} id="bk-pay" value={payerId} onChange={(e) => setPayerId(e.target.value)} disabled={!can.createPatient}>
                           <option value="self">Self-pay</option>
                           {payers.map((p) => (
                             <option key={p.id} value={p.id}>
@@ -499,7 +502,7 @@ export function BookingDialog(props: BookingDialogProps) {
                           ))}
                         </SelectInput>
                       ) : (
-                        <SelectInput id="bk-pay" value="case" disabled>
+                        <SelectInput className={TOUCH_INPUT} id="bk-pay" value="case" disabled>
                           <option value="case">{options.cases.find((c) => c.id === caseId)?.payerLabel ?? "Self-pay"}</option>
                         </SelectInput>
                       )}
@@ -512,7 +515,7 @@ export function BookingDialog(props: BookingDialogProps) {
                     3. Service and time
                   </h3>
                   <Field id="bk-svc" label="Service" error={fieldErrors.serviceId}>
-                    <SelectInput id="bk-svc" value={serviceId} onChange={(e) => setServiceId(e.target.value)} disabled={Boolean(preset.rebookOf)}>
+                    <SelectInput className={TOUCH_INPUT} id="bk-svc" value={serviceId} onChange={(e) => setServiceId(e.target.value)} disabled={Boolean(preset.rebookOf)}>
                       {services.map((s) => (
                         <option key={s.id} value={s.id}>
                           {[s.name, `${s.durationMinutes} min`, s.pricePence !== null ? formatPence(s.pricePence) : null].filter(Boolean).join(" – ")}
@@ -522,7 +525,7 @@ export function BookingDialog(props: BookingDialogProps) {
                   </Field>
                   <div className="grid grid-cols-2 gap-3">
                     <Field id="bk-pr" label="Practitioner" error={fieldErrors.practitionerId}>
-                      <SelectInput id="bk-pr" value={practitionerId} onChange={(e) => setPractitionerId(e.target.value)}>
+                      <SelectInput className={TOUCH_INPUT} id="bk-pr" value={practitionerId} onChange={(e) => setPractitionerId(e.target.value)}>
                         {practitioners.map((p) => (
                           <option key={p.id} value={p.id}>
                             {p.name}
@@ -531,7 +534,7 @@ export function BookingDialog(props: BookingDialogProps) {
                       </SelectInput>
                     </Field>
                     <Field id="bk-rm" label="Room" error={fieldErrors.roomId}>
-                      <SelectInput id="bk-rm" value={roomId} onChange={(e) => setRoomId(e.target.value)}>
+                      <SelectInput className={TOUCH_INPUT} id="bk-rm" value={roomId} onChange={(e) => setRoomId(e.target.value)}>
                         <option value="">No room</option>
                         {rooms.map((r) => (
                           <option key={r.id} value={r.id}>
@@ -541,10 +544,10 @@ export function BookingDialog(props: BookingDialogProps) {
                       </SelectInput>
                     </Field>
                     <Field id="bk-dt" label="Date" error={fieldErrors.date}>
-                      <TextInput id="bk-dt" type="date" value={date} onChange={(e) => e.target.value && setDate(e.target.value)} />
+                      <TextInput className={TOUCH_INPUT} id="bk-dt" type="date" value={date} onChange={(e) => e.target.value && setDate(e.target.value)} />
                     </Field>
                     <Field id="bk-tm" label="Start time" error={fieldErrors.startTime}>
-                      <SelectInput id="bk-tm" value={time} aria-describedby="bk-slot" aria-invalid={firstClash || undefined} onChange={(e) => setTime(e.target.value)}>
+                      <SelectInput className={TOUCH_INPUT} id="bk-tm" value={time} aria-describedby="bk-slot" aria-invalid={firstClash || undefined} onChange={(e) => setTime(e.target.value)}>
                         {times.map((t) => (
                           <option key={t} value={t}>
                             {t}

@@ -30,6 +30,8 @@ export interface PatientPageQuery {
   offset?: number;
   /** A member's site scope (K2-SITE-004; null/undefined = every site): patientSiteFilter in ../access.ts. */
   siteIds?: ReadonlySet<string> | null;
+  /** The list's Site filter: only patients with a case or an appointment at this site. */
+  siteId?: string | null;
   /** Only patients who owe money on issued invoices addressed to them (billing's invoices, read only). */
   owesMoney?: boolean;
 }
@@ -50,6 +52,15 @@ type PatientQuery = ReturnType<typeof base>;
 function filtered(ctx: RepoContext, tenantId: string, q: PatientPageQuery): PatientQuery {
   let query = base(ctx, tenantId);
   if (q.siteIds) query = query.where(patientSiteFilter(tenantId, q.siteIds));
+  if (q.siteId) {
+    const siteId = q.siteId;
+    query = query.where((eb) =>
+      eb.or([
+        eb.exists(eb.selectFrom("pms_cases as fc").select("fc.id").where("fc.tenant_id", "=", tenantId).whereRef("fc.patient_id", "=", "pms_patients.id").where("fc.site_id", "=", siteId)),
+        eb.exists(eb.selectFrom("pms_appointments as fa").select("fa.id").where("fa.tenant_id", "=", tenantId).whereRef("fa.patient_id", "=", "pms_patients.id").where("fa.site_id", "=", siteId)),
+      ]),
+    );
+  }
   const status = q.status ?? "active";
   if (status !== "any") query = query.where("pms_patients.status", "=", status);
   const text = (q.q ?? "").trim().slice(0, 120);

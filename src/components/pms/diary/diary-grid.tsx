@@ -7,7 +7,7 @@
  * and resizes are handled by the screen (onBlockKey) – this component draws the preview it is given.
  */
 import * as React from "react";
-import { AlertTriangle, Ban, CalendarClock, CopyPlus, Globe } from "lucide-react";
+import { AlertTriangle, Ban, CalendarClock, CopyPlus, Globe, Repeat } from "lucide-react";
 import { DOUBLE_BOOKED_LABEL } from "@/modules/pms/diary/copy";
 import type { DiaryCard, DiaryColumn, DiaryHold } from "@/modules/pms/diary/view";
 import { formatHhmm } from "@/modules/pms/diary/time";
@@ -15,7 +15,7 @@ import { layoutColumn } from "@/modules/pms/diary/rules";
 import { cn } from "@/lib/utils";
 import { DiaryBlock } from "../ui/diary-block";
 import { PmsAvatar } from "../ui/pms-avatar";
-import { blockStatusOf, cardSpan, clampLength, clampStart, hourMarks, minutesToPx, offRotaBands, pxToMinutes, snap } from "./grid-model";
+import { blockStatusOf, cardSpan, clampLength, clampStart, hitArea, hourMarks, minutesToPx, offRotaBands, pxToMinutes, snap } from "./grid-model";
 
 export interface GridPreview {
   id: string;
@@ -47,6 +47,8 @@ export interface DiaryGridProps {
   compact?: boolean;
   onOpen: (id: string) => void;
   onBlockKey: (e: React.KeyboardEvent<HTMLButtonElement>, card: DiaryCard, columnIndex: number) => void;
+  /** Right-click on a block (or its hit area): the screen opens the block's context menu there. */
+  onBlockMenu?: (id: string, point: { x: number; y: number }, trigger: HTMLElement | null) => void;
   onSlot: (columnIndex: number, minute: number) => void;
   /** A drag finished (mouse or touch): the screen saves it and offers Undo. */
   onDrop: (card: DiaryCard, change: { columnIndex: number; start: number; length: number; resize: boolean }) => void;
@@ -70,7 +72,12 @@ interface DragState {
 const GUTTER = 56;
 
 export function DiaryGrid(props: DiaryGridProps) {
-  const { label, view, columns, cards, holds = [], holdHref, grid, header, today, nowMinute, selectedId, preview, canBook, compact, onOpen, onBlockKey, onSlot, onDrop, clashAt, blockRef } = props;
+  const { label, view, columns, cards, holds = [], holdHref, grid, header, today, nowMinute, selectedId, preview, canBook, compact, onOpen, onBlockKey, onBlockMenu, onSlot, onDrop, clashAt, blockRef } = props;
+  const menuAt = (id: string, trigger: HTMLElement | null) => (e: React.MouseEvent) => {
+    if (!onBlockMenu) return;
+    e.preventDefault();
+    onBlockMenu(id, { x: e.clientX, y: e.clientY }, trigger);
+  };
   const height = minutesToPx(grid.end - grid.start);
   const bodyRef = React.useRef<HTMLDivElement>(null);
   const colRefs = React.useRef<(HTMLDivElement | null)[]>([]);
@@ -172,6 +179,19 @@ export function DiaryGrid(props: DiaryGridProps) {
                 const mine = cards.filter((x) => x.columnKey === c.key);
                 const boxes = layoutColumn(mine.map((x) => ({ id: x.id, startsAt: x.startsAt, endsAt: x.endsAt })), c.date, grid.start, grid.end);
                 const boxOf = new Map(boxes.map((b) => [b.id, b]));
+                // Free space (px) above and below each drawn block, to its nearest neighbour in an overlapping lane
+                // (or the grid's edge, which nobody shares) – for the 24 px hit areas of short blocks.
+                const gapsOf = (b: (typeof boxes)[number]) => {
+                  const overlaps = (o: (typeof boxes)[number]) => o.lane / o.lanes < (b.lane + 1) / b.lanes && b.lane / b.lanes < (o.lane + 1) / o.lanes;
+                  let above = 2 * (minutesToPx(b.top) + 1);
+                  let below = 2 * (height - minutesToPx(b.top + b.height) + 1);
+                  for (const o of boxes) {
+                    if (o.id === b.id || !overlaps(o)) continue;
+                    if (o.top + o.height <= b.top) above = Math.min(above, minutesToPx(b.top - o.top - o.height) + 2);
+                    if (o.top >= b.top + b.height) below = Math.min(below, minutesToPx(o.top - b.top - b.height) + 2);
+                  }
+                  return hitArea(minutesToPx(b.height) - 2, above, below);
+                };
                 const bands = offRotaBands(c, grid);
                 return (
                   <div
@@ -232,14 +252,27 @@ export function DiaryGrid(props: DiaryGridProps) {
                       const span = cardSpan(card, c.date);
                       const width = `calc(${100 / box.lanes}% - 8px)`;
                       const left = `calc(${(100 / box.lanes) * box.lane}% + 4px)`;
+                      const hit = gapsOf(box);
                       if (card.kind === "block") {
                         return (
+                          <React.Fragment key={card.id}>
+                          {hit.above + hit.below > 0 ? (
+                            <span
+                              aria-hidden
+                              data-hit-area={card.id}
+                              className="absolute z-[1]"
+                              style={{ top: minutesToPx(box.top) + 1 - hit.above, height: minutesToPx(box.height) - 2 + hit.above + hit.below, left, width }}
+                              onClick={() => onOpen(card.id)}
+                              onContextMenu={menuAt(card.id, null)}
+                            />
+                          ) : null}
                           <button
                             key={card.id}
                             type="button"
                             ref={(el) => blockRef(card.id, el)}
                             onClick={() => onOpen(card.id)}
                             onKeyDown={(e) => onBlockKey(e, card, ci)}
+                            onContextMenu={(e) => menuAt(card.id, e.currentTarget)(e)}
                             aria-label={`${card.title || "Blocked time"}, ${card.timeLabel}, not bookable${card.status === "cancelled" ? " (removed)" : ""}`}
                             className={cn(
                               "absolute z-[1] flex items-start gap-1.5 overflow-hidden rounded-[8px] border border-[#CBD5E1] px-2 py-1.5 text-left text-xs font-semibold text-[#334155] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
@@ -255,6 +288,7 @@ export function DiaryGrid(props: DiaryGridProps) {
                               {compact ? "" : ` · ${card.timeLabel.replace("–", "–")}`}
                             </span>
                           </button>
+                          </React.Fragment>
                         );
                       }
                       const start = formatHhmm(span.start);
@@ -267,6 +301,20 @@ export function DiaryGrid(props: DiaryGridProps) {
                           className={cn("absolute z-[1]", moving && "opacity-40")}
                           style={{ top: minutesToPx(box.top) + 1, height: minutesToPx(box.height) - 2, left, width }}
                         >
+                          {hit.above + hit.below > 0 ? (
+                            // A short block's target reaches 24 px (WCAG 2.5.8) while the block stays drawn at its time.
+                            <span
+                              aria-hidden
+                              data-hit-area={card.id}
+                              className="absolute inset-x-0 touch-none"
+                              style={{ top: -hit.above, bottom: -hit.below }}
+                              onClick={() => {
+                                if (!suppressClick.current) onOpen(card.id);
+                              }}
+                              onPointerDown={(e) => startDrag(e, card, ci, false)}
+                              onContextMenu={menuAt(card.id, null)}
+                            />
+                          ) : null}
                           <DiaryBlock
                             ref={(el) => blockRef(card.id, el)}
                             status={blockStatusOf(card)}
@@ -278,7 +326,7 @@ export function DiaryGrid(props: DiaryGridProps) {
                             selected={selectedId === card.id}
                             heightPx={Math.max(18, minutesToPx(box.height) - 2)}
                             marker={
-                              card.doubleBookedWith.length > 0 || card.hasAlerts || card.source === "online" ? (
+                              card.doubleBookedWith.length > 0 || card.hasAlerts || card.source === "online" || card.seriesId ? (
                                 // Markers sit IN the block's top line (part of its flow), so they never cover the time,
                                 // the name or the status however short or narrow the block is (handover §13.4 item 3,
                                 // M9b): the logged double-booking (Khuram's decision A, on both blocks), an alert on the
@@ -297,16 +345,18 @@ export function DiaryGrid(props: DiaryGridProps) {
                                   ) : null}
                                   {card.hasAlerts ? <AlertTriangle aria-hidden className="h-3 w-3 shrink-0 text-[#864E0E]" /> : null}
                                   {card.source === "online" ? <Globe aria-hidden className="h-3 w-3 shrink-0 text-[#1842B4]" /> : null}
+                                  {card.seriesId ? <Repeat aria-hidden data-series="true" className="h-3 w-3 shrink-0" /> : null}
                                 </span>
                               ) : undefined
                             }
                             aria-describedby={`dg-${card.id}`}
-                            className={cn("h-full touch-none", lengthMin > 15 && lengthMin < 45 && "gap-0 py-0.5",
+                            className={cn("relative h-full touch-none", lengthMin > 15 && lengthMin < 45 && "gap-0 py-0.5",
                               lengthMin >= 45 && lengthMin < 60 && "gap-0 py-1", selectedId === card.id && "border-2 border-[#0F172A] shadow-none")}
                             onClick={() => {
                               if (!suppressClick.current) onOpen(card.id);
                             }}
                             onKeyDown={(e) => onBlockKey(e, card, ci)}
+                            onContextMenu={(e) => menuAt(card.id, e.currentTarget)(e)}
                             onPointerDown={(e) => startDrag(e, card, ci, false)}
                           />
                           <span id={`dg-${card.id}`} className="sr-only">
@@ -315,6 +365,7 @@ export function DiaryGrid(props: DiaryGridProps) {
                               card.roomName,
                               card.hasAlerts ? "has an alert" : null,
                               card.source === "online" ? "booked online" : null,
+                              card.seriesId ? "part of a recurring booking" : null,
                               card.doubleBookedWith.length > 0 ? `${DOUBLE_BOOKED_LABEL.toLowerCase()} with ${card.doubleBookedWith.map((x) => `${x.patientName ?? "another appointment"} ${x.timeLabel}`).join(", ")}` : null,
                             ]
                               .filter(Boolean)

@@ -18,14 +18,15 @@ export const dynamic = "force-dynamic";
 export default async function ClinicLayout({ children }: { children: React.ReactNode }) {
   const { session, membership } = await requireAppContext();
   const manager = isManager(membership.role);
-  // Packages (src/server/pms/entitlements.ts): a clinic without the clinic system sees exactly what it saw before.
-  const packages = await clinicPackages(membership.tenantId);
   const brand = currentBrand();
   // 10/2026: the clinic's trial – an owner's first visit starts a trial that waits for it; the banner says what is left.
   // A demo clinic (clinic_plan.demo_clinic, set by ClinForms staff only): the same banner as the Studio.
-  const [trial, demoClinic] = await Promise.all([
+  // Packages (src/server/pms/entitlements.ts, never throws): a clinic without the clinic system sees exactly what it
+  // saw before. Read alongside the other two (one round-trip less).
+  const [trial, demoClinic, packages] = await Promise.all([
     noteClinicVisit(getDb(), { tenantId: membership.tenantId, userId: session.user.id, sessionId: session.session.id, role: membership.role }),
     isDemoClinic(getDb(), membership.tenantId),
+    clinicPackages(membership.tenantId),
   ]);
   const items: NavItem[] = [
     { href: "/app", label: "Overview" },

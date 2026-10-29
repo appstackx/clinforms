@@ -95,6 +95,37 @@ export function publicBookingSchema(today: string) {
 }
 export type PublicBookingInput = z.input<ReturnType<typeof publicBookingSchema>>;
 
+/** The "Your details" step's fields, in the order they are shown (the first with a problem gets the focus). */
+export const BOOKING_DETAIL_FIELDS = ["firstName", "lastName", "dateOfBirth", "phoneMobile", "email"] as const;
+export type BookingDetailField = (typeof BOOKING_DETAIL_FIELDS)[number];
+const BOOKING_DETAIL_EMPTY: Record<BookingDetailField, string> = {
+  firstName: "Enter your first name",
+  lastName: "Enter your last name",
+  dateOfBirth: "Enter your date of birth",
+  phoneMobile: "Enter a mobile number",
+  email: "Enter your email address",
+};
+
+/**
+ * What is wrong with the "Your details" step before Continue (the same rules the server applies on booking, with the
+ * words for an empty field). Empty object = fine. Browser-safe.
+ */
+export function bookingDetailsErrors(details: Partial<Record<BookingDetailField, string>>, today: string): Partial<Record<BookingDetailField, string>> {
+  const schema = publicBookingSchema(today).pick({ firstName: true, lastName: true, dateOfBirth: true, phoneMobile: true, email: true });
+  const parsed = schema.safeParse(details);
+  const out: Partial<Record<BookingDetailField, string>> = {};
+  for (const f of BOOKING_DETAIL_FIELDS) {
+    if (!(details[f] ?? "").trim()) out[f] = BOOKING_DETAIL_EMPTY[f];
+  }
+  if (!parsed.success) {
+    for (const issue of parsed.error.issues) {
+      const f = issue.path[0] as BookingDetailField;
+      if (BOOKING_DETAIL_FIELDS.includes(f) && !out[f]) out[f] = issue.message;
+    }
+  }
+  return out;
+}
+
 /** A booking made by a signed-in portal patient (their details are on the record). */
 export const PortalBookingSchema = z.object({
   siteId: PmsIdSchema,

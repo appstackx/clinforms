@@ -321,6 +321,21 @@ const overlaps = (a, b) => a.x < b.x + b.width - 0.5 && b.x < a.x + a.width - 0.
       await axe(reception, "diary closure notice");
     });
 
+    await step("M10 #8 – the 375 px phone diary says 'Closed – Christmas' and offers no New appointment on a closed day", async () => {
+      await reception.setViewportSize({ width: 375, height: 812 });
+      try {
+        await reception.goto(`${DIARY}?date=2026-12-25&site=${site}`);
+        await ready(reception);
+        const notice = await reception.locator("[data-testid=mobile-closed]").innerText();
+        assert(/Closed – Christmas/.test(notice), notice);
+        assert((await reception.locator("button:visible:has-text('New appointment')").count()) === 0, "no New appointment on a closed day");
+        await shot(reception, "375-diary-closed-christmas", true);
+        await axe(reception, "phone diary closed day");
+      } finally {
+        await reception.setViewportSize({ width: 1440, height: 1000 });
+      }
+    });
+
     let freed = null;
     await step("item 4 – a freed slot offered to a waiting patient is HELD: 'Held until' on the list, a dashed hold in the diary", async () => {
       // The demo seed leaves a late cancellation later today ("Slot freed") and waiting patients who match it. When the
@@ -387,6 +402,21 @@ const overlaps = (a, b) => a.x < b.x + b.width - 0.5 && b.x < a.x + a.width - 0.
       assert(label.startsWith(`${freed.time}–`) && label.includes(`Held for ${freed.who} until`) && label.includes("not bookable"), label);
       await shot(reception, "1440-diary-hold");
       await axe(reception, "diary with a hold");
+      // M10 #8: the phone diary lists the hold too (the practitioner's day).
+      await reception.setViewportSize({ width: 375, height: 812 });
+      try {
+        await reception.goto(`${DIARY}?date=${freed.date}&site=${site}`);
+        await ready(reception);
+        if (await reception.locator("#m-who").count()) await reception.selectOption("#m-who", { label: freed.practitioner });
+        const mhold = reception.locator("[data-testid=mobile-hold]").first();
+        await mhold.waitFor();
+        const mtext = (await mhold.textContent()).replace(/\s+/g, " ").trim();
+        assert(mtext.startsWith(freed.time) && mtext.includes(`Held for ${freed.who} until`), mtext);
+        await shot(reception, "375-diary-hold", true);
+        await axe(reception, "phone diary with a hold");
+      } finally {
+        await reception.setViewportSize({ width: 1440, height: 1000 });
+      }
     });
 
     await step("item 4 – nobody else can book the held slot: the booking form says it is held; withdrawing the offer frees it", async () => {

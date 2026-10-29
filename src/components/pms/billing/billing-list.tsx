@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { DataTable, EmptyState, FilterBar, FilterSearch, PmsButton, StatusPill, pmsButtonVariants, type DataTableColumn } from "@/components/pms/ui";
 import { BILLING_PATH, date, focusRing, money } from "./format";
 import { VisitsTable } from "./visits-table";
+import { ScrollRegion } from "@/components/pms/ui/scroll-region";
 
 export type BillingTab = "invoices" | "visits" | "aged" | "remittances" | "statements";
 
@@ -256,7 +257,7 @@ export function BillingList(props: BillingListProps) {
             {props.remittances.length === 0 ? (
               <p className="text-sm text-[#475569]">No payments from accounts yet.</p>
             ) : (
-              <div className="overflow-x-auto rounded-lg border border-border">
+              <ScrollRegion label="Invoices" className="relative overflow-x-auto rounded-lg border border-border">
                 <table className="w-full min-w-[640px] text-sm">
                   <caption className="sr-only">Payments from accounts</caption>
                   <thead className="bg-[#F8FAFC] text-left text-xs font-semibold text-[#334155]">
@@ -282,7 +283,7 @@ export function BillingList(props: BillingListProps) {
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </ScrollRegion>
             )}
           </div>
         ) : null}
@@ -297,7 +298,7 @@ function AgedDebt({ aged }: { aged: AgedDebtView }) {
   const cols = ["current", "d1_30", "d31_60", "d61_90", "d90_plus"] as const;
   return (
     <div className="grid gap-4 p-3 lg:grid-cols-[1fr_340px]">
-      <div className="overflow-x-auto rounded-lg border border-border">
+      <ScrollRegion label="Aged debt" className="relative overflow-x-auto rounded-lg border border-border">
         <table className="w-full min-w-[620px] text-sm" data-testid="aged-debt">
           <caption className="px-3 py-2 text-left font-semibold text-foreground">Aged debt at {date(aged.asOf)}</caption>
           <thead className="bg-[#F8FAFC] text-xs font-semibold text-[#334155]">
@@ -339,13 +340,13 @@ function AgedDebt({ aged }: { aged: AgedDebtView }) {
           </tbody>
         </table>
         {aged.refundsDuePence > 0 ? <p className="px-3 py-2 text-xs text-[#475569]">Refunds due (owed back, not netted off): {money(aged.refundsDuePence)}</p> : null}
-      </div>
+      </ScrollRegion>
       <div className="flex flex-col gap-2 rounded-lg border border-border p-3">
         <strong className="text-foreground">Largest overdue accounts</strong>
         {aged.largest.length === 0 ? <p className="text-sm text-[#475569]">Nothing overdue.</p> : null}
         {aged.largest.map((d) => (
           <div key={d.key} className="flex items-center gap-2 text-sm">
-            <span className="min-w-0 flex-1 truncate">{d.name}</span>
+            <span className="min-w-0 flex-1 truncate" title={d.name}>{d.name}</span>
             <span className="text-xs text-[#475569]">{d.daysOverdue} days</span>
             <span className="font-semibold tabular-nums">{money(d.amountPence)}</span>
             <Link
