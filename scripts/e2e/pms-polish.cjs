@@ -428,6 +428,9 @@ const overlaps = (a, b) => a.x < b.x + b.width - 0.5 && b.x < a.x + a.width - 0.
       assert(/About the appointment on/.test(await dlg.innerText()), "says what it is about");
       assert((await dlg.locator("#sm-t option").count()) >= 1, "templates offered");
       await dlg.locator("#sm-b").fill("Hello, a quick note about your appointment (fictional e2e).");
+      // Wait for Send now to be enabled and its colour transition to finish before the contrast check.
+      await dlg.locator("[data-testid=send-now]:not([disabled])").waitFor();
+      await reception.waitForTimeout(500);
       await shot(reception, "1440-drawer-send-message");
       await axe(reception, "send message dialog");
       await dlg.locator("[data-testid=send-now]").click();
