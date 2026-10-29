@@ -6,7 +6,14 @@ import { activityLabel, describeActivityDetail } from "@/lib/activity-copy";
 import { activityTime } from "@/server/admin/activity";
 import { requirePlatformAdmin } from "@/server/admin/guards";
 import { PACKAGE_LABELS } from "@/lib/brand";
-import { ACCESS_REQUESTS_SHOWN, listAccessRequestsForPlatform, listClinicPackages, listClinicsOverview, listPlatformActivity } from "@/server/admin/platform-console";
+import {
+  ACCESS_REQUESTS_SHOWN,
+  listAccessRequestsForPlatform,
+  listClinicPackages,
+  listClinicsOverview,
+  listPlatformActivity,
+  reportsSwitchOffNeedsTypedId,
+} from "@/server/admin/platform-console";
 import { TRIAL_COPY } from "@/lib/account-copy";
 import { getDb } from "@/server/db";
 import { emailProviderName } from "@/server/email";
@@ -247,7 +254,7 @@ export default async function PlatformPage() {
 
         <Panel
           title="Packages switched on"
-          description={`What each open clinic can use. ${PACKAGE_LABELS.reports} is on for every clinic unless switched off here; ${PACKAGE_LABELS.clinic} is off until switched on. Switching off hides and blocks that part – nothing is deleted.`}
+          description={`What each open clinic can use. ${PACKAGE_LABELS.reports} is on for every clinic unless switched off here; ${PACKAGE_LABELS.clinic} is off until switched on. Switching off hides and blocks that part – nothing is deleted. Switching ${PACKAGE_LABELS.reports} off stops the clinic's Studio and Report API, so it needs the clinic id typed first.`}
           className="mb-6"
         >
           {live.length === 0 ? (
@@ -272,6 +279,8 @@ export default async function PlatformPage() {
                         <td className={TD}>{c.name}</td>
                         {(["reports", "clinic"] as const).map((pkg) => {
                           const on = p ? p[pkg] : pkg === "reports";
+                          // Reports off stops a live clinic's Studio and Report API: the clinic id must be typed.
+                          const typeId = reportsSwitchOffNeedsTypedId({ package: pkg, on: !on });
                           return (
                             <td key={pkg} className={TD}>
                               <form action={setClinicPackageAction} className="flex flex-wrap items-center gap-2">
@@ -279,6 +288,23 @@ export default async function PlatformPage() {
                                 <input type="hidden" name="package" value={pkg} />
                                 <input type="hidden" name="on" value={on ? "0" : "1"} />
                                 <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${on ? "bg-teal-50 text-teal-800" : "bg-slate-100 text-slate-700"}`}>{on ? "On" : "Off"}</span>
+                                {typeId ? (
+                                  <label className="flex items-center gap-1 text-xs text-slate-600">
+                                    <span className="sr-only">
+                                      Type the clinic id {c.tenantId} to switch {PACKAGE_LABELS[pkg]} off for {c.name}
+                                    </span>
+                                    <input
+                                      name="confirmTenantId"
+                                      required
+                                      autoComplete="off"
+                                      spellCheck={false}
+                                      placeholder="Type the clinic id"
+                                      {...(/^[a-z0-9-]+$/.test(c.tenantId) ? { pattern: c.tenantId } : {})}
+                                      title={`Type ${c.tenantId} to confirm`}
+                                      className="h-8 w-36 rounded-md border border-slate-300 px-2 font-mono text-xs"
+                                    />
+                                  </label>
+                                ) : null}
                                 <SubmitButton
                                   variant="secondary"
                                   className="h-8 px-2.5 text-xs"

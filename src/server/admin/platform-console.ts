@@ -197,6 +197,11 @@ export async function listClinicPackages(db: Kysely<Database>, tenantIds: readon
   return out;
 }
 
+/** Switching Reports OFF needs the clinic id typed again (the page and setClinicPackageAsPlatform). */
+export function reportsSwitchOffNeedsTypedId(input: { package: string; on: boolean }): boolean {
+  return input.package === "reports" && !input.on;
+}
+
 /**
  * Switches a package on ("active") or off ("paused" – nothing is deleted) for a clinic that exists and is not
  * closed. Audited twice: `clinic.package_change` in the clinic's own trail (by "ClinForms support") and
@@ -205,9 +210,13 @@ export async function listClinicPackages(db: Kysely<Database>, tenantIds: readon
 export async function setClinicPackageAsPlatform(
   db: Kysely<Database>,
   admin: PlatformAdmin,
-  input: { tenantId: string; package: PackageId; on: boolean },
+  input: { tenantId: string; package: PackageId; on: boolean; confirmTenantId?: string },
 ): Promise<{ changed: boolean; on: boolean }> {
   if (!isPackageId(input.package)) throw new RepoInputError("Unknown package.");
+  if (reportsSwitchOffNeedsTypedId(input) && String(input.confirmTenantId ?? "").trim() !== input.tenantId) {
+    // Switching Reports off stops a live clinic's Studio and Report API: never one click (M10 review).
+    throw new RepoInputError(`Type the clinic id "${input.tenantId}" to switch Reports off.`);
+  }
   const org = await db.selectFrom("organization").select(["id", "metadata"]).where("slug", "=", input.tenantId).executeTakeFirst();
   if (!org) throw new RepoInputError(`No clinic with the id "${input.tenantId}".`);
   if (org.metadata && /"offboardedAt"/.test(org.metadata)) throw new RepoInputError("That clinic account is closed.");

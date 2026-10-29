@@ -72,7 +72,19 @@ for (const [label, factory] of [
     it("the platform page lists and switches packages for open clinics", async () => {
       let view = await listClinicPackages(t.db, ["riverside-demo", "harbour-clinic"]);
       assert.deepEqual(view.get("harbour-clinic"), { tenantId: "harbour-clinic", reports: true, clinic: false });
-      assert.deepEqual(await setClinicPackageAsPlatform(t.db, ADMIN, { tenantId: "harbour-clinic", package: "reports", on: false }), { changed: true, on: false });
+      // Reports off on a live clinic is never one click: the clinic id must be typed (checked here, on the server).
+      for (const confirmTenantId of [undefined, "", "harbour", "riverside-demo", " HARBOUR-CLINIC "]) {
+        await assert.rejects(
+          setClinicPackageAsPlatform(t.db, ADMIN, { tenantId: "harbour-clinic", package: "reports", on: false, confirmTenantId }),
+          /Type the clinic id "harbour-clinic"/,
+          `refused with ${JSON.stringify(confirmTenantId)}`,
+        );
+      }
+      assert.deepEqual((await listClinicPackages(t.db, ["harbour-clinic"])).get("harbour-clinic")?.reports, true, "still on after the refusals");
+      assert.deepEqual(
+        await setClinicPackageAsPlatform(t.db, ADMIN, { tenantId: "harbour-clinic", package: "reports", on: false, confirmTenantId: " harbour-clinic " }),
+        { changed: true, on: false },
+      );
       view = await listClinicPackages(t.db, ["harbour-clinic"]);
       assert.deepEqual(view.get("harbour-clinic"), { tenantId: "harbour-clinic", reports: false, clinic: false });
       assert.deepEqual(await setClinicPackageAsPlatform(t.db, ADMIN, { tenantId: "harbour-clinic", package: "reports", on: true }), { changed: true, on: true });
