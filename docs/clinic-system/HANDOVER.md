@@ -1,5 +1,10 @@
 # K2 clinic system – handover
 
+> **Read §22 (30/10/2026 – latest):** K2 proven on Postgres 17 (Supabase-like, en_US.UTF-8): every e2e script, the
+> chain and the 50k perf run on Postgres; two Postgres-only bugs fixed (audit area filter under en_US; dialect detection
+> across kysely instances). Production migrations now go to **Supabase** (`db:migrate`), not D1 – see
+> [`M11-RUNSHEET.md`](M11-RUNSHEET.md) §4. Merged into `feat/clinic-system` `d5fc35f`.
+
 > **Read §21 first (29/10/2026 – latest):** final check DONE – K2 is ready for production on `feat/clinic-system`
 > **`332b2b8`**: full chain and every e2e green, ClinForms forms output identical to `main`, one go-live bug fixed
 > (Turnstile widget/token, §21.3). Go-live steps that need Khuram: §21.7 and [`M11-RUNSHEET.md`](M11-RUNSHEET.md);
@@ -1860,3 +1865,229 @@ All in [`M11-RUNSHEET.md`](M11-RUNSHEET.md) (gates G1–G9 first). In order:
 7. Only with a separate go: switch the clinic package on for a demo or test clinic (§6d). Never switch Reports off for a
    live clinic (the platform page now asks for the clinic id typed).
 8. Answer the decisions in §21.5.
+
+## 22. Clinic system on Postgres (29–30/10/2026)
+
+**Why:** ClinForms production moved from D1 to Supabase Postgres 17 on 29/10 ~22:45 (bh2-handover
+`SUPABASE-MOVE-PLAN.md`), so K2 goes live on Supabase too. Until now K2 was browser-tested on SQLite/D1 only; its
+repository suites ran on PGlite (one in-process connection, C collation). **Branch** `feat/cs-postgres` (worktree
+`clinforms-wt/cs-postgres`, e2e ports 3270–3279) from `feat/clinic-system` `9381c30`, merged `--no-ff` into
+`feat/clinic-system` as **`d5fc35f`**. `main` untouched; production Supabase never connected to.
+
+### 22.1 The Supabase-like database (Docker `k2-pg`)
+- `postgres:17` (**17.11**, as Supabase), container `k2-pg`, `127.0.0.1:55432`, initdb `--locale-provider=libc
+  --locale=en_US.UTF-8` → `datcollate = en_US.UTF-8` (Supabase's). Roles `anon`, `authenticated`, `service_role`
+  (nologin) so the init migration's grants/revokes run as on Supabase. TLS off (`DATABASE_SSL=disable`, loopback only).
+  Password: `~/Projects/Appstackx/k2-local-data/k2-pg.password` (chmod 600); env file `k2-pg.env` beside it
+  (`CLINFORMS_DB`, `DATABASE_URL`, `DATABASE_SSL`).
+- `CLINFORMS_DB=postgres npm run db:migrate`: all 59 files (ClinForms 0001–0008 + K2 0100–0213 twins), **103 tables,
+  103 with RLS on**. Production order rehearsed separately (main's 7 files first, two fictional `clinic_profile` rows,
+  then K2's 52 – the 20261024… files sort before main's 20261025…, applied by missing version): 27 → 103 tables, all RLS
+  on, backfill `reports/active` × 2, second run "up to date", `pg_dump -s` identical to the from-scratch database.
+- Demo seed on Postgres: identical per-table row counts to a SQLite seed (102 tables compared), 23 s vs 3 s (network
+  round trips).
+
+### 22.2 Postgres-only bugs found and fixed
+| # | Bug | Where | Fix | Test (fails before the fix) |
+|---|---|---|---|---|
+| 1 | **Audit trail "area" filter empty on Supabase.** The filter is the byte-order range `"pms.closure." ≤ action < "pms.closure/"`. glibc en_US ignores punctuation on the first pass, so `"pms.closure.create" > "pms.closure/"` and the range matches nothing. Found by test:db on the real en_US Postgres (reporting suite "audit search"). | `src/server/repos/pms/reporting/audit-search.ts:70` | Compared with `COLLATE "C"` on Postgres (`byteOrder()`, new `src/server/db/collation.ts`); SQLite/D1 unchanged (already byte order). | `src/server/repos/pms/reporting/audit-search-collation.test.ts` – PGlite with an ICU collation that orders like glibc en_US (`en@colAlternate=shifted`), plus the same on a real Postgres when `CLINFORMS_TEST_PG_URL` is set |
+| 2 | **Postgres sent the SQLite form of the diary reporting SQL** (`function julianday(timestamp with time zone) does not exist`): the dashboard's "Utilisation today" tile failed and Reports pages (attendance, the six-week charts) answered 400, under `next dev` on Postgres and in the perf tool. `isPostgres()` used `adapter instanceof PostgresAdapter`; the app's Kysely is cached on `globalThis`, and Next.js bundles / dev reloads load their own copy of kysely, so the class differs. (Not seen in the production-build e2e, but bundling-dependent – a latent production bug.) | `src/server/pms/diary/reporting-source.ts:28` (`minutesExpr`) | `isPostgresDb()` in new `src/server/db/dialect-kind.ts`: `instanceof`, else the adapter's shape (transactional DDL + RETURNING, no OUTPUT) – the same idea as D1's `Symbol.for` batch marker. `byteOrder()` uses it too. | `src/server/pms/diary/reporting-source-dialect.test.ts` – loads a genuine second module instance of kysely's `PostgresAdapter` and runs the diary facts through it on PGlite |
+
+Checked and found right on Postgres (no change): searches use the stored lower-case `search_name` / `search_phone`
+(LIKE case is irrelevant; invoice search lowers both sides); `count(*)`/`sum(int)` come back as numbers (int8 parser),
+`numeric` sums go through `num()`; dates (`*_on`) are text and instants (`*_at`) timestamptz, compared with ISO
+parameters; booleans are integer 0/1 in K2 (Better Auth's real booleans are read with `authBool` / `=== true || === 1`);
+JSON columns are text; unique violations map from SQLSTATE 23505; no interactive transactions (only `runBatch`), no
+session state, no named prepared statements, advisory locks transaction-scoped – all transaction-pooler safe; keysets
+are ordered and compared by the same collation in SQL, and audit/record ids are ULIDs (0-9A-Z: same order in en_US and
+bytes), so JS-side merges by id stay correct; no `COLLATE NOCASE` anywhere; D1 chunking (≤ 90 ids) is well inside
+Postgres's limits.
+**Display order differs** (not a bug): `ORDER BY name` lists sort in en_US order on Supabase (case-insensitive first,
+punctuation ignored – "McBride" before "McDonald", "O'Brien" among the O's) and in byte order on SQLite/D1 previews.
+
+### 22.3 Tests and tools added
+- **`CLINFORMS_TEST_PG_URL`** (`src/server/db/testing/real-pg.ts`): with a loopback Postgres URL, every
+  `createPgliteTestDb()` / `createGuardedPgliteDb()` hands out a fresh database on that server instead (created,
+  migrated, dropped). `test:db` on the en_US `k2-pg`: 1196/1200 pass, 1 fail = bug 1, 3 skipped (before the fix).
+- **`src/server/repos/pms/diary/clash-concurrency.test.ts`** (real Postgres only, skipped otherwise): two connections
+  writing at once – same practitioner (the second waits on the advisory lock, then 23514 `practitioner_clash` →
+  `CONSTRAINT_CHECK`), same room (`room_clash`; the first writer rolling back lets the second in), unrelated writers do
+  not wait; five simultaneous `createPatient` through the app's pool get numbers 1–5 (retry on 23505). 5/5 repeat runs
+  green.
+- `pms:seed-demo` (and `--fresh`) accept a **Postgres on this machine**: loopback `DATABASE_URL` and
+  `DATABASE_SSL=disable` (`isLoopbackPostgres` in `scripts/admin/cli.ts`, `isLoopbackPostgresUrl` in the Postgres
+  dialect; tests in `scripts/admin/cli.test.ts`: Supabase hosts, TLS on, a missing DATABASE_SSL, `?host=` overrides are
+  all refused). Server databases keep every safeguard (`--env`, `--confirm`, `--yes`, never `--fresh`).
+- **`scripts/e2e/scratch-db.cjs`** (+ `scratch-db-pg.cjs`): the e2e scripts' direct DB reads/writes on `SQLITE_PATH` as
+  before, or on a loopback `E2E_DATABASE_URL` (sync, through a child process; rows shaped like the app's). 11 scripts
+  switched to it; their SQL made portable: `"user"` quoted (pms-integration), `INSERT OR REPLACE` → `ON CONFLICT … DO
+  UPDATE` and `rev = pms_member_access.rev + 1` (ambiguous on Postgres; pms-setup-reports), `datetime('now')` → an ISO
+  parameter (pms-messages-screens).
+- Two e2e races that Postgres's latency exposed (SQLite was fast enough to hide them), fixed in
+  `clinic-system-shell.cjs`: the "/" search read `main` while the route's loading skeleton was still up; the platform
+  page's package switch waited on a page-wide pattern that Riverside's row (both packages on) matched at once.
+- Perf tool (scratchpad `pgk2/perf/tools`): `bench.ts pg` (real Postgres via `PERF_PG_URL`, loopback; a fresh
+  `k2perf_work` copy per run; pool of 3 like the app) and `load-realpg.ts`; `run-pg.sh` points the app's own
+  `getDb()` at the same copy.
+
+### 22.4 E2E on Postgres
+Runner (scratchpad `pgk2/pg-e2e.sh` + `batch.sh <port> <out> prod|dev <scripts…>`): per run a fresh database
+`k2e2e_<port>` (copy of the migrated `k2_tpl`), `db:migrate`, `pms:seed-demo` (no `--fresh` needed: new database) +
+reports-only clinic B, `next start` (production build) or `next dev` with the TEST clock at **Wed 28/10/2026 10:30
+London**, `E2E_DATABASE_URL` for the scripts' DB pokes, test SMS/email providers (as the SQLite runs; no script reads
+Mailpit), Playwright from pigeon-web, server stopped after each. Final code (`2f3e7db`), each script on its own:
+
+| Script | Mode | Postgres 17 (en_US) | SQLite, same worktree (changed scripts) |
+|---|---|---|---|
+| clinic-system-access | production build | 13/13 | – (unchanged) |
+| clinic-system-shell | production build | 11/11 (5/6, 8/9 before the two race fixes) | 11/11 |
+| pms-billing-screens (local payment stub) | production build | 21/21 (4 isolated runs on the final code; earlier 19/21, 13/21, 20/21 – loading-skeleton races in the script, fixed) | 21/21 ×2 |
+| pms-design-system | production build | 14/14 | – |
+| pms-integration (`DEMO_FLAG=1`) | production build | 14/14 | 14/14 |
+| pms-m10-ux | production build | 8/8 | 8/8 |
+| pms-polish-portal | production build | 9/9 | 9/9 |
+| pms-portal-screens | production build | 15/15 | 15/15 |
+| pms-prototype-b | production build | 6/6 | 6/6 |
+| pms-records-screens | production build | 17/17 | 17/17 |
+| pms-setup-reports | production build | 13/13 (12/13 before the `rev` upsert fix) | 13/13 |
+| pms-human-check (Cloudflare test keys) | production build | 3/3 | 3/3 |
+| tenant-studio `FLOW=complete` (Reports-only clinic) | production build | 15/15 (5 "page problems" = RSC prefetch fallbacks, as §21.2) | – |
+| pms-diary-screens | dev + clock | 32/32 | – |
+| pms-prototype-a | dev + clock | 10/10 | 10/10 |
+| pms-messages-screens | dev + clock | 18/18 | 18/18 |
+| pms-polish | dev + clock | 9/9 | – |
+| pms-polish-reports | dev + clock | 8/8 (4/8 before the dialect fix – bug 2) | 8/8 |
+| pms-setup-reports | dev + clock | 13/13 | – |
+
+No database error in any final server log (each run's `server-errors.txt`). Logs and screenshots: scratchpad `pgk2/`
+(`final-prod/`, `fin-*`, `e2e*/`).
+
+### 22.5 Performance on Postgres (50k-patient clinic)
+Dataset rebuilt with the M10 tools (`gen.ts`, same seed and counts as §20.4: 11 sites, 40 practitioners, 50,000
+patients, 146,656 notes, 99,693 invoices, 88,479 payments) on this branch, loaded into `k2-pg` (`k2perf`, 1.19 GB,
+`VACUUM ANALYZE`), measured with `bench.ts pg` (median of 5 after a warm-up; reports 3, jobs 1; pool of 3 as the app)
+and, as a same-machine baseline, `bench.ts sqlite` on the same data and code, back to back with nothing else running.
+M10 columns = the "after" numbers of §20.4 (`30f2c83` / `e0148c6`). Local Docker has ~0.3 ms per round trip; Supabase
+from Vercel `lhr1` (same region) is ~1–2 ms per statement through the pooler, so add roughly `statements × 1.5 ms`
+for production (statements in one page often run in parallel, so this is an upper bound). The big data was deleted
+afterwards (`k2perf*` databases dropped, the 1.2 GB SQLite file removed).
+
+| Path | M10 SQLite | M10 local workerd D1 | M10 PGlite | SQLite today | **Postgres 17 today** | PG statements |
+|---|---|---|---|---|---|---|
+| diary day view (site, today) | 5 | 148 | 15 | 5 | 9 | 14 |
+| diary day view (site, past day) | 4 | 158 | 11 | 5 | 8 | 14 |
+| diary day view by room | 5 | 153 | 12 | 5 | 8 | 14 |
+| diary week view (1 practitioner) | 8 | 163 | 15 | 8 | 10 | 15 |
+| diary week view (site) | 8 | 161 | 15 | 8 | 10 | 15 |
+| free-slot search (site, 21 days) | 6 | 123 | 11 | 5 | 8 | 12 |
+| free-slot search (all sites, 28 days) | 27 | 192 | 72 | 29 | 48 | 16 |
+| online booking slots (week, any practitioner) | 5 | 138 | 12 | 6 | 8 | 14 |
+| patient search name 'hart' | 0 | 9 | 1 | 0 | 1 | 1 |
+| patient search 'amelia ashdown' | 1 | 10 | 12 | 1 | 7 | 1 |
+| patient search phone '900123' | 7 | 18 | 12 | 8 | 7 | 1 |
+| patient search no match 'zzzz' | 13 | 23 | 9 | 16 | 6 | 1 |
+| diary quick patient search 'hart' | 5 | 23 | 1 | 6 | 1 | 2 |
+| patient list page (default) | 30 | 116 | 19 | 32 | 9 | 10 |
+| patient list 'no future appt' | 81 | 166 | 36 | 79 | 20 | 10 |
+| patient list 'owes money' | 94 | 166 | 82 | 98 | 28 | 10 |
+| patient list search 'hart' page 3 | 34 | 115 | 15 | 32 | 10 | 10 |
+| patient search (site-limited admin) 'hart' | 2 | 12 | 42 | 2 | 21 | 1 |
+| record: header (layout) | 1 | 159 | 6 | 1 | 3 | 16 |
+| record: overview tab | 21 | 283 | 10 | 20 | 5 | 28 |
+| record: notes tab | 0 | 20 | 1 | 0 | 1 | 2 |
+| record: appointments tab | 1 | 60 | 3 | 1 | 1 | 6 |
+| record: invoices tab | 0 | 40 | 1 | 0 | 1 | 4 |
+| record: cases tab | 0 | 28 | 1 | 0 | 1 | 3 |
+| record: details tab | 0 | 91 | 2 | 0 | 1 | 7 |
+| record: outcomes tab | 0 | 20 | 1 | 0 | 1 | 2 |
+| record: attachments tab | 0 | 21 | 1 | 0 | 1 | 2 |
+| record: messages tab | 1 | 81 | 2 | 1 | 2 | 7 |
+| record: forms tab | 0 | 83 | 2 | 0 | 1 | 7 |
+| record: history tab | 4 | 68 | 7 | 4 | 3 | 7 |
+| unsigned notes (all) | 10 | 61 | 8 | 9 | 4 | 6 |
+| unsigned notes (mine, clinician) | 1 | 45 | 2 | 0 | 2 | 4 |
+| dashboard owner | 38 | 277 | 105 | 42 | 38 | 28 |
+| dashboard admin | 38 | 273 | 101 | 40 | 34 | 28 |
+| dashboard clinician | 3 | 127 | 6 | 3 | 4 | 12 |
+| dashboard staff | 36 | 272 | 128 | 36 | 45 | 27 |
+| billing home | 46 | 121 | 169 | 49 | 50 | 10 |
+| billing attended, not invoiced | 44 | 473 | 153 | 49 | 81 | 44 |
+| billing aged debt (debtors list) | 47 | 170 | 128 | 65 | 43 | 8 |
+| report attendance quarter | 47 | 118 | 121 | 55 | 40 (34 no JIT) | 6 |
+| report attendance year | 210 | 273 | 430 | 220 | 171 (145 no JIT) | 6 |
+| report attendance year CSV | 171 | 316 | 423 | 237 | 176 (144 no JIT) | 7 |
+| report utilisation quarter | 234 | 470 | 487 | 225 | 282 (227 no JIT) | 12 |
+| report utilisation year | 926 | 1569 | 1837 | 967 | **956 (875 no JIT)** | 12 |
+| report utilisation year CSV | 865 | 1585 | 1813 | 948 | **859 (865 no JIT)** | 13 |
+| report patients quarter | 93 | 154 | 210 | 97 | 204 (179 no JIT) | 7 |
+| report patients year | 310 | 411 | 674 | 309 | **781 (631 no JIT)** | 7 |
+| report patients year CSV | 327 | 379 | 644 | 302 | **767 (638 no JIT)** | 8 |
+| report caseload quarter | 58 | 123 | 32 | 56 | 11 (11 no JIT) | 8 |
+| report caseload year | 60 | 119 | 31 | 57 | 11 (11 no JIT) | 8 |
+| report caseload year CSV | 46 | 124 | 30 | 55 | 11 (13 no JIT) | 9 |
+| report revenue quarter | 8 | 74 | 19 | 9 | 6 (9 no JIT) | 8 |
+| report revenue year | 43 | 123 | 65 | 49 | 18 (20 no JIT) | 8 |
+| report revenue year CSV | 43 | 128 | 61 | 55 | 21 (18 no JIT) | 9 |
+| report debtors quarter | 35 | 103 | 54 | 37 | 29 (25 no JIT) | 7 |
+| report debtors year | 38 | 105 | 55 | 34 | 26 (27 no JIT) | 7 |
+| report debtors year CSV | 37 | 112 | 57 | 37 | 27 (26 no JIT) | 8 |
+| report authorisations quarter | 2 | 113 | 10 | 2 | 5 (5 no JIT) | 13 |
+| report authorisations year | 2 | 133 | 10 | 2 | 5 (6 no JIT) | 13 |
+| report authorisations year CSV | 2 | 124 | 8 | 2 | 5 (5 no JIT) | 14 |
+| comms run: reconcile sweep | 10 | 153 | 26 | 12 | 21 | 13 |
+| comms run: send due messages | 131 | 12675 | 761 | 431 | **848** | 1787 |
+
+**Over 300 ms on Postgres** (every page is ≤ 81 ms; a few tiny reads are slower than SQLite in relative terms – site-limited patient search 21 vs 2 ms, "amelia ashdown" 7 vs 1 ms, free-slot search over all sites 48 vs 29 ms – far below any target):
+- **report utilisation year / CSV: 956 / 859 ms** – the same as SQLite (967 / 948); the in-code interval maths kept on
+  purpose (§20.4 open item 4). Under M10's 5 s report target.
+- **report patients year / CSV: 781 / 767 ms** (SQLite 309 / 302). One statement does 108,899 index probes ("first
+  visit" = no earlier attended visit, one probe of `pms_appointments_patient_starts` per visit, as M10 designed for D1),
+  and **JIT compilation adds ~150 ms** (EXPLAIN ANALYZE: JIT 186 ms of 1,026; with `jit=off` 631 / 638 ms). Possible
+  later rewrite: probe once per distinct patient (`min(starts_at)` per patient, ~3–4× fewer probes; same answer, ties
+  included) – not done tonight (it changes a D1-tuned query on three backends; within the 5 s target).
+- **comms run: send due messages: 848 ms, 1,787 statements** (SQLite 431). On Postgres `runBatch` is a transaction of
+  single statements – one round trip each (on D1 a batch is one request). Expect ~2–4 s on Supabase for the 50k clinic's
+  evening run; it is a manual job with a 45 s budget. If it matters: send each batch as one multi-row statement.
+- Reports under 300 ms that are slower than SQLite: patients quarter 204 (97), utilisation quarter 282 (225). Faster
+  on Postgres: patient lists (9–28 vs 32–98), caseload (11 vs 56), revenue, debtors, attendance year (171 vs 220).
+
+Supabase checks that follow from this (run-sheet S2, S4): Micro → Small before a real clinic's data; `show jit;`.
+
+### 22.6 M11 run-sheet changed
+[`M11-RUNSHEET.md`](M11-RUNSHEET.md): production data is on Supabase, so step 4 is now **"Production migrations on
+SUPABASE"** – `CLINFORMS_DB=postgres npm run db:migrate` through the **session** pooler with `DATABASE_SSL=verify-full`
+and the CA (helpers `pgprod` / `pgq`, values from `~/.config/appstackx/clinforms.supabase.env`, never printed), with
+before/after checks (7 → 59 `schema_migrations` rows, 27 → 103 tables, all RLS on, backfill = `clinic_profile` count),
+**not** `wrangler d1 migrations apply`; D1 `clinforms-prod` is frozen and must not get K2's migrations. Previews stay
+on D1 `clinforms-preview` (step 2 unchanged). New gates G6b (done) and G10 = Supabase pre-checks **S1** backups + PITR
+before real clinic data, **S2** Micro → Small before a real clinic's data, **S3** the non-owner app role (BYPASSRLS
+or policies; not required for the release), **S4** `show jit;`, **S5** pooler limits. The flag check (6b) and the
+rollback table (PITR / backup restore, DROP script + `schema_migrations` rows, the move plan's D1 fallback) are on
+Supabase now; "send due" is re-measured on Supabase.
+
+### 22.7 Open items
+1. Supabase pre-checks S1–S5 (Khuram, dashboard): PITR before real clinic data; compute size; `show jit;`; app role.
+2. Patients report year 0.78 s on Postgres (0.31 s on SQLite): optional rewrite (probe per patient), see §22.5.
+3. Send-due job: one round trip per statement on Postgres (1,787 at 50k) – re-measure on Supabase; batch into
+   multi-row statements if it is too slow.
+4. `ORDER BY name` lists sort en_US on Supabase but byte order on the D1 previews – a preview and production can list
+   names in a different order (expected; not a bug). Any NEW range/prefix/cursor on text that is not a ULID or ISO date
+   must use `byteOrder()` (`src/server/db/collation.ts`).
+5. The e2e scripts still read pages straight after navigation in places; the races fixed here (shell ×2, billing ×2)
+   were the ones Postgres's latency exposed. If a script fails with "under the skeleton" symptoms, wait for the content.
+6. Preview rehearsal (run-sheet §2) still not run (needs preview access) – unchanged from §21.6.
+
+### 22.8 The `k2-pg` container (kept running for Khuram)
+```bash
+docker ps --filter name=k2-pg                                     # postgres:17 on 127.0.0.1:55432 (databases k2 = seeded demo, k2_tpl = migrated, empty)
+set -a; . ~/Projects/Appstackx/k2-local-data/k2-pg.env; set +a      # CLINFORMS_DB=postgres, DATABASE_URL (loopback), DATABASE_SSL=disable
+npm run db:migrate && npm run pms:seed-demo -- --fresh             # in a K2 worktree: migrate + (re)seed the demo clinic on it
+CLINFORMS_TEST_PG_URL=${DATABASE_URL%/*}/postgres npm run test:pms   # the suites on real Postgres (+ the concurrency tests)
+zsh <scratchpad>/pgk2/batch.sh 3270 <out> prod pms-billing-screens.cjs  # e2e on Postgres (fresh k2e2e_<port> per run)
+docker rm -f -v k2-pg && rm -rf ~/Projects/Appstackx/k2-local-data   # remove it and its own data volume (-v); other containers untouched
+```
+
+### 22.9 Chain and merge
+Chain on `2f3e7db` (sequential, nothing else running): typecheck, lint green; test:pms 788/0/1, test:medreport 1786/0/3, test:db 1200/0/4, test:auth 148/0, test:site 155/0, test:gateway 654/0/2; build green. With `CLINFORMS_TEST_PG_URL` (real en_US Postgres):
+test:db 1205/0/3. `feat/cs-postgres` merged `--no-ff` into `feat/clinic-system` as **`d5fc35f`** (the base had not moved
+from `9381c30`) and pushed; `main` untouched.

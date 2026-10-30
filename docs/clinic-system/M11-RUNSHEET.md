@@ -7,6 +7,14 @@ pushed, not merged, not deployed). First drafted by M10 on `842bb02`; brought up
 (migrations to 0213, Turnstile, offboarding batches, Reports switch-off with the typed id, sign-in link hidden in the
 outbox) and the final check (HANDOVER §21).
 
+**Update 30/10/2026 – production data is on Supabase Postgres.** ClinForms production moved from D1 to Supabase
+(project `clinforms`, Postgres 17, London) on 29/10 ~22:45 (bh2-handover `SUPABASE-MOVE-PLAN.md`, "Live log"). So K2's
+52 migrations now go to **Supabase** with `CLINFORMS_DB=postgres npm run db:migrate` (session pooler + CA, step 4),
+**not** `wrangler d1 migrations apply`. **Previews stay on D1 `clinforms-preview`** (step 2 unchanged). K2 was proven end
+to end on a Supabase-like Postgres (Docker `postgres:17`, en_US.UTF-8): every e2e script, the chain, the 50k-patient
+perf run and two Postgres-only bug fixes – HANDOVER §22. New Supabase-only steps: §4 (pre-checks S1–S5) and the
+rollback rows in §7.
+
 **Nothing here has been run against production.** Every step marked **[K]** is Khuram's to approve or run himself
 (CLAUDE.md: production D1, `main`, Vercel promotion, Cloudflare dashboard). Never paste secrets, invite links, sign-in
 links or tokens into chat or logs. Secrets live in `~/.config/appstackx/clinforms.secrets.env`; refer to them by name only.
@@ -15,11 +23,17 @@ Production facts this sheet relies on:
 - App: Vercel project `clinforms`, Hobby plan. A push to `main` builds and promotes to production. **One-step rollback
   only** (to the deployment immediately before), **one cron a day** (`vercel.json` already uses it for
   `/api/cron/retention`).
-- Data: Cloudflare D1 `clinforms-prod` behind the `clinforms-data` Worker (account `appstackx-demos`
-  `a04ab546d0f1be2aa339bafebcdb3ffa`). The Worker has **no table allow-list**: it validates SQL shape only
-  (`workers/data-gateway/src/validate.ts`), and K2 does not change Worker code (only its tests). New tables come from
-  `wrangler d1 migrations apply` with `migrations_dir = db/migrations/sqlite`. **The Worker does not need a redeploy.**
-  The Worker takes at most **100 statements per batch** (`GATEWAY_MAX_STATEMENTS`).
+- Data (PRODUCTION, since 29/10/2026): **Supabase Postgres 17** project `clinforms` (eu-west-2 London, compute
+  **Micro**, Pro organisation, Data API off, automatic RLS on). Vercel Production has `CLINFORMS_DB=postgres`,
+  `DATABASE_SSL=verify-full`, `DATABASE_URL` = the shared **transaction** pooler (port 6543) and `DATABASE_CA_CERT`.
+  The app connects as `postgres` (owner, BYPASSRLS – see S3). Migrations need ONE session: the **session** pooler
+  (port 5432, `DATABASE_URL_SESSION`); the runner refuses 6543. Connection values: `~/.config/appstackx/clinforms.supabase.env`
+  (`PRODUCTION_DATABASE_URL_SESSION`, `PRODUCTION_DATABASE_URL`), CA: `~/.config/appstackx/supabase-ca.crt` – names only,
+  never print them. Text sorts in **en_US.UTF-8** order there, not byte order (HANDOVER §22).
+- D1 `clinforms-prod` is FROZEN (rollback target until about 29/11/2026; `CLINFORMS_D1_GATEWAY_*` kept in Vercel). Do
+  **not** apply K2's migrations to it. Previews still use D1 `clinforms-preview` behind the `clinforms-data` Worker
+  (account `appstackx-demos` `a04ab546d0f1be2aa339bafebcdb3ffa`; no table allow-list, SQL shape only; at most **100
+  statements per batch**; no Worker redeploy needed).
 - The public clinic pages (booking, portal, clinic device) are served by the same deployment at
   `https://clinforms.co.uk/clinics/<clinic>/…`. They answer 404 for every clinic without the clinic package.
 - Blue Heart (`blue-heart-clinics`) is on a live ClinForms trial. It must see no change.
@@ -31,6 +45,13 @@ vc() { npx --yes vercel@63.1.0 "$@"; }
 wr() { (cd "$MAIN/workers/data-gateway" && CI=1 WRANGLER_SEND_METRICS=false CLOUDFLARE_ACCOUNT_ID=a04ab546d0f1be2aa339bafebcdb3ffa ./node_modules/.bin/wrangler "$@"); }
 CHAIN='npm run typecheck && npm run lint && npm run test:pms && npm run test:medreport && npm run test:db && npm run test:auth && npm run test:site && npm run test:gateway && npm run build'
 RUN=~/Desktop/k2-deploy-$(date +%Y%m%d); mkdir -p "$RUN"
+# Supabase PRODUCTION migrations (session pooler, verified TLS). Values are read into the subshell only, never printed.
+pgprod() { (set -a; . ~/.config/appstackx/clinforms.supabase.env; set +a
+  export CLINFORMS_DB=postgres DATABASE_SSL=verify-full DATABASE_CA_CERT="$(cat ~/.config/appstackx/supabase-ca.crt)"
+  export DATABASE_URL_SESSION="$PRODUCTION_DATABASE_URL_SESSION" DATABASE_URL="$PRODUCTION_DATABASE_URL_SESSION"
+  "$@"); }
+# read-only SQL on production (psql 17+ installed locally; or paste the SELECT into the Supabase SQL editor)
+pgq() { pgprod sh -c 'PGSSLMODE=verify-full PGSSLROOTCERT=$HOME/.config/appstackx/supabase-ca.crt psql "$DATABASE_URL_SESSION" -X -A -t -v ON_ERROR_STOP=1 -c "$1"' _ "$1"; }
 ```
 
 ---
@@ -45,6 +66,8 @@ RUN=~/Desktop/k2-deploy-$(date +%Y%m%d); mkdir -p "$RUN"
 | G4 | `feat/clinic-system` is rebased or merged onto the **current** `main` **including the shim merge** (main must not have moved past `cae0c3f` + shim without a re-run of G3 and of the forms regression). | `main` = `cae0c3f` on 29/10. | M11 |
 | G5 | Forms regression (`scripts/e2e/forms-regression.cjs` + `compare-form-outputs.ts`) on builds of `main` and of the candidate: **all 5 files match**. Also the tenant-mode Studio check for a Reports-only clinic (`scripts/e2e/tenant-studio.cjs` with `FLOW=complete`), on both builds. | Both green on `332b2b8` vs `cae0c3f` (§21.2). The `tenant-studio` script drift found by M10 is fixed (it adds the owner's signing details first). | M11 |
 | G6 | Preview D1 has had all **52** K2 migrations applied and the preview app has run on the candidate for at least one smoke pass (step 2). | Not done (needs preview access). | M11 (preview only) |
+| G6b | **K2 on Postgres** proven on a Supabase-like Postgres 17 (en_US.UTF-8): migrations in production order (main's 7, then K2's 52), RLS on every table, every e2e script, the chain, 50k perf. | **Done 30/10** (HANDOVER §22; `feat/clinic-system` `d5fc35f`). | M11 |
+| G10 | Supabase pre-checks S1–S5 (step 4): backups/PITR, compute size, app role decision, JIT setting, pooler limits. | Open | **[K]** |
 | G7 | Khuram chose a quiet window: no Blue Heart session in progress (`trial-activity.sh`, read-only, counts only). | – | **[K]** |
 | G8 | Nobody deploys anything else between the shim deployment (step 1) and the K2 deployment (step 5): Hobby rolls back one step only. | – | everyone |
 | G9 | **Turnstile** decision: either the widget is set up (step 4b) before any clinic switches on online booking for new patients, or online booking stays off / existing patients only. Without it production **refuses** public bookings (M10 M6). Not needed for the K2 deployment itself (the clinic package is off everywhere). | Widget not created yet; code path verified locally with Cloudflare's test keys (`pms-human-check.cjs`). | **[K]** |
@@ -114,38 +137,50 @@ As M9 and the final check did (scratchpad `forms-reg.sh <checkout> <port> <out>`
 → "All 5 files match" (2 PDFs byte-identical; 3 Word files equivalent – only ZIP container bytes differ). Plus
 `tenant-studio.cjs FLOW=complete` on both, against local SQLite, for a Reports-only clinic (15/15 on the candidate).
 
-## 4. Production D1 migrations BEFORE the app  **[K]**
+## 4. Production migrations on SUPABASE BEFORE the app  **[K]**
 
 Order matters: the new app reads `clinic_entitlements` on every `/app` page. That read is fail-safe (Reports ON,
-clinic OFF), and since M10 the platform page, offboarding and exports treat a missing clinic-system table as empty – but
-every clinic-system page needs its tables. The migrations are additive for ClinForms: `main`'s code never reads the new
-tables, so applying them first is invisible to ClinForms.
+clinic OFF), and the platform page, offboarding and exports treat a missing clinic-system table as empty – but every
+clinic-system page needs its tables. The migrations are additive for ClinForms: `main`'s code never reads the new tables,
+so applying them first is invisible to ClinForms. **Not `wrangler d1 migrations apply`** – production data is on Supabase.
 
+### 4a. Supabase pre-checks (G10) **[K]** – in the Supabase dashboard, nothing changes data
+| # | Check | Why |
+|---|---|---|
+| S1 | **Backups:** Database → Backups shows a daily backup from today. **Turn on PITR** (add-on) **before any real clinic data** goes into the clinic system (not needed while the clinic package is off everywhere, but before 6d for a real clinic). Note the time just before 4b as the restore point. | There is no D1 time travel on Supabase; a restore is whole-database (§7). |
+| S2 | **Compute:** Micro (1 GB RAM, shared CPU) is enough for the release (clinic package off; ClinForms is small). **Move to Small (or larger) before a real clinic's data** – the 50k-patient clinic is 1.2 GB on disk, more than Micro's memory; the heaviest reports read hundreds of thousands of rows (HANDOVER §22.5). Check Reports → Database: memory and CPU after the first weeks. | Report speed at scale. |
+| S3 | **App login role:** the app still connects as `postgres` (owner, BYPASSRLS). Planned (docs/database.md §10): a non-owner role, e.g. `clinforms_app` – `LOGIN`, **`BYPASSRLS`** (RLS is on with NO policies, so without it every read returns nothing) or real policies; `USAGE` on schema `public`; `SELECT, INSERT, UPDATE, DELETE` on all tables **except** `audit_log` (`SELECT, INSERT` only); `ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT …` so tables from later migrations are covered; migrations keep running as `postgres`. Pooler user name = `clinforms_app.<project ref>`. Not required for the K2 release; if done, do it as its own change with a sign-in smoke test, not together with step 4b. | An owner can drop the audit triggers. |
+| S4 | **JIT:** run `show jit;` in the SQL editor. If `on`, consider `alter role postgres set jit = off` (or on the app role) – JIT added ~150 ms to the year reports on Postgres 17 locally (HANDOVER §22.5); OLTP pages are unaffected. Optional. | Report latency. |
+| S5 | **Pooler:** the app uses the transaction pooler (6543) with a pool of 3 per function instance (`DATABASE_POOL_MAX`); K2 needs no session state, advisory locks are transaction-scoped (`pg_advisory_xact_lock`), no named prepared statements. Check the pooler's client-connection limit for Micro in Database → Settings is well above (Vercel instances × 3). | Connection limits. |
+
+### 4b. Apply the migrations **[K]**
 ```bash
-wr d1 time-travel info clinforms-prod | tee "$RUN/timetravel-before-k2.txt"          # bookmark (whole-DB restore only – see rollback)
-wr d1 migrations list clinforms-prod --remote | tee "$RUN/migrations-before.txt"     # expect exactly 52 pending (0100…0190, 0210…0213), 0001–0008 applied
-wr d1 migrations apply clinforms-prod --remote | tee "$RUN/migrations-apply.txt"     # 52 ✅; stops at the first failure
-wr d1 migrations list clinforms-prod --remote                                        # "No migrations to apply"
-wr d1 execute clinforms-prod --remote --json --command "SELECT package, status, count(*) n FROM clinic_entitlements GROUP BY package, status"
-wr d1 execute clinforms-prod --remote --json --command "SELECT count(*) n FROM clinic_profile"   # equal to reports|active above
-curl -s https://clinforms-data.appstackx-demos.workers.dev/v1/health; echo           # {"ok":true}
+cd <candidate worktree>                                   # feat/clinic-system merged with main incl. the shim; npm ci done
+# Before: what is applied (expect 7 rows: 20261010000001, …02, …04, …05, 20261024000006, 20261025000007, …08)
+pgq "select version from public.schema_migrations order by version" | tee "$RUN/pg-migrations-before.txt"
+pgq "select count(*) from pg_tables where schemaname = 'public'" | tee -a "$RUN/pg-migrations-before.txt"   # 27
+pgq "select count(*) from public.clinic_profile" | tee -a "$RUN/pg-migrations-before.txt"                   # N clinics
+# Apply: one transaction per file, session-level advisory lock, idempotent. Prints the file names only.
+pgprod npm run -s db:migrate | tee "$RUN/pg-migrations-apply.txt"     # "Postgres: applied 20261024000100_…, …, 20261024000213_…" (52)
+pgprod npm run -s db:migrate                                          # "Postgres: up to date"
+# After
+pgq "select count(*) from public.schema_migrations"                                   # 59
+pgq "select count(*), count(*) filter (where c.relrowsecurity) from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relkind = 'r'"   # 103|103 (plus any Supabase tables in public, e.g. none)
+pgq "select package, status, count(*) from public.clinic_entitlements group by 1, 2"   # reports|active|N (= clinic_profile count)
 ```
-The 52 files (0100–0105, 0110–0125, 0130–0142, 0150–0152, 0160, 0170, 0180–0185, 0189, 0190, 0210–0213; 0191–0209
-and 0214–0219 unused) create 76 tables, 149 indexes and 9 triggers. Their `ALTER TABLE` / `DROP TRIGGER` statements
-touch only the clinic system's own `pms_*` tables created earlier in the same set; **no ClinForms table, index or trigger
-is altered or dropped**. 0210–0213 (M10 performance) add indexes only: `pms_appointments (tenant_id, starts_on,
-site_id)` and `(tenant_id, updated_at)`, `pms_clinical_notes (tenant_id, status, seen_on)`, the partial
-`pms_invoices_open` and `(tenant_id, created_at)`, `pms_cases (…practitioner…)`. No `audit_log` index and no `PRAGMA
-optimize` (decisions in HANDOVER §20.4). The backfill inserts `reports/active` per `clinic_profile` row
-(`ON CONFLICT DO NOTHING`, safe to re-run). D1 serialises writes, so ClinForms requests queue for the few seconds the
-batch takes.
-**Stop rule:** any ❌ → stop. Do not push the app. The failed file's statements were not applied, and the earlier
-files are recorded. Fix forward on the branch (a new migration number), never by editing an applied file.
-
-Postgres twins (`supabase/migrations/20261024000100…213`) are not used in production (D1 is). Their timestamps sort
-BEFORE main's `20261025000007/8`. The repo's own runner (`src/server/db/migrations.ts`) applies by missing version, so
-this is fine. `supabase db push` would refuse them without `--include-all`, which matters only for a later Supabase
-switch.
+The 52 files (0100–0105, 0110–0125, 0130–0142, 0150–0152, 0160, 0170, 0180–0185, 0189, 0190, 0210–0213 as
+`supabase/migrations/20261024000NNN_*.sql`) create 76 tables with their indexes, and 5 trigger functions with 5 triggers on 4 `pms_*` tables
+(appointment clash and hold, signed-note and amendment locks, sealed intake responses). Their `ALTER TABLE` / `DROP TRIGGER` statements touch only the clinic system's own
+tables created earlier in the same set; **no ClinForms table, index or trigger is altered or dropped**. Every table gets
+`enable row level security` in its own file (Supabase's automatic-RLS event trigger is not relied on). The backfill
+(0100) inserts `reports/active` per `clinic_profile` row (`on conflict do nothing`). Their timestamps (20261024…) sort
+BEFORE main's `20261025000007/8`; the repo's runner applies by missing version, so that is fine – **do not use `supabase
+db push`** (it would refuse them without `--include-all`). Rehearsed on Postgres 17.11 with en_US.UTF-8 in exactly this
+order (main's 7 first, two `clinic_profile` rows, then K2's 52): 27 → 103 tables, all RLS on, backfill 2 rows, second run
+"up to date", schema identical to a from-scratch migration (HANDOVER §22.1).
+**Stop rule:** any error → stop (the runner stops at the failed file; that file's transaction is rolled back, the files
+before it stay recorded). Do not push the app. Fix forward on the branch with a new migration number, never by editing
+an applied file. The new tables take locks only on themselves; ClinForms requests are not blocked.
 
 ## 4b. Cloudflare Turnstile for public online booking  **[K]** (before any clinic takes online bookings from new patients)
 
@@ -188,15 +223,17 @@ No env var is required for the app to run with the clinic system OFF. Defaults a
 payments are manual, Turnstile is not set up (so production refuses public bookings – step 4b), and
 `CLINIC_*_PROVIDER=test` is refused on `VERCEL_ENV=production` unless `CLINIC_ALLOW_TEST_PROVIDER=1` (never set it).
 `CRON_SECRET` already exists and is used by the retention cron. **Do not add a second cron to `vercel.json`**: Hobby
-refuses the deploy. The message run stays manual ("Send due messages now"); re-measure "send due" on real D1 once a demo
-clinic has messages (M10 measured 12.7 s on the local workerd proxy, of which D1's own time was 0.15 s).
+refuses the deploy. The message run stays manual ("Send due messages now"); re-measure "send due" on **Supabase** once a
+demo clinic has messages (locally on Postgres 17: 848 ms for 1,787 statements at the 50k clinic – each statement is a
+round trip through the pooler, so expect about 2–4 s from lhr1; M10's 12.7 s was the local D1 proxy). No production env
+var changes for K2: `CLINFORMS_DB=postgres` and the pooler URL + CA are already set.
 
 ## 6. Smoke tests (production, read-only, no sign-in) and feature-flag checks
 
 6a. As DEPLOY.md (c) step 4:
 ```bash
 curl -s https://clinforms.co.uk/api/reports/v1/health; echo
-curl -s https://clinforms-data.appstackx-demos.workers.dev/v1/health; echo
+curl -s https://clinforms-data.appstackx-demos.workers.dev/v1/health; echo        # preview gateway only (prod no longer uses it)
 for p in / /login /reset-password /reports /security /demo /privacy /api/reports/v1/health; do printf '%-28s %s\n' "$p" "$(curl -s -o /dev/null -w '%{http_code}' "https://clinforms.co.uk$p")"; done   # all 200
 curl -s -o /dev/null -w "/app %{http_code}\n" https://clinforms.co.uk/app                        # 307 → /login
 curl -s -o /dev/null -w "/app/clinic %{http_code}\n" https://clinforms.co.uk/app/clinic          # 307 → /login
@@ -210,7 +247,7 @@ vc logs --environment production --since 30m --level error --cwd "$MAIN"; vc log
 ```
 6b. Feature flag: confirm every production clinic is Reports ON and clinic OFF:
 ```bash
-wr d1 execute clinforms-prod --remote --json --command "SELECT tenant_id, package, status FROM clinic_entitlements WHERE package='clinic' OR status <> 'active'"   # expect 0 rows
+pgq "select tenant_id, package, status from public.clinic_entitlements where package = 'clinic' or status <> 'active'"   # expect 0 rows (Supabase, not D1)
 ```
 6c. **[K]** Signed in as a Reports-only test clinic (`appstackx-test`, NOT Blue Heart): `/app` nav = Overview, Studio,
 Clinic, Members, Security, … with **no "Clinic system"** item; `/app/studio` has no product-switch bar; `/app/clinic`
@@ -237,17 +274,18 @@ stay on. While walking it:
 | App problem after step 5 | **[K]** Vercel one-step rollback / promote `$RUN/shim-deployment.txt`. The shim build ignores the new tables and reads native reports. | Nothing lost. The K2 tables stay (unused). |
 | Problem after step 4b (Turnstile redeploy) | Promote the deployment before the redeploy (the K2 one), or remove the two variables and redeploy. Public booking is refused again (safe). | none |
 | Problem after step 1 (shim) | Promote `$RUN/prod-before-shim.txt` (cae0c3f). Safe while no native report exists, which holds before step 5. | none |
-| Migration failed half-way (step 4) | Stop; do not push the app. main's code is unaffected by partial K2 tables. Fix forward with new numbers. | none |
+| Migration failed half-way (step 4b) | Stop; do not push the app. The failed file was rolled back (one transaction per file); main's code is unaffected by the K2 tables already made. Fix forward with new numbers. | none |
 | A clinic-system bug in an enabled demo clinic | Switch its clinic package off (`admin:set-entitlement … --off`, nothing is deleted). | kept |
-| Remove K2 schema entirely (only if Khuram decides) | A reviewed DROP script for the 76 new tables (children first) plus deleting their rows from `d1_migrations`, through `wrangler d1 execute` (the Worker refuses DDL). Not prepared yet. | K2 data lost |
-| D1 corrupted | `wr d1 time-travel restore clinforms-prod --timestamp=<bookmark>`. **Last resort: it also discards every ClinForms write since the bookmark (Blue Heart trial data).** | ClinForms writes since bookmark lost |
+| Remove K2 schema entirely (only if Khuram decides) | A reviewed DROP script for the 76 new tables (children first, plus the 5 `pms_*` trigger functions) and `delete from public.schema_migrations where version between '20261024000100' and '20261024000213'`, in the Supabase SQL editor in one transaction. Not prepared yet. | K2 data lost |
+| Supabase data damaged | Database → Backups: PITR to a time before step 4b (S1), or the daily backup. **Last resort: whole-database restore, it also discards every ClinForms write since then (Blue Heart trial data).** | ClinForms writes since then lost |
+| Supabase unavailable for a long time | ClinForms' own rollback (move plan): `CLINFORMS_DB=d1` + redeploy goes back to the FROZEN D1 – only valid while nothing new was written on Supabase, and K2 then has no tables there. Khuram's call. | writes since 29/10 22:45 not on D1 |
 
 There is no down-migration in the repo. None is needed for the app rollback, because the change is additive.
 
 ## 8. What Khuram must approve or run himself
 
 1. The shim merge + push to `main` (step 1) and its deployment as the rollback point.
-2. The production D1 migration apply (step 4) and the time-travel bookmark.
+2. The Supabase pre-checks S1–S5 and the production migration apply on **Supabase** (step 4), with a backup/PITR point noted.
 3. The K2 merge + push to `main` (step 5).
 4. The Turnstile widget, the two Production variables and the redeploy (step 4b) – when online booking for new patients
    is wanted.
@@ -255,6 +293,15 @@ There is no down-migration in the repo. None is needed for the app rollback, bec
 6. Any switch of the clinic package to ON for any clinic (6d), and **every** change to a live clinic's Reports package.
 7. The decisions list in HANDOVER §21.5 (defaults are built; change any).
 8. Any rollback that is more than a Vercel one-step rollback (time-travel restore, DROP script).
+
+## Evidence on Postgres (30/10/2026, local Docker Postgres 17.11, en_US.UTF-8 – HANDOVER §22)
+
+- Migrations in production order (main's 7, then K2's 52) and from scratch: identical schema, 103 tables, all RLS on.
+- Every `pms-*` / `clinic-system-*` e2e script and `tenant-studio FLOW=complete` green on Postgres (production build and
+  `next dev` with the test clock); repo suites on a real Postgres via `CLINFORMS_TEST_PG_URL`; real two-writer tests of
+  the no-double-booking trigger; 50k-patient perf (pages ≤ 81 ms; year reports 0.6–1.0 s; send-due job 848 ms with 1,787
+  statements – ~2–4 s on Supabase from lhr1).
+- Two Postgres-only bugs fixed (audit area filter under en_US collation; dialect detection across module instances).
 
 ## Evidence (final check, 29/10/2026, local only – HANDOVER §21.2)
 
