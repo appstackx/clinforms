@@ -139,6 +139,13 @@ const invoiceIdOf = (url) => (url.match(/\/invoices\/([^/?#]+)/) || [])[1];
     const page = await ctx.newPage();
     page.on("pageerror", (e) => problems.push(`pageerror: ${String(e).slice(0, 200)}`));
     page.on("console", (m) => m.type() === "error" && !/404|Not Found|Failed to fetch RSC payload|favicon|clipboard/i.test(m.text()) && problems.push(`console: ${m.text().slice(0, 200)}`));
+    // goto/reload can return while the route's loading skeleton is still up (seen on Postgres, and under load):
+    // every step reads the page itself, so wait for the skeleton to go first.
+    const settle = () => page.waitForFunction(() => !document.querySelector("[data-testid=section-loading]"), null, { timeout: 30000 }).catch(() => {});
+    const goto = page.goto.bind(page);
+    const reload = page.reload.bind(page);
+    page.goto = async (...a) => { const r = await goto(...a); await settle(); return r; };
+    page.reload = async (...a) => { const r = await reload(...a); await settle(); return r; };
     return page;
   };
   const owner = await mk();
@@ -236,6 +243,8 @@ const invoiceIdOf = (url) => (url.match(/\/invoices\/([^/?#]+)/) || [])[1];
     await step("drafts → issue: the self-pay draft gets a number (≤ 10 characters)", async () => {
       // Find the drafts made just now from the list.
       await reception.goto(`${BILLING}?state=draft`);
+      // The list can arrive after the page's loading skeleton (seen on Postgres): wait for a row before reading.
+      await reception.waitForSelector("table tbody tr a[href*='/invoices/']", { timeout: 15000 }).catch(() => {});
       const draftLinks = await reception.locator("table tbody tr a[href*='/invoices/']").evaluateAll((as) => as.map((a) => a.getAttribute("href")));
       assert(draftLinks.length >= 3, `drafts: ${draftLinks.length}`);
       for (const href of draftLinks) {
@@ -460,6 +469,8 @@ const invoiceIdOf = (url) => (url.match(/\/invoices\/([^/?#]+)/) || [])[1];
         await answer.waitFor({ timeout: 20000 }).catch(() => {});
         const said = (await answer.count()) ? await answer.innerText() : "(nothing shown)";
         await owner.reload();
+        // Read the case page, not its loading skeleton (slow under load / on Postgres).
+        await owner.waitForSelector("summary:has-text('Edit the case')", { timeout: 20000 }).catch(() => {});
         const after = await owner.locator("main").innerText();
         assert(mode === "per_visit" ? /Patient contribution per visit \(this case\)/.test(after) : /Excess per case \(this case\)/.test(after), `case ${r.caseId} not saved: ${said}`);
       };

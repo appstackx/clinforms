@@ -31,6 +31,7 @@ const BASE = process.env.BASE || "http://localhost:3190";
 const OUT = process.env.E2E_OUT || path.resolve(__dirname, "../../.e2e-out/pms-integration");
 const SEED_LOG = process.env.SEED_LOG;
 const SQLITE = process.env.SQLITE_PATH || "";
+const { openScratchDb } = require("./scratch-db.cjs"); // SQLITE_PATH, or E2E_DATABASE_URL (a local Postgres)
 const RUN = crypto.randomBytes(3).toString("hex");
 const CLINIC = `${BASE}/app/clinic`;
 let AXE = null;
@@ -219,9 +220,7 @@ async function answerOpen(app) {
   const seedText = fs.readFileSync(SEED_LOG, "utf8");
   const ownerInvite = (seedText.match(/https?:\/\/\S+\/accept-invite\?token=[A-Za-z0-9._%-]+/) || [])[0];
   assert(ownerInvite, "no owner invitation in the seed log");
-  assert(SQLITE && /^\/(private\/)?(tmp|var\/folders)\//.test(SQLITE), "SQLITE_PATH must be a scratch database under /tmp");
-  const { DatabaseSync } = require("node:sqlite");
-  const sql = new DatabaseSync(SQLITE);
+  const sql = openScratchDb();
   const one = (q, ...a) => sql.prepare(q).get(...a);
 
   const browser = await chromium.launch({ executablePath: process.env.PW_CHROMIUM || undefined });
@@ -261,8 +260,8 @@ async function answerOpen(app) {
       await row.locator("button:has-text('Save signing details')").click();
       await row.locator("text=Saved.").waitFor({ timeout: 20000 });
       // Link the clinician's account to the seeded practitioner Priya Shah (no screen for it yet).
-      const user = one("select id from user where email = ?", `zz-int-clin-${RUN}@example.com`);
-      new DatabaseSync(SQLITE).prepare("update pms_practitioners set user_id = ? where tenant_id = 'riverside-demo' and display_name = 'Priya Shah'").run(user.id);
+      const user = one('select id from "user" where email = ?', `zz-int-clin-${RUN}@example.com`);
+      sql.prepare("update pms_practitioners set user_id = ? where tenant_id = 'riverside-demo' and display_name = 'Priya Shah'").run(user.id);
     });
 
     await step("product switch: the clinic system's header → ClinForms (the Studio) → the switch back", async () => {

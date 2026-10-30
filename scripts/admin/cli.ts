@@ -8,6 +8,7 @@
 import os from "node:os";
 import path from "node:path";
 import { readSecretsFile, SECRETS_FILE } from "../db/provision-gateway-secrets";
+import { isLoopbackPostgresUrl } from "../../src/server/db/dialects/postgres";
 
 export type Target = "current" | "preview" | "production";
 
@@ -86,6 +87,15 @@ export function applyTarget(target: Target, env: Record<string, string | undefin
   }
   if (!env.CLINFORMS_DB) throw new CliError(`No ${prefix}CLINFORMS_DB in ${file}: is the ${target} database provisioned?`);
   return set;
+}
+
+/**
+ * A Postgres on this machine (e.g. the Docker `k2-pg` test database): CLINFORMS_DB=postgres, DATABASE_URL's host
+ * is a loopback address and DATABASE_SSL is explicitly "disable". Supabase is never on a loopback address and
+ * enforces TLS, so a server database never passes. Scripts treat such a database like local SQLite.
+ */
+export function isLoopbackPostgres(env: Readonly<Record<string, string | undefined>> = process.env): boolean {
+  return env.CLINFORMS_DB === "postgres" && env.DATABASE_SSL === "disable" && isLoopbackPostgresUrl(env.DATABASE_URL);
 }
 
 export function requireYesForProduction(target: Target, args: Map<string, string | true>, what: string): void {

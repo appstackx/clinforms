@@ -4,7 +4,8 @@
  * payers and treatment authorisations (scripts/pms/demo-data.ts), then the diary week (seed-diary.ts) and clinical
  * records (seed-records.ts). Switches the clinic's "clinic" package on.
  *
- * LOCAL (default: the current environment, e.g. node --env-file=.env.local → local SQLite):
+ * LOCAL (default: the current environment, e.g. node --env-file=.env.local → local SQLite; or a Postgres on this
+ * machine – loopback DATABASE_URL with DATABASE_SSL=disable, e.g. the Docker test database – see isLoopbackPostgres):
  *   npm run pms:seed-demo                        # creates the clinic if missing (owner invitation link printed once)
  *   npm run pms:seed-demo -- --fresh             # replace the clinic's demonstration data (local databases only)
  *   npm run pms:seed-demo -- --resume            # finish a run that stopped part-way (any database; adds only what is missing)
@@ -26,7 +27,7 @@ import { seedDemoModules } from "./seed-modules";
 import { createClinic } from "../../src/server/auth/platform";
 import { getDataCipher } from "../../src/server/crypto";
 import { getDb, getDbKind } from "../../src/server/db";
-import { CliError, appUrl, applyTarget, flag, parseArgs, requireYesForProduction, resolveTarget, runCli, str } from "../admin/cli";
+import { CliError, appUrl, applyTarget, flag, isLoopbackPostgres, parseArgs, requireYesForProduction, resolveTarget, runCli, str } from "../admin/cli";
 import { pmsNow } from "../../src/modules/pms/core/clock";
 
 void runCli(async () => {
@@ -43,9 +44,9 @@ void runCli(async () => {
   const seed = Number(str(args, "seed") ?? 2026);
   if (!Number.isInteger(patients) || patients < 2 || patients > 2000) throw new CliError("--patients must be 2–2000.");
   if (!Number.isInteger(seed)) throw new CliError("--seed must be a whole number.");
-  const local = target === "current" && getDbKind() === "sqlite";
-  if (fresh && !local) throw new CliError("--fresh is for a local SQLite database only (clinical records are never cleared on a server).");
-  if (target === "current" && !local) throw new CliError("Without --env this script only writes to a local SQLite database. Use --env preview|production for a server database.");
+  const local = target === "current" && (getDbKind() === "sqlite" || (getDbKind() === "postgres" && isLoopbackPostgres(process.env)));
+  if (fresh && !local) throw new CliError("--fresh is for a local database only (local SQLite, or a Postgres on this machine with DATABASE_SSL=disable): clinical records are never cleared on a server.");
+  if (target === "current" && !local) throw new CliError("Without --env this script only writes to a local database (SQLite, or a loopback Postgres with DATABASE_SSL=disable). Use --env preview|production for a server database.");
   if (!local) {
     if (target === "production") requireYesForProduction(target, args, "Loading demonstration data");
     const db = getDb();

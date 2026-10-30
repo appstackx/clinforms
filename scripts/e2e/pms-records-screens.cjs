@@ -32,12 +32,11 @@ const BASE = process.env.BASE || "http://localhost:3195";
 const OUT = process.env.E2E_OUT || path.resolve(__dirname, "../../.e2e-out/pms-records");
 const AXE = require.resolve("axe-core/axe.min.js");
 const SQLITE = process.env.SQLITE_PATH || process.env.CLINFORMS_SQLITE_PATH || "";
+const { openScratchDb } = require("./scratch-db.cjs"); // SQLITE_PATH, or E2E_DATABASE_URL (a local Postgres)
 
 /** Links the member with `email` to the seeded practitioner `registration` (scratch SQLite only – see above). */
 function linkPractitioner(email, registration) {
-  if (!SQLITE || !/^\/(private\/)?(tmp|var\/folders)\//.test(SQLITE)) throw new Error("SQLITE_PATH must be a scratch database under /tmp");
-  const { DatabaseSync } = require("node:sqlite");
-  const db = new DatabaseSync(SQLITE);
+  const db = openScratchDb();
   try {
     const user = db.prepare('SELECT id FROM "user" WHERE email = ?').get(email);
     if (!user) throw new Error("no such member");

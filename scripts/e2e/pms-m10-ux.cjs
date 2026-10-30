@@ -24,6 +24,7 @@ const BASE = process.env.BASE || "http://localhost:3227";
 const OUT = process.env.E2E_OUT || path.resolve(__dirname, "../../.e2e-out/pms-m10-ux");
 const SEED_LOG = process.env.SEED_LOG;
 const SQLITE = process.env.SQLITE_PATH || "";
+const { openScratchDb } = require("./scratch-db.cjs"); // SQLITE_PATH, or E2E_DATABASE_URL (a local Postgres)
 const AXE = require.resolve("axe-core/axe.min.js");
 const RUN = crypto.randomBytes(3).toString("hex");
 const CLINIC = "riverside-demo";
@@ -121,9 +122,7 @@ async function axe(page, label) {
 }
 
 function scratchDb() {
-  if (!SQLITE || !/^\/(private\/)?(tmp|var\/folders)\//.test(SQLITE)) throw new Error("SQLITE_PATH must be a scratch database under /tmp");
-  const { DatabaseSync } = require("node:sqlite");
-  return new DatabaseSync(SQLITE);
+  return openScratchDb();
 }
 function query(sql, ...args) {
   const db = scratchDb();

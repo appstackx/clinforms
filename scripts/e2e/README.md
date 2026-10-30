@@ -12,6 +12,13 @@ These scripts were used during the build to drive the Studio UI and the simulate
    - Screenshots and downloads go to `.e2e-out/` (gitignored), or to `E2E_OUT`.
    - Set `LIVE=1` for live drafting. The scripts then read `MEDREPORT_LIVE_PASSCODE` from `.env.local` and never print it.
 
+**Direct database access (clinic-system scripts):** a few `pms-*` scripts read the server's scratch database, or make one
+test-only write, through `scratch-db.cjs`: `SQLITE_PATH=<scratch SQLite under /tmp>` as before, or
+`E2E_DATABASE_URL=postgres://…@localhost:…/<db>` when the server under test runs on a local Postgres (`CLINFORMS_DB=postgres`,
+e.g. the Docker `k2-pg` database – loopback hosts only, a server database is refused). Write that SQL portably (`?`
+placeholders, quote `"user"`, `ON CONFLICT … DO UPDATE` with the table name on the right, no SQLite-only functions).
+`npm run pms:seed-demo` accepts such a local Postgres too (loopback `DATABASE_URL` with `DATABASE_SSL=disable`).
+
 | Script | Flow |
 |---|---|
 | `lib.cjs` | Shared helpers: browser profile, console/network error capture, downloads |

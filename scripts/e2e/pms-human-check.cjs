@@ -22,6 +22,7 @@ const { chromium } = require("playwright");
 const BASE = process.env.BASE || "http://localhost:3246";
 const OUT = process.env.E2E_OUT || path.resolve(__dirname, "../../.e2e-out/pms-human-check");
 const SQLITE = process.env.SQLITE_PATH || process.env.CLINFORMS_SQLITE_PATH || "";
+const { openScratchDb } = require("./scratch-db.cjs"); // SQLITE_PATH, or E2E_DATABASE_URL (a local Postgres)
 const CLINIC = process.env.CLINIC_SLUG || "riverside-demo";
 const RUN = crypto.randomBytes(3).toString("hex");
 
@@ -45,9 +46,7 @@ function assert(cond, msg) {
 
 /** Read-only look at the scratch database. */
 function bookingByReference(reference) {
-  if (!SQLITE || !/^\/(private\/)?(tmp|var\/folders)\//.test(SQLITE)) throw new Error("SQLITE_PATH must be a scratch database under /tmp");
-  const { DatabaseSync } = require("node:sqlite");
-  const db = new DatabaseSync(SQLITE, { readOnly: true });
+  const db = openScratchDb({ readOnly: true });
   try {
     return db.prepare("SELECT a.id, a.source FROM pms_online_bookings b JOIN pms_appointments a ON a.tenant_id = b.tenant_id AND a.id = b.appointment_id WHERE b.tenant_id = ? AND b.reference = ?").get(CLINIC, reference);
   } finally {
@@ -110,7 +109,7 @@ async function widgetIn(page) {
       await phone.waitForSelector("h1:has-text(\"You're booked\")", { timeout: 30000 });
       const ref = ((await phone.locator("main").innerText()).match(/Ref ([A-Z0-9-]+)/) || [])[1];
       assert(ref, "a booking reference");
-      if (SQLITE) assert(bookingByReference(ref), "the booking is in the diary");
+      if (SQLITE || process.env.E2E_DATABASE_URL) assert(bookingByReference(ref), "the booking is in the diary");
       await shot("375-booked");
     });
 

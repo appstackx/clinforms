@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
-import { applyTarget, appUrl, CliError, parseArgs, requireYesForProduction, resolveTarget, safeExportDir } from "./cli";
+import { applyTarget, appUrl, CliError, isLoopbackPostgres, parseArgs, requireYesForProduction, resolveTarget, safeExportDir } from "./cli";
 
 describe("admin script helpers", () => {
   it("parses --flag value and boolean flags", () => {
@@ -70,5 +70,24 @@ describe("admin:create-clinic never sends email (24/10/2026)", () => {
     assert.match(source, /sendEmail: false/);
     assert.match(source, /not sent \(this command never sends email\)/);
     assert.equal((source.match(/created\.inviteLink/g) ?? []).length, 1, "printed in one place");
+  });
+});
+
+describe("isLoopbackPostgres (a Postgres on this machine counts as local)", () => {
+  const pg = (url: string, ...ssl: [string?]) => ({ CLINFORMS_DB: "postgres", DATABASE_URL: url, DATABASE_SSL: ssl.length ? ssl[0] : "disable" });
+  it("accepts a loopback host with TLS explicitly off", () => {
+    assert.equal(isLoopbackPostgres(pg("postgres://postgres:x@localhost:55432/k2")), true);
+    assert.equal(isLoopbackPostgres(pg("postgresql://postgres:x@127.0.0.1:55432/k2")), true);
+    assert.equal(isLoopbackPostgres(pg("postgres://postgres:x@[::1]:55432/k2")), true);
+  });
+  it("refuses server databases and anything ambiguous", () => {
+    assert.equal(isLoopbackPostgres(pg("postgres://postgres.ref:x@aws-0-eu-west-2.pooler.supabase.com:5432/postgres")), false);
+    assert.equal(isLoopbackPostgres(pg("postgres://postgres:x@db.ref.supabase.co:5432/postgres")), false);
+    assert.equal(isLoopbackPostgres(pg("postgres://postgres:x@localhost:55432/k2", "verify-full")), false, "TLS on = treat as a server");
+    assert.equal(isLoopbackPostgres(pg("postgres://postgres:x@localhost:55432/k2", undefined)), false, "DATABASE_SSL must be explicit");
+    assert.equal(isLoopbackPostgres(pg("postgres://postgres:x@localhost.example.com:5432/k2")), false);
+    assert.equal(isLoopbackPostgres(pg("postgres://postgres:x@localhost:55432/k2?host=db.ref.supabase.co")), false);
+    assert.equal(isLoopbackPostgres({ ...pg("postgres://postgres:x@localhost:55432/k2"), CLINFORMS_DB: "sqlite" }), false);
+    assert.equal(isLoopbackPostgres(pg("not a url")), false);
   });
 });

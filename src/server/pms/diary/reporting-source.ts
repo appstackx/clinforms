@@ -14,7 +14,8 @@
  * practitioner worked) and less the practitioner's blocked time (leave, meetings, training…). Booked time is
  * clipped the same way, so it never passes the available time (utilisation ≤ 100 %).
  */
-import { PostgresAdapter, sql, type Kysely, type RawBuilder } from "kysely";
+import { sql, type Kysely, type RawBuilder } from "kysely";
+import { isPostgresDb } from "../../db/dialect-kind";
 import type { Database } from "../../db/schema";
 import type { AppointmentFact, AppointmentOutcome, AttendedPatientsFact, AvailabilityFact, VisitFact } from "../../../modules/pms/reporting/facts";
 import { dayUtilisation, type Interval } from "../../../modules/pms/reporting/intervals";
@@ -24,9 +25,9 @@ import { assertTenantId, num, type RepoContext } from "../../repos/pms/context";
 import { availabilityWindows } from "../../repos/pms/diary/availability";
 import type { DiaryReportingSource, ReportingQuery } from "../reporting/sources";
 
-/** Is this database Postgres (PGlite in tests)? SQLite and D1 otherwise. */
+/** Is this database Postgres (PGlite in tests)? SQLite and D1 otherwise. (Not instanceof: see db/dialect-kind.ts.) */
 export function isPostgres(db: Kysely<Database>): boolean {
-  return db.getExecutor().adapter instanceof PostgresAdapter;
+  return isPostgresDb(db);
 }
 
 /** Minutes between starts_at and ends_at (stored as timestamptz on Postgres, ISO text on SQLite / D1). */

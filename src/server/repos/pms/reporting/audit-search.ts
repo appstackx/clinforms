@@ -5,6 +5,7 @@
  * keyset pages.
  */
 import { sql } from "kysely";
+import { byteOrder } from "../../../db/collation";
 import type { AuditEntry } from "../../audit";
 import { RepoInputError, assertTenantId, parseJson, type DbContext } from "../../context";
 
@@ -67,7 +68,11 @@ export async function searchAudit(ctx: DbContext, tenantId: string, search: Audi
     if (search.lowerId) q = q.where("id", ">=", search.lowerId);
     if (search.upperId) q = q.where("id", "<", search.upperId);
     if (search.actions && search.actions.length > 0) q = q.where("action", "in", [...search.actions]);
-    if (search.actionPrefix) q = q.where("action", ">=", search.actionPrefix).where("action", "<", prefixEnd(search.actionPrefix));
+    if (search.actionPrefix) {
+      // A byte-order range: on Supabase's en_US collation "pms.closure.create" sorts AFTER "pms.closure/".
+      const action = byteOrder(ctx.db, "action");
+      q = q.where(action, ">=", search.actionPrefix).where(action, "<", prefixEnd(search.actionPrefix));
+    }
     if (search.userId) q = q.where("user_id", "=", search.userId);
     if (search.targetType) q = q.where("target_type", "=", search.targetType);
     if (search.targetId) q = q.where("target_id", "=", search.targetId);
