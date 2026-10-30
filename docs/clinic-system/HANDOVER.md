@@ -1,5 +1,8 @@
 # K2 clinic system – handover
 
+> **30/10/2026 – next account: read `~/Projects/Appstackx/bh2-handover/START-HERE.md` first** (one page: production now on Supabase, local test setup, open items), then §21 and §22 below.
+
+
 > **Read §22 (30/10/2026 – latest):** K2 proven on Postgres 17 (Supabase-like, en_US.UTF-8): every e2e script, the
 > chain and the 50k perf run on Postgres; two Postgres-only bugs fixed (audit area filter under en_US; dialect detection
 > across kysely instances). Production migrations now go to **Supabase** (`db:migrate`), not D1 – see
