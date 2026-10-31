@@ -14,7 +14,8 @@ import { COMPANY } from "@/lib/site";
  *   (no live provider in this build – outbox only); card payments: src/server/pms/billing/payments (test mode only,
  *   off by default); human check: src/server/pms/portal/human-check.ts (off until its keys are set);
  * - the Reports add-on's drafting service: ClinForms' own (src/modules/medreport);
- * - no analytics and no demo video on this brand's hosts (src/lib/brand.ts analytics: false).
+ * - no analytics on this brand's hosts (src/lib/brand.ts analytics: false); the tour video at /tour plays from the
+ *   media host only when pressed (src/app/clindesk-site/tour/tour-player.tsx, src/lib/clindesk-site/tour-video.ts).
  * Open points are fill-ins (content/clindesk-site.json), shown as "[to confirm]" until Khuram fills them in.
  */
 export const metadata = clindeskMetadata({
@@ -85,6 +86,15 @@ export default function ClindeskPrivacyPage() {
             ],
             [
               <>
+                <strong>Tour video plays</strong> (only if you play or download our{" "}
+                <a href="/tour">3-minute tour</a>): your IP address, browser details, the time and the file requested
+              </>,
+              "To deliver the tour video to you and keep it available",
+              "Legitimate interests (showing our product to people who choose to watch it)",
+              "We keep no copy. Our media delivery provider keeps its own records of requests for a limited period",
+            ],
+            [
+              <>
                 <strong>Demo requests:</strong> your name, clinic or group name, work email, phone number (optional),
                 number of sites and practitioners, your current system (optional) and what you would like to see
               </>,
@@ -122,6 +132,15 @@ export default function ClindeskPrivacyPage() {
         <p>
           We do not sell personal data, we do not use it for advertising, and we do not make decisions about anyone based
           solely on automated processing that have legal or similarly significant effects. This website uses no analytics.
+        </p>
+        <h3 id="tour-video">The tour video</h3>
+        <p>
+          Our <a href="/tour">3-minute tour</a> is kept in the EU by our media delivery provider and played from
+          media.clinforms.co.uk. Opening the page loads nothing from that provider: the poster image comes from this
+          website, and the video is fetched only when you press play or choose a chapter (or download the file); the
+          captions file only if you turn captions on. That request, like any request for a web page, carries your IP
+          address and the details your browser sends with it, such as its type and language. It carries no cookies, the
+          video sets none, and we do not ask who you are.
         </p>
 
         <h2 id="clinic-data">4. Information we process for clinics</h2>
@@ -200,6 +219,10 @@ export default function ClindeskPrivacyPage() {
             <strong>Application hosting</strong> – runs the website and the application (London region).
           </li>
           <li>
+            <strong>Media delivery</strong> – keeps our tour video in the EU and delivers it when a visitor presses play
+            on the tour page. It receives no clinic data and no account data.
+          </li>
+          <li>
             <strong>Database and file storage</strong> – stores clinic data, with free text encrypted at rest (stored in{" "}
             <Fill k="security.region" />
             ).
@@ -244,6 +267,12 @@ export default function ClindeskPrivacyPage() {
         </p>
         <p>
           Optional services: <Fill k="legal.providerLocations" />.
+        </p>
+        <p>
+          The tour video is kept in the EU. When you play it, it is delivered from our media delivery provider&rsquo;s
+          global network, usually from a data centre near you, which may be outside the UK and the EU. The provider is
+          based in the United States, and its records of requests may be kept there; as with our other providers, that
+          transfer is protected as described above.
         </p>
 
         <h2 id="rights">7. Your rights</h2>

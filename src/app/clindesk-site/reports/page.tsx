@@ -5,6 +5,8 @@ import { CtaBand } from "@/components/clindesk/cta-band";
 import { Fill } from "@/components/clindesk/fill";
 import { Drawing } from "@/components/clindesk/drawing";
 import { SitePage } from "@/components/clindesk/site-page";
+import { TourLink } from "@/components/clindesk/tour-link";
+import { TOUR_CHAPTERS, formatTourTime, tourChapterHref } from "@/lib/clindesk-site/tour-video";
 import "@/components/clindesk/styles/reports.css";
 
 /**
@@ -56,6 +58,9 @@ export default function ReportsPage() {
   );
 }
 
+/** The tour's Reports chapter ("11:40 · ClinDesk Reports – powered by ClinForms"): the hero links straight to it. */
+const REPORTS_CHAPTER = TOUR_CHAPTERS.find((c) => c.clock === "11:40") ?? TOUR_CHAPTERS[0];
+
 /** 1 · Hero */
 function Hero() {
   return (
@@ -79,6 +84,11 @@ function Hero() {
             <a className="btn btn-outline" href="/pricing">See pricing <span className="arr" aria-hidden="true">→</span></a>
           </div>
           <p className="small rp-price">Add-on to any {CLINIC_SYSTEM_NAME} plan · <Fill k="reports.price" /></p>
+          <p className="rp-tour">
+            <TourLink href={tourChapterHref(REPORTS_CHAPTER)}>
+              Watch Reports in the 3-minute tour (from {formatTourTime(REPORTS_CHAPTER.at)})
+            </TourLink>
+          </p>
         </div>
         <div className="rp-hero-art">
           <span className="rp-plane" aria-hidden="true" />

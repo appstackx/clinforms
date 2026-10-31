@@ -198,6 +198,10 @@ html:has(.cd-site) { scroll-padding-top: 96px; }
 .cd-site .print img { display: block; width: 100%; height: auto; }
 .cd-site .print:hover { translate: 0 -4px; }
 .cd-site .print-tape { left: -30px; top: -6px; --w: 124px; --h: 32px; --rotate: -36deg; z-index: 2; }
+/* ---------- the "Watch the 3-minute tour" link (home hero, Reports page) ---------- */
+.cd-site .tour-link { display: inline-flex; align-items: center; gap: 10px; }
+.cd-site .tour-link-dot { display: inline-grid; place-items: center; flex: none; width: 28px; height: 28px; border-radius: 50%; background: var(--tape-coral); color: #fff; }
+.cd-site .tour-link-dot svg { width: 13px; height: 13px; margin-left: 2px; fill: currentColor; }
 /* ---------- final call to action ---------- */
 .cd-site .cta { padding-block: 96px; overflow: hidden; }
 .cd-site .cta-inner { align-items: center; }

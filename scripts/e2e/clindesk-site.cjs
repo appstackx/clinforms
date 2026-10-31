@@ -40,6 +40,7 @@ const PAGES = [
   ["security", "/security"],
   ["demo", "/demo"],
   ["demo-thanks", "/demo/thanks"],
+  ["tour", "/tour"],
   ["privacy", "/privacy"],
   ["terms", "/terms"],
   ["cookies", "/cookies"],
@@ -202,7 +203,9 @@ function normalise(html) {
           const facts = await checkPage(page, `${p}@${width}`);
           const canonicalPath = p === "/" ? "https://clindesk.co.uk/" : `https://clindesk.co.uk${p}`;
           assert(facts.canonical === canonicalPath || facts.canonical === canonicalPath.replace(/\/$/, ""), `canonical ${facts.canonical}`);
-          assert(facts.ogImage === "https://clindesk.co.uk/clindesk/og.png", `og:image ${facts.ogImage}`);
+          // /tour's link preview is the tour's own title card (on the media host); every other page has the site's card.
+          const ogImage = p === "/tour" ? "https://media.clinforms.co.uk/clindesk/tour/2026-10-31/clindesk-tour-share.png" : "https://clindesk.co.uk/clindesk/og.png";
+          assert(facts.ogImage === ogImage, `og:image ${facts.ogImage}`);
           assert(facts.icon === "/clindesk/favicon.svg", `icon ${facts.icon}`);
           if (p === "/demo/thanks") assert(/noindex/.test(facts.robots || ""), `thanks robots ${facts.robots}`);
           else assert(facts.robots === "index, follow", `robots ${facts.robots}`);
@@ -230,7 +233,7 @@ function normalise(html) {
       const robots = await (await page.goto(`${SITE}/robots.txt`)).text();
       assert(/Sitemap: https:\/\/clindesk\.co\.uk\/sitemap\.xml/.test(robots) && /Disallow: \/app/.test(robots), robots);
       const sitemap = await (await page.goto(`${SITE}/sitemap.xml`)).text();
-      assert((sitemap.match(/<loc>/g) || []).length === 11 && !/clinforms/.test(sitemap), "ClinDesk sitemap");
+      assert((sitemap.match(/<loc>/g) || []).length === 12 && !/clinforms/.test(sitemap), "ClinDesk sitemap");
       for (const host of [SITE, BASE]) {
         for (const p of ["/clindesk-site", "/clindesk-site/features", "/clindesk-site/demo/thanks"]) {
           const res = await page.goto(`${host}${p}`);

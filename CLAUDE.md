@@ -212,6 +212,7 @@ Empty `.env.local` = demo mode, SQLite/none (fine for most work). `npm run demo:
 | `src/modules/medreport/forms/` | Word/PDF outline, fill, convert (LibreOffice locally only) |
 | `src/app/(marketing)`, `src/lib/site.ts` | Public site, legal pages; `COMPANY` (company number/ICO unset → lines hidden) |
 | `src/lib/site/demo-video.ts` | `/demo`: single source for the video (media URLs `media.clinforms.co.uk/demo/<date>/`, never overwritten; chapters, transcript, end card); tests `demo-video.test.ts` + `scripts/e2e/demo-video.cjs` |
+| `src/lib/clindesk-site/tour-video.ts` | ClinDesk `/tour` (clindesk.co.uk): single source for the 3:01 tour video (media `media.clinforms.co.uk/clindesk/tour/<date>/`, never overwritten; 720p default + 1080p; captions burned in, VTT track off by default; chapters, transcript); poster same-origin `public/clindesk/tour/`; tests `tour-video.test.ts` + `scripts/e2e/clindesk-tour.cjs` |
 | `src/server/{auth,db,crypto,repos,store,cron,email,admin}` | Production server: Better Auth, Kysely data layer, AES-GCM, repositories, retention cron |
 | `workers/data-gateway/` | Gateway Worker `clinforms-data` (pinned wrangler; D1 bindings) |
 | `db/migrations/sqlite/`, `supabase/migrations/` | D1/SQLite migrations `0001`–`0005` (applied on prod 10/10); Postgres twins for Supabase later |
