@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# CLINFORMS MAILERSEND ACCOUNT ONLY (clinforms.co.uk). Do NOT paste ClinDesk's token here: ClinDesk (clindesk.co.uk)
+# has its own, separate MailerSend account, whose token goes in MAILERSEND_API_KEY_CLINIC – set separately, never
+# with this script (docs/auth.md §4).
+#
 # Sets the MailerSend API token for ClinForms: in the private secrets file
 # (~/.config/appstackx/clinforms.secrets.env, as PRODUCTION_MAILERSEND_API_KEY) and in Vercel
 # (production + preview, as MAILERSEND_API_KEY, sensitive). The token is read with hidden input
@@ -6,6 +10,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
+echo "This sets the token of the ClinForms MailerSend account (clinforms.co.uk) only – not ClinDesk's."
 printf 'Paste the MailerSend API token for clinforms.co.uk (input is hidden), then press Enter: '
 IFS= read -rs KEY
 echo
