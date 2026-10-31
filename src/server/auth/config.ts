@@ -187,3 +187,33 @@ export function safeNextPath(value: unknown, fallback = "/app"): string {
   if (value === "/app" || value.startsWith("/app/") || value.startsWith("/app?") || value.startsWith("/accept-invite?")) return value;
   return fallback;
 }
+
+/**
+ * The origins a state-changing browser request to this app may come from (the origin/CSRF checks outside Better
+ * Auth: the clinic system's route handlers, src/server/pms/http.ts, and the public request forms,
+ * src/server/site/request.ts): exactly the origins sign-in trusts – the primary origin (BETTER_AUTH_URL), the other
+ * brand origins (CLINFORMS_AUTH_ORIGINS) and, on a preview, this deployment's own hostnames. Never derived from the
+ * request (on `next start` the request URL names the server's own localhost:<port>, whatever host the browser
+ * used; Host is client-controlled on a self-hosted server). A configuration error = no origin at all (sign-in
+ * refuses to start in that state too).
+ */
+export function allowedAppOrigins(env: Env = process.env): string[] {
+  try {
+    return trustedOriginsOf(baseUrlSetting(env));
+  } catch {
+    return [];
+  }
+}
+
+/** Whether an Origin header names one of allowedAppOrigins (a missing, "null" or malformed Origin never does). */
+export function isAllowedAppOrigin(origin: string | null | undefined, env: Env = process.env): boolean {
+  if (!origin || origin.trim() === "" || origin.trim() === "null") return false;
+  let parsed: URL;
+  try {
+    parsed = new URL(origin.trim());
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return false;
+  return allowedAppOrigins(env).includes(parsed.origin);
+}

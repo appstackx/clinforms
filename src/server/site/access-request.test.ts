@@ -245,7 +245,7 @@ describe("helpers", () => {
 });
 
 describe("POST /api/access-requests", () => {
-  const ENV_KEYS = ["CLINFORMS_DB", "CLINFORMS_SQLITE_PATH", "MAILERSEND_API_KEY", "MAILERSEND_FROM_EMAIL", "VERCEL"] as const;
+  const ENV_KEYS = ["CLINFORMS_DB", "CLINFORMS_SQLITE_PATH", "MAILERSEND_API_KEY", "MAILERSEND_FROM_EMAIL", "VERCEL", "BETTER_AUTH_URL"] as const;
   const saved: Partial<Record<(typeof ENV_KEYS)[number], string | undefined>> = {};
 
   beforeEach(async () => {
@@ -304,6 +304,8 @@ describe("POST /api/access-requests", () => {
 
   test("answers 503 (not 500) when the database is not configured", async () => {
     process.env.VERCEL = "1";
+    // A deployment always has its own origin (the origin check accepts exactly the app's origins – BETTER_AUTH_URL here).
+    process.env.BETTER_AUTH_URL = "http://localhost:3000";
     delete process.env.CLINFORMS_DB;
     const { POST } = await import("@/app/api/access-requests/route");
     const res = await POST(post(JSON.stringify(VALID)));

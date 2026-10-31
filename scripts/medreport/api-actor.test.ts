@@ -844,6 +844,35 @@ describe("request hardening", () => {
     assert.equal((await call(handleConnectorsList, "/connectors", { headers: { origin: "https://evil.example" } })).status, 200);
   });
 
+  test("the other brand origins (CLINFORMS_AUTH_ORIGINS, e.g. clindesk.co.uk) pass the origin check; anything else is still refused", async () => {
+    const body = { report: reportOf("demo"), form: DEMO_FORM };
+    const validate = (origin: string) => call(handleValidate, "/validate", { bearer: demoSessionToken(), body, headers: { origin } });
+    const saved = { a: process.env.CLINFORMS_AUTH_ORIGINS, v: process.env.VERCEL };
+    try {
+      // Not configured: the clinic brand's host is just another site.
+      await expectProblem(await validate("https://clindesk.co.uk"), 403, "ORIGIN_NOT_ALLOWED");
+      process.env.CLINFORMS_AUTH_ORIGINS = " https://clindesk.co.uk , http://clinic.localhost:3180 ";
+      assert.equal((await validate("https://clindesk.co.uk")).status, 200, "the clinic brand's production origin");
+      assert.equal((await validate("http://clinic.localhost:3180")).status, 200, "the clinic brand's local origin");
+      assert.equal((await validate("https://clinforms.test")).status, 200, "APP_ORIGIN still");
+      await expectProblem(await validate("https://evil.example"), 403, "ORIGIN_NOT_ALLOWED");
+      await expectProblem(await validate("https://clindesk.co.uk.evil.example"), 403, "ORIGIN_NOT_ALLOWED");
+      await expectProblem(await validate("http://clindesk.co.uk"), 403, "ORIGIN_NOT_ALLOWED");
+      // A value with a path is not an origin: skipped.
+      process.env.CLINFORMS_AUTH_ORIGINS = "https://clindesk.co.uk/app";
+      await expectProblem(await validate("https://clindesk.co.uk"), 403, "ORIGIN_NOT_ALLOWED");
+      // A preview without BETTER_AUTH_URL ignores it, exactly as sign-in does.
+      process.env.CLINFORMS_AUTH_ORIGINS = "https://clindesk.co.uk";
+      process.env.VERCEL = "1";
+      await expectProblem(await validate("https://clindesk.co.uk"), 403, "ORIGIN_NOT_ALLOWED");
+    } finally {
+      if (saved.a === undefined) delete process.env.CLINFORMS_AUTH_ORIGINS;
+      else process.env.CLINFORMS_AUTH_ORIGINS = saved.a;
+      if (saved.v === undefined) delete process.env.VERCEL;
+      else process.env.VERCEL = saved.v;
+    }
+  });
+
   test("a JSON body must be sent as JSON (415 UNSUPPORTED_MEDIA_TYPE otherwise)", async () => {
     const body = { report: reportOf("demo"), form: DEMO_FORM };
     await expectProblem(
