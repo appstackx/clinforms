@@ -1,12 +1,16 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
+import { AdsRouteGuard } from "@/components/ads/ads-route-guard";
 import { AnalyticsProvider } from "@/components/analytics/analytics-provider";
 import { ConsentBanner } from "@/components/consent/consent-banner";
 import { SITE_URL } from "@/lib/site";
 import { PRODUCT } from "@/modules/medreport/config.public";
 import "./globals.css";
 
-/** Self-hosted by next/font at build time: no font request to a third party from the browser. */
+/**
+ * Self-hosted by next/font at build time: no font request to a third party from the browser. (The public website
+ * pages can load the advertising measurement tag after consent – src/components/ads; nothing else here does.)
+ */
 const inter = Inter({
   subsets: ["latin"],
   variable: "--font-inter",
@@ -44,11 +48,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en-GB" className={inter.variable}>
       <body className="min-h-screen bg-background font-sans antialiased">
-        {/* Cookie choices (never shown in the app or the demo) – first in the tab order while shown – then the page and
-            consent-gated analytics. */}
+        {/* Cookie choices (never shown in the app or the demo; ClinDesk's hosts mount their own in the site layout) – first
+            in the tab order while shown – then the page, consent-gated analytics, and the guard that keeps the public
+            pages' advertising tag out of every other page. */}
         <ConsentBanner />
         {children}
         <AnalyticsProvider />
+        <AdsRouteGuard />
       </body>
     </html>
   );

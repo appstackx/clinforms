@@ -36,8 +36,13 @@ export interface Brand {
   publicSite: "clinforms" | "clindesk";
   /** Canonical origin of this brand's public website (canonical links, sitemap, robots). */
   siteUrl: string;
-  /** Whether the consent-gated analytics may run on this brand's hosts (ClinDesk: no analytics, no cookie banner). */
+  /** Whether the consent-gated product analytics may run on this brand's hosts (ClinDesk: no product analytics). */
   analytics: boolean;
+  /**
+   * Whether the consent-gated advertising measurement tag (src/components/ads/google-ads.ts) may load on this brand's
+   * PUBLIC website pages – never in the app, the demo, the sign-in or patient pages. Both brands: yes.
+   */
+  ads: boolean;
   /** Where a signed-in member lands. */
   appHome: string;
 }
@@ -51,6 +56,7 @@ export const BRANDS: Readonly<Record<BrandId, Brand>> = {
     publicSite: "clinforms",
     siteUrl: "https://clinforms.co.uk",
     analytics: true,
+    ads: true,
     appHome: "/app",
   },
   clinic: {
@@ -61,6 +67,7 @@ export const BRANDS: Readonly<Record<BrandId, Brand>> = {
     publicSite: "clindesk",
     siteUrl: "https://clindesk.co.uk",
     analytics: false,
+    ads: true,
     appHome: "/app/clinic",
   },
 };

@@ -5,6 +5,8 @@ import {
   CONSENT_COOKIE,
   CONSENT_MAX_AGE_SECONDS,
   CONSENT_VERSION,
+  adsAllowed,
+  adsAllowedOnHost,
   analyticsAllowed,
   consentCookieString,
   optOutSignalled,
@@ -15,32 +17,40 @@ import {
 } from "./consent";
 import { showsConsentBanner } from "../../lib/site";
 
-test("a choice round-trips through the cookie value", () => {
+test("a choice round-trips through the cookie value (analytics and advertising, each yes/no)", () => {
   for (const analytics of [true, false]) {
-    const choice = { version: CONSENT_VERSION, analytics, date: "2026-10-09" };
-    const value = serializeConsent(choice);
-    assert.match(value, /^v1\.a[01]\.20261009$/);
-    assert.deepEqual(parseConsent(value), choice);
+    for (const ads of [true, false]) {
+      const choice = { version: CONSENT_VERSION, analytics, ads, date: "2026-10-31" };
+      const value = serializeConsent(choice);
+      assert.equal(value, `v2.a${analytics ? 1 : 0}.m${ads ? 1 : 0}.20261031`);
+      assert.deepEqual(parseConsent(value), choice);
+    }
   }
 });
 
+test("a version-1 choice (analytics only, before advertising existed) counts as no choice: everyone is asked again", () => {
+  assert.equal(CONSENT_VERSION, 2);
+  assert.equal(parseConsent("v1.a1.20261009"), null);
+  assert.equal(parseConsent("v1.a0.20261009"), null);
+});
+
 test("malformed, foreign or older-version values are treated as no choice", () => {
-  for (const value of [undefined, null, "", "yes", "v1.a2.20261009", "v1.a1.2026109", "v0.a1.20261009", "v2.a1.20261009", "v1.a1.20261399", "%E0%A4%A"]) {
+  for (const value of [undefined, null, "", "yes", "v2.a2.m0.20261009", "v2.a1.m2.20261009", "v2.a1.20261009", "v2.a1.m1.2026109", "v1.a1.m1.20261009", "v3.a1.m1.20261009", "v2.a1.m1.20261399", "%E0%A4%A"]) {
     assert.equal(parseConsent(value as string | null | undefined), null, String(value));
   }
 });
 
 test("the consent cookie is read from a Cookie header among other cookies", () => {
-  const header = `other=1; ${CONSENT_COOKIE}=v1.a0.20261001; clinforms.session_token=abc`;
-  assert.deepEqual(readConsentFromCookieString(header), { version: 1, analytics: false, date: "2026-10-01" });
+  const header = `other=1; ${CONSENT_COOKIE}=v2.a0.m1.20261001; clinforms.session_token=abc`;
+  assert.deepEqual(readConsentFromCookieString(header), { version: 2, analytics: false, ads: true, date: "2026-10-01" });
   assert.equal(readConsentFromCookieString("other=1"), null);
   assert.equal(readConsentFromCookieString(""), null);
 });
 
 test("the cookie is first-party, Lax, 6 months, and Secure on https", () => {
-  const choice = { version: CONSENT_VERSION, analytics: true, date: "2026-10-09" };
+  const choice = { version: CONSENT_VERSION, analytics: true, ads: false, date: "2026-10-09" };
   const secure = consentCookieString(choice, { secure: true });
-  assert.equal(secure, `${CONSENT_COOKIE}=v1.a1.20261009; Max-Age=${CONSENT_MAX_AGE_SECONDS}; Path=/; SameSite=Lax; Secure`);
+  assert.equal(secure, `${CONSENT_COOKIE}=v2.a1.m0.20261009; Max-Age=${CONSENT_MAX_AGE_SECONDS}; Path=/; SameSite=Lax; Secure`);
   assert.ok(!consentCookieString(choice, { secure: false }).includes("Secure"));
   assert.ok(!secure.toLowerCase().includes("domain="), "host-only cookie");
   assert.ok(CONSENT_MAX_AGE_SECONDS >= 180 * 86400 && CONSENT_MAX_AGE_SECONDS <= 183 * 86400);
@@ -55,8 +65,24 @@ test("Do Not Track and Global Privacy Control count as a refusal", () => {
   assert.equal(optOutSignalled({ globalPrivacyControl: true }), true);
 });
 
+test("advertising runs only with its own explicit yes and no opt-out signal, independently of analytics", () => {
+  const base = { version: 2, date: "2026-10-31" };
+  assert.equal(adsAllowed(null, {}), false);
+  assert.equal(adsAllowed({ ...base, analytics: true, ads: false }, {}), false);
+  assert.equal(adsAllowed({ ...base, analytics: false, ads: true }, {}), true);
+  assert.equal(analyticsAllowed({ ...base, analytics: false, ads: true }, {}), false);
+  assert.equal(adsAllowed({ ...base, analytics: true, ads: true }, { globalPrivacyControl: true }), false);
+  assert.equal(adsAllowed({ ...base, analytics: true, ads: true }, { doNotTrack: "1" }), false);
+});
+
+test("advertising measurement is offered on both brands' hosts", () => {
+  for (const host of ["clinforms.co.uk", "www.clinforms.co.uk", "localhost:3000", "clindesk.co.uk", "clinic.localhost:3180", "clinforms-abc.vercel.app"]) {
+    assert.equal(adsAllowedOnHost(host), true, host);
+  }
+});
+
 test("analytics runs only with an explicit yes and no opt-out signal", () => {
-  const yes = { version: 1, analytics: true, date: "2026-10-09" };
+  const yes = { version: 2, analytics: true, ads: false, date: "2026-10-09" };
   const no = { ...yes, analytics: false };
   assert.equal(analyticsAllowed(null, {}), false);
   assert.equal(analyticsAllowed(no, {}), false);

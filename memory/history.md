@@ -165,6 +165,11 @@ Times UTC from commits, file times, the production audit log and Vercel. Workflo
 | ~12:30 | Khuram: fix every issue before the email to Dell goes out → workflow bh-trial-fixes (wf_f6b079c8-f05): 6 fix branches → release/bh-trial-fixes, all 17 forms verified live, review, final |
 | ~13:50–14:45 | Packages + usage + demo clinics deployed (D71): preview migrations + browser smoke, production migrations + gates, main `2030885` (chain 751/338/115/83/189), deployment a5u2hvzvt Ready, packages set, test clinic appstackx-test + 17 forms |
 
+### Sat 2026-10-31 (desktop – Google Ads tracking build)
+| Time (UTC) | Event |
+|---|---|
+| ~21:00–23:30 | Google Ads conversion tracking built on `feat/google-ads-tracking` (D72): consent v2 + ClinDesk banner, tag only on public pages after Accept, conversion on both demo forms, per-route CSP, legal pages updated; route/layout inventory test + `scripts/e2e/google-ads.cjs` (14/14 local). Found: on local `next start` a ClinDesk server-action redirect renders the 404 page (Next fetches the target from localhost = ClinForms brand); on Vercel it fetches the request host – unverified on production |
+
 ## 2. Workflow runs (cloud; journals not preserved)
 | Run | Window | Purpose | Outcome |
 |---|---|---|---|

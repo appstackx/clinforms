@@ -1,6 +1,7 @@
 import { CLINIC_SYSTEM_NAME } from "@/lib/brand";
 import { CONTACT_EMAIL, clindeskMetadata } from "@/lib/clindesk/site";
 import { cssVars } from "@/components/clindesk/css-vars";
+import { DemoConversion } from "@/components/clindesk/demo-conversion";
 import { Fill } from "@/components/clindesk/fill";
 import { Drawing } from "@/components/clindesk/drawing";
 import { SitePage } from "@/components/clindesk/site-page";
@@ -23,6 +24,7 @@ export default function DemoThanksPage() {
     <SitePage current="other">
       <RequestReceived />
       <WhileYouWait />
+      <DemoConversion />
     </SitePage>
   );
 }

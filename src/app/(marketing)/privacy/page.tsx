@@ -83,6 +83,20 @@ export default function PrivacyPage() {
           ],
           [
             <>
+              <strong>Advertising measurement</strong> (only if you allow advertising cookies, and only on this
+              website&rsquo;s public pages): whether a visit followed a click on one of our Google adverts and whether it
+              led to a request for access, with the identifiers in Google&rsquo;s advertising cookies, your IP address
+              and browser details – never what you type in our forms, and never patient information
+            </>,
+            "To see which of our adverts lead to requests for access",
+            <>Consent – you can withdraw it at any time through &ldquo;Cookie settings&rdquo;</>,
+            <>
+              Google keeps this data under its own policy; the cookies on this website last up to 90 days (see the{" "}
+              <Link href="/cookies#advertising">cookie policy</Link>)
+            </>,
+          ],
+          [
+            <>
               <strong>Demo video plays</strong> (only if you play or download our{" "}
               <Link href="/demo">product demo</Link>): your IP address, browser details, the time and the file requested
             </>,
@@ -124,8 +138,10 @@ export default function PrivacyPage() {
         ]}
       />
       <p>
-        We do not sell personal data, we do not use it for advertising, and we do not make decisions about anyone based
-        solely on automated processing that have legal or similarly significant effects.
+        We do not sell personal data, and we do not make decisions about anyone based solely on automated processing that
+        have legal or similarly significant effects. Nothing you type in our forms, no account data and no patient
+        information is ever used for advertising; the only advertising use of personal data is the measurement above,
+        and only if you allow it.
       </p>
 
       <h3 id="demo-video">The demo video</h3>
@@ -205,6 +221,16 @@ export default function PrivacyPage() {
         available on request at <a href={`mailto:${email}`}>{email}</a>. We tell clinics before we add or replace a
         sub-processor that handles patient information, so they can object.
       </p>
+      <p id="advertising">
+        <strong>Advertising measurement</strong> – only for visitors who allow advertising cookies: Google (Google
+        Ireland Limited, and Google LLC in the United States) receives the measurement data in section 3 from this
+        website&rsquo;s public pages. Google acts as a separate controller for it and uses it under its own terms and
+        privacy policy – see{" "}
+        <a href="https://policies.google.com/technologies/partner-sites" rel="noopener noreferrer">
+          how Google uses information from sites that use its services
+        </a>
+        . It receives no clinic data, no account data and nothing you type in our forms.
+      </p>
 
       <h2 id="transfers">6. Where data is stored and international transfers</h2>
       <p>
@@ -219,6 +245,10 @@ export default function PrivacyPage() {
         based in the United States, and its records of requests may be kept there; as with our other providers, that
         transfer is protected as described above.
       </p>
+      <p>
+        If you allow advertising cookies, Google may process the measurement data in the United States and other
+        countries, under the safeguards its privacy policy describes.
+      </p>
 
       <h2 id="rights">7. Your rights</h2>
       <p>Under the UK GDPR you have the right to:</p>
@@ -228,7 +258,7 @@ export default function PrivacyPage() {
         <li>have your data erased, or its use restricted, in certain circumstances;</li>
         <li>object to our use of your data where we rely on legitimate interests;</li>
         <li>receive data you gave us in a portable format, in certain circumstances;</li>
-        <li>withdraw consent at any time, where we rely on consent (for analytics, use &ldquo;Cookie settings&rdquo;).</li>
+        <li>withdraw consent at any time, where we rely on consent (for analytics and advertising cookies, use &ldquo;Cookie settings&rdquo;).</li>
       </ul>
       <p>
         To use any of these rights, email <a href={`mailto:${email}`}>{email}</a>. We will reply within one month, and may
@@ -248,7 +278,8 @@ export default function PrivacyPage() {
 
       <h2 id="cookies">9. Cookies</h2>
       <p>
-        We use strictly necessary cookies and browser storage to run the site, and analytics only if you allow it. See our{" "}
+        We use strictly necessary cookies and browser storage to run the site, and analytics and advertising cookies only
+        if you allow them. See our{" "}
         <Link href="/cookies">cookie policy</Link>.
       </p>
 
