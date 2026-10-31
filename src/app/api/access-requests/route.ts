@@ -6,9 +6,8 @@
  */
 import "server-only";
 import { COMPANY } from "@/lib/site";
-import { getDb } from "@/server/db";
-import { getDataCipher } from "@/server/crypto";
 import type { RepoContext } from "@/server/repos/context";
+import { isSameOrigin, siteRepoContext } from "@/server/site/request";
 import { MAX_ACCESS_REQUEST_BYTES, clientIpFrom, hashClientIp, submitAccessRequest } from "@/server/site/access-request";
 import { mailerSendSettingsFromEnv, sendAccessRequestNotification } from "@/server/site/notify";
 
@@ -29,33 +28,8 @@ function log(event: string, detail: Record<string, unknown> = {}): void {
   console.info(JSON.stringify({ event, ...detail }));
 }
 
-/** Same-origin check: a browser always sends Origin on a cross-site POST; it must name this host. */
-function sameOrigin(req: Request): boolean {
-  const origin = req.headers.get("origin");
-  if (!origin) return true;
-  let originHost: string;
-  try {
-    originHost = new URL(origin).host;
-  } catch {
-    return false;
-  }
-  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? new URL(req.url).host;
-  return originHost === host.split(",")[0].trim();
-}
-
-/** Repository context for a table without encrypted columns: the data cipher is resolved only if used. */
-function siteRepoContext(): RepoContext {
-  const db = getDb();
-  return {
-    db,
-    get cipher() {
-      return getDataCipher();
-    },
-  };
-}
-
 export async function POST(req: Request): Promise<Response> {
-  if (!sameOrigin(req)) return json(403, { ok: false, error: "This form can only be sent from the ClinForms website." });
+  if (!isSameOrigin(req.headers, req.url)) return json(403, { ok: false, error: "This form can only be sent from the ClinForms website." });
   if (!(req.headers.get("content-type") ?? "").toLowerCase().startsWith("application/json")) {
     return json(415, { ok: false, error: "Send the form as JSON." });
   }

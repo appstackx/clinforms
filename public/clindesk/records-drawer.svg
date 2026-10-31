@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 360 340" width="360" height="340" aria-hidden="true">
+  <defs>
+    <rect id="cab" x="40" y="10" width="280" height="316" rx="8"/>
+    <rect id="d1" x="62" y="30" width="236" height="84" rx="5"/>
+    <rect id="d2" x="62" y="128" width="236" height="84" rx="5"/>
+    <rect id="d3" x="62" y="226" width="236" height="84" rx="5"/>
+    <rect id="lab" x="110" y="146" width="140" height="30" rx="3"/>
+    <rect id="body" x="158" y="198" width="44" height="40" rx="7"/>
+    <rect id="h1" x="150" y="62" width="60" height="12" rx="6"/>
+    <rect id="h3" x="150" y="258" width="60" height="12" rx="6"/>
+  </defs>
+  <g transform="translate(4 4)">
+    <use href="#d2" xlink:href="#d2" fill="#F6C34A"/>
+    <use href="#body" xlink:href="#body" fill="#F07A5A"/>
+  </g>
+  <g fill="none" stroke="#FBF4E8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <use href="#cab" xlink:href="#cab"/>
+    <use href="#d1" xlink:href="#d1"/>
+    <use href="#d2" xlink:href="#d2"/>
+    <use href="#d3" xlink:href="#d3"/>
+    <use href="#lab" xlink:href="#lab"/>
+    <use href="#h1" xlink:href="#h1"/>
+    <use href="#h3" xlink:href="#h3"/>
+    <path d="M166 186 H194 V192"/>
+    <path d="M166 198 V184 a14 14 0 0 1 28 0 V198"/>
+    <use href="#body" xlink:href="#body"/>
+    <path d="M180 212 v10"/>
+    <path d="M10 330 H350"/>
+  </g>
+</svg>

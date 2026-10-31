@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 600 400" width="600" height="400" aria-hidden="true">
+  <rect width="600" height="400" fill="#CFE7D8"/>
+  <defs>
+    <circle id="clock" cx="500" cy="78" r="46"/>
+    <rect id="front" x="46" y="282" width="508" height="140" rx="6"/>
+    <rect id="top" x="24" y="252" width="552" height="32" rx="9"/>
+    <path id="receipt" d="M190 118 V58 L198 50 L206 58 L214 50 L222 58 L230 50 L238 58 L246 50 L254 58 V118 Z"/>
+    <rect id="body" x="160" y="108" width="124" height="134" rx="18"/>
+    <rect id="screen" x="178" y="126" width="88" height="40" rx="6"/>
+    <rect id="cradle" x="144" y="234" width="156" height="18" rx="7"/>
+    <rect id="card" x="318" y="160" width="118" height="76" rx="10"/>
+    <circle id="roll" cx="490" cy="216" r="34"/>
+    <circle id="core" cx="490" cy="216" r="12"/>
+  </defs>
+  <g transform="translate(9 9)">
+    <use href="#clock" xlink:href="#clock" fill="#FBF4E8"/>
+    <use href="#front" xlink:href="#front" fill="#C4432B"/>
+    <use href="#top" xlink:href="#top" fill="#F6C34A"/>
+    <use href="#receipt" xlink:href="#receipt" fill="#FBF4E8"/>
+    <use href="#body" xlink:href="#body" fill="#0F3B35"/>
+    <use href="#cradle" xlink:href="#cradle" fill="#0F3B35"/>
+    <g transform="rotate(-12 377 198)"><use href="#card" xlink:href="#card" fill="#F3A9BA"/></g>
+    <use href="#roll" xlink:href="#roll" fill="#FBF4E8"/>
+  </g>
+  <use href="#screen" xlink:href="#screen" fill="#D3E7EF"/>
+  <use href="#core" xlink:href="#core" fill="#D3E7EF"/>
+  <g fill="none" stroke="#0F3B35" stroke-width="9" stroke-linecap="round" stroke-linejoin="round">
+    <use href="#clock" xlink:href="#clock" stroke-width="11"/>
+    <path stroke-width="10" d="M500 78 L509 98 M500 78 L529 61"/>
+    <circle cx="500" cy="78" r="5" fill="#0F3B35"/>
+    <use href="#front" xlink:href="#front"/>
+    <path stroke-width="6" d="M130 292 V412 M214 292 V412 M298 292 V412 M382 292 V412 M466 292 V412"/>
+    <use href="#top" xlink:href="#top"/>
+    <use href="#receipt" xlink:href="#receipt"/>
+    <path stroke-width="5" d="M204 76 H240 M204 92 H232 M204 106 H240"/>
+    <use href="#body" xlink:href="#body"/>
+    <use href="#screen" xlink:href="#screen" stroke-width="6"/>
+    <path stroke="#F6C34A" stroke-width="7" d="M190 146 H222"/>
+    <path stroke="#FBF4E8" stroke-width="12" d="M192 188 h2 M220 188 h2 M248 188 h2 M192 210 h2 M220 210 h2 M248 210 h2"/>
+    <use href="#cradle" xlink:href="#cradle"/>
+    <g transform="rotate(-12 377 198)">
+      <use href="#card" xlink:href="#card"/>
+      <rect x="336" y="182" width="28" height="22" rx="4" fill="#F6C34A" stroke-width="5"/>
+      <path stroke-width="5" d="M396 178 C404 186 404 198 396 206 M408 172 C420 184 420 200 408 212"/>
+      <path stroke-width="5" d="M336 220 H392"/>
+    </g>
+    <use href="#roll" xlink:href="#roll"/>
+    <use href="#core" xlink:href="#core" stroke-width="6"/>
+    <path stroke-width="5" d="M490 182 C518 182 528 210 516 230"/>
+  </g>
+</svg>

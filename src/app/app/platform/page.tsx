@@ -5,7 +5,8 @@ import { SubmitButton } from "@/components/account/form-controls";
 import { activityLabel, describeActivityDetail } from "@/lib/activity-copy";
 import { activityTime } from "@/server/admin/activity";
 import { requirePlatformAdmin } from "@/server/admin/guards";
-import { PACKAGE_LABELS } from "@/lib/brand";
+import { CLINIC_SYSTEM_NAME, PACKAGE_LABELS } from "@/lib/brand";
+import { accessRequestSource } from "@/server/site/demo-request";
 import {
   ACCESS_REQUESTS_SHOWN,
   listAccessRequestsForPlatform,
@@ -146,7 +147,7 @@ export default async function PlatformPage() {
 
         <Panel
           title={`Access requests (${open} not contacted)`}
-          description={`From the “Request access” form on the website, newest first${requests.length >= ACCESS_REQUESTS_SHOWN ? ` – the latest ${ACCESS_REQUESTS_SHOWN} are shown` : ""}. The daily retention job deletes requests older than 24 months.`}
+          description={`From the “Request access” form on the website and ${CLINIC_SYSTEM_NAME}’s “Book a demo” form (labelled ${CLINIC_SYSTEM_NAME} demo), newest first${requests.length >= ACCESS_REQUESTS_SHOWN ? ` – the latest ${ACCESS_REQUESTS_SHOWN} are shown` : ""}. The daily retention job deletes requests older than 24 months.`}
           className="mb-6"
         >
           {requests.length === 0 ? (
@@ -157,6 +158,11 @@ export default async function PlatformPage() {
                 <li key={r.id} className={`flex flex-wrap items-start justify-between gap-3 py-3 ${r.contactedAt ? "opacity-70" : ""}`}>
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-slate-900">
+                      {accessRequestSource(r.message) === "clindesk" ? (
+                        <span className="mr-2 inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 align-middle text-xs font-semibold text-amber-900 ring-1 ring-inset ring-amber-200">
+                          {CLINIC_SYSTEM_NAME} demo
+                        </span>
+                      ) : null}
                       {r.clinicName} <span className="font-normal text-slate-600">· {r.contactName}</span>
                     </p>
                     <p className="mt-0.5 break-words text-sm text-slate-600">

@@ -167,7 +167,7 @@ const invoiceIdOf = (url) => (url.match(/\/invoices\/([^/?#]+)/) || [])[1];
     await step("navigation: Billing for all three roles; the billing home shows the totals and the tabs", async () => {
       for (const page of [owner, reception, clinician]) {
         await page.goto(`${BASE}/app/clinic`);
-        const labels = await page.locator("nav[aria-label='Clinic system'] a").allInnerTexts();
+        const labels = await page.locator("nav[aria-label='ClinDesk'] a").allInnerTexts();
         assert(labels.some((l) => /^Billing$/.test(l.trim())), `Billing in nav: ${labels.join(", ")}`);
       }
       await owner.goto(BILLING);

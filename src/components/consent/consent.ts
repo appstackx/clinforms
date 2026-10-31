@@ -8,6 +8,7 @@
  *
  * Cookie value: `v1.a1.20261009` – version, analytics allowed (a1) or refused (a0), date of the choice.
  */
+import { brandForHost } from "@/lib/brand";
 
 export const CONSENT_COOKIE = "clinforms_consent";
 /** 6 months, in seconds (the cookie's Max-Age). */
@@ -137,5 +138,13 @@ export function onConsentManage(listener: () => void): () => void {
 
 /** Analytics is configured for this build (NEXT_PUBLIC_POSTHOG_KEY is inlined at build time). */
 export function analyticsConfigured(): boolean {
-  return Boolean(process.env.NEXT_PUBLIC_POSTHOG_KEY);
+  return Boolean(process.env.NEXT_PUBLIC_POSTHOG_KEY) && analyticsAllowedOnHost(typeof window === "undefined" ? null : window.location.host);
+}
+
+/**
+ * Whether this host's brand uses analytics at all (src/lib/brand.ts). ClinDesk's hosts do not: no banner, no
+ * analytics, and the cookie settings say the site does not use analytics. ClinForms' hosts are unchanged.
+ */
+export function analyticsAllowedOnHost(host: string | null): boolean {
+  return brandForHost(host).analytics;
 }

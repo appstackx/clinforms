@@ -1,0 +1,13 @@
+/* ClinDesk public site – the accessibility statement and the frame of the reused legal pages (not in the design
+   export; built from the site's own tokens and type, styles/site.css). Every selector sits under .cd-site. */
+.cd-site.site .lg-page { padding-block: 72px 96px; }
+.cd-site.site .lg-wrap { max-width: 920px; }
+.cd-site.site .lg-kicker { color: var(--muted); margin-bottom: 12px; }
+.cd-site.site .lg-updated { margin-top: 14px; margin-bottom: 28px; }
+.cd-site.site .lg-page .display-m { margin-top: 44px; margin-bottom: 12px; }
+.cd-site.site .lg-list { margin-top: 12px; padding-left: 1.2em; list-style: disc; display: flex; flex-direction: column; gap: 6px; }
+.cd-site.site .lg-org { margin-top: 40px; }
+@media (max-width: 767px) {
+  .cd-site.site .lg-page { padding-block: 48px 64px; }
+  .cd-site.site .lg-page .display-m { margin-top: 32px; }
+}

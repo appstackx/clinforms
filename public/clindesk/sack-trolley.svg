@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 440 500" width="440" height="500" aria-hidden="true">
+  <defs>
+    <rect id="b1" x="122" y="318" width="214" height="130" rx="6"/>
+    <rect id="b2" x="134" y="206" width="186" height="112" rx="6"/>
+    <rect id="b3" x="154" y="114" width="146" height="92" rx="6"/>
+    <rect id="t1" x="214" y="318" width="32" height="64" rx="3"/>
+    <rect id="t2" x="212" y="206" width="30" height="54" rx="3"/>
+    <rect id="t3" x="212" y="114" width="28" height="44" rx="3"/>
+    <rect id="toe" x="104" y="446" width="244" height="16" rx="6"/>
+    <circle id="wheel" cx="104" cy="444" r="44"/>
+    <circle id="hub" cx="104" cy="444" r="15"/>
+    <ellipse id="shadow" cx="228" cy="482" rx="200" ry="14"/>
+  </defs>
+  <use href="#shadow" xlink:href="#shadow" fill="#CFE7D8"/>
+  <g transform="translate(8 8)">
+    <use href="#b1" xlink:href="#b1" fill="#F6C34A"/>
+    <use href="#b2" xlink:href="#b2" fill="#D3E7EF"/>
+    <use href="#b3" xlink:href="#b3" fill="#F3A9BA"/>
+    <use href="#t1" xlink:href="#t1" fill="#C4432B"/>
+    <use href="#t2" xlink:href="#t2" fill="#C4432B"/>
+    <use href="#t3" xlink:href="#t3" fill="#C4432B"/>
+    <use href="#toe" xlink:href="#toe" fill="#0F3B35"/>
+    <use href="#wheel" xlink:href="#wheel" fill="#C4432B"/>
+    <use href="#hub" xlink:href="#hub" fill="#F6C34A"/>
+  </g>
+  <g fill="none" stroke="#0F3B35" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    <use href="#b1" xlink:href="#b1"/>
+    <use href="#b2" xlink:href="#b2"/>
+    <use href="#b3" xlink:href="#b3"/>
+    <use href="#t1" xlink:href="#t1"/>
+    <use href="#t2" xlink:href="#t2"/>
+    <use href="#t3" xlink:href="#t3"/>
+    <path d="M150 422 l14 -14 l14 14 M164 408 v28 M290 422 l14 -14 l14 14 M304 408 v28"/>
+    <path stroke-width="5" d="M156 300 H206 M260 290 H300"/>
+    <use href="#toe" xlink:href="#toe"/>
+    <path stroke-width="16" d="M112 444 L96 70 C 95 50 84 40 66 42"/>
+    <path stroke="#F6C34A" stroke-width="7" d="M110 412 L100 170"/>
+    <use href="#wheel" xlink:href="#wheel"/>
+    <use href="#hub" xlink:href="#hub"/>
+  </g>
+  <g fill="none" stroke-linecap="round">
+    <path stroke="#0F3B35" stroke-width="28" d="M70 42 L36 52"/>
+    <path stroke="#C4432B" stroke-width="15" d="M70 42 L36 52"/>
+  </g>
+</svg>

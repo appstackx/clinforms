@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 400 500" width="400" height="500" aria-hidden="true">
+  <rect width="400" height="500" fill="#D3E7EF"/>
+  <defs>
+    <rect id="ttop" x="-10" y="404" width="420" height="30" rx="8"/>
+    <rect id="tfront" x="20" y="434" width="360" height="80" rx="4"/>
+    <rect id="body" x="96" y="126" width="176" height="290" rx="28"/>
+    <rect id="screen" x="114" y="156" width="140" height="222" rx="12"/>
+    <rect id="cal" x="138" y="190" width="92" height="84" rx="9"/>
+    <rect id="calTop" x="138" y="190" width="92" height="24" rx="9"/>
+    <circle id="tick" cx="184" cy="324" r="24"/>
+    <path id="bubble" d="M232 34 H352 C366 34 376 44 376 58 V114 C376 128 366 138 352 138 H284 L256 166 L262 138 H232 C218 138 208 128 208 114 V58 C208 44 218 34 232 34 Z"/>
+    <path id="bell" d="M292 62 C276 62 268 74 268 90 V104 L260 114 H324 L316 104 V90 C316 74 308 62 292 62 Z"/>
+    <path id="pot" d="M306 340 H370 L362 404 H314 Z"/>
+    <path id="lf1" d="M336 342 C316 318 314 288 330 268 C350 288 352 318 336 342 Z"/>
+    <path id="lf2" d="M340 342 C344 312 364 296 384 298 C380 324 364 340 340 342 Z"/>
+  </defs>
+  <g transform="translate(8 8)">
+    <use href="#tfront" xlink:href="#tfront" fill="#C4432B"/>
+    <use href="#ttop" xlink:href="#ttop" fill="#F6C34A"/>
+    <use href="#body" xlink:href="#body" fill="#0F3B35"/>
+    <use href="#bubble" xlink:href="#bubble" fill="#F3A9BA"/>
+    <use href="#pot" xlink:href="#pot" fill="#0B6B65"/>
+    <use href="#lf1" xlink:href="#lf1" fill="#CFE7D8"/>
+    <use href="#lf2" xlink:href="#lf2" fill="#CFE7D8"/>
+  </g>
+  <use href="#screen" xlink:href="#screen" fill="#FBF4E8"/>
+  <use href="#cal" xlink:href="#cal" fill="#F6C34A"/>
+  <use href="#calTop" xlink:href="#calTop" fill="#C4432B"/>
+  <use href="#tick" xlink:href="#tick" fill="#0B6B65"/>
+  <use href="#bell" xlink:href="#bell" fill="#F6C34A"/>
+  <g fill="none" stroke="#0F3B35" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    <use href="#tfront" xlink:href="#tfront"/>
+    <path stroke-width="9" d="M196 456 V490"/>
+    <use href="#ttop" xlink:href="#ttop"/>
+    <use href="#body" xlink:href="#body"/>
+    <path stroke="#FBF4E8" stroke-width="6" d="M168 142 H200"/>
+    <use href="#screen" xlink:href="#screen" stroke-width="5"/>
+    <use href="#cal" xlink:href="#cal" stroke-width="6"/>
+    <path stroke-width="6" d="M162 182 V198 M206 182 V198"/>
+    <path stroke-width="8" d="M158 238 h2 M182 238 h2 M206 238 h2 M158 258 h2 M182 258 h2"/>
+    <path stroke="#C4432B" stroke-width="7" d="M204 254 l6 6 l12 -14"/>
+    <use href="#tick" xlink:href="#tick" stroke-width="6"/>
+    <path stroke="#FBF4E8" stroke-width="7" d="M172 324 l8 8 l16 -18"/>
+    <use href="#bubble" xlink:href="#bubble"/>
+    <use href="#bell" xlink:href="#bell" stroke-width="6"/>
+    <path stroke-width="6" d="M284 118 C286 126 298 126 300 118 M292 54 V62"/>
+    <path stroke-width="5" d="M246 70 C238 80 238 96 246 106 M338 70 C346 80 346 96 338 106"/>
+    <use href="#pot" xlink:href="#pot"/>
+    <use href="#lf1" xlink:href="#lf1"/>
+    <use href="#lf2" xlink:href="#lf2"/>
+  </g>
+</svg>

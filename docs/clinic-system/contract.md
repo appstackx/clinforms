@@ -40,23 +40,29 @@ ClinForms, switched on per clinic. Demo first (fictional data only); onboarding 
 
 ## 2. Product name, brands and domains
 
-- The clinic system's name is a **placeholder**: `CLINIC_SYSTEM_NAME = "Clinic system"` in **`src/lib/brand.ts`** – the
-  ONE constant. Import it; never type the name. Screens are labelled by what they do ("Diary", "Patients",
-  "Invoices"). `scripts/pms/contract.test.ts` fails on banned names in clinic-system files.
+- The clinic system's name is **ClinDesk**: `CLINIC_SYSTEM_NAME = "ClinDesk"` in **`src/lib/brand.ts`** – the ONE
+  constant (decided by Khuram, 30/10/2026; domain clindesk.co.uk). Import it; never type the name in code
+  (`scripts/pms/contract.test.ts` fails on a typed "ClinDesk" outside brand.ts, comments excepted, and on banned names
+  in clinic-system and ClinDesk-website files). Screens are labelled by what they do ("Diary", "Patients", "Invoices").
 - **Brand by host name, one config, no duplicated code** (`src/lib/brand.ts`):
-  - `clinforms.co.uk` (and previews, localhost): brand **ClinForms**. The public site is about reports. A clinic with
-    the `clinic` package sees "Clinic system" in its navigation and the clinic area at `/app/clinic`.
-  - A future second domain (e.g. `app.<newbrand>.co.uk`): add its host to `BRANDS.clinic.hosts` – same deployment,
-    same code, same pages and database. On that host the product name is the placeholder, `/` and the other public
-    pages redirect to sign-in (`src/middleware.ts`), and members land on `/app/clinic`. Locally:
-    `http://clinic.localhost:3180`. **Also add the host to the middleware matcher's host pattern** (`config.matcher`
-    in `src/middleware.ts`, written out because Next reads it statically): the public pages run the middleware ONLY
-    on an app-only brand's hosts, so ClinForms' public site never runs it (as on `main`).
-    `src/server/auth/middleware.test.ts` fails until the pattern and `BRANDS` agree.
-  - **Before a second domain goes live** (not in this sprint): Better Auth takes one base URL today, so sign-in on a
+  - `clinforms.co.uk` (and previews, localhost): brand **ClinForms**, `publicSite: "clinforms"`. The public site is
+    about reports and is byte-for-byte what it was (the middleware never runs on its pages; tests in
+    `src/server/site/clindesk-site.test.ts` and `scripts/e2e/clindesk-site.cjs`). A clinic with the `clinic` package
+    sees "ClinDesk" in its navigation and the clinic area at `/app/clinic`.
+  - `clindesk.co.uk` (+ `www.` → apex, `next.config.mjs` redirects): brand **clinic**, `publicSite: "clindesk"`,
+    `analytics: false`. Same deployment, code, app pages and database. The public paths (`/`, `/features`,
+    `/reports`, `/pricing`, `/switching`, `/security`, `/demo`, `/demo/thanks`, `/privacy`, `/terms`, `/cookies`,
+    `/accessibility`, `/robots.txt`, `/sitemap.xml`) are rewritten by `src/middleware.ts` to ClinDesk's website in
+    `src/app/clindesk-site` (static; `/clindesk-site/…` itself answers 404 on every host); `/request-access` → `/demo`;
+    `/app` stays protected and noindex; members land on `/app/clinic`. Locally: `http://clinic.localhost:3180`.
+    **A new host goes in `BRANDS` AND in the middleware matcher's host pattern** (written out because Next reads it
+    statically); `src/server/auth/middleware.test.ts` fails until they agree.
+  - The website's fill-ins (prices, terms, hosting, company details …) come only from `content/clindesk-site.json`
+    (zod-checked; see `docs/clinic-system/CLINDESK-SITE-CONTENT.md`).
+  - **Before clindesk.co.uk goes live** (M11 run-sheet): Better Auth takes one base URL today, so sign-in on the
     second host needs `trustedOrigins` + a per-request base URL (as for previews), invitation and reset links per
     brand, and a decision on whether one account spans both hosts (cookies are host-only: signing in on one host does
-    not sign you in on the other). The pages need nothing else.
+    not sign you in on the other). The website itself needs nothing else.
 - Server components get the request's brand with `currentBrand()` (`src/server/brand.ts`).
 
 ## 3. Modules, ownership and migration numbers

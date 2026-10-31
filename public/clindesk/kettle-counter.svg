@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 400 500" width="400" height="500" aria-hidden="true">
+  <rect width="400" height="500" fill="#D3E7EF"/>
+  <defs>
+    <rect id="ctop" x="-10" y="306" width="420" height="30" rx="8"/>
+    <rect id="door1" x="18" y="336" width="172" height="180" rx="4"/>
+    <rect id="door2" x="210" y="336" width="172" height="180" rx="4"/>
+    <rect id="plate" x="52" y="288" width="160" height="18" rx="6"/>
+    <path id="body" d="M76 288 L92 164 C94 150 104 144 116 144 H164 C176 144 186 150 188 164 L200 288 Z"/>
+    <path id="spout" d="M92 182 L56 150 L50 162 L88 214 Z"/>
+    <path id="lid" d="M106 144 C110 126 170 126 174 144 Z"/>
+    <rect id="mug" x="250" y="230" width="70" height="76" rx="10"/>
+    <rect id="tag" x="230" y="252" width="22" height="26" rx="3"/>
+    <rect id="jar" x="336" y="238" width="44" height="68" rx="8"/>
+  </defs>
+  <g fill="none" stroke="#0F3B35" stroke-width="3" opacity=".35">
+    <path d="M0 62 H400 M0 124 H400 M0 186 H400 M0 248 H400 M66 0 V306 M132 0 V306 M198 0 V306 M264 0 V306 M330 0 V306"/>
+  </g>
+  <g transform="translate(8 8)">
+    <use href="#door1" xlink:href="#door1" fill="#CFE7D8"/>
+    <use href="#door2" xlink:href="#door2" fill="#CFE7D8"/>
+    <use href="#ctop" xlink:href="#ctop" fill="#F6C34A"/>
+    <use href="#plate" xlink:href="#plate" fill="#0F3B35"/>
+    <use href="#spout" xlink:href="#spout" fill="#C4432B"/>
+    <use href="#body" xlink:href="#body" fill="#C4432B"/>
+    <use href="#lid" xlink:href="#lid" fill="#0F3B35"/>
+    <use href="#mug" xlink:href="#mug" fill="#F3A9BA"/>
+    <use href="#tag" xlink:href="#tag" fill="#F6C34A"/>
+    <use href="#jar" xlink:href="#jar" fill="#FBF4E8"/>
+  </g>
+  <g fill="none" stroke="#0F3B35" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    <use href="#door1" xlink:href="#door1"/>
+    <use href="#door2" xlink:href="#door2"/>
+    <path stroke-width="9" d="M168 376 V420 M232 376 V420"/>
+    <use href="#ctop" xlink:href="#ctop"/>
+    <use href="#plate" xlink:href="#plate"/>
+    <use href="#spout" xlink:href="#spout"/>
+    <use href="#body" xlink:href="#body"/>
+    <path d="M190 176 C238 176 242 260 198 262"/>
+    <path stroke="#FBF4E8" stroke-width="8" d="M110 200 V264"/>
+    <use href="#lid" xlink:href="#lid"/>
+    <path d="M140 128 V118"/>
+    <path stroke-width="6" d="M66 128 C52 108 78 96 64 72 M100 116 C86 92 116 82 100 52 M140 104 C126 82 154 70 140 40"/>
+    <use href="#mug" xlink:href="#mug"/>
+    <path stroke="#0B6B65" stroke-width="10" d="M256 256 H314"/>
+    <path d="M320 248 C346 248 346 286 320 286"/>
+    <path stroke-width="4" d="M262 232 C254 236 248 244 242 252"/>
+    <use href="#tag" xlink:href="#tag" stroke-width="5"/>
+    <path stroke-width="5" d="M286 214 C278 198 294 190 286 174"/>
+    <use href="#jar" xlink:href="#jar"/>
+    <path d="M334 250 H382"/>
+  </g>
+</svg>

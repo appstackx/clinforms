@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 360 300" width="360" height="300" aria-hidden="true">
+  <defs>
+    <rect id="box" x="20" y="52" width="320" height="232" rx="6"/>
+    <path id="lid" d="M14 40 H346 L340 64 H20 Z"/>
+    <rect id="label" x="58" y="132" width="244" height="92" rx="4"/>
+    <rect id="tape" x="160" y="30" width="40" height="104" rx="5"/>
+    <path id="tail" d="M168 224 L192 224 L196 284 L164 284 Z"/>
+    <rect id="hand" x="150" y="88" width="60" height="16" rx="8"/>
+  </defs>
+  <g transform="translate(4 4)">
+    <use href="#box" xlink:href="#box" fill="#F6C34A"/>
+    <use href="#lid" xlink:href="#lid" fill="#F6C34A"/>
+    <use href="#label" xlink:href="#label" fill="#D3E7EF"/>
+    <use href="#tape" xlink:href="#tape" fill="#C4432B"/>
+    <use href="#tail" xlink:href="#tail" fill="#C4432B"/>
+  </g>
+  <g fill="none" stroke="#0F3B35" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <use href="#box" xlink:href="#box"/>
+    <use href="#lid" xlink:href="#lid"/>
+    <use href="#label" xlink:href="#label"/>
+    <use href="#tape" xlink:href="#tape"/>
+    <use href="#tail" xlink:href="#tail"/>
+    <path d="M40 254 l14 -14 l14 14 M54 240 v28"/>
+    <path d="M292 254 l14 -14 l14 14 M306 240 v28"/>
+    <path d="M0 290 H360"/>
+  </g>
+</svg>

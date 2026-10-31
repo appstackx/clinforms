@@ -13,7 +13,7 @@
  * the shell (design v1: product switch, left navigation by role, site switcher, "/" patient search, user menu, "?"
  * shortcuts) works, works by keyboard (skip link) and at 375 px without sideways scrolling (navigation behind "Menu"); the platform page switches B's package on
  * (B then sees it) and off again; switching B's Reports off needs B's clinic id typed (a wrong id, sent past the
- * browser's check, is refused by the server); on an app-only brand host the public pages go to sign-in. Nothing secret is
+ * browser's check, is refused by the server); on the clinic brand's host the public pages are ClinDesk's website and the app needs sign-in. Nothing secret is
  * printed (random passwords, codes in memory). Screenshots: E2E_OUT (default .e2e-out/clinic-system).
  */
 const crypto = require("crypto");
@@ -134,17 +134,17 @@ const navLabels = (page) => page.locator("header nav[aria-label='Clinic'] a").al
       await b.waitForSelector("text=Page not found");
       await b.goto(`${BASE}/app/settings/activity`);
       const groups = await b.locator("#activity-action optgroup").evaluateAll((els) => els.map((e) => e.getAttribute("label")));
-      assert(!groups.includes("Clinic system"), `groups: ${groups.join(", ")}`);
+      assert(!groups.includes("ClinDesk"), `groups: ${groups.join(", ")}`);
     });
 
     await step("A (demo clinic): the navigation adds the clinic system after Overview", async () => {
       const labels = await navLabels(a);
-      assert(labels[0] === "Overview" && labels[1] === "Clinic system", `nav: ${labels.join(", ")}`);
+      assert(labels[0] === "Overview" && labels[1] === "ClinDesk", `nav: ${labels.join(", ")}`);
       await shot(a, "a-01-app");
     });
 
     await step("A: /app/clinic shows the demo clinic (figures, sites, practitioners, demo notice)", async () => {
-      await a.click("header nav[aria-label='Clinic'] >> text=Clinic system");
+      await a.click("header nav[aria-label='Clinic'] >> text=ClinDesk");
       await a.waitForURL(`${BASE}/app/clinic`);
       // The section's loading skeleton (loading.tsx) shows first on a client navigation: wait for the page itself.
       await a.locator("[data-testid='dashboard']").waitFor();
@@ -155,7 +155,7 @@ const navLabels = (page) => page.locator("header nav[aria-label='Clinic'] a").al
         assert(text.includes(s.toLowerCase()), `missing "${s}"`);
       }
       // 27/10/2026 (design v1): the clinic system's navigation moved from the header to the left-hand side.
-      assert((await a.locator("nav[aria-label='Clinic system'] a[aria-current='page']").innerText()) === "Dashboard", "Dashboard is the current page");
+      assert((await a.locator("nav[aria-label='ClinDesk'] a[aria-current='page']").innerText()) === "Dashboard", "Dashboard is the current page");
       assert(!/\bTM3\b|CareConnect|\bAI\b/.test(await a.locator("body").innerText()), "no banned names on screen");
       await shot(a, "a-02-clinic-overview");
     });
@@ -163,9 +163,9 @@ const navLabels = (page) => page.locator("header nav[aria-label='Clinic'] a").al
     await step("A: the shell (design v1) – product switch, navigation by role, patient search on \"/\", user menu", async () => {
       await a.goto(`${BASE}/app/clinic`);
       const products = await a.locator("nav[aria-label='Product areas'] a").allInnerTexts();
-      assert(products[0] === "Clinic system" && /^ClinForms/.test(products[1] || ""), `products: ${products.join(", ")}`);
+      assert(products[0] === "ClinDesk" && /^ClinForms/.test(products[1] || ""), `products: ${products.join(", ")}`);
       // The entry's own words (a badge, e.g. Messages' replies waiting, is left out).
-      const labels = (await a.locator("nav[aria-label='Clinic system'] a").allInnerTexts()).map((l) => l.split("\n")[0].trim());
+      const labels = (await a.locator("nav[aria-label='ClinDesk'] a").allInnerTexts()).map((l) => l.split("\n")[0].trim());
       // M8: the main list ends with Reports and one Set-up entry; the set-up pages (every module's) are the Set-up
       // section's list ("← Clinic navigation"), shown on a set-up page.
       assert(JSON.stringify(labels) === JSON.stringify(["Dashboard", "Diary", "Patients", "Unsigned notes", "Billing", "Messages", "Reports", "Set-up"]), `clinic nav: ${labels.join(", ")}`);
@@ -175,7 +175,7 @@ const navLabels = (page) => page.locator("header nav[aria-label='Clinic'] a").al
         assert(setup.includes(l), `set-up nav lacks ${l}: ${setup.join(", ")}`);
       }
       await a.click("[data-testid=shell-back-to-main]");
-      await a.waitForSelector("nav[aria-label='Clinic system'] >> text=Diary");
+      await a.waitForSelector("nav[aria-label='ClinDesk'] >> text=Diary");
       await a.goto(`${BASE}/app/clinic`);
       assert((await a.locator("button[aria-haspopup='listbox']").first().innerText()).includes("Bletchley (fictional)"), "site switcher shows the first site");
       await a.locator("main h1").first().click();
@@ -213,9 +213,9 @@ const navLabels = (page) => page.locator("header nav[aria-label='Clinic'] a").al
       const overflow = await a.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
       assert(overflow <= 0, `scrolls sideways by ${overflow}px`);
       // The navigation folds behind "Menu" on a phone.
-      assert(!(await a.locator("nav[aria-label='Clinic system']").isVisible()), "navigation folded on a phone");
+      assert(!(await a.locator("nav[aria-label='ClinDesk']").isVisible()), "navigation folded on a phone");
       await a.click("button[aria-controls='clinic-nav']");
-      assert(await a.locator("nav[aria-label='Clinic system']").isVisible(), "Menu opens the navigation");
+      assert(await a.locator("nav[aria-label='ClinDesk']").isVisible(), "Menu opens the navigation");
       await shot(a, "a-03b-clinic-375-menu");
       await a.click("button[aria-controls='clinic-nav']");
       await shot(a, "a-03-clinic-375");
@@ -240,7 +240,7 @@ const navLabels = (page) => page.locator("header nav[aria-label='Clinic'] a").al
       await harbourClinicState(true);
       await b.goto(`${BASE}/app`);
       const labels = await navLabels(b);
-      assert(labels.includes("Clinic system"), `B nav after switching on: ${labels.join(", ")}`);
+      assert(labels.includes("ClinDesk"), `B nav after switching on: ${labels.join(", ")}`);
       const res = await b.goto(`${BASE}/app/clinic`);
       assert(res.status() === 200, `B /app/clinic ${res.status()}`);
       await b.waitForSelector("text=No sites yet.");
@@ -290,13 +290,21 @@ const navLabels = (page) => page.locator("header nav[aria-label='Clinic'] a").al
       assert((await b.goto(`${BASE}/app/studio`)).status() === 200, "B's Studio is back");
     });
 
-    await step("brand by host: an app-only brand's public pages go to sign-in; ClinForms' stay public", async () => {
+    await step("brand by host: the clinic host serves ClinDesk's website, its app needs sign-in; ClinForms' site is unchanged", async () => {
       const host = BASE.replace("localhost", "clinic.localhost");
       const p = await browser.newPage();
-      await p.goto(`${host}/`);
-      assert(p.url().startsWith(`${host}/login`), `at ${p.url()}`);
+      const home = await p.goto(`${host}/`);
+      assert(home.status() === 200 && p.url() === `${host}/`, `at ${p.url()} (${home.status()})`);
+      assert(/ClinDesk/.test(await p.title()), `title: ${await p.title()}`);
+      await p.waitForSelector(".cd-site header.site-header");
+      assert((await p.locator("a.signin").getAttribute("href")) === "/login", "Sign in goes to /login");
+      await p.goto(`${host}/app/clinic`);
+      assert(p.url().startsWith(`${host}/login`), `app at ${p.url()}`);
+      await p.goto(`${host}/request-access`);
+      assert(p.url() === `${host}/demo`, `request-access at ${p.url()}`);
       await p.goto(`${BASE}/`);
-      assert(p.url() === `${BASE}/`, `at ${p.url()}`);
+      assert(p.url() === `${BASE}/` && !(await p.locator(".cd-site").count()), `at ${p.url()}`);
+      assert((await p.goto(`${BASE}/features`)).status() === 404, "no ClinDesk pages on ClinForms' host");
       await p.close();
     });
 
