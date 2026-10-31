@@ -188,7 +188,7 @@ async function pickPatient(page, q, name) {
     await step("navigation by role: Diary for all; Practitioner rotas (diary.rota) under Set-up for the owner, in the main list for reception; the clinician gets the 404 page for rotas", async () => {
       for (const [page, rota] of [[owner, false], [reception, true], [clinician, false]]) {
         await page.goto(DIARY);
-        const labels = (await page.locator("nav[aria-label='Clinic system'] a").allInnerTexts()).map((l) => l.trim());
+        const labels = (await page.locator("nav[aria-label='ClinDesk'] a").allInnerTexts()).map((l) => l.trim());
         assert(labels.includes("Diary"), `Diary in nav: ${labels.join(", ")}`);
         assert(labels.includes("Practitioner rotas") === rota, `Practitioner rotas in the main nav = ${rota}: ${labels.join(", ")}`);
       }

@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 680 560" width="680" height="560" aria-hidden="true">
+  <defs>
+    <rect id="blind" x="18" y="26" width="304" height="28" rx="8"/>
+    <rect id="frame" x="30" y="48" width="280" height="194" rx="10"/>
+    <rect id="p1" x="52" y="68" width="108" height="76" rx="4"/>
+    <rect id="p2" x="180" y="68" width="108" height="76" rx="4"/>
+    <rect id="p3" x="52" y="158" width="108" height="66" rx="4"/>
+    <rect id="p4" x="180" y="158" width="108" height="66" rx="4"/>
+    <rect id="sill" x="12" y="236" width="316" height="22" rx="7"/>
+    <rect id="mug" x="62" y="194" width="42" height="42" rx="7"/>
+    <path id="pot" d="M218 192 H290 L280 236 H228 Z"/>
+    <path id="lf1" d="M252 194 C226 170 222 132 240 110 C264 132 268 168 252 194 Z"/>
+    <path id="lf2" d="M256 194 C262 158 288 138 312 142 C308 172 288 190 256 194 Z"/>
+    <path id="lf3" d="M250 194 C228 184 200 186 188 170 C208 152 238 162 250 194 Z"/>
+    <circle id="clock" cx="586" cy="86" r="54"/>
+    <rect id="top" x="350" y="244" width="322" height="42" rx="14"/>
+    <rect id="paper" x="396" y="232" width="190" height="16" rx="4"/>
+    <circle id="roll" cx="372" cy="228" r="26"/>
+    <rect id="towel" x="572" y="198" width="92" height="48" rx="8"/>
+    <rect id="col" x="474" y="286" width="54" height="130" rx="6"/>
+    <rect id="foot" x="408" y="404" width="186" height="22" rx="8"/>
+  </defs>
+
+  <!-- solid fills, offset for the print look -->
+  <g transform="translate(6 6)">
+    <use href="#frame" xlink:href="#frame" fill="#0F3B35"/>
+  </g>
+  <!-- panes sit inside the solid frame, unshifted -->
+  <g fill="#D3E7EF">
+    <use href="#p1" xlink:href="#p1"/>
+    <use href="#p2" xlink:href="#p2"/>
+    <use href="#p3" xlink:href="#p3"/>
+    <use href="#p4" xlink:href="#p4"/>
+  </g>
+  <g transform="translate(6 6)">
+    <use href="#blind" xlink:href="#blind" fill="#F6C34A"/>
+    <use href="#sill" xlink:href="#sill" fill="#F6C34A"/>
+    <use href="#mug" xlink:href="#mug" fill="#C4432B"/>
+    <use href="#lf1" xlink:href="#lf1" fill="#0B6B65"/>
+    <use href="#lf2" xlink:href="#lf2" fill="#0B6B65"/>
+    <use href="#lf3" xlink:href="#lf3" fill="#0B6B65"/>
+    <use href="#pot" xlink:href="#pot" fill="#C4432B"/>
+    <use href="#clock" xlink:href="#clock" fill="#FBF4E8"/>
+    <use href="#col" xlink:href="#col" fill="#0F3B35"/>
+    <use href="#foot" xlink:href="#foot" fill="#0F3B35"/>
+    <use href="#top" xlink:href="#top" fill="#0B6B65"/>
+    <use href="#paper" xlink:href="#paper" fill="#FBF4E8"/>
+    <use href="#roll" xlink:href="#roll" fill="#FBF4E8"/>
+    <use href="#towel" xlink:href="#towel" fill="#F6C34A"/>
+  </g>
+  <!-- heavy pine linework -->
+  <g fill="none" stroke="#0F3B35" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <use href="#blind" xlink:href="#blind"/>
+    <path d="M296 54 V84"/>
+    <circle cx="296" cy="90" r="6" fill="#C4432B"/>
+    <use href="#frame" xlink:href="#frame"/>
+    <path stroke-width="5" d="M84 82 l-8 18 M128 108 l-8 18 M206 84 l-8 18 M254 112 l-8 18 M96 170 l-8 18 M140 196 l-8 16"/>
+    <use href="#sill" xlink:href="#sill"/>
+    <use href="#mug" xlink:href="#mug"/>
+    <path d="M104 204 C124 204 124 226 104 226"/>
+    <path stroke-width="4" d="M76 184 C70 174 82 168 76 158 M92 184 C86 174 98 168 92 158"/>
+    <use href="#lf1" xlink:href="#lf1"/>
+    <use href="#lf2" xlink:href="#lf2"/>
+    <use href="#lf3" xlink:href="#lf3"/>
+    <use href="#pot" xlink:href="#pot"/>
+
+    <use href="#clock" xlink:href="#clock" stroke-width="9"/>
+    <path d="M586 46 V54 M586 118 V126 M546 86 H554 M618 86 H626"/>
+    <path stroke-width="8" d="M586 86 L606 104 M586 86 V122"/>
+    <circle cx="586" cy="86" r="5" fill="#0F3B35"/>
+
+    <use href="#col" xlink:href="#col"/>
+    <use href="#foot" xlink:href="#foot"/>
+    <path d="M440 312 L474 300 M528 300 L562 312"/>
+    <use href="#top" xlink:href="#top"/>
+    <path stroke-width="4" d="M392 265 H548"/>
+    <use href="#paper" xlink:href="#paper"/>
+    <use href="#roll" xlink:href="#roll"/>
+    <circle cx="372" cy="228" r="9" fill="#0F3B35"/>
+    <use href="#towel" xlink:href="#towel"/>
+    <path d="M572 216 H664"/>
+    <path stroke="#C4432B" stroke-width="7" d="M590 230 H646"/>
+  </g>
+
+  <!-- resistance band over the foot of the couch: outlined ribbon -->
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path stroke="#0F3B35" stroke-width="22" d="M612 246 C616 228 664 228 670 252 C674 290 676 332 664 362 C654 384 630 380 634 352 C636 330 642 312 640 290"/>
+    <path stroke="#F3A9BA" stroke-width="11" d="M612 246 C616 228 664 228 670 252 C674 290 676 332 664 362 C654 384 630 380 634 352 C636 330 642 312 640 290"/>
+  </g>
+</svg>

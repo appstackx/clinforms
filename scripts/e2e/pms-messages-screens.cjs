@@ -270,7 +270,7 @@ async function recordRows(page, patientId) {
     await step("navigation: Messages for every role; the badge counts replies waiting (the seed's two)", async () => {
       for (const page of [owner, reception, clinician]) {
         await page.goto(`${BASE}/app/clinic`);
-        const labels = await page.locator("nav[aria-label='Clinic system'] a").allInnerTexts();
+        const labels = await page.locator("nav[aria-label='ClinDesk'] a").allInnerTexts();
         assert(labels.some((l) => /^Messages/.test(l.trim())), `Messages in nav: ${labels.join(", ")}`);
       }
       const badge = (await reception.locator("[data-testid='nav-badge-comms.messages']").first().innerText()).trim();
@@ -575,7 +575,7 @@ async function recordRows(page, patientId) {
         assert(t.length <= 160, `≤ 160: ${t.length} – ${t}`);
         assert(/^Riverside: /.test(t), `clinic's name: ${t}`);
         assert(/STOP to opt out$/.test(t), `opt-out: ${t}`);
-        assert(!/Clinic system/i.test(t), "never the product name");
+        assert(!/ClinDesk|Clinic system/i.test(t), "never the product name");
       }
       await shot(reception, "1440-patient-facing", true);
       await axe(reception, "patient-facing messages");

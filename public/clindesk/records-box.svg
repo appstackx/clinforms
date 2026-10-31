@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 480 360" width="480" height="360" aria-hidden="true">
+  <rect width="480" height="360" fill="#CFE7D8"/>
+  <defs>
+    <rect id="desk" x="-10" y="300" width="500" height="70" rx="0"/>
+    <rect id="box" x="70" y="150" width="270" height="150" rx="6"/>
+    <rect id="lid" x="58" y="122" width="294" height="40" rx="8"/>
+    <rect id="label" x="104" y="196" width="104" height="62" rx="4"/>
+    <rect id="hasp" x="244" y="146" width="34" height="56" rx="6"/>
+    <rect id="lock" x="228" y="196" width="66" height="62" rx="12"/>
+    <path id="f1" d="M96 122 L104 70 H196 L204 122 Z"/>
+    <path id="f2" d="M178 122 L192 84 H284 L292 122 Z"/>
+    <circle id="ring" cx="398" cy="276" r="22"/>
+    <path id="key1" d="M412 290 L452 296 L452 308 L444 308 L444 314 L436 314 L436 304 L410 300 Z"/>
+    <circle id="bow" cx="384" cy="292" r="14"/>
+  </defs>
+  <g transform="translate(8 8)">
+    <use href="#desk" xlink:href="#desk" fill="#F6C34A"/>
+    <use href="#f1" xlink:href="#f1" fill="#D3E7EF"/>
+    <use href="#f2" xlink:href="#f2" fill="#F3A9BA"/>
+    <use href="#box" xlink:href="#box" fill="#0B6B65"/>
+    <use href="#lid" xlink:href="#lid" fill="#C4432B"/>
+    <use href="#label" xlink:href="#label" fill="#FBF4E8"/>
+    <use href="#lock" xlink:href="#lock" fill="#F6C34A"/>
+    <use href="#bow" xlink:href="#bow" fill="#C4432B"/>
+    <use href="#key1" xlink:href="#key1" fill="#C4432B"/>
+  </g>
+  <g fill="none" stroke="#0F3B35" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <use href="#desk" xlink:href="#desk"/>
+    <use href="#f1" xlink:href="#f1"/>
+    <use href="#f2" xlink:href="#f2"/>
+    <path stroke-width="5" d="M118 90 H180 M206 104 H268"/>
+    <use href="#box" xlink:href="#box"/>
+    <use href="#lid" xlink:href="#lid"/>
+    <path stroke-width="10" d="M96 280 H140"/>
+    <use href="#label" xlink:href="#label"/>
+    <path stroke-width="5" d="M122 216 H190 M122 238 H172"/>
+    <path stroke-width="10" d="M240 198 V172 C240 144 282 144 282 172 V198"/>
+    <use href="#lock" xlink:href="#lock"/>
+    <circle cx="261" cy="222" r="7" fill="#0F3B35"/>
+    <path stroke-width="7" d="M261 226 V242"/>
+    <use href="#ring" xlink:href="#ring"/>
+    <use href="#bow" xlink:href="#bow"/>
+    <use href="#key1" xlink:href="#key1" stroke-width="6"/>
+  </g>
+</svg>

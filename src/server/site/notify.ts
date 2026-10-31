@@ -38,13 +38,16 @@ export function accessRequestEmail(request: NotificationPayload): NotificationEm
     ["Work email", request.email],
     ["Phone", request.phone ?? "–"],
     ["Number of sites", request.sites],
+    ...(request.details ?? []).map(([k, v]) => [k, v] as [string, string]),
     ["Received", request.createdAt],
     ["Reference", request.id],
   ];
   const message = request.message ?? "";
-  const subject = `${PRODUCT.name} access request: ${oneLine(request.clinicName, 80)}`;
+  const product = request.product ?? PRODUCT.name;
+  const kind = request.product ? "demo request" : "access request";
+  const subject = `${product} ${kind}: ${oneLine(request.clinicName, 80)}`;
   const text = [
-    `New ${PRODUCT.name} access request`,
+    `New ${product} ${kind}`,
     "",
     ...rows.map(([k, v]) => `${k}: ${oneLine(v, 300)}`),
     "",
@@ -54,7 +57,7 @@ export function accessRequestEmail(request: NotificationPayload): NotificationEm
     "Reply to this email to answer the clinic directly.",
   ].join("\n");
   const html = `<!doctype html><html><body style="font-family:Arial,Helvetica,sans-serif;color:#0f172a;max-width:600px;margin:0 auto">
-<h2 style="color:#0f766e;margin:0 0 12px">New ${escapeHtml(PRODUCT.name)} access request</h2>
+<h2 style="color:#0f766e;margin:0 0 12px">New ${escapeHtml(product)} ${kind}</h2>
 <table style="border-collapse:collapse;width:100%;font-size:14px">${rows
     .map(
       ([k, v]) =>
@@ -91,7 +94,7 @@ export async function sendAccessRequestNotification(
   const email = accessRequestEmail(request);
   const params = new EmailParams()
     .setFrom(new Sender(settings.fromEmail, PRODUCT.name))
-    .setTo([new Recipient(settings.to, `${PRODUCT.name} team`)])
+    .setTo([new Recipient(settings.to, `${request.product ?? PRODUCT.name} team`)])
     .setReplyTo(new Recipient(request.email, oneLine(request.contactName, 100)))
     .setSubject(email.subject)
     .setText(email.text)

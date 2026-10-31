@@ -87,7 +87,22 @@ describe("navigation, record tabs and audit labels (contract §5–7)", () => {
 
 /** Files of the clinic system (code and copy). */
 function clinicSystemFiles(): string[] {
-  const roots = ["src/modules/pms", "src/server/pms", "src/server/repos/pms", "src/server/db/pms-schema", "src/app/app/clinic", "src/components/pms", "scripts/pms", "src/lib/brand.ts"];
+  const roots = [
+    "src/modules/pms",
+    "src/server/pms",
+    "src/server/repos/pms",
+    "src/server/db/pms-schema",
+    "src/app/app/clinic",
+    "src/components/pms",
+    "scripts/pms",
+    "src/lib/brand.ts",
+    // ClinDesk's public website (clindesk.co.uk) and its fill-ins.
+    "src/app/clindesk-site",
+    "src/components/clindesk",
+    "src/lib/clindesk",
+    "src/server/site/demo-request.ts",
+    
+  ];
   const out: string[] = [];
   const walk = (p: string) => {
     const full = path.join(ROOT, p);
@@ -107,6 +122,11 @@ function clinicSystemFiles(): string[] {
 const NAMING_ALLOW: { file: string; text: RegExp; reason: string }[] = [
   { file: "scripts/pms/contract.test.ts", text: /./, reason: "this test lists the banned names" },
   { file: "src/lib/brand.ts", text: /never "TM3", never a competitor's name, never "Practice"/, reason: "the rule itself" },
+  // ClinDesk's website copy (the approved design): "practice" as an ordinary word at the start of a phrase, never a name.
+  { file: "src/app/clindesk-site/page.tsx", text: /Practice software for UK physio and MSK clinics\./, reason: "the design's tagline (a description)" },
+  { file: "src/components/clindesk/site-footer.tsx", text: /Practice software for UK physiotherapy and MSK clinics\./, reason: "the design's tagline (a description)" },
+  { file: "src/app/clindesk-site/features/page.tsx", text: /<span>Practice manager<\/span>/, reason: "a job title in a fictional product scene" },
+  { file: "src/app/clindesk-site/security/page.tsx", text: /<b>Practice manager<\/b>/, reason: "a job title in a fictional product scene" },
 ];
 const BANNED_NAMES: { re: RegExp; what: string }[] = [
   { re: /\bTM3\b/, what: "TM3" },
@@ -129,6 +149,25 @@ describe("product naming in the clinic system (contract §2)", () => {
       });
     }
     assert.deepEqual(hits, []);
+  });
+});
+
+describe("the product name is one constant (contract §2)", () => {
+  it("code never types \"ClinDesk\" – it imports CLINIC_SYSTEM_NAME from src/lib/brand.ts (comments may name it)", () => {
+    const hits: string[] = [];
+    for (const file of clinicSystemFiles().filter((f) => /\.tsx?$/.test(f) && f !== "src/lib/brand.ts" && !/\.test\.tsx?$/.test(f))) {
+      const lines = fs.readFileSync(path.join(ROOT, file), "utf8").split("\n");
+      lines.forEach((line, i) => {
+        const code = line.replace(/\/\/.*$/, "").replace(/\{?\/\*.*?\*\/\}?/g, "");
+        if (/^\s*(\*|\/\*)/.test(line)) return;
+        if (/ClinDesk/.test(code)) hits.push(`${file}:${i + 1}`);
+      });
+    }
+    assert.deepEqual(hits, []);
+  });
+  it("the website's copy and the content file pass the banned-name check", () => {
+    const json = fs.readFileSync(path.join(ROOT, "content/clindesk-site.json"), "utf8");
+    for (const b of BANNED_NAMES) assert.equal(b.re.test(json), false, `content/clindesk-site.json: ${b.what}`);
   });
 });
 

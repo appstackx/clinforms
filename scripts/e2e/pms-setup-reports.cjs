@@ -223,13 +223,13 @@ async function eventually(check, what) {
 
     await step("navigation: owner has Reports and Set-up (the Set-up section list); reception has neither and gets the 404 page", async () => {
       await owner.goto(APP);
-      const main = (await owner.locator("nav[aria-label='Clinic system'] a").allInnerTexts()).map((l) => l.split("\n")[0].trim());
+      const main = (await owner.locator("nav[aria-label='ClinDesk'] a").allInnerTexts()).map((l) => l.split("\n")[0].trim());
       assert(main.includes("Reports") && main.includes("Set-up"), `owner nav: ${main.join(", ")}`);
-      await owner.click("nav[aria-label='Clinic system'] >> text=Set-up");
+      await owner.click("nav[aria-label='ClinDesk'] >> text=Set-up");
       await owner.waitForURL(/\/setup\/sites/);
       await owner.waitForSelector("nav[aria-label='Set-up']");
       await reception.goto(APP);
-      const r = (await reception.locator("nav[aria-label='Clinic system'] a").allInnerTexts()).map((l) => l.split("\n")[0].trim());
+      const r = (await reception.locator("nav[aria-label='ClinDesk'] a").allInnerTexts()).map((l) => l.split("\n")[0].trim());
       assert(!r.includes("Reports") && !r.includes("Set-up"), `reception nav: ${r.join(", ")}`);
       for (const url of [SETUP, `${SETUP}/sites`, `${SETUP}/billing`, REPORTS, `${REPORTS}/attendance`, `${REPORTS}/export/attendance`]) {
         const res = await reception.goto(url);

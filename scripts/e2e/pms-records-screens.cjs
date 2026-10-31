@@ -187,7 +187,7 @@ async function noSideways(page, label) {
   const navTopAligned = async (page, label) => {
     const gap = await page.evaluate(() => {
       window.scrollTo(0, 0);
-      const nav = document.querySelector("nav[aria-label='Clinic system']");
+      const nav = document.querySelector("nav[aria-label='ClinDesk']");
       const header = document.querySelector("header");
       return nav && header ? Math.round(nav.getBoundingClientRect().top - header.getBoundingClientRect().bottom) : null;
     });
@@ -325,7 +325,7 @@ async function noSideways(page, label) {
     const stuck = await clin.evaluate(() => {
       window.scrollTo(0, 700);
       const chart = document.querySelector("aside[aria-label='Body chart and outcome measures']").getBoundingClientRect();
-      const nav = document.querySelector("nav[aria-label='Clinic system']").getBoundingClientRect();
+      const nav = document.querySelector("nav[aria-label='ClinDesk']").getBoundingClientRect();
       return { chart: Math.round(chart.top), nav: Math.round(nav.top), y: Math.round(window.scrollY) };
     });
     assert(stuck.y > 0 && stuck.chart >= 0 && stuck.chart <= 24 && stuck.nav >= 0 && stuck.nav <= 24, `sticky when scrolled: ${JSON.stringify(stuck)}`);

@@ -158,13 +158,13 @@ const wideOnes = (page) =>
     await step("Set-up shows Staff access and Roles and permissions to the owner only", async () => {
       // M8: one "Set-up" entry in the main list; the set-up pages are the Set-up section's list.
       await o.goto(`${BASE}/app/clinic`);
-      const ownerMain = (await o.locator("nav[aria-label='Clinic system'] a").allInnerTexts()).map((l) => l.trim());
+      const ownerMain = (await o.locator("nav[aria-label='ClinDesk'] a").allInnerTexts()).map((l) => l.trim());
       assert(ownerMain.includes("Set-up"), `owner nav: ${ownerMain.join(", ")}`);
       await o.goto(`${BASE}/app/clinic/access`);
       const owner = (await o.locator("nav[aria-label='Set-up'] a").allInnerTexts()).map((l) => l.trim());
       assert(owner.includes("Staff access") && owner.includes("Roles and permissions"), `owner set-up nav: ${owner.join(", ")}`);
       await j.goto(`${BASE}/app/clinic`);
-      const jess = (await j.locator("nav[aria-label='Clinic system'] a").allInnerTexts()).map((l) => l.trim());
+      const jess = (await j.locator("nav[aria-label='ClinDesk'] a").allInnerTexts()).map((l) => l.trim());
       assert(!jess.includes("Set-up") && !jess.includes("Staff access") && !jess.includes("Roles and permissions") && !jess.includes("Reports"), `reception nav: ${jess.join(", ")}`);
       for (const url of ["/app/clinic/access", "/app/clinic/access/roles", "/app/clinic/access/roles/history"]) {
         const res = await j.goto(`${BASE}${url}`);

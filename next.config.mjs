@@ -71,8 +71,7 @@ const NOINDEX_SOURCES = [
   "/api/:path*",
   "/app",
   "/app/:path*",
-  "/reports",
-  "/reports/:path*",
+  "/reports/:path+",
   "/pms-sandbox",
   "/pms-sandbox/:path*",
   "/login",
@@ -102,6 +101,13 @@ const nextConfig = {
     return [
       { source: "/:path*", headers: securityHeaders },
       ...NOINDEX_SOURCES.map((source) => ({ source, headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }] })),
+      // ClinForms' public demo at /reports: noindex – except on ClinDesk's hosts, where /reports is ClinDesk's
+      // "Referrer reports" page (src/middleware.ts). Below /reports stays noindex on every host (list above).
+      {
+        source: "/reports",
+        missing: [{ type: "host", value: "clindesk\\.co\\.uk|www\\.clindesk\\.co\\.uk|clinic\\.localhost" }],
+        headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
+      },
       // A clinic's public booking pages and patient portal (clinic system, contract §6): never indexed, and the
       // patient's OWN browser may use its location for "distance from you" (worked out on the device, never sent).
       // Later entries win for the same header, so only these paths differ from the site-wide policy above.
@@ -111,6 +117,18 @@ const nextConfig = {
           { key: "X-Robots-Tag", value: "noindex, nofollow" },
           { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(self), payment=(), usb=()" },
         ],
+      },
+    ];
+  },
+  // www.clindesk.co.uk → clindesk.co.uk (the clinic system's own domain; src/lib/brand.ts). Runs before the
+  // middleware, only for that host: ClinForms' hosts are untouched.
+  async redirects() {
+    return [
+      {
+        source: "/:path*",
+        has: [{ type: "host", value: "www\\.clindesk\\.co\\.uk" }],
+        destination: "https://clindesk.co.uk/:path*",
+        permanent: true,
       },
     ];
   },

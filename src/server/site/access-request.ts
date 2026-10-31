@@ -75,9 +75,14 @@ export interface NotificationPayload {
   contactName: string;
   email: string;
   phone: string | null;
-  sites: SitesBand;
+  /** The number-of-sites band the visitor chose (each form has its own bands). */
+  sites: string;
   message: string | null;
   createdAt: string;
+  /** Product the request is for; default ClinForms (PRODUCT.name). */
+  product?: string;
+  /** Extra rows after "Number of sites" (ClinDesk's demo form: practitioners, current system, interests). */
+  details?: ReadonlyArray<readonly [string, string]>;
 }
 
 /** First message per field, keyed by field name ("form" for anything else). */
@@ -113,16 +118,8 @@ export async function submitAccessRequest(raw: unknown, deps: AccessRequestDeps)
   if (body.website.trim()) return { kind: "spam" };
 
   const ctx: RepoContext = deps.now ? { ...deps.ctx, now: deps.now } : deps.ctx;
-  const limited = (resetAtIso: string): AccessRequestOutcome => ({
-    kind: "rate_limited",
-    retryAfterSeconds: Math.max(1, Math.ceil((Date.parse(resetAtIso) - Date.parse(nowIso(ctx))) / 1000)),
-  });
-  // The client's own limit first: a client over it never touches the shared counter, so one sender cannot
-  // use up the site-wide allowance and block the form for everyone else.
-  const client = deps.clientKey ? await hitRateLimit(ctx, `access-request:${deps.clientKey}`, WINDOW_MS) : null;
-  if (client && client.count > PER_CLIENT_LIMIT) return limited(client.resetAt);
-  const global = await hitRateLimit(ctx, "access-request:all", WINDOW_MS);
-  if (global.count > GLOBAL_LIMIT) return limited(global.resetAt);
+  const limited = await accessRequestRateLimit(ctx, deps.clientKey);
+  if (limited) return limited;
 
   const stored = await createAccessRequest(ctx, {
     clinicName: body.clinicName,
@@ -151,6 +148,23 @@ export async function submitAccessRequest(raw: unknown, deps: AccessRequestDeps)
     }
   }
   return { kind: "stored", id: stored.id, sites: body.sites, notified };
+}
+
+/**
+ * The rate limits every request form shares (this one and ClinDesk's "Book a demo", demo-request.ts): the client's
+ * own limit first – a client over it never touches the shared counter, so one sender cannot use up the site-wide
+ * allowance and block the forms for everyone else – then the global cap. Null when the request may go ahead.
+ */
+export async function accessRequestRateLimit(ctx: RepoContext, clientKey: string | null): Promise<{ kind: "rate_limited"; retryAfterSeconds: number } | null> {
+  const limited = (resetAtIso: string) => ({
+    kind: "rate_limited" as const,
+    retryAfterSeconds: Math.max(1, Math.ceil((Date.parse(resetAtIso) - Date.parse(nowIso(ctx))) / 1000)),
+  });
+  const client = clientKey ? await hitRateLimit(ctx, `access-request:${clientKey}`, WINDOW_MS) : null;
+  if (client && client.count > PER_CLIENT_LIMIT) return limited(client.resetAt);
+  const global = await hitRateLimit(ctx, "access-request:all", WINDOW_MS);
+  if (global.count > GLOBAL_LIMIT) return limited(global.resetAt);
+  return null;
 }
 
 /**
