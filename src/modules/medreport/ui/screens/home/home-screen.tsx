@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 import type { ConnectorInfo, Report } from "../../../core/types";
 import { formatUkDateTime } from "../../../core/dates";
+import { connectorIdLabel } from "../../../core/labels";
 import { prefillSigners, prefillSignersText } from "../../../core/parties";
 import { api, saveBlob } from "../../api-client";
 import { useHostHooks, useStudioMode } from "../../host-hooks";
@@ -717,7 +718,8 @@ function FormCell({ report }: { report: Report }) {
 
 /** Where the notes came from, on one line (an uploaded file's name can be long – the full name is in the tooltip). */
 function SourceLine({ report }: { report: Report }) {
-  const source = report.bundleSnapshot.source.simulated ? "Simulated TM3" : (report.bundleSnapshot.source.label ?? report.episodeRef.connectorId);
+  // A connector id this build does not know (a later release's record) is named neutrally, never shown as a raw id.
+  const source = report.bundleSnapshot.source.simulated ? "Simulated TM3" : (report.bundleSnapshot.source.label ?? connectorIdLabel(report.episodeRef.connectorId));
   return (
     <p className="max-w-[14rem] truncate text-xs text-slate-500" title={source}>
       {source}

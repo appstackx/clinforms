@@ -22,6 +22,7 @@
  */
 import { z } from "zod";
 import {
+  ConnectorIdSchema,
   FormDefinitionSchema,
   ParagraphOriginSchema,
   RegistrationPartSchema,
@@ -37,9 +38,11 @@ export const MAX_FORWARD_ENUM_MEMBER = 80;
 
 /**
  * The enums a later release adds members to (release/bh-trial-2: flag codes such as DRAFT_FIT or APPROVER_DECISION,
- * paragraph origin "staff", record paths such as episode.attendedDate). Every other enum stays closed.
+ * paragraph origin "staff", record paths such as episode.attendedDate; the clinic system, 10/2026: connector id
+ * "native" – a report started from the clinic system's own patient record, on episodeRef and bundleSnapshot.source).
+ * Every other enum stays closed.
  */
-export const FORWARD_OPEN_ENUMS = [ReportFlagCodeSchema, ParagraphOriginSchema, RegistrationPathSchema] as const;
+export const FORWARD_OPEN_ENUMS = [ReportFlagCodeSchema, ParagraphOriginSchema, RegistrationPathSchema, ConnectorIdSchema] as const;
 
 /** release/bh-trial-2 prints session dates and times over up to 30 lines, and lists the sessions from a given one. */
 const StoredRegistrationPartSchema = z.looseObject({
@@ -104,8 +107,10 @@ export function forwardCompatible(schema: z.ZodType, seen = new Map<z.ZodType, z
 /*
  * Typed as the strict shapes on purpose: every caller is code written for those shapes. A member of a
  * FORWARD_OPEN_ENUMS enum this build does not know reaches it as a plain string; the code that shows or uses those
- * values has a fallback for it (core/labels.ts flagCodeLabel / registrationPathLabel, review-model originLabel,
- * core/forms.ts resolveRegistrationValue).
+ * values has a fallback for it (core/labels.ts flagCodeLabel / registrationPathLabel / connectorIdLabel, review-model
+ * originLabel, core/forms.ts resolveRegistrationValue). A connector id this build does not know names no connector it
+ * has: anything that needs the connector (fetching the record again, filing back, reusing the notes) is refused with a
+ * 4xx, never attempted.
  */
 
 /** A stored report (clinic store, this browser's demo store, and the report a request carries for reading). */
