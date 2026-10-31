@@ -1,4 +1,5 @@
 /** Transactional email: message and provider types (src/server/email). */
+import type { BrandId } from "../../lib/brand";
 
 export type EmailKind = "invitation" | "password_reset" | "two_factor_enabled";
 
@@ -21,6 +22,11 @@ export interface EmailMessage {
   link?: string;
   /** When the link stops working (ISO). */
   linkExpiresAt?: string;
+  /**
+   * The brand the message speaks for, when it is not ClinForms ("clinic": a clinic with the clinic package). The
+   * sender follows it only when that brand's own sender address is configured (providers.ts senderFor).
+   */
+  brand?: BrandId;
 }
 
 export interface DeliveryResult {

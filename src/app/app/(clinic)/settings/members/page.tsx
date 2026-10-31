@@ -5,11 +5,12 @@ import { roleLabel } from "@/lib/account-copy";
 import { isDemoHcpc } from "@/modules/medreport/core/demo-clinic";
 import { WORDING } from "@/modules/medreport/core/wording";
 import { isDemoClinic } from "@/server/admin/clinic-plan";
-import { appOrigin, authSecret, baseUrlSetting } from "@/server/auth/config";
+import { authSecret, baseUrlSetting, brandOrigin } from "@/server/auth/config";
+import { clinicLinkBrand } from "@/server/auth/brand-links";
 import { listClinicMembers, listPendingInvitations } from "@/server/auth/membership";
 import { inviteLink } from "@/server/auth/platform";
 import { assignableRoles, isManager } from "@/server/auth/roles";
-import { requestHeaders, requireAppContext } from "@/server/auth/session";
+import { requireAppContext } from "@/server/auth/session";
 import { getDb } from "@/server/db";
 import { emailProviderName } from "@/server/email";
 import { ukDateTime } from "@/server/email/templates";
@@ -22,16 +23,18 @@ export const metadata: Metadata = { title: "Members" };
 export default async function MembersPage() {
   const { session, membership } = await requireAppContext();
   const db = getDb();
-  const [members, invitations, demoClinic] = await Promise.all([
+  const [members, invitations, demoClinic, linkBrand] = await Promise.all([
     listClinicMembers(db, membership.organizationId),
     listPendingInvitations(db, membership.organizationId),
     // A demo clinic (made-up data only, set by ClinForms staff): made-up PH-DEMO numbers are accepted – say so.
     isDemoClinic(db, membership.tenantId),
+    // Invitation links go to the clinic's brand host (clinic package → the clinic brand; src/server/auth/brand-links.ts).
+    clinicLinkBrand(db, membership.tenantId),
   ]);
   const manager = isManager(membership.role);
   const roles = assignableRoles(membership.role);
   const emailOff = emailProviderName() === "none";
-  const origin = appOrigin(baseUrlSetting(), requestHeaders());
+  const origin = brandOrigin(baseUrlSetting(), linkBrand);
   const linkSecret = manager ? authSecret() : "";
 
   return (

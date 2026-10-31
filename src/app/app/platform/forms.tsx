@@ -5,6 +5,7 @@ import { Field, Notice } from "@/components/account/shell";
 import { SecretBox, SubmitButton } from "@/components/account/form-controls";
 import { INVITE_COPY, OWNER_RESET_COPY, RETENTION_MAX_DAYS, RETENTION_MIN_DAYS } from "@/lib/account-copy";
 import { PACKAGE_IDS, PACKAGE_PRESETS, SETUP_FEE_PENCE, isPackageId } from "@/lib/packages";
+import { BRANDS } from "@/lib/brand";
 import {
   changeTrialAction,
   createClinicAction,
@@ -21,8 +22,12 @@ import {
 const UK_DATE = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", day: "numeric", month: "long", year: "numeric" });
 const UK_DATE_TIME = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
 
-/** `emailOn`: email is set up on this deployment, so the invitation can be emailed (a choice, on by default). */
-export function CreateClinicForm({ emailOn }: { emailOn: boolean }) {
+/**
+ * `emailOn`: email is set up on this deployment, so the invitation can be emailed (a choice, on by default).
+ * `clinicBrandHost`: the deployment also signs people in on the clinic brand's host – the owner's invitation can go
+ * there (for a clinic that is to have the clinic package; later invitations follow the package).
+ */
+export function CreateClinicForm({ emailOn, clinicBrandHost = false }: { emailOn: boolean; clinicBrandHost?: boolean }) {
   const [state, action] = useFormState(createClinicAction, null as CreateClinicResult | null);
   return (
     <div className="space-y-4">
@@ -48,6 +53,21 @@ export function CreateClinicForm({ emailOn }: { emailOn: boolean }) {
           defaultValue={365}
           hint={`${RETENTION_MIN_DAYS}–${RETENTION_MAX_DAYS} days. The clinic can change it later.`}
         />
+        {clinicBrandHost ? (
+          <div>
+            <label htmlFor="create-link-brand" className={LABEL}>
+              Owner signs in on
+            </label>
+            <select id="create-link-brand" name="linkBrand" className={SELECT} defaultValue="clinforms">
+              <option value="clinforms">{BRANDS.clinforms.productName} ({BRANDS.clinforms.hosts[0]})</option>
+              <option value="clinic">{BRANDS.clinic.productName} ({BRANDS.clinic.hosts[0]})</option>
+            </select>
+            <p className="mt-1 text-xs text-slate-500">
+              Where the invitation link goes. Choose {BRANDS.clinic.productName} for a clinic that will have the {BRANDS.clinic.productName} package, and switch the
+              package on under Packages: later invitations and reset links follow the package.
+            </p>
+          </div>
+        ) : null}
         {emailOn ? (
           <div className="sm:col-span-2">
             <input type="hidden" name="emailChoice" value="1" />

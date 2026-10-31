@@ -2,12 +2,13 @@
 
 **Internal.** ClinDesk's public website (clindesk.co.uk, built in `src/app/clindesk-site`) never invents a price, a
 term or a claim. Every value Khuram must confirm – prices, plans, hosting region, certifications, contract and support
-details, timelines, company number, registered office, response times – comes from ONE file:
+details, timelines, company number, registered office, response times, the legal pages' open points – comes from ONE
+file:
 
     content/clindesk-site.json
 
 It is read when the site is built (the pages are static) and validated with zod (`src/lib/clindesk/content.ts`).
-**49 keys.**
+**57 keys.**
 
 ## How to edit it
 
@@ -33,8 +34,10 @@ Not in this file, on purpose:
 - the contact email (`COMPANY.contactEmail` in `src/lib/site.ts`: khuram@appstackx.co.uk);
 - the free-trial link: the design keeps a "TrialLink" slot only for when a free trial is confirmed (pricing plans and
   the closing call to action) – add it in `src/components/clindesk/cta-band.tsx` / the pricing page then;
-- the legal pages' text (privacy, terms, cookies): reused from clinforms.co.uk (`src/app/(marketing)`), shown in the
-  ClinDesk header and footer. It names ClinForms – review it for ClinDesk before go-live.
+- the legal pages' text itself: ClinDesk has its own privacy policy, terms and cookie policy
+  (`src/app/clindesk-site/{privacy,terms,cookies}`, adapted from ClinForms' – whose pages stay unchanged – and dated
+  `CLINDESK_LEGAL_LAST_UPDATED` in `src/lib/clindesk/site.ts`). Only their open points are fill-ins here (the `legal.*`
+  keys, plus company, security, pricing and support keys they reuse). Have a lawyer review them before go-live.
 
 ## Every key
 
@@ -42,8 +45,8 @@ Not in this file, on purpose:
 
 | Key | Placeholder (current value) | What it is and where it shows |
 |---|---|---|
-| `company.number` | [Company number] | Companies House number of AppstackX Ltd, e.g. 12345678. Footer of every page. |
-| `company.registeredOffice` | [Registered address] | Registered office address on one line, e.g. "1 High Street, Town, AB1 2CD". Footer of every page. |
+| `company.number` | [Company number] | Companies House number of AppstackX Ltd, e.g. 12345678. Footer of every page. Also the privacy policy and the terms ("company number …"). |
+| `company.registeredOffice` | [Registered address] | Registered office address on one line, e.g. "1 High Street, Town, AB1 2CD". Footer of every page. Also the privacy policy and the terms ("registered office …"). |
 
 ### Contact
 
@@ -56,7 +59,7 @@ Not in this file, on purpose:
 | Key | Placeholder (current value) | What it is and where it shows |
 |---|---|---|
 | `pricing.fromPrice` | [£X a month, ex VAT – price and unit to confirm] | Lowest price line in the closing call to action ("From … · Reports is an add-on"), e.g. "£35 per practitioner a month, ex VAT". Home, Features, Reports and Switching pages. |
-| `pricing.vat` | [exclude / include] | Whether prices include VAT: "exclude" or "include" (reads "Prices … VAT"). Pricing page, top and the VAT question. |
+| `pricing.vat` | [exclude / include] | Whether prices include VAT: "exclude" or "include" (reads "Prices … VAT"). Pricing page, top and the VAT question. Also the terms ("fees … VAT"). |
 | `pricing.trialSummary` | [length and terms] | Free trial in a few words after "Free trial:", e.g. "14 days, no card" – or "none". Pricing page, top. |
 | `pricing.essentialsPrice` | [£X] | Price of the Essentials plan per practitioner a month, e.g. "£35". Pricing page, Essentials card. |
 | `pricing.completePrice` | [£X] | Price of the Complete plan per practitioner a month, e.g. "£49". Pricing page, Complete card. |
@@ -64,7 +67,7 @@ Not in this file, on purpose:
 | `pricing.switchingFeeSummary` | [Any switching fee] | Short note on any switching fee in the "With every plan" list, e.g. "Included" or "£X one-off per site". Pricing page. |
 | `pricing.contractLength` | [Contract length, e.g. monthly rolling or 12 months] | Contract length ("How long is the contract?"), e.g. "Monthly rolling". Pricing page FAQ. |
 | `pricing.noticePeriod` | [Notice period] | Notice period, written as a sentence fragment after the contract length, e.g. "30 days' notice to leave". Pricing page FAQ. |
-| `pricing.dataExport` | [How export works: formats, timescale and any cost] | How a clinic exports its data when it leaves: formats, timescale and any cost. Pricing page FAQ. |
+| `pricing.dataExport` | [How export works: formats, timescale and any cost] | How a clinic exports its data when it leaves: formats, timescale and any cost. Pricing page FAQ. Also the terms, after "How the data is returned:". |
 | `pricing.switchingFee` | [Switching fee, if any] | Switching fee, if any ("Will you help us switch?" answer). Pricing page FAQ. |
 | `pricing.trialTerms` | [Trial length and terms] | Free trial answer ("Is there a free trial?"), e.g. "Yes – 14 days on your own data, no card needed". Pricing page FAQ. |
 
@@ -82,8 +85,8 @@ Not in this file, on purpose:
 | Key | Placeholder (current value) | What it is and where it shows |
 |---|---|---|
 | `support.summary` | [Support hours and channels] | Support in a few words, e.g. "Mon–Fri 08:00–18:00, by email and phone". Features and Pricing pages ("Support"). |
-| `support.hours` | [Support hours, e.g. Monday to Friday, 08:00–18:00] | Support hours ("When can we get support?"). Pricing page FAQ. |
-| `support.channels` | [email, phone or in-app] | How to reach support, after "by", e.g. "email and phone". Pricing page FAQ. |
+| `support.hours` | [Support hours, e.g. Monday to Friday, 08:00–18:00] | Support hours ("When can we get support?"). Pricing page FAQ. Also the terms, in brackets after the support channels. |
+| `support.channels` | [email, phone or in-app] | How to reach support, after "by", e.g. "email and phone". Pricing page FAQ. Also the terms ("Support is by …"). |
 
 ### Hosting
 
@@ -116,19 +119,19 @@ Not in this file, on purpose:
 
 | Key | Placeholder (current value) | What it is and where it shows |
 |---|---|---|
-| `security.region` | [UK region] | The hosting region, e.g. "the UK (London)" – used for the data and the backups ("stored in …"). Security page. |
+| `security.region` | [UK region] | The hosting region, e.g. "the UK (London)" – used for the data and the backups ("stored in …"). Security page. Also the privacy policy (sub-processors and "clinic data is stored in …"). |
 | `security.hostingDetails` | [Hosting details] | One line on the hosting provider and set-up, e.g. "Hosted on … in London". Security page, Hosting. |
-| `security.icoRegistration` | [UK GDPR / ICO registration – to confirm] | ICO registration line, e.g. "Registered with the ICO, number ZA123456". Security page top. |
+| `security.icoRegistration` | [UK GDPR / ICO registration – to confirm] | ICO registration line, e.g. "Registered with the ICO, number ZA123456". Security page top. Also the privacy policy, after "ICO registration:". |
 | `security.certifications` | [Certifications – to confirm] | Certifications held, e.g. "Cyber Essentials" – or say none yet. Never claim one you do not hold. Security page top. |
 | `security.encryptionInTransit` | [standard] | Encryption in transit, after "In transit:", e.g. "TLS 1.2 or later". Security page. |
 | `security.encryptionAtRest` | [standard] | Encryption at rest, after "At rest:", e.g. "AES-256". Security page. |
 | `security.backupFrequency` | [Backup frequency] | How often backups are made, e.g. "Daily" (starts the sentence). Security page, Backups. |
-| `security.backupRetention` | [period] | How long backups are kept, after "kept for", e.g. "7 days". Security page, Backups. |
-| `security.retentionGuidance` | [professional and legal guidance] | Which guidance record retention follows, e.g. "HCPC and Records Management Code guidance". Security page, Retention. |
+| `security.backupRetention` | [period] | How long backups are kept, after "kept for", e.g. "7 days". Security page, Backups. Also the privacy policy ("Backups are kept for …"). |
+| `security.retentionGuidance` | [professional and legal guidance] | Which guidance record retention follows, e.g. "HCPC and Records Management Code guidance". Security page, Retention. Also the privacy policy, Retention. |
 | `security.deletionProcess` | [Deletion process] | One sentence on how records are deleted at the end of the retention period or when a clinic leaves. Security page, Retention. |
-| `security.auditRetention` | [audit retention period] | How long the audit trail is kept, after "Kept for", e.g. "8 years". Security page, Audit trail. |
+| `security.auditRetention` | [audit retention period] | How long the audit trail is kept, after "Kept for", e.g. "8 years". Security page, Audit trail. Also the privacy policy ("kept for …"). |
 | `security.overviewDocument` | [Security overview] | Title of the security overview document you send on request, e.g. "Security overview (PDF)". Security page, Documents. |
-| `security.subProcessorsDocument` | [List of sub-processors] | Title of the sub-processor list you send on request, e.g. "Sub-processors (PDF)". Security page, Documents. |
+| `security.subProcessorsDocument` | [List of sub-processors] | Title of the sub-processor list you send on request, e.g. "Sub-processors (PDF)". Security page, Documents. Also the privacy policy, sub-processors. |
 | `security.issueResponseTime` | [timeframe] | How fast you respond to a reported security issue, after "we'll respond within", e.g. "one working day". Security page. |
 
 ### Book a demo
@@ -136,3 +139,18 @@ Not in this file, on purpose:
 | Key | Placeholder (current value) | What it is and where it shows |
 |---|---|---|
 | `demo.callLength` | [length, e.g. 30–45 minutes] | Length of the demo call, after "Online,", e.g. "30–45 minutes". Book a demo page, "What to expect". |
+
+### Legal pages (privacy, terms, cookies)
+
+For Khuram and a lawyer: none of these may be guessed. Until filled in, the pages show "[to confirm]".
+
+| Key | Placeholder (current value) | What it is and where it shows |
+|---|---|---|
+| `legal.termsEffectiveFrom` | [Date these terms take effect] | The date the terms take effect, after "These terms apply from", e.g. "1 December 2026". Terms page, top. |
+| `legal.accountRetention` | [How long a clinic user's account data is kept after the clinic's account closes] | How long clinic user accounts (name, email, sign-in records) are kept after a clinic's account closes, e.g. "deleted within 90 days". Privacy page, table of data we control. |
+| `legal.demoRequestRetention` | [How long demo requests are kept] | How long "Book a demo" requests are kept, e.g. "Up to 24 months after our last contact, unless your clinic becomes a customer". Privacy page, table of data we control. |
+| `legal.providerLocations` | [Where the messaging, card payment and human-check services process data, and the safeguards] | Where the patient messaging, card payment and human-check services (all only where switched on) process data, and the transfer safeguards. Privacy page, "Where data is stored". |
+| `legal.humanCheckStorage` | [What the human check stores in the browser, if anything] | What the human check on the booking page and portal sign-in (only where switched on) stores in the browser, if anything, and for how long. Cookie page. |
+| `legal.medicalDeviceStatus` | [Medical device status – to confirm with a lawyer] | One sentence on whether the clinic system is a medical device, checked by a lawyer, e.g. "It is not a medical device." Terms page, clinical responsibility. |
+| `legal.liabilityCap` | [Liability limit – to confirm with a lawyer] | Each party's total liability in any 12-month period, after "is limited to", e.g. "the fees paid and payable by the clinic in the 12 months before the claim". Terms page, liability. |
+| `legal.paymentProviderTerms` | [How the card payment provider's own terms apply – to confirm] | One sentence on whether the card payment provider's own terms also apply to a clinic that switches on card payments. Terms page, fees and payments. |

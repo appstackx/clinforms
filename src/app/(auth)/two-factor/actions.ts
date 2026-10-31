@@ -10,6 +10,7 @@ import { getAuth } from "@/server/auth/auth";
 import { authErrorMessage } from "@/server/auth/errors";
 import { manualEntryKey, otpauthQrDataUri } from "@/server/auth/qr";
 import { getServerSession, hasTwoFactor, requestHeaders, throttle } from "@/server/auth/session";
+import { landingPath } from "@/server/brand";
 
 export type SetupState =
   | { status: "idle" }
@@ -49,5 +50,5 @@ export async function confirmSetup(_prev: ConfirmState, form: FormData): Promise
     return { status: "error", error: authErrorMessage(err, "two_factor_confirm") };
   }
   // Leave this page straight away: a re-render here would still carry the old (now revoked) session cookie.
-  redirect("/app");
+  redirect(landingPath());
 }

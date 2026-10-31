@@ -10,6 +10,7 @@ import { getAuth } from "@/server/auth/auth";
 import { findMembership } from "@/server/auth/membership";
 import { getServerSession, hasTwoFactor, requestHeaders } from "@/server/auth/session";
 import { getDb } from "@/server/db";
+import { landingPath } from "@/server/brand";
 
 /** Sign out; returns the page to load next (the caller loads it in full). */
 export async function endSessionAction(): Promise<string> {
@@ -30,5 +31,5 @@ export async function chooseClinicAction(form: FormData): Promise<string> {
   const membership = organizationId ? await findMembership(getDb(), organizationId, session.user.id) : null;
   if (!membership) return "/app/select-clinic";
   await getAuth().api.setActiveOrganization({ body: { organizationId }, headers: requestHeaders() });
-  return "/app";
+  return landingPath();
 }

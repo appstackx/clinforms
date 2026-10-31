@@ -9,6 +9,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { MessageChannel, MessagePurpose } from "../../../modules/pms/comms/types";
 import { pmsNowMs } from "../../../modules/pms/core/clock";
+import { baseUrlSetting, linkTarget } from "../../auth/config";
 
 type Env = Readonly<Record<string, string | undefined>>;
 
@@ -31,8 +32,19 @@ export function commsLinkSecret(env: Env = process.env): string | null {
   return createHmac("sha256", base).update("clinic-comms:stop-links:v1").digest("base64url");
 }
 
-/** Where links in messages point (the app's public origin). */
+/**
+ * Where links in messages point (patient sign-in links, booking and stop-email links): APP_ORIGIN when set; else the
+ * clinic brand's own origin when this deployment serves it (BETTER_AUTH_URL + CLINFORMS_AUTH_ORIGINS – every clinic
+ * that sends patient messages has the clinic package; docs/auth.md "Two brand hosts"); else BETTER_AUTH_URL.
+ */
 export function commsLinkOrigin(env: Env = process.env): string {
+  if (!env.APP_ORIGIN && env.BETTER_AUTH_URL && env.CLINFORMS_AUTH_ORIGINS) {
+    try {
+      return linkTarget(baseUrlSetting(env), "clinic").origin;
+    } catch {
+      // a malformed CLINFORMS_AUTH_ORIGINS: sign-in itself refuses to start; links fall back to BETTER_AUTH_URL
+    }
+  }
   const raw = env.APP_ORIGIN || env.BETTER_AUTH_URL || `http://localhost:${env.PORT ?? "3180"}`;
   try {
     return new URL(raw).origin;

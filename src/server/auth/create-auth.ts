@@ -17,6 +17,10 @@
  * - Rate limits stored in the database (shared by every server instance), cookie prefix "clinforms",
  *   secure cookies on https, session cookie cache 5 minutes.
  * - Every membership / security change writes an audit_log row (ids only, never patient data).
+ * - Two brand hosts (31/10/2026, docs/auth.md "Two brand hosts"): with CLINFORMS_AUTH_ORIGINS the base URL is per
+ *   request among the app's own origins (config.ts), each trusted for the origin check; cookies stay host-only, so a
+ *   session belongs to the host it was signed in on. Invitation and reset links go to the CLINIC's brand host
+ *   (brand-links.ts), the emails and the authenticator entry carry that brand's name.
  */
 import { createHash, randomInt } from "node:crypto";
 import { betterAuth } from "better-auth";
@@ -30,7 +34,9 @@ import { deliverEmail, invitationEmail, passwordResetEmail, twoFactorEnabledEmai
 import { logAuthEvent } from "../email/log";
 import { appendAudit } from "../repos/audit";
 import { deleteMemberProfile } from "../repos/member-profile";
-import { appOrigin, betterAuthBaseURL, isPlatformAdmin, usesSecureCookies, type BaseUrlSetting } from "./config";
+import { BRANDS, type BrandId } from "../../lib/brand";
+import { betterAuthBaseURL, isPlatformAdmin, linkTarget, requestBrand, trustedOriginsOf, usesSecureCookies, type BaseUrlSetting } from "./config";
+import { clinicLinkBrand, linkBrandHint, userLinkBrand } from "./brand-links";
 import { INVITATION_DAYS, invitationExpiry } from "./invitation-expiry";
 import { inviteLink } from "./invite-token";
 import { AuthDateParsePlugin } from "./pg-dates";
@@ -54,6 +60,11 @@ export const RESET_TOKEN_TTL_SECONDS = 2 * 3600;
 export const SESSION_TTL_SECONDS = 12 * 3600;
 export const COOKIE_PREFIX = "clinforms";
 export const TWO_FACTOR_ISSUER = "ClinForms";
+/** The authenticator app's entry name per brand (the host where two-step verification is set up). */
+export const TWO_FACTOR_ISSUERS: Readonly<Record<BrandId, string>> = {
+  clinforms: TWO_FACTOR_ISSUER,
+  clinic: BRANDS.clinic.productName,
+};
 /** The platform's own user: the inviter of record for clinics set up by the platform. It has no password. */
 export const PLATFORM_USER_ID = "clinforms-platform";
 export const PLATFORM_USER_EMAIL = "platform@clinforms.invalid";
@@ -131,7 +142,7 @@ export interface CreateAuthInput {
   isPlatformAdminEmail?: (email: string) => boolean;
 }
 
-type AnyCtx = { path?: string; body?: Record<string, unknown> } | null | undefined;
+type AnyCtx = { path?: string; body?: Record<string, unknown>; request?: Request; headers?: Headers } | null | undefined;
 
 /** Rows Better Auth hands to hooks (dates may be Date objects or ISO strings). */
 function isoOf(value: unknown): string {
@@ -176,10 +187,17 @@ export function createAuth(input: CreateAuthInput) {
     for (const m of memberships) await audit(m.organizationId, { userId, targetType: "user", targetId: userId, ...entry });
   }
 
-  async function origin(request?: Request | null): Promise<string> {
-    if (request) return appOrigin(input.baseUrl, request.headers);
-    const headers = input.currentHeaders ? await input.currentHeaders().catch(() => null) : null;
-    return appOrigin(input.baseUrl, headers);
+  /** The headers of the request behind a call: Better Auth's request, else the current server action's. */
+  async function headersOf(source?: { request?: Request | null; headers?: Headers | null } | Request | null): Promise<Headers | null> {
+    if (source instanceof Request) return source.headers;
+    if (source?.request) return source.request.headers;
+    if (source?.headers && typeof (source.headers as Headers).get === "function") return source.headers as Headers;
+    return input.currentHeaders ? await input.currentHeaders().catch(() => null) : null;
+  }
+
+  /** The brand of the host a call came in on – only when that host is one of the app's own origins. */
+  async function hostBrand(source?: Parameters<typeof headersOf>[0]): Promise<BrandId | null> {
+    return requestBrand(input.baseUrl, await headersOf(source));
   }
 
   function requireClinicRole(role: unknown): void {
@@ -194,6 +212,9 @@ export function createAuth(input: CreateAuthInput) {
     appName: "ClinForms",
     secret: input.secret,
     baseURL: betterAuthBaseURL(input.baseUrl),
+    // The app's own origins only (Better Auth derives the same list from the base URL setting; written out so the
+    // origin/CSRF check's allow-list is explicit and tested). Never a wildcard, never a request's own host.
+    trustedOrigins: trustedOriginsOf(input.baseUrl),
     // transaction: false on EVERY dialect – D1 has none, and on SQLite/Postgres our hooks (invite-only check,
     // active clinic, audit) query through the shared Kysely instance: inside a Better Auth transaction that
     // deadlocks a single connection and can exhaust a small Postgres pool. Each statement is still atomic.
@@ -209,9 +230,11 @@ export function createAuth(input: CreateAuthInput) {
       resetPasswordTokenExpiresIn: RESET_TOKEN_TTL_SECONDS,
       revokeSessionsOnPasswordReset: true,
       async sendResetPassword({ user, token }, request) {
-        const link = `${await origin(request)}/reset-password?token=${encodeURIComponent(token)}`;
+        // The brand host of the person's clinic(s) – brand-links.ts – never a host from the request that is not ours.
+        const { origin, brand } = linkTarget(input.baseUrl, linkBrandHint() ?? (await userLinkBrand(db, user.id, await hostBrand(request))));
+        const link = `${origin}/reset-password?token=${encodeURIComponent(token)}`;
         const expiresAt = new Date(Date.now() + RESET_TOKEN_TTL_SECONDS * 1000).toISOString();
-        await deliverEmail(passwordResetEmail({ to: { email: user.email, name: user.name }, link, expiresAt }));
+        await deliverEmail(passwordResetEmail({ to: { email: user.email, name: user.name }, link, expiresAt, brand }));
       },
       async onPasswordReset({ user }) {
         await auditForUser(user.id, { action: "auth.password_reset" });
@@ -281,7 +304,8 @@ export function createAuth(input: CreateAuthInput) {
               enablingContexts.add(c as object);
               await db.deleteFrom("session").where("userId", "=", user.id).execute();
               await auditForUser(user.id, { action: "auth.two_factor_enable" });
-              await deliverEmail(twoFactorEnabledEmail({ to: { email: user.email, name: user.name }, at: new Date().toISOString() }));
+              const brand = (await hostBrand(c)) ?? "clinforms";
+              await deliverEmail(twoFactorEnabledEmail({ to: { email: user.email, name: user.name }, at: new Date().toISOString(), brand }));
             }
           },
         },
@@ -332,6 +356,11 @@ export function createAuth(input: CreateAuthInput) {
         }
         if (ctx.path === "/two-factor/enable" && ctx.body?.method && ctx.body.method !== "totp") {
           throw new APIError("BAD_REQUEST", { message: "Use an authenticator app.", code: "TOTP_ONLY" });
+        }
+        if (ctx.path === "/two-factor/enable") {
+          // The authenticator entry is named after the brand of the host it is set up on (never a name the client sends).
+          const issuer = TWO_FACTOR_ISSUERS[(await hostBrand(ctx as AnyCtx & object)) ?? "clinforms"];
+          return { context: { body: { ...(ctx.body ?? {}), issuer } } };
         }
       }),
       // Audit rows that need the acting member (Better Auth's organization hooks only name the target).
@@ -385,9 +414,11 @@ export function createAuth(input: CreateAuthInput) {
         requireEmailVerificationOnInvitation: false,
         invitationLimit: 100,
         membershipLimit: 500,
-        async sendInvitationEmail(data, request) {
+        async sendInvitationEmail(data) {
           const inviterName = data.inviter.user.id === PLATFORM_USER_ID ? null : data.inviter.user.name;
-          const link = inviteLink(await origin(request), data.id, input.secret);
+          // The inviting clinic's brand host (clinic package → the clinic brand), not the inviter's current host.
+          const { origin, brand } = linkTarget(input.baseUrl, linkBrandHint() ?? (await clinicLinkBrand(db, data.organization.slug)));
+          const link = inviteLink(origin, data.id, input.secret);
           await deliverEmail(
             invitationEmail({
               to: { email: data.email },
@@ -396,6 +427,7 @@ export function createAuth(input: CreateAuthInput) {
               inviterName,
               link,
               expiresAt: isoOf(data.invitation.expiresAt),
+              brand,
             }),
           );
         },

@@ -6,6 +6,7 @@ import { getAuth } from "@/server/auth/auth";
 import { safeNextPath } from "@/server/auth/config";
 import { authErrorKey, authErrorMessage } from "@/server/auth/errors";
 import { clientIp, requestHeaders, throttle } from "@/server/auth/session";
+import { landingPath } from "@/server/brand";
 
 export type LoginState =
   | { status: "idle" }
@@ -39,7 +40,7 @@ export async function codeStep(_prev: LoginState, form: FormData): Promise<Login
   // Backup codes are capitals and digits (create-auth.ts generateBackupCodes): one typed in small letters is
   // accepted too. Codes issued before that change are mixed-case and are used exactly as typed.
   const code = method === "backup" && /^[a-z0-9-]+$/.test(typed) && /[a-z]/.test(typed) ? typed.toUpperCase() : typed;
-  const next = safeNextPath(form.get("next"));
+  const next = safeNextPath(form.get("next"), landingPath());
   if (!code) return { status: "error", error: method === "backup" ? ACCOUNT_ERRORS.invalidBackupCode : ACCOUNT_ERRORS.invalidCode };
   if (!(await throttle("second-factor-ip", clientIp(), 30, WINDOW))) return { status: "error", error: ACCOUNT_ERRORS.tooManyAttempts };
   try {

@@ -1,6 +1,5 @@
 import { CLINDESK_CONTENT } from "@/lib/clindesk/content";
-import { ACCESSIBILITY_LAST_UPDATED, CLINDESK_PAGES, CLINDESK_SITE_UPDATED, clindeskUrl } from "@/lib/clindesk/site";
-import { LEGAL_LAST_UPDATED, PRIVACY_LAST_UPDATED } from "@/lib/site";
+import { ACCESSIBILITY_LAST_UPDATED, CLINDESK_LEGAL_LAST_UPDATED, CLINDESK_PAGES, CLINDESK_SITE_UPDATED, clindeskUrl } from "@/lib/clindesk/site";
 
 /**
  * /sitemap.xml on ClinDesk's hosts (src/middleware.ts rewrites it here; clinforms.co.uk keeps src/app/sitemap.ts):
@@ -10,8 +9,8 @@ import { LEGAL_LAST_UPDATED, PRIVACY_LAST_UPDATED } from "@/lib/site";
 export const dynamic = "force-static";
 
 function lastModified(path: string): string {
-  if (path === "/privacy") return PRIVACY_LAST_UPDATED;
-  if (path === "/terms" || path === "/cookies") return LEGAL_LAST_UPDATED;
+  // ClinDesk's own legal text (31/10/2026), not ClinForms' dates.
+  if (path === "/privacy" || path === "/terms" || path === "/cookies") return CLINDESK_LEGAL_LAST_UPDATED;
   if (path === "/accessibility") return ACCESSIBILITY_LAST_UPDATED;
   return CLINDESK_SITE_UPDATED;
 }

@@ -12,6 +12,7 @@ import { authSecret } from "@/server/auth/config";
 import { findInvitationForLink } from "@/server/auth/membership";
 import { clientIp, getServerSession, hasTwoFactor, requestHeaders, throttle } from "@/server/auth/session";
 import { getDb } from "@/server/db";
+import { landingPath } from "@/server/brand";
 
 export type AcceptState = { status: "idle" } | { status: "error"; error: string };
 
@@ -60,7 +61,7 @@ export async function joinAsSignedIn(_prev: AcceptState, form: FormData): Promis
   } catch (err) {
     return { status: "error", error: authErrorMessage(err, "accept_invitation_existing") };
   }
-  redirect(hasTwoFactor(session) ? "/app" : "/two-factor");
+  redirect(hasTwoFactor(session) ? landingPath() : "/two-factor");
 }
 
 export async function signOutForInvite(form: FormData): Promise<void> {

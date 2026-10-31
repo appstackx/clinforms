@@ -32,7 +32,7 @@ function filesUnder(dir: string): string[] {
 describe("content/clindesk-site.json", () => {
   it("is valid, has exactly the listed keys, each with a value and a description", () => {
     assert.deepEqual(Object.keys(CLINDESK_CONTENT.values).sort(), [...CLINDESK_CONTENT_KEYS].sort());
-    assert.equal(CLINDESK_CONTENT_KEYS.length, 49);
+    assert.equal(CLINDESK_CONTENT_KEYS.length, 57);
     for (const k of CLINDESK_CONTENT_KEYS) {
       assert.ok(CLINDESK_CONTENT.values[k].value.length > 0, k);
       assert.ok(CLINDESK_CONTENT.values[k].description.length >= 10, k);
