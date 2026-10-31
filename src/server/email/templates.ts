@@ -180,3 +180,40 @@ export function twoFactorEnabledEmail(input: TwoFactorEnabledEmailInput): EmailM
   ]);
   return { kind: "two_factor_enabled", to: input.to, subject, text, html, ...brandField(input.brand) };
 }
+
+export type TextCreditNotice = { kind: "low"; balance: number; lowThreshold: number } | { kind: "zero" } | { kind: "topup_failed" };
+
+export interface TextCreditNoticeEmailInput {
+  to: EmailRecipient;
+  /** Default ClinForms (a clinic with the clinic package: "clinic"). */
+  brand?: BrandId;
+  clinicName: string;
+  notice: TextCreditNotice;
+  /** The clinic's Text credits page. */
+  creditsUrl: string;
+}
+
+/**
+ * Text credits (the clinic system's prepaid texts): the warning at 20 % of the last pack, at zero, and when an
+ * automatic top-up did not go through. To the clinic's owner and admins. No patient data; never the payment
+ * provider's name.
+ */
+export function textCreditNoticeEmail(input: TextCreditNoticeEmailInput): EmailMessage {
+  const name = productNameOf(input.brand);
+  const n = input.notice;
+  const subject =
+    n.kind === "low" ? `Text credits running low – ${input.clinicName}` : n.kind === "zero" ? `Text credits used up – ${input.clinicName}` : `Automatic top-up did not go through – ${input.clinicName}`;
+  const first =
+    n.kind === "low"
+      ? `${input.clinicName} has ${n.balance.toLocaleString("en-GB")} text ${n.balance === 1 ? "credit" : "credits"} left.`
+      : n.kind === "zero"
+        ? `${input.clinicName} has no text credits left.`
+        : `The card payment for the automatic top-up of ${input.clinicName}'s text credits did not go through. Nothing was charged, and automatic top-up is paused.`;
+  const second =
+    n.kind === "topup_failed"
+      ? "Check the saved card or buy a pack, then switch automatic top-up on again. Until then, automatic messages go by email where the patient has an email address and allows email; otherwise they are not sent."
+      : "When credits run out, automatic messages go by email where the patient has an email address and allows email; otherwise they are not sent. Texts are never sent on credit.";
+  const text = [greeting(input.to), "", first, "", second, "", "Buy more credits or change automatic top-up here:", input.creditsUrl, "", `${name} · ${COMPANY_NAME}`].join("\n");
+  const html = layout(name, subject, [escapeHtml(greeting(input.to)), escapeHtml(first), escapeHtml(second)], { label: "Open text credits", href: input.creditsUrl });
+  return { kind: "text_credit_notice", to: input.to, subject, text, html, ...brandField(input.brand) };
+}

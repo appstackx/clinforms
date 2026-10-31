@@ -53,6 +53,14 @@ providers in outbox / test mode only), §11.
 - **Patient-facing wording** (`/app/clinic/messages/patient-view`): the clinic's current templates written out by the
   same code that sends, with each text's length.
 
+## Text credits (prepaid, 31/10/2026)
+
+Every text needs credits first (1 credit = 1 segment): reserved before the provider call, returned when the text is
+not sent; with too little credit an automatic text goes by email instead (or is recorded "no text credit"), a text
+written by hand is refused. Owner/admin warnings at 20 % and zero; optional automatic top-up with a saved card.
+Migration `0143_pms_sms_credits`; screens Messages → Text credits; platform page Text credits. Runbook, env vars,
+webhook and go-live: [`SMS-CREDITS.md`](SMS-CREDITS.md).
+
 ## Providers – nothing reaches a patient in this build
 
 `CLINIC_SMS_PROVIDER` / `CLINIC_EMAIL_PROVIDER` = `outbox` (default: kept, shown, never sent) or `test` (a test service
@@ -97,8 +105,9 @@ now" does the run by hand.
 
 ## Data
 
-Migrations `0140_pms_comms` (settings, templates, reminder rules, messages, planned messages, consent events) and
-`0141_pms_letters` (letter templates, letters), each with its Postgres twin. Message and letter text is encrypted
+Migrations `0140_pms_comms` (settings, templates, reminder rules, messages, planned messages, consent events),
+`0141_pms_letters` (letter templates, letters), `0142_pms_messages_hold` and `0143_pms_sms_credits` (text credit
+accounts and the append-only ledger), each with its Postgres twin. Message and letter text is encrypted
 (`*_enc`); lists never decrypt – an outbox row says what a message is for from plain fields. Nothing is deleted
 (messages and letters belong to the patient's record; a letter written in error is withdrawn). Every change and its
 audit row are one batch (conditional audit INSERT – `src/server/repos/pms/comms/shared.ts`).

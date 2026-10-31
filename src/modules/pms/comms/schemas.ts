@@ -92,6 +92,7 @@ export const SKIP_REASONS = [
   "appointment_cancelled",
   "not_entitled",
   "provider_error",
+  "no_sms_credit",
 ] as const;
 
 export const LETTER_STATUSES = ["draft", "final", "void"] as const;

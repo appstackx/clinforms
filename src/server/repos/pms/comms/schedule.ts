@@ -374,9 +374,16 @@ export async function claimDueMessages(ctx: DbContext, tenantId: string, token: 
 }
 
 /** The UPDATE that closes a claimed row (sent with its message, or skipped with a reason) – for a batch. */
-export function closeScheduleQuery(ctx: DbContext, tenantId: string, id: string, token: string, outcome: { status: "sent"; messageId: string } | { status: "skipped" | "failed"; reason: SkipReason }): BatchQuery {
+export function closeScheduleQuery(
+  ctx: DbContext,
+  tenantId: string,
+  id: string,
+  token: string,
+  outcome: { status: "sent"; messageId: string; note?: SkipReason | null } | { status: "skipped" | "failed"; reason: SkipReason },
+): BatchQuery {
   const at = nowIso(ctx);
-  const set = outcome.status === "sent" ? { status: "sent", message_id: outcome.messageId, skip_reason: null, updated_at: at } : { status: outcome.status, skip_reason: outcome.reason, updated_at: at };
+  // A "sent" row may carry a note: "no_sms_credit" = a planned text that went by email instead (not enough credit).
+  const set = outcome.status === "sent" ? { status: "sent", message_id: outcome.messageId, skip_reason: outcome.note ?? null, updated_at: at } : { status: outcome.status, skip_reason: outcome.reason, updated_at: at };
   return ctx.db.updateTable(T).set(set).where("tenant_id", "=", tenantId).where("id", "=", id).where("claim_token", "=", token).where("status", "=", "processing");
 }
 
@@ -491,4 +498,24 @@ export async function scheduleByMessageIds(ctx: DbContext, tenantId: string, mes
     for (const r of rows) if (r.message_id) out.set(r.message_id, toScheduled(r));
   }
   return out;
+}
+
+/**
+ * Whether an appointment already has an EMAIL of this kind planned, being sent or sent (text credits: a text that
+ * cannot be paid for goes by email instead – unless the patient gets that email anyway).
+ */
+export async function hasEmailCounterpart(ctx: DbContext, tenantId: string, appointmentId: string, kind: AppointmentMessageKind, exceptId: string): Promise<boolean> {
+  assertTenantId(tenantId);
+  const r = await ctx.db
+    .selectFrom(T)
+    .select("id")
+    .where("tenant_id", "=", tenantId)
+    .where("appointment_id", "=", appointmentId)
+    .where("kind", "=", kind)
+    .where("channel", "=", "email")
+    .where("status", "in", ["pending", "processing", "sent"])
+    .where("id", "<>", exceptId)
+    .limit(1)
+    .executeTakeFirst();
+  return Boolean(r);
 }

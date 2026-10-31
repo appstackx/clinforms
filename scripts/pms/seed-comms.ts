@@ -12,6 +12,7 @@
  * Wiring (orchestrator, scripts/pms/seed-demo.ts – after seedBilling):
  *   await seedComms({ db, cipher: getDataCipher() }, slug, { log: (line) => console.log(`  ${line}`) });
  */
+import { adjustSmsCredits } from "../../src/server/repos/pms/comms/credits";
 import { ukToday } from "../../src/modules/pms/core/text";
 import { addDays, londonToUtcIso } from "../../src/modules/pms/comms/schedule";
 import type { EmailProvider, SmsProvider } from "../../src/server/pms/comms/providers";
@@ -77,6 +78,8 @@ export async function seedComms(base: Pick<RepoContext, "db" | "cipher">, tenant
   // Settings and reminders.
   const s = await getCommsSettings(ctx, tenantId);
   await updateCommsSettings(ctx, tenantId, s.rev, { smsSender: "Riverside", replyPhone: "01632 960100", replyEmail: "hello@riverside-demo.example.com", quietStart: "20:00", quietEnd: "08:00" }, SEED_ACTOR);
+  // Texts are prepaid: the demonstration clinic starts with demonstration credits (a support adjustment).
+  await adjustSmsCredits(ctx, tenantId, { credits: 1000, reason: "Demonstration credits (fictional clinic)" }, SEED_ACTOR);
   await createReminderRule(ctx, tenantId, { name: "Text the day before", channel: "sms", timing: "hours_before", hoursBefore: 24 }, SEED_ACTOR);
   await createReminderRule(ctx, tenantId, { name: "Email two days before", channel: "email", timing: "days_before", daysBefore: 2, sendAt: "10:00" }, SEED_ACTOR);
 

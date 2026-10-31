@@ -72,6 +72,7 @@ const SETUP_ICONS: Readonly<Record<string, ShellNavIcon>> = {
   "portal.forms": "form",
   "reporting.billing": "billing",
   "comms.settings": "messages",
+  "comms.credits": "messages",
   "reporting.targets": "target",
   "reporting.import": "import",
 };
@@ -120,6 +121,7 @@ export const SETUP_ORDER: readonly string[] = [
   "portal.forms",
   "reporting.billing",
   "comms.settings",
+  "comms.credits",
   "reporting.targets",
   "reporting.audit",
   "reporting.import",

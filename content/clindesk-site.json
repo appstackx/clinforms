@@ -228,6 +228,10 @@
     "legal.paymentProviderTerms": {
       "value": "[How the card payment provider's own terms apply – to confirm]",
       "description": "One sentence on whether the card payment provider's own terms also apply to a clinic that switches on card payments. Terms page, fees and payments."
+    },
+    "legal.textCredits": {
+      "value": "Text messages to patients are paid for in advance with text credits, bought in packs by card payment: one credit sends one text segment (up to 160 characters, or fewer with special characters). Nothing is sent on credit. Unused credits stay on the clinic's account while it is open and end when the account closes. Credits are not refundable and have no cash value.",
+      "description": "The prepaid text credits line (Khuram's decision, 31/10/2026: prepaid only, unused credits stay while the account is open, not refundable). Terms page, fees and payments."
     }
   }
 }

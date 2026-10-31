@@ -74,6 +74,7 @@ export const ERROR_LABELS: Readonly<Record<string, string>> = {
   test_bounced: "Email address bounced",
   provider_error: "The message service did not accept it",
   undelivered: "Not delivered",
+  no_sms_credit: "Not enough text credit",
 };
 
 export const SCHEDULE_STATUS_LABELS: Readonly<Record<ScheduleStatus, string>> = {
@@ -105,6 +106,7 @@ export const SKIP_REASON_LABELS: Readonly<Record<SkipReason, string>> = {
   appointment_cancelled: "The appointment was cancelled.",
   not_entitled: "The clinic does not use this part of the system.",
   provider_error: "The message service did not accept it.",
+  no_sms_credit: "Not enough text credit, and no email address that allows email to send it to instead.",
 };
 
 export const CONSENT_SOURCE_LABELS: Readonly<Record<ConsentSource, string>> = {

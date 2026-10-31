@@ -32,6 +32,7 @@ import { verifyStopToken } from "../../../../pms/comms/links";
 import { outboxEmail, outboxSms } from "../../../../pms/comms/providers/outbox";
 import { clearTestOutbox, testEmail, testOutbox, testSms } from "../../../../pms/comms/providers/test";
 import { recordInboundSms } from "../../../../pms/comms/replies";
+import { adjustSmsCredits } from "../credits";
 
 export interface CommsSuiteDb {
   db: Kysely<Database>;
@@ -70,6 +71,8 @@ export function defineCommsRepoSuite(label: string, factory: () => Promise<Comms
         [B, STAFF_B],
       ] as const) {
         await setEntitlement(ctx, t, "clinic", { status: "trial" }, who);
+        // Texts are prepaid (text credits): both clinics start with enough for the suite.
+        await adjustSmsCredits(ctx, t, { credits: 1000, reason: "Suite set-up (fictional)" }, who);
       }
       const site = await createSite(ctx, A, { name: "Bletchley (fictional)", phone: "01632 960101", address: ["2 Station Parade (fictional)", "Bletchley"], postcode: "MK2 9ZZ" }, STAFF);
       const prac = await createPractitioner(ctx, A, { displayName: "Sarah Reid", registrationNumber: "PH-DEMO-01", defaultSiteId: site.id }, STAFF);

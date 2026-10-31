@@ -2,6 +2,7 @@
  * The comms module's HTTP handlers and settings: provider selection (no live keys, no live provider), stop-email
  * links, the cron run, the SMS webhook (not live: test provider only, signed) and the unsubscribe page.
  */
+import { adjustSmsCredits } from "../../repos/pms/comms/credits";
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
 import { testCipher } from "../../db/testing/databases";
@@ -135,6 +136,7 @@ describe("cron, webhook and unsubscribe handlers", () => {
     g = createGuardedSqliteDb();
     ctx = { db: g.db, cipher: testCipher(), now: () => new Date(clock) };
     await setEntitlement(ctx, A, "clinic", { status: "trial" }, STAFF);
+    await adjustSmsCredits(ctx, A, { credits: 100, reason: "Test set-up (fictional)" }, STAFF);
     const site = await createSite(ctx, A, { name: "Bletchley (fictional)" }, STAFF);
     const megan = await createPatient(ctx, A, { firstName: "Megan", lastName: "Hart", phoneMobile: "07700 900123", email: "megan.hart@example.com" }, STAFF);
     Object.assign(ids, { site: site.id, megan: megan.id });

@@ -128,6 +128,12 @@ export default async function PlatformPage() {
             </Link>{" "}
             <span className="text-slate-600">– reports, drafting calls, tokens, estimated drafting cost and margin per month.</span>
           </p>
+          <p className="mt-2 text-sm">
+            <Link href="/app/platform/text-credits" className="font-medium text-teal-700 underline-offset-4 hover:underline">
+              Text credits
+            </Link>{" "}
+            <span className="text-slate-600">– prepaid texts per clinic: balance, history and support adjustments.</span>
+          </p>
         </Panel>
 
         <Panel

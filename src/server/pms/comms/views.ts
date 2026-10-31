@@ -123,7 +123,9 @@ function messageRow(actor: CommsActor, m: MessageSummary, names: Map<string, str
     kind,
     summary: summaryOf(kind, sch?.startsAt ?? null),
     state,
-    why: state === "held" && m.holdUntil ? `Quiet hours – will send ${formatAppointmentTime(m.holdUntil)}` : state === "failed" ? (ERROR_LABELS[m.errorCode ?? ""] ?? "Not delivered") : state === "outbox" ? "Kept in the outbox – not sent" : m.attempts > 1 && state === "sent" ? `Sent on try ${m.attempts}` : null,
+    why: sch?.skipReason === "no_sms_credit" && m.channel === "email" && state !== "failed"
+      ? "By email instead of a text – not enough text credit"
+      : state === "held" && m.holdUntil ? `Quiet hours – will send ${formatAppointmentTime(m.holdUntil)}` : state === "failed" ? (ERROR_LABELS[m.errorCode ?? ""] ?? "Not delivered") : state === "outbox" ? "Kept in the outbox – not sent" : m.attempts > 1 && state === "sent" ? `Sent on try ${m.attempts}` : null,
     canRetry: state === "failed" && actor.can("messages.send") && canSeeMessage(actor, m) && canResendKind(m.kind),
   };
 }

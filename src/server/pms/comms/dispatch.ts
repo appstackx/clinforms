@@ -18,7 +18,7 @@ import { STOP_CONFIRMATION } from "../../../modules/pms/comms/defaults";
 import type { DocumentType, MessageChannel, MessageKind, MessagePurpose, MessageStatus, ScheduledMessage, SkipReason, TemplateKind } from "../../../modules/pms/comms/types";
 import type { PmsActor } from "../../../modules/pms/core/types";
 import type { BatchQuery } from "../../db/batch";
-import { RepoInputError, nowIso, parseInput, pmsAuditQuery, writeWithAudit, type RepoContext } from "../../repos/pms/context";
+import { RepoInputError, nowIso, parseInput, pmsAuditQuery, pmsId, writeWithAudit, type RepoContext } from "../../repos/pms/context";
 import { getMessagingContact, getMessagingContacts } from "../../repos/pms/comms/contacts";
 import {
   claimHeldMessage,
@@ -33,7 +33,7 @@ import {
   type SendOutcome,
 } from "../../repos/pms/comms/messages";
 import { listReminderRules } from "../../repos/pms/comms/rules";
-import { claimDueMessages, closeScheduleQuery } from "../../repos/pms/comms/schedule";
+import { claimDueMessages, closeScheduleQuery, hasEmailCounterpart } from "../../repos/pms/comms/schedule";
 import { getCommsSettings } from "../../repos/pms/comms/settings";
 import { getMessageTemplate, resolveTemplate } from "../../repos/pms/comms/templates";
 import { incrementUsage } from "../../repos/pms/entitlements";
@@ -53,6 +53,11 @@ import {
 } from "./render";
 import { pmsNow, pmsNowMs } from "../../../modules/pms/core/clock";
 import { NO_RESEND_MESSAGE, canResendKind, redactSecretLinks } from "../../../modules/pms/comms/secret-links";
+import { CREDIT_COPY, creditsForSms } from "../../../modules/pms/comms/credits";
+import { COMMS_ID_PREFIXES } from "../../../modules/pms/comms/ids";
+import { cardPaymentsConfig, createCardPayments } from "./credits/card-payments";
+import { emailCreditNotifier } from "./credits/notify";
+import { hasCreditsFor, returnCreditsForText, takeCreditsForText, type CreditDeps } from "./credits/service";
 
 /** The diary's answer for the run: the current status of these appointments ("booked", "cancelled", …). */
 export type AppointmentStatusReader = (ctx: RepoContext, tenantId: string, appointmentIds: readonly string[]) => Promise<ReadonlyMap<string, string>>;
@@ -67,12 +72,55 @@ export interface DispatchDeps {
    * confirmation of an appointment no longer booked is skipped even if the diary's sync was missed.
    */
   appointmentStatus?: AppointmentStatusReader;
+  /**
+   * Prepaid text credits (./credits/service.ts): the automatic top-up's card payments and the owner/admin
+   * warnings. Texts need credits WHETHER OR NOT this is set – without it there is no top-up and no warning email.
+   */
+  credits?: CreditDeps;
+}
+
+/** Card payments for automatic top-up from the environment (null when not set up – ./credits/card-payments.ts). */
+export function creditDepsFromEnv(env: Readonly<Record<string, string | undefined>> = process.env): CreditDeps {
+  return {
+    payments: () => {
+      const c = cardPaymentsConfig(env);
+      return c.ok ? createCardPayments(c.config) : null;
+    },
+    notify: emailCreditNotifier(env),
+  };
 }
 
 /** Providers and link settings from the environment (throws CommsConfigError on a bad provider setting). */
 export function dispatchDepsFromEnv(env: Readonly<Record<string, string | undefined>> = process.env, appointmentStatus?: AppointmentStatusReader): DispatchDeps {
-  return { providers: resolveCommsProviders(env), linkSecret: commsLinkSecret(env), linkOrigin: commsLinkOrigin(env), appointmentStatus };
+  return { providers: resolveCommsProviders(env), linkSecret: commsLinkSecret(env), linkOrigin: commsLinkOrigin(env), appointmentStatus, credits: creditDepsFromEnv(env) };
 }
+
+/* ------------------------------------------------------------------------------------------------
+ * Text credits around a send (prepaid – never sent on credit)
+ * ----------------------------------------------------------------------------------------------*/
+
+/** Credits taken for one text before the provider call (null: the outbox keeps it – nothing is taken). */
+type Taken = { debitId: string; credits: number } | null;
+
+/**
+ * Before a text goes to the provider: its credits (one per segment of what is SENT). The outbox provider sends
+ * nothing, so nothing is taken – but the balance must cover the text, so the outbox shows what would happen.
+ * { ok: false }: not enough credit (after any automatic top-up) – nothing taken.
+ */
+async function takeForText(ctx: RepoContext, tenantId: string, text: string, messageId: string, outbox: boolean, actor: PmsActor, deps: DispatchDeps): Promise<{ ok: true; taken: Taken } | { ok: false }> {
+  const credits = Math.max(1, creditsForSms(text));
+  if (outbox) return (await hasCreditsFor(ctx, tenantId, credits)).ok ? { ok: true, taken: null } : { ok: false };
+  const r = await takeCreditsForText(ctx, tenantId, { credits, messageId }, actor, deps.credits ?? {});
+  return r.ok ? { ok: true, taken: { debitId: r.debitId, credits: r.credits } } : { ok: false };
+}
+
+/** After the provider answered: a text that was not sent gets its credits back (at most once). */
+async function settleText(ctx: RepoContext, tenantId: string, taken: Taken, messageId: string, outcome: SendOutcome["status"] | "not_written", actor: PmsActor): Promise<void> {
+  if (!taken || outcome === "sent") return;
+  await returnCreditsForText(ctx, tenantId, taken, messageId, outcome, actor);
+}
+
+const NO_CREDIT: SendResult = { ok: false, reason: "no_sms_credit", message: CREDIT_COPY.noCredit };
 
 /** Who the system is in the audit trail when no person acts (the reminder run, a reply arriving). */
 export const SYSTEM_ACTOR: PmsActor = { userId: null, sessionId: null };
@@ -162,35 +210,50 @@ async function deliver(
 ): Promise<SendResult> {
   const provider = args.channel === "sms" ? deps.providers.sms : deps.providers.email;
   const outbox = provider.mode === "outbox";
-  const draft = draftFor({ ...args, providerId: provider.id, outbox });
+  const messageId = pmsId(COMMS_ID_PREFIXES.message, ctx);
+  // A text needs its credits first – except one held for the quiet hours, which takes them when it is released.
+  let taken: Taken = null;
+  if (args.channel === "sms" && !args.holdUntil) {
+    const t = await takeForText(ctx, tenantId, (args.sendAs ?? args.composed).text, messageId, outbox, actor, deps);
+    if (!t.ok) return NO_CREDIT;
+    taken = t.taken;
+  }
+  const draft = { ...draftFor({ ...args, providerId: provider.id, outbox }), id: messageId };
   const { id, query } = outboundInsertQuery(ctx, tenantId, draft, actor);
-  await writeWithAudit(
-    ctx,
-    [
-      query,
-      pmsAuditQuery(ctx, tenantId, actor, {
-        action: "pms.message.send",
-        targetType: "pms_message",
-        targetId: id,
-        detail: {
-          channel: draft.channel,
-          kind: draft.kind,
-          purpose: draft.purpose,
-          status: draft.status,
-          provider: draft.provider,
-          patientId: draft.patientId,
-          ...(draft.documentType ? { documentType: draft.documentType, documentId: draft.documentId ?? null } : {}),
-          ...(draft.holdUntil ? { held: true } : {}),
-        },
-      }),
-      ...extra,
-    ],
-    { foreignKey: "The patient or template does not exist in this clinic." },
-  );
+  try {
+    await writeWithAudit(
+      ctx,
+      [
+        query,
+        pmsAuditQuery(ctx, tenantId, actor, {
+          action: "pms.message.send",
+          targetType: "pms_message",
+          targetId: id,
+          detail: {
+            channel: draft.channel,
+            kind: draft.kind,
+            purpose: draft.purpose,
+            status: draft.status,
+            provider: draft.provider,
+            patientId: draft.patientId,
+            ...(draft.documentType ? { documentType: draft.documentType, documentId: draft.documentId ?? null } : {}),
+            ...(draft.holdUntil ? { held: true } : {}),
+            ...(taken ? { credits: taken.credits } : {}),
+          },
+        }),
+        ...extra,
+      ],
+      { foreignKey: "The patient or template does not exist in this clinic." },
+    );
+  } catch (err) {
+    await settleText(ctx, tenantId, taken, id, "not_written", actor);
+    throw err;
+  }
   if (draft.holdUntil) return { ok: true, messageId: id, status: "queued", heldUntil: draft.holdUntil };
   if (outbox) return { ok: true, messageId: id, status: "outbox" };
   const outcome = await callProvider(deps, args.channel, id, args.address, args.sendAs ?? args.composed, clinic, sender);
   await recordSendOutcomes(ctx, tenantId, [{ id, outcome }], actor);
+  await settleText(ctx, tenantId, taken, id, outcome.status, actor);
   if (outcome.status === "sent" && args.channel === "sms" && args.composed.segments) await incrementUsage(ctx, tenantId, "sms_segments", args.composed.segments);
   return { ok: true, messageId: id, status: outcome.status };
 }
@@ -364,28 +427,34 @@ export async function sendAppointmentNotice(
     }
   }
   const clinic = await clinicContact(ctx, tenantId, settings);
-  const template = await resolveTemplate(ctx, tenantId, input.kind, channel, null);
-  if (!template) return { ok: false, reason: "bad_template", message: "There is no template for this message." };
-  const composed = composeMessage({
-    kind: input.kind,
-    channel,
-    purpose: "service",
-    subject: template.subject,
-    body: template.body,
-    values: { ...patientValues(contact), ...clinicValues(clinic), ...appointmentValues(input.appointment, directory, clinic) },
-    settings,
-    clinic,
-    stopUrl: channel === "email" ? stopUrl(deps, tenantId, contact.id, "service", now) : null,
-  });
-  return deliver(
-    ctx,
-    tenantId,
-    { patientId: contact.id, channel, purpose: "service", kind: input.kind, address: addressFor(contact, channel) as string, composed, templateId: template.standard ? null : template.id, appointmentId: input.appointmentRef, holdUntil },
-    clinic,
-    settings.smsSender,
-    actor,
-    deps,
-  );
+  const send = async (ch: MessageChannel, hold: string | null): Promise<SendResult> => {
+    const template = await resolveTemplate(ctx, tenantId, input.kind, ch, null);
+    if (!template) return { ok: false, reason: "bad_template", message: "There is no template for this message." };
+    const composed = composeMessage({
+      kind: input.kind,
+      channel: ch,
+      purpose: "service",
+      subject: template.subject,
+      body: template.body,
+      values: { ...patientValues(contact), ...clinicValues(clinic), ...appointmentValues(input.appointment, directory, clinic) },
+      settings,
+      clinic,
+      stopUrl: ch === "email" ? stopUrl(deps, tenantId, contact.id, "service", now) : null,
+    });
+    return deliver(
+      ctx,
+      tenantId,
+      { patientId: contact.id, channel: ch, purpose: "service", kind: input.kind, address: addressFor(contact, ch) as string, composed, templateId: template.standard ? null : template.id, appointmentId: input.appointmentRef, holdUntil: hold },
+      clinic,
+      settings.smsSender,
+      actor,
+      deps,
+    );
+  };
+  const first = await send(channel, holdUntil);
+  // Not enough text credit: by email instead when the patient has one and allows email.
+  if (!first.ok && first.reason === "no_sms_credit" && channel === "sms" && !emailBlock) return send("email", null);
+  return first;
 }
 
 /**
@@ -415,7 +484,16 @@ export async function retryMessage(ctx: RepoContext, tenantId: string, id: strin
     const block = contact ? messageBlock(contact, before.channel, before.purpose, { automatic: false, kind: before.kind }) : "archived";
     if (block) return { ok: false, reason: block, message: block };
   }
-  if (!(await requeueFailedMessage(ctx, tenantId, id, actor))) return { ok: false, reason: "provider_error", message: "This message cannot be sent again (it has been tried too often, or it changed)." };
+  let taken: Taken = null;
+  if (before.channel === "sms") {
+    const t = await takeForText(ctx, tenantId, before.body, id, deps.providers.sms.mode === "outbox", actor, deps);
+    if (!t.ok) return NO_CREDIT;
+    taken = t.taken;
+  }
+  if (!(await requeueFailedMessage(ctx, tenantId, id, actor))) {
+    await settleText(ctx, tenantId, taken, id, "not_written", actor);
+    return { ok: false, reason: "provider_error", message: "This message cannot be sent again (it has been tried too often, or it changed)." };
+  }
   const settings = await getCommsSettings(ctx, tenantId);
   const clinic = await clinicContact(ctx, tenantId, settings);
   const composed: Composed = {
@@ -427,6 +505,7 @@ export async function retryMessage(ctx: RepoContext, tenantId: string, id: strin
   };
   const outcome = await callProvider(deps, before.channel, id, before.toAddress, composed, clinic, settings.smsSender);
   await recordSendOutcomes(ctx, tenantId, [{ id, outcome }], actor);
+  await settleText(ctx, tenantId, taken, id, outcome.status, actor);
   if (outcome.status === "sent" && before.channel === "sms" && before.segments) await incrementUsage(ctx, tenantId, "sms_segments", before.segments);
   return { ok: true, messageId: id, status: outcome.status };
 }
@@ -440,6 +519,8 @@ export interface RunSummary {
   failed: number;
   skipped: number;
   reasons: Partial<Record<SkipReason, number>>;
+  /** Planned texts that went by email instead (not enough text credit). */
+  emailInstead?: number;
 }
 
 const emptySummary = (): RunSummary => ({ claimed: 0, released: 0, sent: 0, outbox: 0, failed: 0, skipped: 0, reasons: {} });
@@ -499,13 +580,16 @@ export async function runDueMessages(ctx: RepoContext, tenantId: string, deps: D
     return (await cached(templates, `template:${key}`, () => resolveTemplate(ctx, tenantId, row.kind, row.channel, preferred))) ?? null;
   };
 
-  type Planned = { row: ScheduledMessage; queries: BatchQuery[]; send?: { id: string; address: string; composed: Composed } };
+  type Planned = { row: ScheduledMessage; queries: BatchQuery[]; channel: MessageChannel; taken: Taken; send?: { id: string; address: string; composed: Composed } };
   const planned: Planned[] = [];
+  // The outbox keeps texts without taking credits, but the balance must still cover them (what would happen).
+  let outboxCredits: number | null = null;
+  let emailInstead = 0;
   for (const row of rows) {
     const skip = (reason: SkipReason): Planned => {
       summary.skipped++;
       summary.reasons[reason] = (summary.reasons[reason] ?? 0) + 1;
-      return { row, queries: [closeScheduleQuery(ctx, tenantId, row.id, token, { status: "skipped", reason })] };
+      return { row, channel: row.channel, taken: null, queries: [closeScheduleQuery(ctx, tenantId, row.id, token, { status: "skipped", reason })] };
     };
     if (!stillWorthSending(row.kind, row.startsAt, nowText)) {
       planned.push(skip("too_late"));
@@ -525,55 +609,100 @@ export async function runDueMessages(ctx: RepoContext, tenantId: string, deps: D
       planned.push(skip(block));
       continue;
     }
-    const template = await templateFor(row);
+    let template = await templateFor(row);
     if (!template) {
       planned.push(skip("provider_error"));
       continue;
     }
-    const composed = composeMessage({
-      kind: row.kind,
-      channel: row.channel,
-      purpose: "service",
-      subject: template.subject,
-      body: template.body,
-      values: { ...patientValues(contact), ...clinicValues(clinic), ...appointmentValues(row, directory, clinic) },
-      settings,
-      clinic,
-      stopUrl: row.channel === "email" ? stopUrl(deps, tenantId, contact.id, "service", now) : null,
-    });
-    const address = addressFor(contact, row.channel) as string;
-    const provider = row.channel === "sms" ? deps.providers.sms : deps.providers.email;
+    const compose = (channel: MessageChannel, t: NonNullable<typeof template>) =>
+      composeMessage({
+        kind: row.kind,
+        channel,
+        purpose: "service",
+        subject: t.subject,
+        body: t.body,
+        values: { ...patientValues(contact), ...clinicValues(clinic), ...appointmentValues(row, directory, clinic) },
+        settings,
+        clinic,
+        stopUrl: channel === "email" ? stopUrl(deps, tenantId, contact.id, "service", now) : null,
+      });
+    let channel: MessageChannel = row.channel;
+    let composed = compose(channel, template);
+    const id = pmsId(COMMS_ID_PREFIXES.message, ctx);
+    let taken: Taken = null;
+    let note: SkipReason | null = null;
+    if (channel === "sms") {
+      const outboxSms = deps.providers.sms.mode === "outbox";
+      let enough: boolean;
+      if (outboxSms) {
+        const need = Math.max(1, creditsForSms(composed.text));
+        if (outboxCredits === null) outboxCredits = (await hasCreditsFor(ctx, tenantId, need)).balance;
+        enough = outboxCredits >= need;
+        if (enough) outboxCredits -= need;
+      } else {
+        const t = await takeForText(ctx, tenantId, composed.text, id, false, actor, deps);
+        enough = t.ok;
+        if (t.ok) taken = t.taken;
+      }
+      if (!enough) {
+        // Not enough text credit: by email instead when the patient has an address and allows email, else not sent.
+        // (Not when the appointment has an email of this kind anyway – the patient gets that one.)
+        const emailTemplate =
+          messageBlock(contact, "email", "service", { automatic: true, kind: row.kind }) || (await hasEmailCounterpart(ctx, tenantId, row.appointmentId, row.kind, row.id))
+            ? null
+            : await cached(templates, `template:${row.kind}:email:-`, () => resolveTemplate(ctx, tenantId, row.kind, "email", null));
+        if (!emailTemplate) {
+          planned.push(skip("no_sms_credit"));
+          continue;
+        }
+        channel = "email";
+        template = emailTemplate;
+        composed = compose("email", emailTemplate);
+        note = "no_sms_credit";
+        emailInstead++;
+      }
+    }
+    const address = addressFor(contact, channel) as string;
+    const provider = channel === "sms" ? deps.providers.sms : deps.providers.email;
     const outbox = provider.mode === "outbox";
-    const draft = draftFor({
-      patientId: contact.id,
-      channel: row.channel,
-      purpose: "service",
-      kind: row.kind,
-      address,
-      composed,
-      templateId: template.standard ? null : template.id,
-      appointmentId: row.appointmentId,
-      providerId: provider.id,
-      outbox,
-    });
-    const { id, query } = outboundInsertQuery(ctx, tenantId, draft, actor);
+    const draft = {
+      ...draftFor({
+        patientId: contact.id,
+        channel,
+        purpose: "service",
+        kind: row.kind,
+        address,
+        composed,
+        templateId: template.standard || note ? null : template.id,
+        appointmentId: row.appointmentId,
+        providerId: provider.id,
+        outbox,
+      }),
+      id,
+    };
+    const { query } = outboundInsertQuery(ctx, tenantId, draft, actor);
     if (outbox) summary.outbox++;
-    planned.push({ row, queries: [query, closeScheduleQuery(ctx, tenantId, row.id, token, { status: "sent", messageId: id })], send: outbox ? undefined : { id, address, composed } });
+    planned.push({ row, channel, taken, queries: [query, closeScheduleQuery(ctx, tenantId, row.id, token, { status: "sent", messageId: id, note })], send: outbox ? undefined : { id, address, composed } });
   }
 
-  const toSend: NonNullable<Planned["send"]>[] = [];
+  const toSend: Planned[] = [];
   const audit = (chunk: Planned[]) =>
     pmsAuditQuery(ctx, tenantId, actor, {
       action: "pms.message.bulk_send",
       targetType: "pms_message_schedule",
       targetId: chunk[0].row.id,
-      detail: { count: chunk.length, messages: chunk.filter((p) => p.queries.length === 2).length, skipped: chunk.filter((p) => p.queries.length === 1).length },
+      detail: {
+        count: chunk.length,
+        messages: chunk.filter((p) => p.queries.length === 2).length,
+        skipped: chunk.filter((p) => p.queries.length === 1).length,
+        ...(emailInstead ? { emailInsteadOfText: chunk.filter((p) => p.queries.length === 2 && p.channel !== p.row.channel).length } : {}),
+      },
     });
   for (let i = 0; i < planned.length; i += SEND_WRITE_CHUNK) {
     const chunk = planned.slice(i, i + SEND_WRITE_CHUNK);
     try {
       await writeWithAudit(ctx, [...chunk.flatMap((p) => p.queries), audit(chunk)]);
-      for (const p of chunk) if (p.send) toSend.push(p.send);
+      for (const p of chunk) if (p.send) toSend.push(p);
       continue;
     } catch {
       // The batch was refused as a whole (one bad row): write the rows one by one; a row that still fails is
@@ -582,10 +711,12 @@ export async function runDueMessages(ctx: RepoContext, tenantId: string, deps: D
     for (const p of chunk) {
       try {
         await writeWithAudit(ctx, [...p.queries, audit([p])]);
-        if (p.send) toSend.push(p.send);
+        if (p.send) toSend.push(p);
       } catch {
         if (p.queries.length === 2 && !p.send) summary.outbox--;
         summary.failed++;
+        // The text was never written: its credits go back.
+        await settleText(ctx, tenantId, p.taken, p.send?.id ?? p.row.id, "not_written", actor).catch(() => undefined);
         try {
           await writeWithAudit(ctx, [closeScheduleQuery(ctx, tenantId, p.row.id, token, { status: "failed", reason: "provider_error" }), audit([p])]);
         } catch {
@@ -597,17 +728,19 @@ export async function runDueMessages(ctx: RepoContext, tenantId: string, deps: D
 
   const outcomes: { id: string; outcome: SendOutcome }[] = [];
   let segments = 0;
-  for (const s of toSend) {
-    const row = planned.find((p) => p.send?.id === s.id)?.row;
-    const outcome = await callProvider(deps, row?.channel ?? "sms", s.id, s.address, s.composed, clinic, settings.smsSender);
+  for (const p of toSend) {
+    const s = p.send as NonNullable<Planned["send"]>;
+    const outcome = await callProvider(deps, p.channel, s.id, s.address, s.composed, clinic, settings.smsSender);
     outcomes.push({ id: s.id, outcome });
     if (outcome.status === "sent") {
       summary.sent++;
-      if (row?.channel === "sms" && s.composed.segments) segments += s.composed.segments;
+      if (p.channel === "sms" && s.composed.segments) segments += s.composed.segments;
     } else if (outcome.status === "failed") summary.failed++;
   }
   await recordSendOutcomes(ctx, tenantId, outcomes, actor);
+  for (let i = 0; i < toSend.length; i++) await settleText(ctx, tenantId, toSend[i].taken, outcomes[i].id, outcomes[i].outcome.status, actor);
   if (segments > 0) await incrementUsage(ctx, tenantId, "sms_segments", segments);
+  if (emailInstead) summary.emailInstead = (summary.emailInstead ?? 0) + emailInstead;
   return summary;
 }
 
@@ -630,18 +763,37 @@ export async function releaseHeldMessages(
   const settings = await getCommsSettings(ctx, tenantId);
   const clinic = await clinicContact(ctx, tenantId, settings);
   const outcomes: { id: string; outcome: SendOutcome }[] = [];
+  const takenFor = new Map<string, NonNullable<Taken>>();
   let segments = 0;
   for (const id of ids) {
     const m = await getMessage(ctx, tenantId, id);
     if (!m || m.direction !== "outbound" || !m.toAddress) continue;
     const provider = m.channel === "sms" ? deps.providers.sms : deps.providers.email;
     const outbox = provider.mode === "outbox";
-    if (!(await claimHeldMessage(ctx, tenantId, id, now, outbox, actor))) continue;
+    // A held text takes its credits now; without enough it is recorded as failed ("not enough text credit").
+    let taken: Taken = null;
+    let noCredit = false;
+    if (m.channel === "sms") {
+      const t = await takeForText(ctx, tenantId, m.body, id, outbox, actor, deps);
+      if (t.ok) taken = t.taken;
+      else noCredit = true;
+    }
+    const keep = outbox && !noCredit;
+    if (!(await claimHeldMessage(ctx, tenantId, id, now, keep, actor))) {
+      await settleText(ctx, tenantId, taken, id, "not_written", actor);
+      continue;
+    }
     out.released++;
-    if (outbox) {
+    if (noCredit) {
+      outcomes.push({ id, outcome: { status: "failed", errorCode: "no_sms_credit" } });
+      out.failed++;
+      continue;
+    }
+    if (keep) {
       out.outbox++;
       continue;
     }
+    if (taken) takenFor.set(id, taken);
     const composed: Composed = { subject: m.subject, text: m.body, html: m.channel === "email" ? htmlFromStoredText(clinic.name, m.body) : null, segments: m.segments, headers: {} };
     const outcome = await callProvider(deps, m.channel, id, m.toAddress, composed, clinic, settings.smsSender);
     outcomes.push({ id, outcome });
@@ -651,6 +803,7 @@ export async function releaseHeldMessages(
     } else if (outcome.status === "failed") out.failed++;
   }
   await recordSendOutcomes(ctx, tenantId, outcomes, actor);
+  for (const o of outcomes) await settleText(ctx, tenantId, takenFor.get(o.id) ?? null, o.id, o.outcome.status, actor);
   if (segments > 0) await incrementUsage(ctx, tenantId, "sms_segments", segments);
   return out;
 }
@@ -668,6 +821,7 @@ export async function runAllDueMessages(ctx: RepoContext, tenantId: string, deps
     total.outbox += r.outbox;
     total.failed += r.failed;
     total.skipped += r.skipped;
+    if (r.emailInstead) total.emailInstead = (total.emailInstead ?? 0) + r.emailInstead;
     for (const [k, v] of Object.entries(r.reasons)) total.reasons[k as SkipReason] = (total.reasons[k as SkipReason] ?? 0) + (v ?? 0);
     if (r.claimed < 90 || pmsNowMs() - started > (options.budgetMs ?? 40_000)) break;
   }

@@ -157,6 +157,9 @@ export default function ClindeskTermsPage() {
           insurers. Card payments from patients are optional and are taken by our card payment provider.{" "}
           <Fill k="legal.paymentProviderTerms" />
         </p>
+        <p id="text-credits">
+          <Fill k="legal.textCredits" />
+        </p>
 
         <h2 id="ip">8. Intellectual property</h2>
         <p>

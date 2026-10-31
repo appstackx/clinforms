@@ -166,6 +166,7 @@ export const ACTIVITY_LABELS: Readonly<Record<string, string>> = {
   "platform.owner_reset_link": "Owner password reset link created",
   "platform.demo_on": "Demo clinic switched on",
   "platform.demo_off": "Demo clinic switched off",
+  "platform.sms_credit_adjust": "Text credits adjusted for a clinic",
   ...RELEASE_REPORT_AUDIT_LABELS,
 };
 

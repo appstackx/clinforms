@@ -291,7 +291,7 @@ async function recordRows(page, patientId) {
            ORDER BY import_ref DESC LIMIT 2`,
         CLINIC,
         CLINIC,
-        new Date().toISOString(), // real now (was SQLite's datetime('now')): portable to Postgres
+        new Date(clockNow()).toISOString(), // the TEST clock's now when it runs (else real now) – portable to Postgres
       );
       assert(pats.length === 2, "two patients with a mobile and email, no future appointment");
       [s.x, s.y] = pats;

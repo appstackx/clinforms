@@ -22,7 +22,8 @@ import type { DeliveryResult, EmailMessage, EmailProvider, EmailProviderName } f
 
 export type { DeliveryResult, EmailKind, EmailMessage, EmailProviderName, EmailRecipient } from "./types";
 export { EmailConfigError, resolveEmailProviderName } from "./providers";
-export { invitationEmail, passwordResetEmail, twoFactorEnabledEmail } from "./templates";
+export { invitationEmail, passwordResetEmail, textCreditNoticeEmail, twoFactorEnabledEmail } from "./templates";
+export type { TextCreditNotice } from "./templates";
 
 export interface CapturedEmail {
   message: EmailMessage;

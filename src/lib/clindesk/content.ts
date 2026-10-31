@@ -74,6 +74,7 @@ export const CLINDESK_CONTENT_KEYS = [
   "legal.medicalDeviceStatus",
   "legal.liabilityCap",
   "legal.paymentProviderTerms",
+  "legal.textCredits",
 ] as const;
 
 export type ClindeskContentKey = (typeof CLINDESK_CONTENT_KEYS)[number];
