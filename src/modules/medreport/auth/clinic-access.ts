@@ -6,7 +6,8 @@ import "server-only";
  * approved – but nothing NEW is created: no new report, no drafting from the notes, no uploads (form files and
  * notes), no new form reading or form map, no launch link. Every such endpoint calls assertClinicMayCreate() first:
  *
- *   403 TRIAL_ENDED   "Your trial has ended" – what is not available, what still is, and whom to contact
+ *   403 TRIAL_ENDED      "Your trial has ended" – what is not available, what still is, and whom to contact
+ *   403 PAYMENT_OVERDUE  "A payment is overdue" (31/10/2026: the plan's payment is past its grace period)
  *
  * The trial comes from the host (MedreportDeps.clinicProfile → ClinicProfile.trial, the host's clinic_plan). The
  * public demo is never affected; a host without clinic profiles has no trials. A profile that cannot be read fails
@@ -47,6 +48,10 @@ export async function assertTenantMayCreate(deps: MedreportDeps, tenantId: Tenan
   if (profile?.trial?.state === "ended") {
     logEvent("clinic_trial_ended_refused", { action });
     throw trialEndedError(action, profile);
+  }
+  if (profile?.paymentOverdue) {
+    logEvent("clinic_payment_overdue_refused", { action });
+    throw new HttpError(403, WORDING.server.access.paymentOverdueTitle, { code: "PAYMENT_OVERDUE", detail: WORDING.server.access.paymentOverdue(WHAT[action]) });
   }
 }
 

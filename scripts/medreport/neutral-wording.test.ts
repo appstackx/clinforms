@@ -106,6 +106,7 @@ const CALLS: Record<string, unknown[][]> = {
   "server.access.storeLimitDetail": [[30]],
   "server.access.importLimitDetail": [[30]],
   "server.access.trialEnded": [["starting a new report", "khuram@appstackx.co.uk"], ["uploading files"]],
+  "server.access.paymentOverdue": [["starting a new report"]],
   "server.access.demoConnectorDetail": [["Simulated TM3 sandbox"]],
   "demoClinic.approvedWithDemoNumber": [["PH-DEMO-01"]],
   "demoClinic.switchedOff": [[0], [1], [3]],

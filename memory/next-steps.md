@@ -11,6 +11,10 @@ Rule: Khuram wants **a short plan first, build after his OK** for anything big �
 **Updated Sun 2026-10-25 ~14:50 UTC:** TOP-0 (usage/packages live; Dell's email waits for the trial bug fixes).
 Update this file at the end of every session (status, blockers, what changed).
 
+## TOP-billing – Sat 2026-10-31: subscription billing + SMS-credit fixes BUILT (branch `feat/clindesk-billing`, not merged)
+- Runbooks: `docs/clinic-system/BILLING.md` (go-live order §7), `docs/clinic-system/SMS-CREDITS.md` (§7 The SMS Works set-up, §8 review fixes).
+- Khuram: review + merge decision; VAT decision (nothing adds VAT today); live catalogue with the same lookup keys; live webhook (10 events) at `/api/billing/stripe-webhook`; migrations 0009/0144/0145 before deploy; `npm run admin:billing-go-live` then `CLINDESK_BILLING_LIVE=1`; The SMS Works sign-up when the first real clinic onboards.
+
 ## TOP-0 – Sun 2026-10-25: usage/packages LIVE; Dell's email WAITS for the trial bug fixes
 - **Don't send Dell's invitation yet.** The help-video test run found bugs (F-37 opinion flag blocks a faithful answer; "Delete unused cells" left in the Word output; 24–28 blocking items; raw merge codes; etc.). Workflow **bh-trial-fixes** (wf_f6b079c8-f05) fixes them on `release/bh-trial-fixes` (worktree `clinforms-wt/bhfix-release`), verifies all 17 forms live on a local mirror (`scratchpad/bh-fix/verify`, port 3245), reviews, writes `scratchpad/bh-fix/deploy-runbook.md`. Then: merge **main** (now has plan-usage) into the release, full chain + a short e2e, deploy, then Khuram emails Dell (video `marketing/clinforms/blue-heart-help-video-v1/…-email.mp4`, guide PDF, sample notes, invite link from `~/Desktop/bh-deploy-20261024/blue-heart-invite.txt`).
 - **Usage/packages LIVE (D71):** Blue Heart = Trial £300/500 (extra price not set). Khuram's test clinic `appstackx-test` (demo, 17 forms) – he accepts the invite from `~/Desktop/pu-deploy-20261025/test-clinic-invite.txt` while signed in, then deletes the file; sets PH-DEMO-01 + may sign, drafting on.

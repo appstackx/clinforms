@@ -134,6 +134,12 @@ export default async function PlatformPage() {
             </Link>{" "}
             <span className="text-slate-600">– prepaid texts per clinic: balance, history and support adjustments.</span>
           </p>
+          <p className="mt-2 text-sm">
+            <Link href="/app/platform/billing" className="font-medium text-teal-700 underline-offset-4 hover:underline">
+              Subscriptions
+            </Link>{" "}
+            <span className="text-slate-600">– each clinic&apos;s plan, status, next payment and the manual override.</span>
+          </p>
         </Panel>
 
         <Panel

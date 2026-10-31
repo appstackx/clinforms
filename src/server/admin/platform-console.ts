@@ -11,6 +11,7 @@
  * wrappers (./guards.ts and src/app/app/platform/*).
  */
 import type { Kysely } from "kysely";
+import { overrideForManualChange } from "./billing";
 import { isPackageId, packageIsOn, type PackageId } from "../../modules/pms/core/entitlements";
 import { isPlatformAdmin } from "../auth/config";
 import { PLATFORM_USER_ID } from "../auth/create-auth";
@@ -233,6 +234,8 @@ export async function setClinicPackageAsPlatform(
     targetId: org.id,
     detail: { tenantId: input.tenantId, package: input.package, on: result.isOn, wasOn: result.wasOn },
   });
+  // 31/10/2026: a manual package change wins over the clinic's subscription (src/server/admin/billing.ts).
+  await overrideForManualChange(db, { kind: "platform", admin }, input.tenantId, `${input.package} ${input.on ? "on" : "off"}`);
   return { changed: result.wasOn !== result.isOn, on: result.isOn };
 }
 

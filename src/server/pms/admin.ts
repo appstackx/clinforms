@@ -4,6 +4,7 @@
  * imports – so they are tested directly (src/server/pms/admin.test.ts).
  */
 import type { Kysely } from "kysely";
+import { overrideForManualChange } from "../admin/billing";
 import {
   isEntitlementStatus,
   isPackageId,
@@ -41,6 +42,8 @@ export interface SetEntitlementPlan {
   before: { status: string | null; on: boolean };
   after: { status: EntitlementStatus; on: boolean };
   dryRun: boolean;
+  /** The clinic's subscription stops driving its packages from now on (a manual change wins – admin/billing.ts). */
+  billingOverride?: boolean;
 }
 
 /** Previews (default) or applies a package change for one clinic. Refuses unknown or closed clinics. */
@@ -80,5 +83,7 @@ export async function setClinicEntitlement(db: Kysely<Database>, input: SetEntit
     targetId: org.id,
     detail: { tenantId: input.slug, package: input.package, on: result.isOn, wasOn: result.wasOn, via: "script" },
   });
-  return { ...plan, after: { status, on: result.isOn } };
+  // 31/10/2026: a manual package change wins over the clinic's subscription (src/server/admin/billing.ts).
+  const overridden = await overrideForManualChange(db, { kind: "script" }, input.slug, `${input.package} ${status}`);
+  return { ...plan, after: { status, on: result.isOn }, billingOverride: overridden };
 }

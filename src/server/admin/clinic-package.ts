@@ -12,6 +12,7 @@ import type { Database } from "../db/schema";
 import { deleteClinicPackage, getClinicPackage, setClinicPackage, type ClinicPackage, type PackageInput } from "../repos/clinic-package";
 import { RepoInputError } from "../repos/context";
 import { auditPlanChange, requireOpenClinic, type PlanActor } from "./clinic-plan";
+import { overrideForManualChange } from "./billing";
 
 /** The audit detail of a package (no notes). */
 function packageDetail(p: ClinicPackage | null): Record<string, unknown> | null {
@@ -38,6 +39,8 @@ export async function setPackage(db: Kysely<Database>, actor: PlanActor, tenantI
     before: packageDetail(before),
     notesChanged: (before?.notes ?? null) !== saved.notes,
   });
+  // 31/10/2026: a manual allowance wins over the clinic's subscription (./billing.ts).
+  await overrideForManualChange(db, actor, tenantId, `package ${saved.package}`);
   return saved;
 }
 

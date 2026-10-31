@@ -85,7 +85,7 @@ export function cardPaymentsConfig(env: Env = process.env): { ok: true; config: 
   return { ok: true, config: { secretKey: key, webhookSecret: hook.length >= 16 ? hook : null, apiBase, live, mode: live ? "live" : "test" } };
 }
 
-function form(fields: Record<string, string | number | boolean>): string {
+function form(fields: FormFields): string {
   return Object.entries(fields)
     .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
     .join("&");
@@ -201,8 +201,15 @@ export function paymentIntentInfo(o: Record<string, unknown>): PaymentIntentInfo
   };
 }
 
-export function createCardPayments(config: CardPaymentsConfig, fetchImpl: Fetch = (url, init) => fetch(url, init)): CardPayments {
-  const call = async (method: "GET" | "POST", path: string, body?: Record<string, string | number | boolean>, idempotencyKey?: string): Promise<{ status: number; json: Record<string, unknown> }> => {
+export type FormFields = Record<string, string | number | boolean>;
+
+/**
+ * The low-level client (shared with subscription billing – src/server/billing/payments.ts): every request carries the
+ * pinned API version and the key; every answer is checked against the key's mode (a test key never accepts a live
+ * answer and the other way round). `call` answers whatever came back; `ok` throws CardPaymentsError on a non-2xx.
+ */
+export function paymentsHttp(config: CardPaymentsConfig, fetchImpl: Fetch = (url, init) => fetch(url, init)) {
+  const call = async (method: "GET" | "POST" | "DELETE", path: string, body?: FormFields, idempotencyKey?: string): Promise<{ status: number; json: Record<string, unknown> }> => {
     const headers: Record<string, string> = { authorization: `Bearer ${config.secretKey}`, "stripe-version": CARD_API_VERSION };
     if (body) headers["content-type"] = "application/x-www-form-urlencoded";
     if (idempotencyKey) headers["idempotency-key"] = idempotencyKey;
@@ -216,7 +223,7 @@ export function createCardPayments(config: CardPaymentsConfig, fetchImpl: Fetch 
     if (typeof json.livemode === "boolean" && json.livemode !== config.live) throw new CardPaymentsError("Refused: the card payment service answered in the wrong mode.", "wrong_mode");
     return { status: res.status, json };
   };
-  const ok = async (method: "GET" | "POST", path: string, body?: Record<string, string | number | boolean>, idempotencyKey?: string): Promise<Record<string, unknown>> => {
+  const ok = async (method: "GET" | "POST" | "DELETE", path: string, body?: FormFields, idempotencyKey?: string): Promise<Record<string, unknown>> => {
     const r = await call(method, path, body, idempotencyKey);
     if (r.status < 200 || r.status >= 300) {
       const err = (r.json.error ?? {}) as Record<string, unknown>;
@@ -224,6 +231,11 @@ export function createCardPayments(config: CardPaymentsConfig, fetchImpl: Fetch 
     }
     return r.json;
   };
+  return { call, ok };
+}
+
+export function createCardPayments(config: CardPaymentsConfig, fetchImpl: Fetch = (url, init) => fetch(url, init)): CardPayments {
+  const { call, ok } = paymentsHttp(config, fetchImpl);
 
   let priceCache: { at: number; map: Map<SmsPackKey, string> } | null = null;
 
@@ -249,7 +261,9 @@ export function createCardPayments(config: CardPaymentsConfig, fetchImpl: Fetch 
       return map;
     },
     async createCustomer(input) {
-      const c = await ok("POST", "/customers", { name: input.clinicName.slice(0, 200), "metadata[tenant_id]": input.tenantId, "metadata[kind]": "clinic" }, `customer-${input.tenantId}`);
+      // Test mode: the customer's name says so (31/10/2026), so test customers are never mistaken for real ones.
+      const name = `${config.live ? "" : "TEST – "}${input.clinicName}`.slice(0, 200);
+      const c = await ok("POST", "/customers", { name, "metadata[tenant_id]": input.tenantId, "metadata[kind]": "clinic", "metadata[mode]": config.live ? "live" : "test" }, `customer-v2-${config.live ? "live" : "test"}-${input.tenantId}`);
       if (typeof c.id !== "string") throw new CardPaymentsError("The card payment service gave no customer.");
       return c.id;
     },

@@ -16,6 +16,7 @@
  * service). No row = Reports on, and a package table that cannot be read counts as on, so ClinForms behaves as
  * before for every clinic that has not been switched off.
  */
+import { accountHold } from "../billing/access";
 import type { Kysely } from "kysely";
 import type { AuthContext, ClinicProfile } from "../../modules/medreport/api/deps";
 import type { Database } from "../db/schema";
@@ -92,16 +93,19 @@ export async function resolveMedreportCaller(auth: Auth, db: Kysely<Database>, h
  */
 export async function loadClinicProfile(db: Kysely<Database>, tenantId: string, now: Date = new Date()): Promise<ClinicProfile | null> {
   // readClinicPlan: a database before migration 0006 reads as "no plan" (security fix 24/10, ops M1).
-  const [p, plan] = await Promise.all([getClinicProfile({ db }, tenantId), readClinicPlan({ db }, tenantId)]);
+  const [p, plan, hold] = await Promise.all([getClinicProfile({ db }, tenantId), readClinicPlan({ db }, tenantId), accountHold(db, tenantId, now)]);
+  // 31/10/2026: a plan payment overdue past its grace period → nothing new (the module's 403 PAYMENT_OVERDUE).
+  const overdue = hold.held ? { paymentOverdue: true } : {};
   if (!p) {
     // Security fix 24/10 (authz L1): an ended trial is enforced even without a clinic_profile row – a minimal profile
     // carrying the trial (drafting off, no clinic details) instead of null, which the module reads as "no trial".
     const planView = clinicPlanForModule(plan, now);
-    if (planView.trial?.state !== "ended") return null;
-    return { ...planView, tenantId, displayName: "", addressLines: [], retentionDays: 30, draftingEnabled: false };
+    if (planView.trial?.state !== "ended" && !hold.held) return null;
+    return { ...planView, ...overdue, tenantId, displayName: "", addressLines: [], retentionDays: 30, draftingEnabled: false };
   }
   return {
     ...clinicPlanForModule(plan, now),
+    ...overdue,
     tenantId: p.tenantId,
     displayName: p.displayName,
     ...(p.legalName ? { legalName: p.legalName } : {}),

@@ -18,6 +18,9 @@ import { unansweredRepliesFor } from "@/server/pms/comms/views";
 import { resolveDiarySiteScope } from "@/server/pms/diary/caller";
 import { hasPackage } from "@/server/pms/entitlements";
 import { listSites } from "@/server/repos/pms/directory";
+import { BillingBannerBar } from "@/components/account/billing-banner";
+import { billingBannerFor } from "@/server/billing/banner";
+import { getDb } from "@/server/db";
 
 export const dynamic = "force-dynamic";
 
@@ -49,11 +52,12 @@ export default async function ClinicSystemLayout({ children }: { children: React
   if (report && report !== "export" && (!isReportId(report) || reportAccess(report, (p) => actor.can(p)) === null)) notFound();
   const brand = currentBrand();
   const ctx = actor.repo();
-  const [reports, sites, scope, replies] = await Promise.all([
+  const [reports, sites, scope, replies, billing] = await Promise.all([
     brand.id === "clinforms" ? hasPackage(actor.tenantId, "reports") : Promise.resolve(false),
     listSites(ctx, actor.tenantId),
     resolveDiarySiteScope(actor),
     unansweredRepliesFor(actor),
+    billingBannerFor(getDb(), actor.tenantId, actor.role === "owner" || actor.role === "admin"),
   ]);
   const mySites = scope ? sites.filter((s) => scope.has(s.id)) : sites;
   const siteValue = resolveSiteChoice(cookies().get(SITE_COOKIE)?.value, mySites.map((s) => s.id), ALL_SITES);
@@ -69,6 +73,7 @@ export default async function ClinicSystemLayout({ children }: { children: React
       clinForms={reports ? { href: "/app/studio", label: "ClinForms" } : null}
       accountHref="/app/clinic/account"
     >
+      <BillingBannerBar banner={billing} className="mb-4 rounded-md border" />
       {children}
     </ClinicShell>
   );

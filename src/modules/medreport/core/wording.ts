@@ -311,6 +311,8 @@ export interface AccessWording {
   /** 10/2026: the clinic's trial has ended – nothing new can be created; existing records stay available. */
   trialEndedTitle: string;
   trialEnded(what: string, contactEmail?: string): string;
+  paymentOverdueTitle: string;
+  paymentOverdue(what: string): string;
   /** 25/10/2026: "Complete another form for this patient" – the earlier report (or its record) is not there any more. */
   reuseGoneTitle: string;
   reuseGoneDetail: string;
@@ -377,6 +379,9 @@ const ACCESS: AccessWording = {
   trialEndedTitle: "Your trial has ended",
   trialEnded: (what, contactEmail) =>
     `Your clinic's trial has ended, so ${what} is not available. Existing reports and forms can still be opened and downloaded. To carry on, contact us${contactEmail ? ` at ${contactEmail}` : ""}.`,
+  paymentOverdueTitle: "A payment is overdue",
+  paymentOverdue: (what) =>
+    `A payment for your clinic's plan is overdue, so ${what} is not available. Existing reports and forms can still be opened and downloaded. The clinic owner can pay under Plan and billing.`,
   reuseGoneTitle: "The patient's notes are no longer here",
   reuseGoneDetail:
     "This report is not in your clinic's records – it may have been deleted, or removed at the end of your clinic's retention period – so its notes cannot be used again. Upload the patient's notes to complete another form.",

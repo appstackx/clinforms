@@ -377,6 +377,66 @@ export interface RateLimitsTable {
   count: number;
 }
 
+/**
+ * `clinic_subscription` (migration 0009) – the clinic's ONE subscription at the payment service (ClinDesk band +
+ * optional Reports add-on, or ClinForms on its own), written by src/server/billing only from the service's own copy.
+ */
+export interface ClinicSubscriptionTable {
+  tenant_id: string;
+  customer_ref: string;
+  subscription_ref: string;
+  /** test | live */
+  mode: string;
+  /** The payment service's status (active, trialing, past_due, unpaid, canceled, incomplete …). */
+  status: string;
+  /** pending_payment | active | past_due | canceled | expired (src/lib/billing/plans.ts). */
+  state: string;
+  product: string | null;
+  plan_key: string | null;
+  billing_interval: string | null;
+  reports_key: string | null;
+  reports_included: number | null;
+  practitioners_max: number | null;
+  amount_pence: number | null;
+  current_period_start: IsoTimestamp | null;
+  current_period_end: IsoTimestamp | null;
+  cancel_at_period_end: WithDefault<number>;
+  canceled_at: IsoTimestamp | null;
+  ended_at: IsoTimestamp | null;
+  activated_at: IsoTimestamp | null;
+  past_due_since: IsoTimestamp | null;
+  grace_until: IsoTimestamp | null;
+  grace_notified_at: IsoTimestamp | null;
+  read_only_notified_at: IsoTimestamp | null;
+  /** 0/1: ClinForms staff manage the packages by hand (the subscription changes none). */
+  override: WithDefault<number>;
+  override_note: string | null;
+  applied_json: string | null;
+  last_event_ref: string | null;
+  last_synced_at: IsoTimestamp | null;
+  rev: WithDefault<number>;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
+/** `clinic_billing_extras` (migration 0009) – extra reports billed per clinic and UK month, once each. */
+export interface ClinicBillingExtrasTable {
+  tenant_id: string;
+  /** "YYYY-MM" (UK month, as clinic_usage). */
+  period: string;
+  subscription_ref: string;
+  reports_counted: number;
+  reports_included: number;
+  extra_reports: number;
+  unit_pence: number;
+  /** pending | billed | skipped */
+  status: string;
+  invoice_item_ref: string | null;
+  invoice_ref: string | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
 /** `access_requests` – the landing page's "Request access" form. */
 export interface AccessRequestsTable {
   id: string;
@@ -407,6 +467,8 @@ export interface Database extends PmsDatabase {
   clinic_profile: ClinicProfileTable;
   clinic_plan: ClinicPlanTable;
   clinic_package: ClinicPackageTable;
+  clinic_subscription: ClinicSubscriptionTable;
+  clinic_billing_extras: ClinicBillingExtrasTable;
   clinic_usage: ClinicUsageTable;
   usage_report: UsageReportTable;
   usage_event: UsageEventTable;
@@ -442,6 +504,8 @@ export const TABLES_IN_FK_ORDER = [
   "clinic_profile",
   "clinic_plan",
   "clinic_package",
+  "clinic_subscription",
+  "clinic_billing_extras",
   "clinic_usage",
   "usage_report",
   "usage_event",
@@ -475,6 +539,8 @@ export const PRIMARY_KEYS: { readonly [T in TableName]: readonly (keyof Database
   clinic_profile: ["tenant_id"],
   clinic_plan: ["tenant_id"],
   clinic_package: ["tenant_id"],
+  clinic_subscription: ["tenant_id"],
+  clinic_billing_extras: ["tenant_id", "period"],
   clinic_usage: ["tenant_id", "period"],
   usage_report: ["tenant_id", "report_id", "episode_fp"],
   usage_event: ["id"],

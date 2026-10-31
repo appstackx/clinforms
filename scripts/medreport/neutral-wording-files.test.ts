@@ -54,6 +54,14 @@ const VENDOR_ROOTS = [
   "src/app/app/clinic",
   "src/components/pms",
   "src/modules/pms",
+  // 31/10/2026: plan and billing screens, the billing banner, the plan list and the billing emails' wording.
+  "src/app/app/(clinic)/settings/billing",
+  "src/app/app/(clinic)/settings/plan",
+  "src/components/account/billing-banner.tsx",
+  "src/lib/billing",
+  "src/server/billing/banner.ts",
+  "src/server/billing/access.ts",
+  "src/server/billing/views.ts",
 ];
 
 const MODEL_PATTERNS: readonly RegExp[] = [/\b(opus|sonnet|haiku|fable)\b/i];
@@ -66,6 +74,8 @@ const VENDOR_PATTERNS: readonly RegExp[] = [
   /\bopenai\b/i,
   /\bamazon web services\b|\baws\b/i,
   /\bgoogle analytics\b/i,
+  // 31/10/2026: the payment service is never named on screen (card payment / payment page / billing page instead).
+  /\bstripe\b/i,
 ];
 
 interface AllowEntry {

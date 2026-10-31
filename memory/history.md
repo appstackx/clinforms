@@ -165,6 +165,10 @@ Times UTC from commits, file times, the production audit log and Vercel. Workflo
 | ~12:30 | Khuram: fix every issue before the email to Dell goes out → workflow bh-trial-fixes (wf_f6b079c8-f05): 6 fix branches → release/bh-trial-fixes, all 17 forms verified live, review, final |
 | ~13:50–14:45 | Packages + usage + demo clinics deployed (D71): preview migrations + browser smoke, production migrations + gates, main `2030885` (chain 751/338/115/83/189), deployment a5u2hvzvt Ready, packages set, test clinic appstackx-test + 17 forms |
 
+### Sat 2026-10-31 (billing)
+- Branch `feat/clindesk-billing`: SMS-credit review fixes + repricing + The SMS Works adapter (commit 1), subscription billing for ClinDesk/ClinForms (commit 2). Real TEST-mode e2e: card 4242 and Bacs 10-88-00/00012345 both pass (Bacs pending until cleared, then active); SMS-credit e2e 15/15 on the alias webhook.
+- Lesson: the hosted payment page cannot mix monthly and yearly prices in one subscription – the Reports add-on is monthly-only.
+
 ## 2. Workflow runs (cloud; journals not preserved)
 | Run | Window | Purpose | Outcome |
 |---|---|---|---|
