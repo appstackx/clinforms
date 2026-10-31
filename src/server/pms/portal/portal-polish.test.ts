@@ -1,0 +1,255 @@
+/**
+ * The portal module's M9b staff services on node:sqlite and PGlite (guarded – every statement names tenant_id):
+ * "Share with the patient" from the record's attachments (PORTAL-004), a form completed in the clinic on a clinic
+ * device and verified by staff with their password (FORM-007), and the sealed copy's PDF with the screen's
+ * visibility rules. Permissions per role; who and when recorded; the audit rows.
+ */
+import assert from "node:assert/strict";
+import { after, before, describe, it } from "node:test";
+import { testCipher } from "../../db/testing/databases";
+import { listAudit } from "../../repos/audit";
+import type { RepoContext } from "../../repos/context";
+import { createPatient, getPatient } from "../../repos/pms/patients";
+import { getIntakeResponse, createIntakeTemplate, requestIntakeForm } from "../../repos/pms/portal/intake";
+import { getBookingSettings, updateBookingSettings } from "../../repos/pms/portal/settings";
+import { putAttachment } from "../../repos/pms/records/attachments";
+import { createGuardedPgliteDb, createGuardedSqliteDb, unscopedStatements, type GuardedDb } from "../../repos/pms/testing/guarded-db";
+import { STARTER_FORMS } from "../../../modules/pms/portal/starters";
+import type { ClinicActor } from "../actor";
+import { testActor } from "../records/access";
+import { endHandoffFor, handoffStaffViewFor, newPairingCodeFor, startHandoffFor, verifyHandoffFor, type PasswordCheck } from "./clinic-device";
+import { PAIR_REFUSED, deviceState, pairDeviceWithCode, submitOnDevice } from "./device-flow";
+import { signedCopyPdfFor, signedVia } from "./signed-copy";
+import { patientResponseFor } from "./staff";
+import { attachmentSharesFor, shareAttachmentFor, withdrawShareFor } from "./staff-shares";
+import type { PmsRole } from "../../../modules/pms/core/permissions";
+
+const A = "riverside-polish";
+const B = "harbour-polish";
+
+function suite(label: string, factory: () => Promise<GuardedDb>) {
+  describe(`portal staff services (M9b) on ${label}`, () => {
+    let g: GuardedDb;
+    let ctx: RepoContext;
+    let clock = Date.parse("2026-11-03T10:00:00.000Z");
+    const now = () => new Date(clock++);
+    const ids: Record<string, string> = {};
+    const actor = (role: PmsRole, userId: string, name: string, tenantId = A): ClinicActor =>
+      ({ ...testActor(ctx, tenantId, role, { userId, name }), organizationId: `org_${tenantId}`, clinicName: "Riverside Physiotherapy (fictional)", sessionId: `sess_${userId}`, permissions: [] }) as unknown as ClinicActor;
+    let clinician: ClinicActor;
+    let reception: ClinicActor;
+    let admin: ClinicActor;
+    let otherClinic: ClinicActor;
+    const passwordOk: PasswordCheck = async () => "ok";
+    const passwordWrong: PasswordCheck = async () => "wrong";
+
+    before(async () => {
+      g = await factory();
+      ctx = { db: g.db, cipher: testCipher(), now };
+      const at = new Date(clock).toISOString();
+      for (const [slug, name] of [
+        [A, "Riverside Physiotherapy (fictional)"],
+        [B, "Harbour Clinic (fictional)"],
+      ]) {
+        await ctx.db.insertInto("organization").values({ id: `org_${slug}`, name, slug, logo: null, createdAt: at, metadata: null }).execute();
+      }
+      for (const [id, name, role] of [
+        ["user_clin_01", "Priya Shah", "clinician"],
+        ["user_rec_01", "Jess Taylor", "staff"],
+        ["user_adm_01", "Alex Admin", "admin"],
+      ]) {
+        await ctx.db.insertInto("user").values({ id, name, email: `${id}@example.com`, emailVerified: true, image: null, createdAt: at, updatedAt: at, twoFactorEnabled: true }).execute();
+        await ctx.db.insertInto("member").values({ id: `mem_${id}`, organizationId: `org_${A}`, userId: id, role, createdAt: at }).execute();
+      }
+      clinician = actor("clinician", "user_clin_01", "Priya Shah");
+      reception = actor("staff", "user_rec_01", "Jess Taylor");
+      admin = actor("admin", "user_adm_01", "Alex Admin");
+      otherClinic = actor("clinician", "user_clin_b", "Other Clinic", B);
+      const s = await getBookingSettings(ctx, A);
+      await updateBookingSettings(ctx, A, s.rev, { portal: true, onlineBooking: true }, clinician.actor);
+      ids.pat = (await createPatient(ctx, A, { firstName: "Robin", lastName: "Fixture", dateOfBirth: "1979-06-01", email: "robin.fixture@example.com" }, clinician.actor)).id;
+      ids.patB = (await createPatient(ctx, B, { firstName: "Robin", lastName: "Other", dateOfBirth: "1979-06-01" }, otherClinic.actor)).id;
+      const pdf = Buffer.concat([Buffer.from("%PDF-1.7\n"), Buffer.from("fictional letter ".repeat(30))]);
+      ids.file = (await putAttachment(ctx, A, { patientId: ids.pat, bytes: pdf, fileName: "Robin Fixture letter.pdf" }, clinician.actor)).id;
+      for (const st of STARTER_FORMS) ids[`form_${st.key}`] = (await createIntakeTemplate(ctx, A, { name: st.name, kind: st.kind, sendWhen: "manual", requiresSignature: st.requiresSignature, signatureStatement: st.signatureStatement, setsTreatmentConsent: st.setsTreatmentConsent, definition: st.definition }, clinician.actor)).id;
+    });
+    after(async () => g.close());
+
+    it("Share with the patient: clinicians only (not reception, not without clinical.write); who and when; withdraw", async () => {
+      assert.equal(await attachmentSharesFor(reception, ids.pat), null, "reception never sees attachments or their shares");
+      assert.deepEqual(await shareAttachmentFor(reception, ids.pat, ids.file, { title: "Letter", notify: false }), { ok: false, error: "You do not have permission to do that." });
+      const adminView = await attachmentSharesFor(admin, ids.pat);
+      assert.equal(adminView?.canShare, false, "admins see attachments but do not add or share them by default");
+      assert.equal((await shareAttachmentFor(admin, ids.pat, ids.file, { title: "Letter", notify: false })).ok, false);
+      const r = await shareAttachmentFor(clinician, ids.pat, ids.file, { title: "Your letter", message: "As we discussed.", notify: false });
+      assert.ok(r.ok, JSON.stringify(r));
+      if (!r.ok) return;
+      const view = await attachmentSharesFor(clinician, ids.pat);
+      const rows = view?.byAttachment[ids.file] ?? [];
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0].sharedBy, "Priya Shah");
+      assert.match(rows[0].sharedAt, /\d{2}:\d{2}/);
+      assert.equal((await shareAttachmentFor(otherClinic, ids.pat, ids.file, { title: "Cross", notify: false })).ok, false, "never another clinic's file");
+      assert.equal((await withdrawShareFor(reception, ids.pat, r.value.shareId)).ok, false);
+      assert.equal((await withdrawShareFor(clinician, ids.pat, r.value.shareId)).ok, true);
+      assert.equal((await withdrawShareFor(clinician, ids.pat, r.value.shareId)).ok, false, "already withdrawn");
+      assert.ok((await attachmentSharesFor(clinician, ids.pat))?.byAttachment[ids.file][0].withdrawnAt);
+    });
+
+    /** M10 H3: staff ask for a code on their own screen; the (signed-out) device enters it and gets its secret. */
+    let ipSeq = 10;
+    const pairedSecret = async (handoffId: string): Promise<string> => {
+      const code = await newPairingCodeFor(reception, handoffId);
+      assert.ok(code.ok, JSON.stringify(code));
+      if (!code.ok) throw new Error("no code");
+      const paired = await pairDeviceWithCode(ctx, A, code.value.code.toLowerCase(), { clientIp: `203.0.113.${ipSeq++}` });
+      assert.ok(paired.ok, JSON.stringify(paired));
+      if (!paired.ok) throw new Error("not paired");
+      return paired.secret;
+    };
+
+    it("M10 H3: the clinic device is paired by a short code from the staff screen – never a staff browser", async () => {
+      const copy = (await requestIntakeForm(ctx, A, { templateId: ids.form_consent, patientId: ids.pat }, reception.actor)).response;
+      const started = await startHandoffFor(reception, ids.pat, copy.id);
+      assert.ok(started.ok, JSON.stringify(started));
+      if (!started.ok) return;
+      assert.equal(started.value.path, `/app/clinic/intake/device/${started.value.handoffId}`, "staff go to their own hand-off page");
+      assert.deepEqual(Object.keys(started.value).sort(), ["handoffId", "path"], "nothing for a device in the staff browser");
+      const ip = { clientIp: "198.51.100.20" };
+      assert.deepEqual(await pairDeviceWithCode(ctx, A, "ABCD-EFGH", ip), { ok: false, error: PAIR_REFUSED }, "no code asked for yet");
+      const first = await newPairingCodeFor(reception, started.value.handoffId);
+      assert.ok(first.ok);
+      if (!first.ok) return;
+      assert.match(first.value.code, /^[A-Z2-9]{4}-[A-Z2-9]{4}$/);
+      assert.equal(first.value.devicePath, `/clinics/${A}/device`);
+      assert.ok(Date.parse(first.value.expiresAt) - clock <= 10 * 60_000 + 5, "valid 10 minutes");
+      assert.equal((await newPairingCodeFor(otherClinic, started.value.handoffId)).ok, false, "another clinic cannot");
+      const second = await newPairingCodeFor(reception, started.value.handoffId);
+      assert.ok(second.ok && second.value.code !== first.value.code);
+      if (!second.ok) return;
+      assert.deepEqual(await pairDeviceWithCode(ctx, A, first.value.code, ip), { ok: false, error: PAIR_REFUSED }, "a replaced code stops working");
+      assert.deepEqual(await pairDeviceWithCode(ctx, B, second.value.code, ip), { ok: false, error: PAIR_REFUSED }, "a code means nothing in another clinic");
+      const paired = await pairDeviceWithCode(ctx, A, ` ${second.value.code.replace("-", " ")} `, ip);
+      assert.ok(paired.ok, JSON.stringify(paired));
+      if (!paired.ok) return;
+      assert.equal((await deviceState(ctx, A, paired.secret)).state, "open");
+      assert.deepEqual(await pairDeviceWithCode(ctx, A, second.value.code, ip), { ok: false, error: PAIR_REFUSED }, "a code works once");
+      assert.equal((await newPairingCodeFor(reception, started.value.handoffId)).ok, false, "no new code once a device is paired");
+      const view = await handoffStaffViewFor(reception, started.value.handoffId);
+      assert.ok(view.ok && view.value.pairing?.pairedAt);
+      const audit = (await listAudit(ctx, A, { limit: 500 })).filter((e) => e.targetId === started.value.handoffId);
+      assert.deepEqual(audit.map((e) => e.action).sort(), ["pms.intake_handoff.pair_code", "pms.intake_handoff.pair_code", "pms.intake_handoff.paired"]);
+      assert.ok(!JSON.stringify(audit).includes(second.value.code.replace("-", "")), "the code is not in the audit");
+      // An expired code is refused.
+      const other = (await requestIntakeForm(ctx, A, { templateId: ids.form_health, patientId: ids.pat }, reception.actor)).response;
+      const s2 = await startHandoffFor(reception, ids.pat, other.id);
+      if (!s2.ok) return assert.fail("start");
+      const c2 = await newPairingCodeFor(reception, s2.value.handoffId);
+      if (!c2.ok) return assert.fail("code");
+      clock += 11 * 60_000;
+      assert.deepEqual(await pairDeviceWithCode(ctx, A, c2.value.code, ip), { ok: false, error: PAIR_REFUSED }, "expired after 10 minutes");
+      assert.equal((await endHandoffFor(reception, s2.value.handoffId)).ok, true);
+      assert.equal((await endHandoffFor(reception, started.value.handoffId)).ok, true);
+      // Guessing is limited per address.
+      let last: Awaited<ReturnType<typeof pairDeviceWithCode>> = { ok: true, secret: "", expiresAt: "" };
+      for (let i = 0; i < 11; i++) last = await pairDeviceWithCode(ctx, A, "ZZZZ-ZZZZ", { clientIp: "198.51.100.99" });
+      assert.ok(!last.ok && /Too many attempts/.test(last.error));
+    });
+
+    it("a form completed on a clinic device: only that copy, then staff verify with THEIR password", async () => {
+      const copy = (await requestIntakeForm(ctx, A, { templateId: ids.form_consent, patientId: ids.pat }, reception.actor)).response;
+      const started = await startHandoffFor(reception, ids.pat, copy.id);
+      assert.ok(started.ok, JSON.stringify(started));
+      if (!started.ok) return;
+      const secret1 = await pairedSecret(started.value.handoffId);
+      const device = await deviceState(ctx, A, secret1);
+      assert.equal(device.state, "open");
+      if (device.state !== "open") return;
+      const form = new FormData();
+      for (const k of ["consent_treatment", "consent_records", "cancellations"]) form.set(`q_${k}`, "on");
+      form.set("q_share_gp", "no");
+      form.set("signature", "Robin Fixture");
+      assert.deepEqual(await submitOnDevice(ctx, A, secret1, device.response.rev, form), { ok: true });
+      const handoffId = device.handoff.id;
+      assert.equal((await handoffStaffViewFor(otherClinic, handoffId)).ok, false, "another clinic cannot open it");
+      assert.deepEqual(await verifyHandoffFor(reception, handoffId, "", passwordOk), { ok: false, error: "Enter your password to confirm." });
+      assert.deepEqual(await verifyHandoffFor(reception, handoffId, "nope", passwordWrong), { ok: false, error: "That password is not right." });
+      assert.equal((await getPatient(ctx, A, ids.pat))?.consentTreatment, false);
+      const before = await patientResponseFor(reception, ids.pat, copy.id);
+      assert.ok(before.ok && before.value.inClinic?.state === "completed" && /waiting for a member of staff/.test(before.value.inClinic.words));
+      const v = await verifyHandoffFor(reception, handoffId, "the-right-one", passwordOk);
+      assert.ok(v.ok, JSON.stringify(v));
+      assert.equal((await verifyHandoffFor(reception, handoffId, "the-right-one", passwordOk)).ok, false, "verified once");
+      assert.equal((await getPatient(ctx, A, ids.pat))?.consentTreatment, true, "consent recorded once a member verified it");
+      const after = await patientResponseFor(reception, ids.pat, copy.id);
+      assert.ok(after.ok);
+      if (!after.ok) return;
+      assert.match(after.value.inClinic?.words ?? "", /^Completed in the clinic, verified by Jess Taylor on /);
+      assert.match(signedVia(after.value.response.trust, after.value.inClinic?.words ?? null), /verified by Jess Taylor/);
+      assert.equal((await deviceState(ctx, A, secret1)).state, "finished");
+      const audit = await listAudit(ctx, A, { limit: 500 });
+      const verify = audit.filter((e) => e.action === "pms.intake_response.verify" && e.targetId === copy.id);
+      assert.deepEqual([verify.length, verify[0]?.userId], [1, "user_rec_01"]);
+      // Outcome questionnaires stay in the portal; a hand-off can be ended.
+      const second = (await requestIntakeForm(ctx, A, { templateId: ids.form_health, patientId: ids.pat }, reception.actor)).response;
+      const s2 = await startHandoffFor(reception, ids.pat, second.id);
+      assert.ok(s2.ok);
+      if (!s2.ok) return;
+      const secret2 = await pairedSecret(s2.value.handoffId);
+      const st = await deviceState(ctx, A, secret2);
+      assert.ok(st.state === "open");
+      if (st.state !== "open") return;
+      assert.equal((await endHandoffFor(reception, st.handoff.id)).ok, true);
+      assert.equal((await deviceState(ctx, A, secret2)).state, "finished");
+      assert.equal((await getIntakeResponse(ctx, A, second.id))?.status, "requested", "ending a hand-off leaves the copy waiting");
+      assert.equal((await startHandoffFor(reception, ids.pat, copy.id)).ok, false, "a completed copy cannot be handed out again");
+    });
+
+    it("the sealed copy's PDF: a real PDF, health answers only with clinical.view, recorded in the trail", async () => {
+      const copy = (await requestIntakeForm(ctx, A, { templateId: ids.form_health, patientId: ids.pat }, reception.actor)).response;
+      const started = await startHandoffFor(reception, ids.pat, copy.id);
+      assert.ok(started.ok);
+      if (!started.ok) return;
+      const secret3 = await pairedSecret(started.value.handoffId);
+      const st = await deviceState(ctx, A, secret3);
+      if (st.state !== "open") return assert.fail("open");
+      const form = new FormData();
+      for (const f of st.response.form.fields) {
+        if (f.type === "heading" || !f.required) continue;
+        if (f.type === "yes_no") form.set(`q_${f.id}`, "no");
+        else if (f.type === "choice" || f.type === "multi") form.append(`q_${f.id}`, f.options![0]);
+        else if (f.type === "consent") form.set(`q_${f.id}`, "on");
+        else if (f.type === "date") form.set(`q_${f.id}`, "2026-10-01");
+        else form.set(`q_${f.id}`, "Fictional sore shoulder");
+      }
+      const sent = await submitOnDevice(ctx, A, secret3, st.response.rev, form);
+      assert.ok(sent.ok, JSON.stringify(sent));
+      const forClinician = await signedCopyPdfFor(clinician, ids.pat, copy.id);
+      const forReception = await signedCopyPdfFor(reception, ids.pat, copy.id);
+      assert.ok(forClinician && forReception);
+      for (const pdf of [forClinician!, forReception!]) assert.equal(Buffer.from(pdf.bytes.slice(0, 5)).toString(), "%PDF-");
+      assert.match(forClinician!.fileName, /signed-copy\.pdf$/);
+      const rec = await patientResponseFor(reception, ids.pat, copy.id);
+      const cli = await patientResponseFor(clinician, ids.pat, copy.id);
+      assert.ok(rec.ok && cli.ok);
+      if (!rec.ok || !cli.ok) return;
+      assert.ok(rec.value.hiddenCount > 0, "the health questionnaire has clinical questions");
+      assert.equal(cli.value.hiddenCount, 0);
+      assert.equal(await signedCopyPdfFor(otherClinic, ids.pat, copy.id), null);
+      const waiting = (await requestIntakeForm(ctx, A, { templateId: ids.form_consent, patientId: ids.pat }, reception.actor)).response;
+      assert.equal(await signedCopyPdfFor(clinician, ids.pat, waiting.id), null, "only a completed copy");
+      const audit = await listAudit(ctx, A, { limit: 500 });
+      const pdfRows = audit.filter((e) => e.action === "pms.intake_response.pdf" && e.targetId === copy.id);
+      assert.equal(pdfRows.length, 2);
+      assert.deepEqual(pdfRows.map((e) => e.detail?.hiddenAnswers).sort(), [0, rec.value.hiddenCount].sort());
+      assert.ok(!JSON.stringify(audit.map((e) => e.detail)).includes("shoulder"));
+    });
+
+    it("tenant-scope guard: every clinic-system statement named tenant_id", () => {
+      assert.deepEqual(unscopedStatements(g.log.statements), []);
+    });
+  });
+}
+
+suite("SQLite (node:sqlite)", async () => createGuardedSqliteDb());
+suite("Postgres (PGlite)", () => createGuardedPgliteDb());

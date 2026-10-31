@@ -135,6 +135,16 @@ Rules for new migrations:
   (booleans compared as 0/1, their dates as ISO in the checksums – tested: an account with two-step verification
   copied from SQLite to Postgres still signs in).
 
+- **Clinic system (from 24/10/2026, branch `feat/clinic-system`):** migrations `0100`–`0179` / `20261024000100`–`…0179`
+  belong to the clinic-system modules (ranges per module in `src/modules/pms/core/modules.ts`, conventions in
+  `docs/clinic-system/contract.md` §4). `0100` adds `clinic_entitlements` (packages; backfills `reports = active` for
+  every existing clinic), `clinic_usage_counters` and `pms_settings`; `0101` the clinic directory (`pms_sites`,
+  `pms_rooms`, `pms_practitioners`, `pms_services`, `pms_referrers`, `pms_price_lists`, `pms_price_list_items`); `0102`
+  the shared patient record (`pms_patients`, `pms_cases`, `pms_authorisations`). Composite `(tenant_id, id)` keys,
+  foreign keys including `tenant_id`, free text in `*_enc` columns (AAD `<tenant>:<table>.<column>:<id>`). Their
+  tables are listed per module in `src/server/db/pms-schema/` and merged into `schema.ts` (no edit there). **Apply
+  them before deploying code that reads them** (the app falls back to "Reports on, clinic system off" if it cannot).
+
 Use `npm run db:migrate` for Supabase, not `supabase db push`: the CLI keeps its own history table
 (`supabase_migrations.schema_migrations`). Both are idempotent, so a mix does no harm, but stick to one.
 
@@ -316,6 +326,7 @@ writes happened on Postgres – copy those back by hand).
 |---|---|
 | `npm run test:db` | migration parity (node:sqlite vs PGlite, RLS on every Postgres table, idempotent files); crypto (tamper, wrong tenant/row/table, unknown kid, rotation); key fingerprints (known answers, domain separation), `/api/ops/key-fingerprint` (503/401/200/500, no key material in responses or logs) and `ops:key-fingerprint` against the real handler (MATCH/MISMATCH, every refusal, nothing secret printed); dialect/driver units; the repository suite on SQLite and PGlite; the copy script (SQLite → PGlite) and Supabase helpers |
 | `npm run test:gateway` | Worker handler units (HMAC, window, limits, denylist, error mapping), the repository suite through the D1 dialect → in-process Worker → node:sqlite stand-in, and against **real local D1** (workerd via `getPlatformProxy`, migrations applied by `wrangler d1 migrations apply --local`). The last one needs `npm ci` in `workers/data-gateway` (skipped otherwise) |
+| `CLINFORMS_TEST_PG_URL=postgres://postgres:…@localhost:55432/postgres npm run test:pms` (or `test:db`) | the same suites with every PGlite database replaced by a fresh database on a REAL local Postgres (`src/server/db/testing/real-pg.ts`; loopback only, created + migrated + dropped per suite), plus the real-concurrency tests (`clash-concurrency.test.ts`: two writers vs the no-double-booking trigger, simultaneous patient numbers) that are skipped otherwise. Use a server made with `--locale=en_US.UTF-8` (as Supabase) – e.g. the Docker `k2-pg` (M11 run-sheet) – so text sorts as in production |
 | `npm run db:selftest -- --env preview` | live checks against the deployed preview gateway |
 | `npm run ops:key-fingerprint -- --env production --compare https://clinforms.co.uk` | the secrets file and the deployment hold the same data keys (fingerprints only) |
 | `cd workers/data-gateway && npm run typecheck` / `npx tsc -p test/tsconfig.json` | Worker types |

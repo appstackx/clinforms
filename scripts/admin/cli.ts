@@ -8,6 +8,9 @@
 import os from "node:os";
 import path from "node:path";
 import { readSecretsFile, SECRETS_FILE } from "../db/provision-gateway-secrets";
+import { isLoopbackPostgresUrl } from "../../src/server/db/dialects/postgres";
+import { BRANDS, type BrandId } from "../../src/lib/brand";
+import { baseUrlSetting, linkTarget } from "../../src/server/auth/config";
 
 export type Target = "current" | "preview" | "production";
 
@@ -22,6 +25,7 @@ export const TARGET_VARS = [
   "DATABASE_SSL",
   "DATABASE_CA_CERT",
   "BETTER_AUTH_URL",
+  "CLINFORMS_AUTH_ORIGINS",
   "BETTER_AUTH_SECRET",
   "CLINFORMS_EMAIL_PROVIDER",
   "MAILERSEND_API_KEY",
@@ -88,6 +92,15 @@ export function applyTarget(target: Target, env: Record<string, string | undefin
   return set;
 }
 
+/**
+ * A Postgres on this machine (e.g. the Docker `k2-pg` test database): CLINFORMS_DB=postgres, DATABASE_URL's host
+ * is a loopback address and DATABASE_SSL is explicitly "disable". Supabase is never on a loopback address and
+ * enforces TLS, so a server database never passes. Scripts treat such a database like local SQLite.
+ */
+export function isLoopbackPostgres(env: Readonly<Record<string, string | undefined>> = process.env): boolean {
+  return env.CLINFORMS_DB === "postgres" && env.DATABASE_SSL === "disable" && isLoopbackPostgresUrl(env.DATABASE_URL);
+}
+
 export function requireYesForProduction(target: Target, args: Map<string, string | true>, what: string): void {
   if (target === "production" && !flag(args, "yes")) throw new CliError(`${what} on PRODUCTION needs --yes.`);
 }
@@ -102,6 +115,39 @@ export function appUrl(target: Target, args: Map<string, string | true>, env: Re
     return url.origin;
   } catch {
     throw new CliError("--app-url must be an https URL (http only for localhost).");
+  }
+}
+
+/** --brand clinforms | clinic (the brand whose host a printed link goes to), or null when not given. */
+export function brandArg(args: Map<string, string | true>): BrandId | null {
+  const v = str(args, "brand");
+  if (v === undefined) return null;
+  if (v === "clinforms" || v === "clinic") return v;
+  throw new CliError(`--brand must be clinforms or clinic (${BRANDS.clinic.productName}).`);
+}
+
+/**
+ * The origin for a link of one brand (docs/auth.md "Two brand hosts"): --app-url when given (used as is), else the
+ * brand's origin among the target's BETTER_AUTH_URL + CLINFORMS_AUTH_ORIGINS – exactly what the deployment itself
+ * uses (src/server/auth/config.ts brandOrigin). A target that does not serve the brand's host gets its primary origin.
+ */
+export function brandAppUrl(
+  target: Target,
+  args: Map<string, string | true>,
+  brand: BrandId,
+  env: Record<string, string | undefined> = process.env,
+): { origin: string; brand: BrandId } {
+  const primary = appUrl(target, args, env);
+  if (str(args, "app-url")) return { origin: primary, brand };
+  try {
+    const setting = baseUrlSetting({
+      BETTER_AUTH_URL: primary,
+      CLINFORMS_AUTH_ORIGINS: env.CLINFORMS_AUTH_ORIGINS,
+      ...(target === "current" ? {} : { VERCEL: "1", VERCEL_ENV: target }),
+    });
+    return linkTarget(setting, brand);
+  } catch (err) {
+    throw new CliError(err instanceof Error ? err.message : String(err));
   }
 }
 

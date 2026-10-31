@@ -7,12 +7,12 @@ import { codeStep, passwordStep, type LoginState } from "./actions";
 
 const IDLE: LoginState = { status: "idle" };
 
-export function LoginForm({ next }: { next: string }) {
+export function LoginForm({ next, productName }: { next: string; productName: string }) {
   const [attempt, setAttempt] = useState(0);
-  return <LoginSteps key={attempt} next={next} onRestart={() => setAttempt((n) => n + 1)} />;
+  return <LoginSteps key={attempt} next={next} productName={productName} onRestart={() => setAttempt((n) => n + 1)} />;
 }
 
-function LoginSteps({ next, onRestart }: { next: string; onRestart: () => void }) {
+function LoginSteps({ next, productName, onRestart }: { next: string; productName: string; onRestart: () => void }) {
   const [pwState, pwAction] = useFormState(passwordStep, IDLE);
   const [codeState, codeAction] = useFormState(codeStep, IDLE);
   const [useBackup, setUseBackup] = useState(false);
@@ -55,7 +55,7 @@ function LoginSteps({ next, onRestart }: { next: string; onRestart: () => void }
         <Notice>
           {useBackup
             ? "Enter one of your backup codes. Each code works once."
-            : "Open your authenticator app and enter the 6-digit code for ClinForms."}
+            : `Open your authenticator app and enter the 6-digit code for ${productName}.`}
         </Notice>
       )}
       {useBackup ? (

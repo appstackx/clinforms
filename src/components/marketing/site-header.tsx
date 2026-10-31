@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { TrackedLink } from "../analytics/tracked-link";
+import { PUBLIC_SITE_BRAND, type Brand } from "@/lib/brand";
 import { Logo } from "./logo";
 import { MobileNav } from "./mobile-nav";
 import { NavLink } from "./nav-link";
@@ -12,11 +13,11 @@ const navLink =
  * Public site header: logo, navigation (incl. "Demo video", the recorded walk-through at /demo, and "Interactive demo",
  * the sandbox at /reports), "Sign in", "Request access". The link to the page being shown carries aria-current="page".
  */
-export function SiteHeader() {
+export function SiteHeader({ brand = PUBLIC_SITE_BRAND }: { brand?: Brand }) {
   return (
     <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/90 backdrop-blur supports-[backdrop-filter]:bg-white/75">
       <div className="mx-auto flex h-16 max-w-6xl items-center gap-4 px-4 sm:px-6 lg:px-8">
-        <Logo />
+        <Logo name={brand.productName} />
         <nav aria-label="Main" className="ml-6 hidden items-center gap-1 lg:flex">
           {MARKETING_NAV.map((item) => (
             <NavLink key={item.href} href={item.href} className={navLink}>

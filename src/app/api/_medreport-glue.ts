@@ -33,7 +33,7 @@ import type { AuthContext, MedreportDeps, SharedStateStore } from "@/modules/med
 import { HttpError, bindHandler, logEvent, type HandlerFn, type MedreportHandler } from "@/modules/medreport/api/http";
 import { getSecret, getTm3SimBaseUrl } from "@/modules/medreport/config.server";
 import { createConnectorRegistry, createDefaultConnectors } from "@/modules/medreport/connectors/registry";
-import { TRANSPORT_HEADER, type ConnectorFetch } from "@/modules/medreport/connectors/types";
+import { TRANSPORT_HEADER, type ConnectorFetch, type ConnectorRegistry } from "@/modules/medreport/connectors/types";
 import { WORDING } from "@/modules/medreport/core/wording";
 import { dispatchSimRequest } from "@/sandbox/tm3-sim/handlers";
 import { SESSION_COOKIE_NAMES } from "@/lib/session-cookie";
@@ -46,6 +46,9 @@ import { claimLaunchToken } from "@/server/repos/launch-tokens";
 import { partnerKeyTenant, verifyPartnerKey } from "@/server/repos/partner-keys";
 import { hitRateLimit, peekRateLimit, resetRateLimit } from "@/server/repos/rate-limits";
 import { dbUsageRecorder } from "@/server/usage/recorder";
+import { createNativeConnector } from "@/server/pms/native-connector";
+import { clinicalAccessFrom, mayReadNativeReport } from "@/server/pms/native-report-access";
+import { hasPackage } from "@/server/pms/entitlements";
 import { tenantDeps } from "./_medreport-tenant";
 
 /** After HTTP to the simulated API fails once, use in-process calls for this long (per instance). */
@@ -234,7 +237,8 @@ function sharedStateForEnv(): SharedStateStore | undefined {
 }
 
 /** The host capabilities of wave 2 (database-backed; see the header). */
-export function hostCapabilities(): Pick<MedreportDeps, "authenticate" | "clinicProfile" | "sharedState" | "audit" | "verifyPartnerKey" | "usage"> {
+export function hostCapabilities(): Pick<MedreportDeps, "authenticate" | "clinicProfile" | "sharedState" | "audit" | "verifyPartnerKey" | "usage" | "mayReadReport" | "restrictsReports"> {
+  const clinicalAccess = clinicalAccessFrom(() => ({ db: getDb() }));
   return {
     authenticate: authenticateMember,
     clinicProfile: (tenantId) => loadClinicProfile(getDb(), tenantId),
@@ -243,6 +247,26 @@ export function hostCapabilities(): Pick<MedreportDeps, "authenticate" | "clinic
     verifyPartnerKey: dbPartnerKeys(getDb),
     // Only ever called for a signed-in clinic member (api/usage.ts skips the public demo), so the demo never needs a database.
     usage: dbUsageRecorder(getDb),
+    // M10 H2: a report drafted from the clinic system's own record with clinical content needs the member's
+    // clinic-system clinical.view; every other report is readable as before (src/server/pms/native-report-access.ts).
+    mayReadReport: (actor, report) => mayReadNativeReport(actor, report, clinicalAccess),
+    restrictsReports: (tenantId) => hasPackage(tenantId, "clinic"),
+  };
+}
+
+/**
+ * The standard connectors (tiles, in their order) plus the clinic system's NATIVE connector (10/2026, K2-CF-001):
+ * `get("native")` finds it, `list()` never shows it – it is reached only from "Complete referrer form" on a case
+ * (a launch for exactly that patient and case) and checks the clinic-system package, the member and the patient's
+ * sites itself on every call (src/server/pms/native-connector.ts). ClinForms behaves exactly as before for every
+ * other connector and every clinic without the clinic system.
+ */
+export function connectorRegistry(): ConnectorRegistry {
+  const standard = createConnectorRegistry(createDefaultConnectors());
+  const native = createNativeConnector();
+  return {
+    list: () => standard.list(),
+    get: (id) => (id === native.id ? native : standard.get(id)),
   };
 }
 
@@ -254,7 +278,7 @@ export function getMedreportDeps(): MedreportDeps {
     ...hostCapabilities(),
     // Tenant mode (wave 2): the clinic's server storage for the Studio (lazy; inert in the public demo).
     ...tenantDeps(),
-    connectors: createConnectorRegistry(createDefaultConnectors()),
+    connectors: connectorRegistry(),
     createConnectorContext(req, connectorId, tenantId) {
       void req; // the request is deliberately NOT used for the base URL (see simTrustedBaseUrl)
       if (connectorId === "tm3-sim") {
@@ -266,7 +290,8 @@ export function getMedreportDeps(): MedreportDeps {
           trace: [],
         };
       }
-      // file-import parses locally; tm3 is not configured. Neither makes outbound calls.
+      // file-import parses locally; tm3 is not configured; native reads the clinic system's record in-process.
+      // None of them makes outbound calls.
       return { tenantId, credentials: { kind: "none" }, baseUrl: "", fetch: (u, i) => fetch(u, i), trace: [] };
     },
   };

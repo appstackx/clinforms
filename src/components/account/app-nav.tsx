@@ -7,6 +7,8 @@ import { cn } from "@/lib/utils";
 export interface NavItem {
   href: string;
   label: string;
+  /** Active only on exactly this path (a section's overview page). */
+  exact?: boolean;
 }
 
 /**
@@ -37,13 +39,13 @@ function useEdgeFade() {
   return { ref, style: { maskImage: mask, WebkitMaskImage: mask } };
 }
 
-export function AppNav({ items }: { items: NavItem[] }) {
+export function AppNav({ items, label = "Clinic" }: { items: NavItem[]; label?: string }) {
   const pathname = usePathname();
   const fade = useEdgeFade();
   return (
-    <nav ref={fade.ref} style={fade.style} aria-label="Clinic" className="flex gap-0.5 overflow-x-auto sm:gap-1">
+    <nav ref={fade.ref} style={fade.style} aria-label={label} className="flex gap-0.5 overflow-x-auto sm:gap-1">
       {items.map((item) => {
-        const active = item.href === "/app" ? pathname === "/app" : pathname === item.href || pathname.startsWith(`${item.href}/`);
+        const active = item.href === "/app" || item.exact ? pathname === item.href : pathname === item.href || pathname.startsWith(`${item.href}/`);
         return (
           <Link
             key={item.href}

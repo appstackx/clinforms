@@ -26,13 +26,35 @@ const ROOT = process.cwd();
  * Folders whose strings are customer-facing (missing folders are skipped). src/app/app = the signed-in clinic area and its
  * Studio; src/lib/site = public-site copy kept outside the pages (the demo video's transcript and chapters).
  */
-const BANNED_TERM_ROOTS = ["src/app/(marketing)", "src/app/(auth)", "src/app/app", "src/components", "src/lib/site", "src/server/email", "src/server/site"];
+const BANNED_TERM_ROOTS = [
+  "src/app/(marketing)",
+  "src/app/(auth)",
+  "src/app/app",
+  "src/components",
+  "src/lib/site",
+  "src/server/email",
+  "src/server/site",
+  // The clinic system: its labels and copy (src/modules/pms), the brand names (src/lib/brand.ts).
+  "src/modules/pms",
+  "src/lib/brand.ts",
+];
 
 /**
  * Folders (or files) whose strings are visible copy, where infrastructure vendor names may not appear either.
  * For email only the templates are copy: the provider code legitimately names its provider.
  */
-const VENDOR_ROOTS = ["src/app/(marketing)", "src/app/(auth)", "src/components/consent", "src/components/marketing", "src/lib/site", "src/server/email/templates.ts"];
+const VENDOR_ROOTS = [
+  "src/app/(marketing)",
+  "src/app/(auth)",
+  "src/components/consent",
+  "src/components/marketing",
+  "src/lib/site",
+  "src/server/email/templates.ts",
+  // The clinic system's screens and copy: no infrastructure vendor names on screen either.
+  "src/app/app/clinic",
+  "src/components/pms",
+  "src/modules/pms",
+];
 
 const MODEL_PATTERNS: readonly RegExp[] = [/\b(opus|sonnet|haiku|fable)\b/i];
 const VENDOR_PATTERNS: readonly RegExp[] = [
@@ -60,7 +82,13 @@ interface AllowEntry {
  * Example (not active):
  *   { file: "src/app/(marketing)/privacy/page.tsx", text: /^Anthropic PBC/, reason: "Owner decided to name the drafting sub-processor (DPA list)" },
  */
-const ALLOW: AllowEntry[] = [];
+const ALLOW: AllowEntry[] = [
+  {
+    file: "src/components/pms/portal/human-check.tsx",
+    text: /^https:\/\/challenges\.cloudflare\.com\/turnstile\/v0\/api\.js\?render=explicit$/,
+    reason: "The bot-check widget's script address (loaded, never shown); the widget's visible text names no vendor.",
+  },
+];
 
 export interface ExtractedString {
   text: string;

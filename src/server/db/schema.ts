@@ -18,6 +18,7 @@
  * adapter).
  */
 import type { ColumnType, Insertable, Selectable } from "kysely";
+import { PMS_PRIMARY_KEYS, PMS_TABLES_IN_FK_ORDER, type PmsDatabase } from "./pms-schema";
 
 /** ISO-8601 UTC timestamp string, e.g. "2026-10-09T12:00:00.000Z". */
 export type IsoTimestamp = string;
@@ -389,7 +390,11 @@ export interface AccessRequestsTable {
   contacted_at: IsoTimestamp | null;
 }
 
-export interface Database {
+/**
+ * Every table. The clinic system's tables (pms_*, clinic_entitlements, clinic_usage_counters) come from
+ * ./pms-schema (one file per module, docs/clinic-system/contract.md §4).
+ */
+export interface Database extends PmsDatabase {
   user: AuthUserTable;
   session: AuthSessionTable;
   account: AuthAccountTable;
@@ -451,6 +456,7 @@ export const TABLES_IN_FK_ORDER = [
   "launch_token_uses",
   "rate_limits",
   "access_requests",
+  ...PMS_TABLES_IN_FK_ORDER,
 ] as const satisfies readonly (keyof Database)[];
 
 export type TableName = (typeof TABLES_IN_FK_ORDER)[number];
@@ -483,6 +489,7 @@ export const PRIMARY_KEYS: { readonly [T in TableName]: readonly (keyof Database
   launch_token_uses: ["jti"],
   rate_limits: ["key", "window_start"],
   access_requests: ["id"],
+  ...PMS_PRIMARY_KEYS,
 };
 
 export type ClinicProfileRow = Selectable<ClinicProfileTable>;

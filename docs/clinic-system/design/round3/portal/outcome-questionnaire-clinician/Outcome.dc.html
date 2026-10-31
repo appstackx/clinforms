@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<title>Outcome questionnaire</title>
+<script src="./vendor/react.js"></script>
+<script src="./vendor/react-dom.js"></script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+*{box-sizing:border-box}
+a{color:#0B7970}a:hover{color:#095E57}
+:focus-visible{outline:2px solid #0E958A;outline-offset:2px}
+label:has(input:focus-visible){outline:2px solid #0E958A;outline-offset:2px}
+</style>
+</helmet>
+<div style="min-height: 100vh; background: #F8FAFC; color: #0F172A; font-family: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 14px; line-height: 20px; display: flex; flex-direction: column">
+<header style="background: #FFFFFF; border-bottom: 1px solid #E2E8F0; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 10px 16px; min-height: 56px">
+<span aria-hidden="true" style="width: 28px; height: 28px; border-radius: 8px; background: #0B7970; color: #FFFFFF; display: inline-flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg></span>
+<nav aria-label="Product areas" style="display: flex; background: #F1F5F9; border-radius: 10px; padding: 3px; gap: 2px"><a href="Dashboard.dc.html" aria-current="page" style="height: 30px; padding: 0 12px; border-radius: 8px; background: #FFFFFF; box-shadow: 0 1px 2px rgba(15,23,42,.08); font-weight: 600; color: #0F172A; text-decoration: none; display: inline-flex; align-items: center">{{product}}</a><a href="ReferrerForm.dc.html" style="height: 30px; padding: 0 12px; border-radius: 8px; font-weight: 500; color: #475569; text-decoration: none; display: inline-flex; align-items: center">ClinForms</a></nav>
+<span style="margin-left: auto; display: inline-flex; align-items: center; gap: 8px"><span aria-hidden="true" style="width: 32px; height: 32px; border-radius: 999px; background: #CCFBF1; color: #0B5F58; display: inline-flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px">PS</span><span style="display: flex; flex-direction: column; line-height: 16px"><strong>Priya Shah</strong><span style="font-size: 12px; color: #64748B">Physiotherapist</span></span></span>
+</header>
+
+<main style="flex: 1; padding: 16px 24px 32px; display: flex; flex-direction: column; gap: 14px; max-width: 1400px; width: 100%; margin: 0 auto">
+<nav aria-label="Breadcrumb" style="font-size: 13px; color: #64748B; display: flex; gap: 6px"><a href="PatientRecord.dc.html">Ravi Patel</a><span aria-hidden="true">/</span><a href="PatientRecord.dc.html">Outcomes</a><span aria-hidden="true">/</span><span>Record scores</span></nav>
+<div style="display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap"><div style="flex: 1; min-width: 260px"><h1 style="margin: 0; font-size: 20px; line-height: 28px; font-weight: 600">Outcome measures – Ravi Patel</h1><span style="color: #475569">DOB 19/05/1979 (47) · Case: low back pain · session 4 · today 08:00</span></div></div>
+
+<div role="tablist" aria-label="Measure" style="display: flex; gap: 6px; flex-wrap: wrap">
+<sc-for list="{{tabs}}" as="t" hint-placeholder-count="5"><button type="button" role="tab" aria-selected="{{t.sel}}" onClick="{{t.pick}}" style="min-height: 40px; padding: 4px 14px; border-radius: 10px; border: 1px solid {{t.bd}}; background: {{t.bg}}; color: #0F172A; font: inherit; display: inline-flex; flex-direction: column; align-items: flex-start; line-height: 16px; cursor: pointer"><strong>{{t.label}}</strong><span style="font-size: 11px; color: #475569">{{t.state}}</span></button></sc-for>
+</div>
+
+<div style="display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start">
+<section aria-labelledby="q-h" style="flex: 999 1 560px; min-width: 0; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 18px 20px; display: flex; flex-direction: column; gap: 14px">
+<div style="display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap"><div style="flex: 1; min-width: 220px"><h2 id="q-h" style="margin: 0; font-size: 17px; font-weight: 600">{{m.title}}</h2><span style="font-size: 13px; color: #475569">{{m.help}}</span></div><sc-if value="{{m.fromPatient}}" hint-placeholder-val="{{false}}"><span style="display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px 0 6px; border-radius: 999px; font-size: 12px; font-weight: 500; background: #E8EEFB; color: #1842B4"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM2 12h20"></path></svg>From patient · portal 27/10 19:40</span></sc-if></div>
+<sc-for list="{{items}}" as="q" hint-placeholder-count="5">
+<fieldset style="border: 0; border-top: 1px solid #F1F5F9; padding: 10px 0 0; margin: 0; display: flex; flex-direction: column; gap: 6px">
+<legend style="font-weight: 500; padding: 0; float: left; width: 100%; margin-bottom: 6px; display: flex; gap: 8px"><span style="color: #64748B; font-variant-numeric: tabular-nums; width: 20px">{{q.n}}</span><span style="flex: 1">{{q.label}}</span><span style="font-size: 12px; color: {{q.ansFg}}">{{q.ansText}}</span></legend>
+<div style="display: flex; gap: 4px; flex-wrap: wrap; align-items: center; clear: both">
+<span style="font-size: 12px; color: #475569; width: 88px">{{q.lo}}</span>
+<sc-for list="{{q.opts}}" as="o" hint-placeholder-count="6"><label style="display: inline-flex; align-items: center; justify-content: center; min-width: 40px; height: 40px; border-radius: 8px; border: 1px solid {{o.bd}}; background: {{o.bg}}; color: {{o.fg}}; font-weight: 600; font-variant-numeric: tabular-nums; cursor: pointer"><input type="radio" name="{{q.name}}" checked="{{o.on}}" onChange="{{o.pick}}" aria-label="{{o.aria}}" style="position: absolute; opacity: 0; width: 1px; height: 1px">{{o.v}}</label></sc-for>
+<span style="font-size: 12px; color: #475569">{{q.hi}}</span>
+</div>
+<sc-if value="{{q.isText}}" hint-placeholder-val="{{false}}"><span style="font-size: 12px; color: #475569">Activity chosen by the patient at the first visit</span></sc-if>
+</fieldset>
+</sc-for>
+</section>
+
+<aside style="flex: 1 1 360px; min-width: 0; display: flex; flex-direction: column; gap: 16px">
+<section aria-labelledby="sc-h" style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 16px 20px; display: flex; flex-direction: column; gap: 8px">
+<h2 id="sc-h" style="margin: 0; font-size: 15px; font-weight: 600">Score</h2>
+<div style="display: flex; align-items: baseline; gap: 8px"><strong style="font-size: 36px; line-height: 44px; font-variant-numeric: tabular-nums">{{m.score}}</strong><span style="color: #475569">{{m.unit}}</span></div>
+<span style="font-size: 13px; color: #334155">{{m.band}}</span>
+<span style="font-size: 13px; color: {{m.chgFg}}; font-weight: 500">{{m.change}}</span>
+<span style="font-size: 12px; color: #475569">{{m.answered}}</span>
+<button type="button" onClick="{{save}}" disabled="{{m.cantSave}}" style="margin-top: 6px; height: 40px; border-radius: 8px; border: 0; background: {{m.saveBg}}; color: {{m.saveFg}}; font: inherit; font-weight: 600; cursor: pointer">{{saveLabel}}</button>
+<a href="OutcomePatient.dc.html" style="font-size: 13px; font-weight: 500">Send to patient's portal instead</a>
+</section>
+<figure style="margin: 0; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 16px 20px; display: flex; flex-direction: column; gap: 8px">
+<figcaption style="display: flex; flex-direction: column"><strong style="font-size: 15px">{{m.short}} over this case</strong><span style="font-size: 12px; color: #475569">{{m.dir}}</span></figcaption>
+<svg role="img" aria-label="{{chart.aria}}" viewBox="0 0 360 170" style="width: 100%; height: auto">
+<line x1="34" y1="20" x2="350" y2="20" stroke="#F1F5F9"></line><line x1="34" y1="70" x2="350" y2="70" stroke="#F1F5F9"></line><line x1="34" y1="120" x2="350" y2="120" stroke="#E2E8F0"></line>
+<text x="28" y="24" text-anchor="end" font-size="10" fill="#64748B">{{chart.max}}</text><text x="28" y="124" text-anchor="end" font-size="10" fill="#64748B">0</text>
+<polyline points="{{chart.points}}" fill="none" stroke="#0E958A" stroke-width="2.5" stroke-linejoin="round"></polyline>
+<sc-for list="{{chart.dots}}" as="d" hint-placeholder-count="4"><circle cx="{{d.x}}" cy="{{d.y}}" r="{{d.r}}" fill="{{d.fill}}" stroke="#0B7970" stroke-width="2"></circle><text x="{{d.x}}" y="{{d.ly}}" text-anchor="middle" font-size="11" font-weight="600" fill="#0F172A">{{d.v}}</text><text x="{{d.x}}" y="142" text-anchor="middle" font-size="10" fill="#64748B">{{d.date}}</text><text x="{{d.x}}" y="156" text-anchor="middle" font-size="9" fill="#64748B">{{d.visit}}</text></sc-for>
+</svg>
+</figure>
+</aside>
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1100}}'>
+class Component extends DCLogic {
+  constructor(p) {
+    super(p);
+    this.state = { m: 'odi', saved: {}, a: {
+      nprs: { 0: 3 },
+      odi: { 0: 2, 1: 1, 2: 2, 3: 1, 4: 2, 5: 1, 6: 1, 8: 1, 9: 2 },
+      ndi: {},
+      psfs: { 0: 6, 1: 7, 2: 5 },
+      qd: { 0: 2, 1: 1, 2: 2, 3: 1, 4: 2, 5: 1, 6: 1, 7: 1, 8: 2, 9: 1, 10: 2 }
+    } };
+  }
+  defs() {
+    const r = (a, b) => { const o = []; for (let i = a; i <= b; i++) o.push(i); return o; };
+    return {
+      nprs: { label: 'NPRS', title: 'Numeric pain rating scale', help: 'Pain right now, 0 = no pain, 10 = worst imaginable.', items: ['Pain right now'], opts: r(0, 10), lo: 'No pain', hi: 'Worst', unit: '/ 10', max: 10, hist: [7, 6, 4], higherBetter: false },
+      odi: { label: 'ODI', title: 'Oswestry disability index', help: 'Low back pain. Each section 0 (no problem) to 5 (most severe). Sections can be left out.', items: ['Pain intensity', 'Personal care', 'Lifting', 'Walking', 'Sitting', 'Standing', 'Sleeping', 'Sex life (optional)', 'Social life', 'Travelling'], opts: r(0, 5), lo: 'No problem', hi: 'Most severe', unit: '%', max: 100, hist: [40, 32, 26], higherBetter: false },
+      ndi: { label: 'NDI', title: 'Neck disability index', help: 'Neck pain. Each section 0 to 5. Not used on this case yet.', items: ['Pain intensity', 'Personal care', 'Lifting', 'Reading', 'Headaches', 'Concentration', 'Work', 'Driving', 'Sleeping', 'Recreation'], opts: r(0, 5), lo: 'No problem', hi: 'Most severe', unit: '%', max: 100, hist: [], higherBetter: false },
+      psfs: { label: 'PSFS', title: 'Patient-specific functional scale', help: 'How well the patient can do each activity, 0 = unable, 10 = as before the problem.', items: ['Sitting through a 2-hour meeting', 'Lifting my daughter', 'Running 5 km'], opts: r(0, 10), lo: 'Unable', hi: 'As before', unit: '/ 10', max: 10, hist: [2.3, 3.7, 4.7], higherBetter: true, text: true },
+      qd: { label: 'QuickDASH', title: 'QuickDASH', help: 'Arm, shoulder and hand. 1 = no difficulty, 5 = unable. Needs at least 10 of 11 answers.', items: ['Open a tight jar', 'Heavy household chores', 'Carry a shopping bag', 'Wash your back', 'Use a knife to cut food', 'Activities with arm force or impact', 'Effect on social activities', 'Limited in work or daily activities', 'Arm, shoulder or hand pain', 'Tingling', 'Difficulty sleeping'], opts: r(1, 5), lo: 'No difficulty', hi: 'Unable', unit: '/ 100', max: 100, hist: [], higherBetter: false, fromPatient: true }
+    };
+  }
+  score(k, a) {
+    const vals = Object.keys(a).map(x => a[x]); const n = vals.length; const sum = vals.reduce((s, v) => s + v, 0);
+    if (k === 'nprs') return n ? { v: sum, ok: true } : { ok: false };
+    if (k === 'odi' || k === 'ndi') return n >= 8 ? { v: Math.round(sum / (5 * n) * 100), ok: true } : { ok: false, need: 8 - n };
+    if (k === 'psfs') return n === 3 ? { v: Math.round(sum / 3 * 10) / 10, ok: true } : { ok: false, need: 3 - n };
+    if (k === 'qd') return n >= 10 ? { v: Math.round(((sum / n) - 1) * 25 * 10) / 10, ok: true } : { ok: false, need: 10 - n };
+  }
+  renderVals() {
+    const st = this.state; const D = this.defs(); const k = st.m; const d = D[k]; const a = st.a[k];
+    const items = d.items.map((label, i) => ({ n: String(i + 1), label, name: k + '-' + i, lo: d.lo, hi: d.hi, isText: !!d.text,
+      ansText: a[i] != null ? 'Answered: ' + a[i] : 'Not answered', ansFg: a[i] != null ? '#166534' : '#64748B',
+      opts: d.opts.map(v => { const on = a[i] === v; return { v: String(v), on, bg: on ? '#0B7970' : '#FFFFFF', fg: on ? '#FFFFFF' : '#0F172A', bd: on ? '#0B7970' : '#CBD5E1', aria: label + ': ' + v,
+        pick: () => { const all = Object.assign({}, st.a); const cur = Object.assign({}, all[k]); cur[i] = v; all[k] = cur; this.setState({ a: all }); } }; }) }));
+    const sc = this.score(k, a);
+    const prev = d.hist.length ? d.hist[d.hist.length - 1] : null; const first = d.hist.length ? d.hist[0] : null;
+    let change = 'First score on this case', chgFg = '#475569';
+    if (sc.ok && first != null) { const diff = Math.round((sc.v - first) * 10) / 10; const better = d.higherBetter ? diff > 0 : diff < 0; change = (diff > 0 ? '+' : '') + diff + ' since first visit (' + first + ') · ' + (better ? 'improving' : 'not improving'); chgFg = better ? '#166534' : '#BA1C1C'; }
+    const band = !sc.ok ? '' : (k === 'odi' || k === 'ndi') ? (sc.v <= 20 ? 'Minimal disability (0–20%)' : sc.v <= 40 ? 'Moderate disability (21–40%)' : sc.v <= 60 ? 'Severe disability (41–60%)' : 'Very severe (over 60%)') : (k === 'nprs' ? (sc.v <= 3 ? 'Mild pain' : sc.v <= 6 ? 'Moderate pain' : 'Severe pain') : (k === 'psfs' ? 'Average of 3 activities' : 'Higher = more disability'));
+    const series = d.hist.concat(sc.ok ? [sc.v] : []);
+    const dates = ['03/09', '17/09', '01/10', 'Today'];
+    const n = series.length; const xs = series.map((v, i) => 50 + (n > 1 ? i * (290 / (n - 1)) : 145));
+    const ys = series.map(v => 120 - (v / d.max) * 100);
+    const chart = { max: String(d.max), points: xs.map((x, i) => x + ',' + ys[i]).join(' '),
+      dots: series.map((v, i) => ({ x: xs[i], y: ys[i], ly: ys[i] - 10, v: String(v), date: dates[dates.length - n + i] || '', visit: 'Session ' + ([1, 2, 3, 4][4 - n + i] || ''), r: i === n - 1 && sc.ok ? 6 : 4, fill: i === n - 1 && sc.ok ? '#0E958A' : '#FFFFFF' })),
+      aria: d.label + ' scores: ' + series.map((v, i) => (dates[dates.length - n + i]) + ' ' + v).join(', ') };
+    const tabs = Object.keys(D).map(key => { const s = this.score(key, st.a[key]); const on = st.m === key; return { label: D[key].label, sel: on ? 'true' : 'false', bg: on ? '#F0FDFA' : '#FFFFFF', bd: on ? '#0E958A' : '#E2E8F0', state: st.saved[key] ? 'Saved' : (s.ok ? 'Ready to save' : (Object.keys(st.a[key]).length ? 'In progress' : (key === 'ndi' ? 'Not used' : 'Due'))), pick: () => this.setState({ m: key }) }; });
+    return {
+      product: 'Clinic system', tabs, items,
+      m: { title: d.title, help: d.help, short: d.label, unit: d.unit, fromPatient: !!d.fromPatient, score: sc.ok ? String(sc.v) : '–', band, change: sc.ok ? change : '', chgFg,
+        answered: Object.keys(a).length + ' of ' + d.items.length + ' answered' + (sc.ok ? '' : ' · ' + (sc.need || 1) + ' more needed for a score'),
+        dir: d.higherBetter ? 'Higher is better' : 'Lower is better', cantSave: !sc.ok, saveBg: sc.ok ? '#0B7970' : '#E2E8F0', saveFg: sc.ok ? '#FFFFFF' : '#64748B' },
+      chart, saveLabel: st.saved[k] ? 'Saved to record' : 'Save ' + d.label + ' score',
+      save: () => { if (sc.ok) { const s = Object.assign({}, st.saved); s[k] = true; this.setState({ saved: s }); } }
+    };
+  }
+}
+</script>
+</body>
+</html>

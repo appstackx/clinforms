@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { PageHeader, Panel } from "@/components/account/shell";
-import { ACTIVITY_ACTORS, ACTIVITY_COPY, ACTIVITY_GROUPS, activityLabel } from "@/lib/activity-copy";
+import { ACTIVITY_ACTORS, ACTIVITY_COPY, ACTIVITY_GROUPS, CLINIC_SYSTEM_ACTIVITY_GROUP, activityLabel } from "@/lib/activity-copy";
 import {
   ACTIVITY_EXPORT_PATH,
   ACTIVITY_PATH,
@@ -18,6 +18,7 @@ import {
 } from "@/server/admin/activity";
 import { requireAppContext } from "@/server/auth/session";
 import { getDb } from "@/server/db";
+import { clinicPackages } from "@/server/pms/entitlements";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Activity" };
@@ -35,6 +36,8 @@ export default async function ActivityPage({ searchParams }: { searchParams: Rec
   const query = activityQuery(scope, params);
   const db = getDb();
   const page = await loadActivityPage({ db }, query);
+  // The clinic system's filter group only for clinics with that package (everyone else sees the page as before).
+  const groups = (await clinicPackages(membership.tenantId)).clinic ? [...ACTIVITY_GROUPS, CLINIC_SYSTEM_ACTIVITY_GROUP] : ACTIVITY_GROUPS;
   const [lookups, people] = await Promise.all([
     loadActivityLookups(db, viewer, page.entries),
     scope.everyone ? activityPeople(db, viewer.organizationId) : Promise.resolve([] as PersonOption[]),
@@ -44,7 +47,7 @@ export default async function ActivityPage({ searchParams }: { searchParams: Rec
   const filters = { action: query.action, user: scope.everyone ? query.userId : null, saves: params.saves };
   const filtered = Boolean(filters.action || filters.user || filters.saves);
   const paged = Boolean(params.before || params.after);
-  const knownActions = new Set(ACTIVITY_GROUPS.flatMap((g) => g.actions));
+  const knownActions = new Set(groups.flatMap((g) => g.actions));
   const personChoices =
     filters.user && !people.some((p) => p.userId === filters.user)
       ? [...people, { userId: filters.user, label: lookups.users.get(filters.user)?.name ?? ACTIVITY_ACTORS.formerMember }]
@@ -66,7 +69,7 @@ export default async function ActivityPage({ searchParams }: { searchParams: Rec
             </label>
             <select id="activity-action" name="action" defaultValue={filters.action ?? ""} className={SELECT}>
               <option value="">{ACTIVITY_COPY.allActions}</option>
-              {ACTIVITY_GROUPS.map((group) => (
+              {groups.map((group) => (
                 <optgroup key={group.label} label={group.label}>
                   {group.actions.map((action) => (
                     <option key={action} value={action}>

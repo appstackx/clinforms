@@ -9,9 +9,11 @@ import { endTrial, extendTrial, setDemoClinic, setDraftingLimits, setTrial } fro
 import { removePackage, setPackage } from "@/server/admin/clinic-package";
 import { formatPence, isPackageId, packageLabel, parsePounds, reportsText, type SetupFeeStatus } from "@/lib/packages";
 import { platformActionAdmin } from "@/server/admin/guards";
-import { PLATFORM_PATH, createClinicAsPlatform, createOwnerResetLinkAsPlatform, markAccessRequest } from "@/server/admin/platform-console";
+import { isPackageId as isEntitlementPackageId } from "@/modules/pms/core/entitlements";
+import { PLATFORM_PATH, createClinicAsPlatform, createOwnerResetLinkAsPlatform, markAccessRequest, setClinicPackageAsPlatform } from "@/server/admin/platform-console";
 import { getAuth } from "@/server/auth/auth";
-import { appOrigin, authSecret, baseUrlSetting } from "@/server/auth/config";
+import { authSecret, baseUrlSetting, linkTarget } from "@/server/auth/config";
+import { clinicLinkBrand, withLinkBrand } from "@/server/auth/brand-links";
 import { normaliseEmail } from "@/server/auth/platform";
 import { requestHeaders, type ActionResult } from "@/server/auth/session";
 import { TenantSlugError } from "@/server/auth/tenant";
@@ -41,13 +43,17 @@ export async function createClinicAction(_prev: CreateClinicResult | null, form:
   // 24/10/2026 (D4): the box is OFF by default – an owner's address may be a shared inbox, and whoever opens the
   // invitation first becomes the owner; tick it only for the owner's own mailbox.
   const sendEmail = !(form.get("emailChoice") === "1" && form.get("sendEmail") !== "on");
+  // Where the owner's invitation goes: ClinForms unless the clinic brand was chosen (the form offers it only when this
+  // deployment serves the clinic brand's host; brandOrigin falls back to the primary origin otherwise).
+  const link = linkTarget(baseUrlSetting(), form.get("linkBrand") === "clinic" ? "clinic" : "clinforms");
   try {
     const created = await createClinicAsPlatform(getDb(), admin, {
       name: String(form.get("name") ?? "").trim(),
       slug: String(form.get("slug") ?? "").trim().toLowerCase(),
       ownerEmail: String(form.get("ownerEmail") ?? ""),
       retentionDays,
-      appOrigin: appOrigin(baseUrlSetting(), requestHeaders()),
+      appOrigin: link.origin,
+      brand: link.brand,
       linkSecret: authSecret(),
       sendEmail,
     });
@@ -80,10 +86,12 @@ export async function createOwnerResetLinkAction(_prev: OwnerResetResult | null,
   try {
     const tenantId = String(form.get("tenantId") ?? "").trim();
     const ownerEmail = normaliseEmail(String(form.get("resetOwnerEmail") ?? ""));
+    // The link goes to the named clinic's brand host (its package), whichever host the administrator is on.
+    const linkBrand = await clinicLinkBrand(getDb(), tenantId);
     const created = await createOwnerResetLinkAsPlatform(getDb(), admin, {
       tenantId,
       ownerEmail,
-      requestReset: (email) => getAuth().api.requestPasswordReset({ body: { email }, headers: requestHeaders() }),
+      requestReset: (email) => withLinkBrand(linkBrand, () => getAuth().api.requestPasswordReset({ body: { email }, headers: requestHeaders() })),
     });
     revalidatePath(PLATFORM_PATH);
     return { ok: true, tenantId, ownerEmail, link: created.link, expiresAt: created.expiresAt };
@@ -102,6 +110,29 @@ export async function setAccessRequestContactedAction(form: FormData): Promise<v
     await markAccessRequest({ db: getDb() }, admin, String(form.get("id") ?? ""), form.get("contacted") === "1");
   } catch {
     // unknown or malformed id: nothing to do
+  }
+  revalidatePath(PLATFORM_PATH);
+}
+
+/**
+ * Switches a clinic's package on or off (package = reports | clinic, on = 1 | 0). Nothing is deleted. Reports off
+ * also needs confirmTenantId = the clinic id (typed by the administrator), else nothing changes.
+ */
+export async function setClinicPackageAction(form: FormData): Promise<void> {
+  const admin = await platformActionAdmin();
+  if (!admin) return;
+  const pkg = String(form.get("package") ?? "");
+  if (!isEntitlementPackageId(pkg)) return;
+  try {
+    await setClinicPackageAsPlatform(getDb(), admin, {
+      tenantId: String(form.get("tenantId") ?? ""),
+      package: pkg,
+      on: form.get("on") === "1",
+      // Switching Reports off: the clinic id typed again (checked on the server, setClinicPackageAsPlatform).
+      confirmTenantId: String(form.get("confirmTenantId") ?? ""),
+    });
+  } catch (err) {
+    if (!(err instanceof RepoInputError)) logAuthEvent("platform.set_package_failed", { error: err instanceof Error ? err.name : "error" });
   }
   revalidatePath(PLATFORM_PATH);
 }

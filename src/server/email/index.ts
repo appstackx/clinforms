@@ -2,7 +2,7 @@
  * Transactional email for the identity layer (invitations, password resets, the two-step verification
  * notice). See docs/auth.md §Email.
  *
- * deliverEmail() sends through the configured provider (CLINFORMS_EMAIL_PROVIDER = mailersend | log | none)
+ * deliverEmail() sends through the configured provider (CLINFORMS_EMAIL_PROVIDER = mailersend | log | none, or mailpit locally)
  * and also records the message in the current "outbox capture", if one is open. Server actions that act for
  * an administrator open one with captureOutbox(): when email is off ("none") or a send failed, the action can
  * show the administrator the invitation or reset link to pass on. captureOutbox(fn, { send: false }) records the

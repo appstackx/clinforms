@@ -10,7 +10,8 @@ import { signingNumberFor } from "@/lib/hcpc";
 import { isDemoHcpc } from "@/modules/medreport/core/demo-clinic";
 import { isDemoClinic } from "@/server/admin/clinic-plan";
 import { getAuth } from "@/server/auth/auth";
-import { appOrigin, authSecret, baseUrlSetting } from "@/server/auth/config";
+import { authSecret, baseUrlSetting, brandOrigin } from "@/server/auth/config";
+import { clinicLinkBrand } from "@/server/auth/brand-links";
 import { authErrorMessage } from "@/server/auth/errors";
 import { inviteLink, normaliseEmail } from "@/server/auth/platform";
 import { assignableRoles, parseMemberRole } from "@/server/auth/roles";
@@ -75,7 +76,9 @@ export async function inviteMember(_prev: InviteResult | null, form: FormData): 
       getAuth().api.createInvitation({ body: { email, role, organizationId: ctx.membership.organizationId }, headers: requestHeaders() }),
     );
     const captured = outbox.find((m) => m.message.kind === "invitation");
-    const link = linkToShare(captured) ?? (captured ? null : inviteLink(appOrigin(baseUrlSetting(), requestHeaders()), result.id, authSecret()));
+    // Not emailed at all: the link to the clinic's brand host (src/server/auth/brand-links.ts), as the email would have.
+    const origin = captured ? "" : brandOrigin(baseUrlSetting(), await clinicLinkBrand(getDb(), ctx.membership.tenantId));
+    const link = linkToShare(captured) ?? (captured ? null : inviteLink(origin, result.id, authSecret()));
     revalidatePath(PATH);
     return {
       ok: true,

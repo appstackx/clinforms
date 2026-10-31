@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 600 400" width="600" height="400" aria-hidden="true">
+  <rect width="600" height="400" fill="#F8D5CA"/>
+  <defs>
+    <rect id="front" x="46" y="316" width="508" height="110" rx="6"/>
+    <rect id="top" x="24" y="288" width="552" height="30" rx="9"/>
+    <rect id="lid" x="172" y="92" width="252" height="170" rx="12"/>
+    <rect id="scr" x="190" y="110" width="216" height="134" rx="4"/>
+    <path id="base" d="M142 262 H454 L474 288 H122 Z"/>
+    <rect id="mug" x="62" y="222" width="62" height="66" rx="10"/>
+    <rect id="card" x="458" y="182" width="104" height="100" rx="6"/>
+  </defs>
+  <g transform="translate(9 9)">
+    <use href="#front" xlink:href="#front" fill="#0B6B65"/>
+    <use href="#top" xlink:href="#top" fill="#F6C34A"/>
+    <use href="#lid" xlink:href="#lid" fill="#0F3B35"/>
+    <use href="#base" xlink:href="#base" fill="#D3E7EF"/>
+    <use href="#mug" xlink:href="#mug" fill="#C4432B"/>
+    <g transform="rotate(7 510 232)"><use href="#card" xlink:href="#card" fill="#FBF4E8"/></g>
+  </g>
+  <!-- the diary on screen, no words -->
+  <use href="#scr" xlink:href="#scr" fill="#FBF4E8"/>
+  <g>
+    <rect x="200" y="132" width="58" height="34" rx="4" fill="#CFE7D8"/>
+    <rect x="200" y="176" width="58" height="44" rx="4" fill="#D3E7EF"/>
+    <rect x="270" y="122" width="58" height="50" rx="4" fill="#F6C34A"/>
+    <rect x="340" y="150" width="58" height="34" rx="4" fill="#F3A9BA"/>
+    <rect x="270" y="190" width="58" height="34" rx="4" fill="#CFE7D8"/>
+  </g>
+  <g fill="none" stroke="#0F3B35" stroke-width="9" stroke-linecap="round" stroke-linejoin="round">
+    <use href="#front" xlink:href="#front"/>
+    <path stroke-width="6" d="M300 326 V416"/>
+    <use href="#top" xlink:href="#top"/>
+    <use href="#lid" xlink:href="#lid"/>
+    <use href="#scr" xlink:href="#scr" stroke-width="5"/>
+    <path stroke-width="4" d="M264 114 V240 M334 114 V240"/>
+    <path stroke="#C4432B" stroke-width="5" d="M196 180 H402"/>
+    <use href="#base" xlink:href="#base"/>
+    <path stroke-width="6" d="M262 276 H334"/>
+    <use href="#mug" xlink:href="#mug"/>
+    <path d="M124 236 C148 236 148 272 124 272"/>
+    <path stroke-width="6" d="M80 204 C70 188 90 180 80 162 M104 204 C94 188 114 180 104 162"/>
+    <g transform="rotate(7 510 232)">
+      <use href="#card" xlink:href="#card"/>
+      <path stroke-width="5" d="M476 206 H540 M476 226 H528 M476 246 H544 M476 264 H520"/>
+      <path stroke="#C4432B" stroke-width="7" d="M476 206 H514"/>
+      <circle cx="458" cy="200" r="5" fill="#F8D5CA" stroke-width="4"/>
+      <circle cx="458" cy="232" r="5" fill="#F8D5CA" stroke-width="4"/>
+      <circle cx="458" cy="264" r="5" fill="#F8D5CA" stroke-width="4"/>
+    </g>
+  </g>
+</svg>

@@ -78,6 +78,15 @@ export async function appendAudit(ctx: DbContext, tenantId: string, input: Audit
 }
 
 /**
+ * The audit row for an entry, validated, plus the INSERT that writes it – not executed, so a caller can send it
+ * in the same atomic batch as the write it records (runBatch; the clinic-system repositories do).
+ */
+export function auditInsertQuery(ctx: DbContext, tenantId: string, input: AuditEntryInput) {
+  const { entry, row } = auditRow(ctx, tenantId, input);
+  return { entry, query: ctx.db.insertInto("audit_log").values(row) };
+}
+
+/**
  * (10/2026) One audit row as a statement for an atomic batch (db/batch.ts runBatch), written only while the
  * `whenExists` subquery finds a row when the statement runs (INSERT … SELECT … WHERE EXISTS): the audit row exists
  * exactly when the change it records does. Still insert-only (the log stays append-only).

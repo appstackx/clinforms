@@ -5,12 +5,22 @@ import { SubmitButton } from "@/components/account/form-controls";
 import { activityLabel, describeActivityDetail } from "@/lib/activity-copy";
 import { activityTime } from "@/server/admin/activity";
 import { requirePlatformAdmin } from "@/server/admin/guards";
-import { ACCESS_REQUESTS_SHOWN, listAccessRequestsForPlatform, listClinicsOverview, listPlatformActivity } from "@/server/admin/platform-console";
+import { CLINIC_SYSTEM_NAME, PACKAGE_LABELS } from "@/lib/brand";
+import { accessRequestSource } from "@/server/site/demo-request";
+import {
+  ACCESS_REQUESTS_SHOWN,
+  listAccessRequestsForPlatform,
+  listClinicPackages,
+  listClinicsOverview,
+  listPlatformActivity,
+  reportsSwitchOffNeedsTypedId,
+} from "@/server/admin/platform-console";
 import { TRIAL_COPY } from "@/lib/account-copy";
 import { getDb } from "@/server/db";
 import { emailProviderName } from "@/server/email";
+import { baseUrlSetting, brandOrigin } from "@/server/auth/config";
 import { SignOutForm } from "../session-forms";
-import { setAccessRequestContactedAction } from "./actions";
+import { setAccessRequestContactedAction, setClinicPackageAction } from "./actions";
 import { CreateClinicForm, DemoClinicForm, OwnerResetForm, PackageForm, TrialForms } from "./forms";
 import type { ClinicOverview } from "@/server/admin/platform-console";
 import { formatPence, packageLabel, reportsText } from "@/lib/packages";
@@ -63,6 +73,8 @@ export default async function PlatformPage() {
   ]);
   const packageOf = new Map(packages.map((p) => [p.tenantId, p] as const));
   const open = requests.filter((r) => !r.contactedAt).length;
+  const live = clinics.filter((c) => !c.offboardedAt);
+  const entitlements = await listClinicPackages(db, live.map((c) => c.tenantId));
   const openClinics = clinics.filter((c) => !c.offboardedAt).map((c) => ({ tenantId: c.tenantId, name: c.name }));
   const demoClinics = clinics.filter((c) => !c.offboardedAt && c.plan?.demoClinic === true).map((c) => ({ tenantId: c.tenantId, name: c.name }));
   const emailOn = emailProviderName() !== "none";
@@ -97,7 +109,7 @@ export default async function PlatformPage() {
         />
 
         <Panel title="Create a clinic" description="Creates the clinic account and an invitation for its owner. Do this once the data processing agreement is signed." className="mb-6">
-          <CreateClinicForm emailOn={emailOn} />
+          <CreateClinicForm emailOn={emailOn} clinicBrandHost={servesClinicBrandHost()} />
         </Panel>
 
         <Panel title="Trials and drafting limits" description={TRIAL_COPY.platformDescription} className="mb-6">
@@ -136,7 +148,7 @@ export default async function PlatformPage() {
 
         <Panel
           title={`Access requests (${open} not contacted)`}
-          description={`From the “Request access” form on the website, newest first${requests.length >= ACCESS_REQUESTS_SHOWN ? ` – the latest ${ACCESS_REQUESTS_SHOWN} are shown` : ""}. The daily retention job deletes requests older than 24 months.`}
+          description={`From the “Request access” form on the website and ${CLINIC_SYSTEM_NAME}’s “Book a demo” form (labelled ${CLINIC_SYSTEM_NAME} demo), newest first${requests.length >= ACCESS_REQUESTS_SHOWN ? ` – the latest ${ACCESS_REQUESTS_SHOWN} are shown` : ""}. The daily retention job deletes requests older than 24 months.`}
           className="mb-6"
         >
           {requests.length === 0 ? (
@@ -147,6 +159,11 @@ export default async function PlatformPage() {
                 <li key={r.id} className={`flex flex-wrap items-start justify-between gap-3 py-3 ${r.contactedAt ? "opacity-70" : ""}`}>
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-slate-900">
+                      {accessRequestSource(r.message) === "clindesk" ? (
+                        <span className="mr-2 inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 align-middle text-xs font-semibold text-amber-900 ring-1 ring-inset ring-amber-200">
+                          {CLINIC_SYSTEM_NAME} demo
+                        </span>
+                      ) : null}
                       {r.clinicName} <span className="font-normal text-slate-600">· {r.contactName}</span>
                     </p>
                     <p className="mt-0.5 break-words text-sm text-slate-600">
@@ -242,6 +259,84 @@ export default async function PlatformPage() {
           )}
         </Panel>
 
+        <Panel
+          title="Packages switched on"
+          description={`What each open clinic can use. ${PACKAGE_LABELS.reports} is on for every clinic unless switched off here; ${PACKAGE_LABELS.clinic} is off until switched on. Switching off hides and blocks that part – nothing is deleted. Switching ${PACKAGE_LABELS.reports} off stops the clinic's Studio and Report API, so it needs the clinic id typed first.`}
+          className="mb-6"
+        >
+          {live.length === 0 ? (
+            <p className="text-sm text-slate-600">No open clinics.</p>
+          ) : (
+            <div className="-mx-3 overflow-x-auto">
+              <table className="min-w-full">
+                <thead>
+                  <tr className="border-b border-slate-200">
+                    <th className={TH}>Clinic id</th>
+                    <th className={TH}>Name</th>
+                    <th className={TH}>{PACKAGE_LABELS.reports}</th>
+                    <th className={TH}>{PACKAGE_LABELS.clinic}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {live.map((c) => {
+                    const p = entitlements.get(c.tenantId);
+                    return (
+                      <tr key={c.organizationId}>
+                        <td className={`${TD} font-mono text-xs`}>{c.tenantId}</td>
+                        <td className={TD}>{c.name}</td>
+                        {(["reports", "clinic"] as const).map((pkg) => {
+                          const on = p ? p[pkg] : pkg === "reports";
+                          // Reports off stops a live clinic's Studio and Report API: the clinic id must be typed.
+                          const typeId = reportsSwitchOffNeedsTypedId({ package: pkg, on: !on });
+                          return (
+                            <td key={pkg} className={TD}>
+                              <form action={setClinicPackageAction} className="flex flex-wrap items-center gap-2">
+                                <input type="hidden" name="tenantId" value={c.tenantId} />
+                                <input type="hidden" name="package" value={pkg} />
+                                <input type="hidden" name="on" value={on ? "0" : "1"} />
+                                <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${on ? "bg-teal-50 text-teal-800" : "bg-slate-100 text-slate-700"}`}>{on ? "On" : "Off"}</span>
+                                {typeId ? (
+                                  <label className="flex items-center gap-1 text-xs text-slate-600">
+                                    <span className="sr-only">
+                                      Type the clinic id {c.tenantId} to switch {PACKAGE_LABELS[pkg]} off for {c.name}
+                                    </span>
+                                    <input
+                                      name="confirmTenantId"
+                                      required
+                                      autoComplete="off"
+                                      spellCheck={false}
+                                      placeholder="Clinic id"
+                                      {...(/^[a-z0-9-]+$/.test(c.tenantId) ? { pattern: c.tenantId } : {})}
+                                      title={`Type ${c.tenantId} to confirm`}
+                                      className="h-8 w-36 rounded-md border border-slate-300 px-2 font-mono text-xs"
+                                    />
+                                  </label>
+                                ) : null}
+                                <SubmitButton
+                                  variant="secondary"
+                                  className="h-8 px-2.5 text-xs"
+                                  pendingText="Saving…"
+                                  confirmText={on ? `Switch ${PACKAGE_LABELS[pkg]} off for ${c.name}? Its screens are hidden and blocked; nothing is deleted.` : undefined}
+                                >
+                                  {on ? "Switch off" : "Switch on"}
+                                  <span className="sr-only">
+                                    {" "}
+                                    {PACKAGE_LABELS[pkg]} for {c.name}
+                                  </span>
+                                </SubmitButton>
+                              </form>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Panel>
+
         <Panel title="Recent platform actions" description="The latest 20 changes made on this page.">
           {activity.length === 0 ? (
             <p className="text-sm text-slate-600">Nothing yet.</p>
@@ -265,4 +360,14 @@ export default async function PlatformPage() {
       </main>
     </>
   );
+}
+
+/** Whether this deployment signs people in on the clinic brand's own host (CLINFORMS_AUTH_ORIGINS – docs/auth.md). */
+function servesClinicBrandHost(): boolean {
+  try {
+    const setting = baseUrlSetting();
+    return brandOrigin(setting, "clinic") !== brandOrigin(setting, "clinforms");
+  } catch {
+    return false;
+  }
 }

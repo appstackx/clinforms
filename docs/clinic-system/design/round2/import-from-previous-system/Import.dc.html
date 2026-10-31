@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<title>Import</title>
+<script src="./vendor/react.js"></script>
+<script src="./vendor/react-dom.js"></script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+*{box-sizing:border-box}
+a{color:#0B7970}a:hover{color:#095E57}
+:focus-visible{outline:2px solid #0E958A;outline-offset:2px}
+</style>
+</helmet>
+<div style="min-height: 100vh; background: #F8FAFC; color: #0F172A; font-family: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 14px; line-height: 20px; display: flex; flex-direction: column">
+<header style="background: #FFFFFF; border-bottom: 1px solid #E2E8F0; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 10px 16px; min-height: 56px">
+<div style="display: flex; align-items: center; gap: 10px">
+<span aria-hidden="true" style="width: 28px; height: 28px; border-radius: 8px; background: #0B7970; color: #FFFFFF; display: inline-flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg></span>
+<nav aria-label="Product areas" style="display: flex; background: #F1F5F9; border-radius: 10px; padding: 3px; gap: 2px">
+<a href="AppShell.dc.html" aria-current="page" style="height: 30px; padding: 0 12px; border-radius: 8px; background: #FFFFFF; box-shadow: 0 1px 2px rgba(15,23,42,.08); font-weight: 600; color: #0F172A; text-decoration: none; display: inline-flex; align-items: center">{{product}}</a>
+<a href="#clinforms" style="height: 30px; padding: 0 12px; border-radius: 8px; font-weight: 500; color: #475569; text-decoration: none; display: inline-flex; align-items: center">ClinForms</a>
+</nav>
+</div>
+<button type="button" style="margin-left: auto; height: 40px; padding: 0 8px 0 4px; border: 0; border-radius: 8px; background: transparent; font: inherit; display: inline-flex; align-items: center; gap: 8px; color: #0F172A">
+<span aria-hidden="true" style="width: 32px; height: 32px; border-radius: 999px; background: #EDE9FE; color: #5B21B6; display: inline-flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px">HW</span>
+<span style="display: flex; flex-direction: column; align-items: flex-start; line-height: 16px"><span style="font-weight: 600">Helen Ward</span><span style="font-size: 12px; color: #64748B">Owner</span></span>
+</button>
+</header>
+
+<main style="flex: 1; padding: 20px 24px 32px; display: flex; flex-direction: column; gap: 16px; max-width: 1120px; width: 100%; margin: 0 auto">
+<nav aria-label="Breadcrumb" style="font-size: 13px; color: #64748B; display: flex; gap: 6px"><a href="Setup.dc.html">Set-up</a><span aria-hidden="true">/</span><span>Import data</span></nav>
+<div style="display: flex; flex-direction: column; gap: 2px"><h1 style="margin: 0; font-size: 22px; line-height: 30px; font-weight: 600">Import from your previous system</h1><span style="color: #475569">Bring in patients first, then appointments, then invoices. Each import can be undone for 7 days.</span></div>
+
+<ol aria-label="Import steps" style="list-style: none; margin: 0; padding: 0; display: flex; gap: 8px; flex-wrap: wrap">
+<sc-for list="{{steps}}" as="s" hint-placeholder-count="5">
+<li aria-current="{{s.cur}}" style="flex: 1 1 150px; display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 12px; border: 1px solid {{s.bd}}; background: {{s.bg}}">
+<span aria-hidden="true" style="width: 26px; height: 26px; border-radius: 999px; background: {{s.dotBg}}; color: {{s.dotFg}}; font-size: 13px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; flex: none">{{s.mark}}</span>
+<span style="display: flex; flex-direction: column; line-height: 16px"><span style="font-weight: 600; font-size: 13px">{{s.label}}</span><span style="font-size: 12px; color: #475569">{{s.state}}</span></span>
+</li>
+</sc-for>
+</ol>
+
+<section style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 20px; display: flex; flex-direction: column; gap: 16px">
+
+<sc-if value="{{v.upload}}" hint-placeholder-val="{{true}}">
+<div style="display: flex; gap: 16px; flex-wrap: wrap">
+<div style="display: flex; flex-direction: column; gap: 4px; min-width: 240px"><label for="im-type" style="font-weight: 500">What are you importing?</label><select id="im-type" style="height: 40px; padding: 0 10px; border: 1px solid #CBD5E1; border-radius: 8px; font: inherit; background: #FFFFFF"><option>Patients</option><option>Appointments</option><option>Invoices and payments</option></select></div>
+<div style="display: flex; flex-direction: column; gap: 4px; min-width: 240px"><label for="im-site" style="font-weight: 500">Default site</label><select id="im-site" style="height: 40px; padding: 0 10px; border: 1px solid #CBD5E1; border-radius: 8px; font: inherit; background: #FFFFFF"><option>Harbour Road</option></select></div>
+</div>
+<div style="border: 2px dashed #CBD5E1; border-radius: 16px; padding: 32px 20px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; background: #F8FAFC">
+<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#0B7970" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"></path></svg>
+<strong>Drag a CSV file here</strong>
+<span style="color: #475569">or</span>
+<button type="button" style="height: 40px; padding: 0 16px; border-radius: 8px; border: 1px solid #E2E8F0; background: #FFFFFF; font: inherit; font-weight: 500">Choose file</button>
+<span style="font-size: 12px; color: #475569">CSV, UTF-8, up to 50 MB. Dates as DD/MM/YYYY.</span>
+</div>
+<div style="display: flex; gap: 12px; align-items: center; padding: 10px 14px; border: 1px solid #A7E8BE; background: #F0FDF4; border-radius: 12px; flex-wrap: wrap"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#166534" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6"></path></svg><span style="flex: 1"><strong>patients_export_2026-10-20.csv</strong> · 2,184 rows · 14 columns</span><button type="button" style="border: 0; background: none; padding: 0; font: inherit; color: #0B7970; font-weight: 500">Replace</button></div>
+</sc-if>
+
+<sc-if value="{{v.map}}" hint-placeholder-val="{{false}}">
+<p style="margin: 0; color: #475569">We matched 11 of 14 columns by their names. Check the three marked for review.</p>
+<div style="overflow-x: auto; border: 1px solid #E2E8F0; border-radius: 12px">
+<table style="width: 100%; border-collapse: collapse; min-width: 720px">
+<thead><tr style="background: #F8FAFC; text-align: left; font-size: 12px; color: #475569"><th scope="col" style="padding: 8px 14px">Column in your file</th><th scope="col" style="padding: 8px 12px">Example</th><th scope="col" style="padding: 8px 12px">Import as</th><th scope="col" style="padding: 8px 14px">Status</th></tr></thead>
+<tbody>
+<sc-for list="{{mapping}}" as="m" hint-placeholder-count="8"><tr style="border-top: 1px solid #E2E8F0"><td style="padding: 8px 14px; font-family: ui-monospace, Menlo, monospace; font-size: 13px">{{m.col}}</td><td style="padding: 8px 12px; color: #334155">{{m.ex}}</td><td style="padding: 8px 12px"><select aria-label="{{m.lbl}}" style="height: 32px; padding: 0 8px; border: 1px solid {{m.selBd}}; border-radius: 8px; font: inherit; font-size: 13px; background: #FFFFFF; min-width: 200px"><option>{{m.to}}</option><option>Do not import</option></select></td><td style="padding: 8px 14px"><span style="display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px 0 6px; border-radius: 999px; font-size: 12px; font-weight: 500; white-space: nowrap; background: {{m.bg}}; color: {{m.fg}}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{m.icon}}"></path></svg>{{m.status}}</span></td></tr></sc-for>
+</tbody>
+</table>
+</div>
+</sc-if>
+
+<sc-if value="{{v.check}}" hint-placeholder-val="{{false}}">
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); gap: 12px">
+<div style="border: 1px solid #A7E8BE; background: #F0FDF4; border-radius: 12px; padding: 12px 14px"><span style="font-size: 13px; color: #166534; font-weight: 600">Ready</span><div style="font-size: 22px; font-weight: 600; line-height: 30px">2,161</div></div>
+<div style="border: 1px solid #FBD38D; background: #FFFBEB; border-radius: 12px; padding: 12px 14px"><span style="font-size: 13px; color: #864E0E; font-weight: 600">Warnings – will import</span><div style="font-size: 22px; font-weight: 600; line-height: 30px">17</div></div>
+<div style="border: 1px solid #FECACA; background: #FEF2F2; border-radius: 12px; padding: 12px 14px"><span style="font-size: 13px; color: #BA1C1C; font-weight: 600">Errors – will be skipped</span><div style="font-size: 22px; font-weight: 600; line-height: 30px">6</div></div>
+</div>
+<div style="border: 1px solid #E2E8F0; border-radius: 12px; overflow: hidden">
+<sc-for list="{{issues}}" as="i" hint-placeholder-count="6"><div style="display: flex; gap: 12px; align-items: center; padding: 10px 14px; border-bottom: 1px solid #F1F5F9; flex-wrap: wrap"><span style="display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px 0 6px; border-radius: 999px; font-size: 12px; font-weight: 500; white-space: nowrap; background: {{i.bg}}; color: {{i.fg}}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{i.icon}}"></path></svg>{{i.kind}}</span><span style="width: 72px; color: #475569; font-variant-numeric: tabular-nums">Row {{i.row}}</span><span style="flex: 1; min-width: 220px">{{i.text}}</span><button type="button" style="height: 32px; padding: 0 10px; border-radius: 8px; border: 1px solid #E2E8F0; background: #FFFFFF; font: inherit; font-size: 13px; font-weight: 500">{{i.action}}</button></div></sc-for>
+</div>
+</sc-if>
+
+<sc-if value="{{v.run}}" hint-placeholder-val="{{false}}">
+<div role="status" style="display: flex; flex-direction: column; gap: 10px; padding: 12px 0">
+<strong style="font-size: 16px">Importing patients…</strong>
+<div role="progressbar" aria-label="Import progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="64" style="height: 10px; border-radius: 999px; background: #E2E8F0; overflow: hidden"><div style="width: 64%; height: 100%; background: #0E958A"></div></div>
+<span style="color: #475569">1,383 of 2,161 · about 1 minute left. You can leave this page – we'll notify you when it's done.</span>
+</div>
+</sc-if>
+
+<sc-if value="{{v.done}}" hint-placeholder-val="{{false}}">
+<sc-if value="{{undone}}" hint-placeholder-val="{{false}}">
+<div role="status" style="display: flex; gap: 10px; align-items: center; padding: 12px 14px; border: 1px solid #CBD5E1; background: #F8FAFC; border-radius: 12px"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#334155" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7v6h6M21 17a9 9 0 0 0-15-6.7L3 13"></path></svg><span><strong>Import undone.</strong> The 2,161 patients added on 27/10/2026 have been removed. Nothing else was changed.</span></div>
+</sc-if>
+<sc-if value="{{notUndone}}" hint-placeholder-val="{{true}}">
+<div role="status" style="display: flex; gap: 10px; align-items: center; padding: 12px 14px; border: 1px solid #A7E8BE; background: #F0FDF4; border-radius: 12px"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#166534" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14M22 4L12 14.01l-3-3"></path></svg><span><strong>2,161 patients imported</strong> at 27/10/2026 22:41. 6 rows skipped.</span></div>
+<div style="display: flex; gap: 8px; flex-wrap: wrap"><button type="button" style="height: 40px; padding: 0 14px; border-radius: 8px; border: 1px solid #E2E8F0; background: #FFFFFF; font: inherit; font-weight: 500">Download skipped rows</button><a href="PatientList.dc.html" style="height: 40px; padding: 0 14px; border-radius: 8px; border: 1px solid #E2E8F0; background: #FFFFFF; color: #0F172A; text-decoration: none; font-weight: 500; display: inline-flex; align-items: center">View patients</a><button type="button" onClick="{{again}}" style="height: 40px; padding: 0 14px; border-radius: 8px; border: 0; background: #0B7970; color: #FFFFFF; font: inherit; font-weight: 500; cursor: pointer">Next: import appointments</button></div>
+<div style="border-top: 1px solid #E2E8F0; padding-top: 14px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap"><span style="flex: 1; min-width: 240px; color: #334155">Something wrong? You can undo this whole import until <strong>03/11/2026</strong>. Patients you've since booked or edited are kept and listed for review.</span>
+<sc-if value="{{confirmUndo}}" hint-placeholder-val="{{false}}"><button type="button" onClick="{{doUndo}}" style="height: 40px; padding: 0 14px; border-radius: 8px; border: 0; background: #BA1C1C; color: #FFFFFF; font: inherit; font-weight: 600; cursor: pointer">Yes, remove 2,161 patients</button><button type="button" onClick="{{cancelUndo}}" style="height: 40px; padding: 0 14px; border-radius: 8px; border: 1px solid #E2E8F0; background: #FFFFFF; font: inherit; font-weight: 500; cursor: pointer">Keep</button></sc-if>
+<sc-if value="{{askUndoVis}}" hint-placeholder-val="{{true}}"><button type="button" onClick="{{askUndo}}" style="height: 40px; padding: 0 14px; border-radius: 8px; border: 1px solid #E2E8F0; background: #FFFFFF; color: #BA1C1C; font: inherit; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; cursor: pointer"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7v6h6M21 17a9 9 0 0 0-15-6.7L3 13"></path></svg>Undo import</button></sc-if>
+</div>
+</sc-if>
+</sc-if>
+
+<sc-if value="{{showNav}}" hint-placeholder-val="{{true}}">
+<div style="display: flex; gap: 8px; justify-content: flex-end; border-top: 1px solid #E2E8F0; padding-top: 14px">
+<sc-if value="{{canBack}}" hint-placeholder-val="{{false}}"><button type="button" onClick="{{back}}" style="height: 40px; padding: 0 16px; border-radius: 8px; border: 1px solid #E2E8F0; background: #FFFFFF; font: inherit; font-weight: 500; cursor: pointer">Back</button></sc-if>
+<button type="button" onClick="{{next}}" style="height: 40px; padding: 0 16px; border-radius: 8px; border: 0; background: #0B7970; color: #FFFFFF; font: inherit; font-weight: 600; cursor: pointer">{{nextLabel}}</button>
+</div>
+</sc-if>
+</section>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1000}}'>
+class Component extends DCLogic {
+  constructor(p) { super(p); this.state = { step: 1, confirm: false, undone: false }; }
+  renderVals() {
+    const st = this.state;
+    const I = { ok: 'M20 6L9 17l-5-5', warn: 'M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01', x: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM15 9l-6 6M9 9l6 6', ban: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM4.93 4.93l14.14 14.14' };
+    const L = ['Upload', 'Map columns', 'Check', 'Import', 'Done'];
+    const steps = L.map((label, i) => {
+      const done = i < st.step, cur = i === st.step;
+      return { label, cur: cur ? 'step' : 'false', mark: done ? '✓' : String(i + 1), state: done ? 'Complete' : (cur ? 'Current step' : 'Not started'),
+        bg: cur ? '#F0FDFA' : '#FFFFFF', bd: cur ? '#0E958A' : '#E2E8F0', dotBg: done ? '#0B7970' : (cur ? '#FFFFFF' : '#F1F5F9'), dotFg: done ? '#FFFFFF' : (cur ? '#0B7970' : '#475569') };
+    });
+    const M = [['PatientFirstName', 'Margaret', 'First name', 'ok'], ['PatientSurname', 'Ellis', 'Last name', 'ok'], ['DOB', '14/03/1961', 'Date of birth', 'ok'], ['MobileTel', '07700 900123', 'Mobile', 'ok'], ['EmailAddr', 'm.ellis@example.com', 'Email', 'ok'], ['Addr1', '3 Mill Lane', 'Address line 1', 'ok'], ['PCode', 'NG1 0AB', 'Postcode', 'ok'], ['Referrer', 'Westgate Surgery (fictional)', 'Referrer', 'review'], ['SMSConsent', 'Y', 'Reminders consent', 'review'], ['Alert', 'Latex', 'Patient alert', 'review'], ['LegacyID', '100482', 'Previous system ID', 'ok'], ['Colour', 'Blue', 'Do not import', 'skip']];
+    const mapStatus = { ok: ['Matched', '#DCFCE7', '#166534', I.ok, '#CBD5E1'], review: ['Check', '#FEF3C7', '#864E0E', I.warn, '#F59F0A'], skip: ['Ignored', '#F1F5F9', '#475569', I.ban, '#CBD5E1'] };
+    const mapping = M.map(m => { const s = mapStatus[m[3]]; return { col: m[0], ex: m[1], to: m[2], lbl: 'Import ' + m[0] + ' as', status: s[0], bg: s[1], fg: s[2], icon: s[3], selBd: s[4] }; });
+    const iss = [['Error', 412, 'Date of birth "31/02/1975" is not a real date', 'Edit'], ['Error', 977, 'No first or last name', 'Skip row'], ['Warning', 58, 'Possible duplicate of Margaret Ellis (14/03/1961) already in the system', 'Compare'], ['Warning', 203, 'Mobile "01632 960 111" looks like a landline – reminders will go by email', 'OK'], ['Warning', 1440, 'Email missing – portal sign-in won’t be available', 'OK'], ['Error', 2011, 'Date of birth is in the future', 'Edit']];
+    const issues = iss.map(i => { const e = i[0] === 'Error'; return { kind: i[0], row: i[1], text: i[2], action: i[3], bg: e ? '#FEE2E2' : '#FEF3C7', fg: e ? '#991B1B' : '#864E0E', icon: e ? I.x : I.warn }; });
+    const nextLabels = ['Continue', 'Check data', 'Import 2,161 patients', 'Simulate: finish'];
+    return {
+      product: 'Clinic system', steps, mapping, issues,
+      v: { upload: st.step === 0, map: st.step === 1, check: st.step === 2, run: st.step === 3, done: st.step === 4 },
+      showNav: st.step < 4, canBack: st.step > 0 && st.step < 3, nextLabel: nextLabels[st.step] || '',
+      next: () => this.setState({ step: Math.min(4, st.step + 1) }), back: () => this.setState({ step: st.step - 1 }),
+      again: () => this.setState({ step: 0, undone: false, confirm: false }),
+      undone: st.undone, notUndone: !st.undone, confirmUndo: st.confirm, askUndoVis: !st.confirm,
+      askUndo: () => this.setState({ confirm: true }), cancelUndo: () => this.setState({ confirm: false }), doUndo: () => this.setState({ undone: true, confirm: false })
+    };
+  }
+}
+</script>
+</body>
+</html>

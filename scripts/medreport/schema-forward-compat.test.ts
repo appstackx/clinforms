@@ -549,6 +549,8 @@ test("guard: production keeps these enums, literals and kinds closed – adding 
       for (const m of members) if (!known.includes(m)) unreadable.push(`${kind}${at} = ${m}`);
     }
   }
+  // K2 (clinic system, 10/2026): the NATIVE connector's id is read on main through the shim fix/native-connector-read-shim
+  // (ConnectorIdSchema in FORWARD_OPEN_ENUMS), which must be deployed to production before the clinic system goes live.
   assert.deepEqual(unreadable, [], "production (e132057 + the shim) cannot read these members");
 });
 

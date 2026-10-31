@@ -9,6 +9,7 @@ import { listMemberships } from "@/server/auth/membership";
 import { requireSignedIn } from "@/server/auth/session";
 import { getDb } from "@/server/db";
 import { SignOutForm, SwitchClinicForm } from "../session-forms";
+import { currentBrand } from "@/server/brand";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Choose a clinic" };
@@ -26,7 +27,7 @@ export default async function SelectClinicPage() {
     .where("invitation.expiresAt", ">", new Date().toISOString())
     .execute();
   return (
-    <AuthShell
+    <AuthShell productName={currentBrand().productName}
       title={memberships.length ? "Choose a clinic" : "No clinic yet"}
       footer={
         <SignOutForm>

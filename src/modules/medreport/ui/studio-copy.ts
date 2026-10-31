@@ -115,6 +115,9 @@ export const TENANT_COPY = {
     fillHelpRegistration: "Copied by code from the patient's details, referral or episode in the uploaded notes – never drafted.",
     mappingIdentifiers: "Identifiers are always copied by code from the patient record, never drafted.",
     lockedFromRecords: "Filled in by code from the uploaded notes. To change it, correct the notes and upload them again.",
+    /** 10/2026: a form opened from the clinic system's own record (connector "native"). */
+    registrationLongNative: "From the patient's record in the clinic system – filled by code",
+    lockedFromRecordsNative: "Filled in by code from the patient's record in the clinic system. To change it, correct the record and open the form again from the case.",
   },
   batch: {
     title: "Batch",

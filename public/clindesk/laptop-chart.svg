@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 600 400" width="600" height="400" aria-hidden="true">
+  <rect width="600" height="400" fill="#CFE7D8"/>
+  <defs>
+    <rect id="dtop" x="-10" y="322" width="620" height="32" rx="9"/>
+    <rect id="dfront" x="30" y="354" width="540" height="70" rx="4"/>
+    <rect id="lid" x="112" y="62" width="300" height="214" rx="14"/>
+    <rect id="scr" x="132" y="82" width="260" height="174" rx="6"/>
+    <path id="base" d="M84 276 H440 L460 322 H64 Z"/>
+    <rect id="b1" x="160" y="176" width="26" height="56"/>
+    <rect id="b2" x="190" y="150" width="26" height="82"/>
+    <rect id="b3" x="236" y="160" width="26" height="72"/>
+    <rect id="b4" x="266" y="132" width="26" height="100"/>
+    <rect id="b5" x="312" y="142" width="26" height="90"/>
+    <rect id="b6" x="342" y="112" width="26" height="120"/>
+    <rect id="mug" x="480" y="230" width="56" height="68" rx="9"/>
+    <rect id="book1" x="466" y="298" width="104" height="24" rx="4"/>
+  </defs>
+  <g transform="translate(9 9)">
+    <use href="#dfront" xlink:href="#dfront" fill="#0B6B65"/>
+    <use href="#dtop" xlink:href="#dtop" fill="#F6C34A"/>
+    <use href="#lid" xlink:href="#lid" fill="#0F3B35"/>
+    <use href="#base" xlink:href="#base" fill="#0F3B35"/>
+    <use href="#mug" xlink:href="#mug" fill="#C4432B"/>
+    <use href="#book1" xlink:href="#book1" fill="#F3A9BA"/>
+  </g>
+  <use href="#scr" xlink:href="#scr" fill="#FBF4E8"/>
+  <g fill="#0B6B65"><use href="#b1" xlink:href="#b1"/><use href="#b3" xlink:href="#b3"/><use href="#b5" xlink:href="#b5"/></g>
+  <g fill="#C4432B"><use href="#b2" xlink:href="#b2"/><use href="#b4" xlink:href="#b4"/><use href="#b6" xlink:href="#b6"/></g>
+  <g fill="none" stroke="#0F3B35" stroke-width="9" stroke-linecap="round" stroke-linejoin="round">
+    <use href="#dfront" xlink:href="#dfront"/>
+    <use href="#dtop" xlink:href="#dtop"/>
+    <use href="#lid" xlink:href="#lid"/>
+    <use href="#scr" xlink:href="#scr" stroke-width="6"/>
+    <path stroke-width="6" d="M152 236 H374 M152 104 V236"/>
+    <g stroke-width="5"><use href="#b1" xlink:href="#b1"/><use href="#b2" xlink:href="#b2"/><use href="#b3" xlink:href="#b3"/><use href="#b4" xlink:href="#b4"/><use href="#b5" xlink:href="#b5"/><use href="#b6" xlink:href="#b6"/></g>
+    <use href="#base" xlink:href="#base"/>
+    <path stroke="#FBF4E8" stroke-width="6" d="M222 300 H302"/>
+    <use href="#book1" xlink:href="#book1" stroke-width="7"/>
+    <use href="#mug" xlink:href="#mug"/>
+    <path d="M536 244 C558 244 558 280 536 280"/>
+    <path stroke-width="5" d="M500 214 C492 202 506 194 498 180 M518 214 C510 202 524 194 516 180"/>
+  </g>
+</svg>

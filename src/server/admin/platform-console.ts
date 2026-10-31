@@ -11,7 +11,9 @@
  * wrappers (./guards.ts and src/app/app/platform/*).
  */
 import type { Kysely } from "kysely";
+import { isPackageId, packageIsOn, type PackageId } from "../../modules/pms/core/entitlements";
 import { isPlatformAdmin } from "../auth/config";
+import { PLATFORM_USER_ID } from "../auth/create-auth";
 import {
   createClinic,
   createOwnerResetLink,
@@ -28,6 +30,9 @@ import { listAccessRequests, setAccessRequestContacted, type AccessRequest } fro
 import { clinicAccessOf, readClinicPlans, type ClinicAccess, type ClinicPlan } from "../repos/clinic-plan";
 import { appendAudit, listAudit, type AuditEntry } from "../repos/audit";
 import { RepoInputError, type DbContext } from "../repos/context";
+import { listEntitlementsByTenant, setEntitlement } from "../repos/pms/entitlements";
+import type { Entitlement } from "../../modules/pms/core/types";
+import { isMissingPmsTable } from "../pms/missing-table";
 
 export const PLATFORM_PATH = "/app/platform";
 
@@ -157,6 +162,78 @@ export async function createClinicAsPlatform(db: Kysely<Database>, admin: Platfo
     detail: { tenantId: created.tenantId, emailStatus: created.email.status },
   });
   return created;
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Packages (entitlements): Reports and the clinic system, per clinic
+ * ----------------------------------------------------------------------------------------------*/
+
+export interface ClinicPackagesView {
+  tenantId: string;
+  reports: boolean;
+  clinic: boolean;
+}
+
+/**
+ * Every clinic's packages, on/off as the app applies them (no row = the default). FAIL-SAFE like
+ * src/server/pms/entitlements.ts clinicPackages: on a database before the clinic system's migrations (no
+ * clinic_entitlements table) every clinic reads as the default – Reports on, the clinic system off – and the platform
+ * page still opens. Any other error still throws.
+ */
+export async function listClinicPackages(db: Kysely<Database>, tenantIds: readonly string[], now = new Date()): Promise<Map<string, ClinicPackagesView>> {
+  let rows: Map<string, Entitlement[]>;
+  try {
+    rows = await listEntitlementsByTenant({ db });
+  } catch (err) {
+    if (!isMissingPmsTable(err, "clinic_entitlements")) throw err;
+    rows = new Map();
+  }
+  const out = new Map<string, ClinicPackagesView>();
+  for (const tenantId of tenantIds) {
+    const own = rows.get(tenantId) ?? [];
+    const find = (pkg: PackageId) => own.find((e) => e.package === pkg) ?? null;
+    out.set(tenantId, { tenantId, reports: packageIsOn("reports", find("reports"), now), clinic: packageIsOn("clinic", find("clinic"), now) });
+  }
+  return out;
+}
+
+/** Switching Reports OFF needs the clinic id typed again (the page and setClinicPackageAsPlatform). */
+export function reportsSwitchOffNeedsTypedId(input: { package: string; on: boolean }): boolean {
+  return input.package === "reports" && !input.on;
+}
+
+/**
+ * Switches a package on ("active") or off ("paused" – nothing is deleted) for a clinic that exists and is not
+ * closed. Audited twice: `clinic.package_change` in the clinic's own trail (by "ClinForms support") and
+ * `platform.entitlement_set` in the platform's trail (by the administrator).
+ */
+export async function setClinicPackageAsPlatform(
+  db: Kysely<Database>,
+  admin: PlatformAdmin,
+  input: { tenantId: string; package: PackageId; on: boolean; confirmTenantId?: string },
+): Promise<{ changed: boolean; on: boolean }> {
+  if (!isPackageId(input.package)) throw new RepoInputError("Unknown package.");
+  if (reportsSwitchOffNeedsTypedId(input) && String(input.confirmTenantId ?? "").trim() !== input.tenantId) {
+    // Switching Reports off stops a live clinic's Studio and Report API: never one click (M10 review).
+    throw new RepoInputError(`Type the clinic id "${input.tenantId}" to switch Reports off.`);
+  }
+  const org = await db.selectFrom("organization").select(["id", "metadata"]).where("slug", "=", input.tenantId).executeTakeFirst();
+  if (!org) throw new RepoInputError(`No clinic with the id "${input.tenantId}".`);
+  if (org.metadata && /"offboardedAt"/.test(org.metadata)) throw new RepoInputError("That clinic account is closed.");
+  const result = await setEntitlement(
+    { db },
+    input.tenantId,
+    input.package,
+    { status: input.on ? "active" : "paused", note: `Set on the platform page by ${admin.email}`.slice(0, 500) },
+    { userId: PLATFORM_USER_ID, sessionId: null },
+  );
+  await appendPlatformAudit({ db }, admin, {
+    action: "platform.entitlement_set",
+    targetType: "organization",
+    targetId: org.id,
+    detail: { tenantId: input.tenantId, package: input.package, on: result.isOn, wasOn: result.wasOn },
+  });
+  return { changed: result.wasOn !== result.isOn, on: result.isOn };
 }
 
 /**

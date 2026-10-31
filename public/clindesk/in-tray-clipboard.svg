@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 560 440" width="560" height="440" aria-hidden="true">
+  <defs>
+    <rect id="desk" x="-10" y="376" width="580" height="30" rx="8"/>
+    <path id="sheetA" d="M60 150 L230 132 L240 230 L70 248 Z"/>
+    <path id="bandA" d="M60 150 L230 132 L233 158 L63 176 Z"/>
+    <path id="sheetB" d="M96 166 L276 172 L272 240 L92 234 Z"/>
+    <path id="bandB" d="M96 166 L276 172 L275 196 L95 190 Z"/>
+    <rect id="trayU" x="40" y="214" width="252" height="54" rx="8"/>
+    <path id="sheetC" d="M70 280 L250 264 L258 330 L78 346 Z"/>
+    <path id="bandC" d="M70 280 L250 264 L252 286 L72 302 Z"/>
+    <rect id="trayL" x="40" y="320" width="252" height="56" rx="8"/>
+    <rect id="board" x="330" y="112" width="186" height="262" rx="14"/>
+    <rect id="paper" x="350" y="146" width="146" height="206" rx="4"/>
+    <rect id="clip" x="384" y="96" width="78" height="36" rx="9"/>
+  </defs>
+  <g fill="none" stroke="#0F3B35" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <!-- desk -->
+    <use href="#desk" xlink:href="#desk" fill="#F6C34A" stroke="none" transform="translate(7 7)"/>
+    <use href="#desk" xlink:href="#desk"/>
+
+    <!-- two-tier in-tray, back to front -->
+    <path d="M58 268 V320 M274 268 V320"/>
+    <use href="#sheetA" xlink:href="#sheetA" fill="#FBF4E8" stroke="none" transform="translate(7 7)"/>
+    <use href="#bandA" xlink:href="#bandA" fill="#1F3A6B" stroke="none"/>
+    <use href="#sheetA" xlink:href="#sheetA"/>
+    <use href="#sheetB" xlink:href="#sheetB" fill="#FBF4E8" stroke="none" transform="translate(7 7)"/>
+    <use href="#bandB" xlink:href="#bandB" fill="#33415C" stroke="none"/>
+    <use href="#sheetB" xlink:href="#sheetB"/>
+    <path stroke-width="4" d="M112 212 H232"/>
+    <use href="#trayU" xlink:href="#trayU" fill="#0B6B65" stroke="none" transform="translate(7 7)"/>
+    <use href="#trayU" xlink:href="#trayU" fill="#0B6B65"/>
+    <path stroke="#FBF4E8" stroke-width="5" d="M66 241 H266"/>
+    <use href="#sheetC" xlink:href="#sheetC" fill="#FBF4E8" stroke="none" transform="translate(7 7)"/>
+    <use href="#bandC" xlink:href="#bandC" fill="#F6C34A" stroke="none"/>
+    <use href="#sheetC" xlink:href="#sheetC"/>
+    <use href="#trayL" xlink:href="#trayL" fill="#0B6B65" stroke="none" transform="translate(7 7)"/>
+    <use href="#trayL" xlink:href="#trayL" fill="#0B6B65"/>
+    <path stroke="#FBF4E8" stroke-width="5" d="M66 348 H266"/>
+
+    <!-- clipboard -->
+    <use href="#board" xlink:href="#board" fill="#C4432B" stroke="none" transform="translate(7 7)"/>
+    <use href="#board" xlink:href="#board"/>
+    <use href="#paper" xlink:href="#paper" fill="#FBF4E8"/>
+    <use href="#clip" xlink:href="#clip" fill="#0F3B35"/>
+    <circle cx="423" cy="96" r="9" fill="#FBF4E8"/>
+    <path stroke-width="4" d="M368 170 H476"/>
+    <rect x="366" y="196" width="22" height="22" rx="3" stroke-width="4"/>
+    <rect x="366" y="234" width="22" height="22" rx="3" stroke-width="4"/>
+    <rect x="366" y="272" width="22" height="22" rx="3" stroke-width="4"/>
+    <path stroke-width="4" d="M400 207 H474 M400 245 H462 M400 283 H470"/>
+    <path stroke="#C4432B" stroke-width="7" d="M368 206 L376 214 L392 192 M368 244 L376 252 L392 230"/>
+    <path stroke="#C4432B" stroke-width="5" d="M372 330 C 382 310, 392 310, 392 322 C 392 334, 402 312, 412 318 C 420 324, 428 314, 440 318 H 476"/>
+  </g>
+
+  <!-- pen lying across the clipboard: outlined body, nib and cap -->
+  <g stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <path d="M430 366 L528 268" stroke="#0F3B35" stroke-width="26"/>
+    <path d="M430 366 L528 268" stroke="#0B6B65" stroke-width="13"/>
+    <path d="M500 296 L528 268" stroke="#F6C34A" stroke-width="13"/>
+    <path d="M422 362 L412 386 L436 376 Z" fill="#0F3B35" stroke="#0F3B35" stroke-width="5"/>
+  </g>
+</svg>

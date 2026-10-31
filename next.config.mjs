@@ -10,6 +10,9 @@
  *   A custom NEXT_PUBLIC_POSTHOG_HOST (absolute URL) is added to script-src/connect-src.
  * - media-src: the product demo video at /demo plays from MEDIA_ORIGIN (src/lib/site/demo-video.ts, which a test
  *   holds to this value); its captions track and poster are on our own domain ('self').
+ * - Cloudflare Turnstile (the clinic system's public booking / portal sign-in bot check,
+ *   src/components/pms/portal/human-check.tsx): https://challenges.cloudflare.com joins script-src and frame-src
+ *   only when NEXT_PUBLIC_CLINIC_TURNSTILE_SITE_KEY is set at build time; otherwise the policy is unchanged.
  * - skipTrailingSlashRedirect: the analytics API paths end in "/" and must not be redirected.
  */
 
@@ -28,18 +31,21 @@ function analyticsOrigin() {
   }
 }
 
+/** Turnstile's origin when the clinic system's bot check is set up on this build (see human-check.ts), else null. */
+const TURNSTILE_ORIGIN = process.env.NEXT_PUBLIC_CLINIC_TURNSTILE_SITE_KEY?.trim() ? "https://challenges.cloudflare.com" : null;
+
 function contentSecurityPolicy() {
   const extra = analyticsOrigin();
   const directives = {
     "default-src": ["'self'"],
-    "script-src": ["'self'", "'unsafe-inline'", ...(isDev ? ["'unsafe-eval'"] : []), ...(extra ? [extra] : [])],
+    "script-src": ["'self'", "'unsafe-inline'", ...(isDev ? ["'unsafe-eval'"] : []), ...(extra ? [extra] : []), ...(TURNSTILE_ORIGIN ? [TURNSTILE_ORIGIN] : [])],
     "style-src": ["'self'", "'unsafe-inline'"],
     "img-src": ["'self'", "data:", "blob:"],
     "media-src": ["'self'", MEDIA_ORIGIN],
     "font-src": ["'self'", "data:"],
     "worker-src": ["'self'", "blob:"],
     "connect-src": ["'self'", ...(extra ? [extra] : [])],
-    "frame-src": ["'none'"],
+    "frame-src": TURNSTILE_ORIGIN ? [TURNSTILE_ORIGIN] : ["'none'"],
     "frame-ancestors": ["'none'"],
     "base-uri": ["'self'"],
     "form-action": ["'self'"],
@@ -65,8 +71,7 @@ const NOINDEX_SOURCES = [
   "/api/:path*",
   "/app",
   "/app/:path*",
-  "/reports",
-  "/reports/:path*",
+  "/reports/:path+",
   "/pms-sandbox",
   "/pms-sandbox/:path*",
   "/login",
@@ -88,12 +93,43 @@ const nextConfig = {
     outputFileTracingIncludes: {
       "/api/reports/v1/render": ["./node_modules/pdfkit/js/standard-fonts/**/*"],
       "/api/reports/v1/forms/fill-preview": ["./node_modules/pdfkit/js/standard-fonts/**/*"],
+      // Clinic system: letters as PDF (src/app/app/clinic/letters/[letterId]/file).
+      "/app/clinic/letters/[letterId]/file": ["./node_modules/pdfkit/js/standard-fonts/**/*"],
     },
   },
   async headers() {
     return [
       { source: "/:path*", headers: securityHeaders },
       ...NOINDEX_SOURCES.map((source) => ({ source, headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }] })),
+      // ClinForms' public demo at /reports: noindex – except on ClinDesk's hosts, where /reports is ClinDesk's
+      // "Referrer reports" page (src/middleware.ts). Below /reports stays noindex on every host (list above).
+      {
+        source: "/reports",
+        missing: [{ type: "host", value: "clindesk\\.co\\.uk|www\\.clindesk\\.co\\.uk|clinic\\.localhost" }],
+        headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
+      },
+      // A clinic's public booking pages and patient portal (clinic system, contract §6): never indexed, and the
+      // patient's OWN browser may use its location for "distance from you" (worked out on the device, never sent).
+      // Later entries win for the same header, so only these paths differ from the site-wide policy above.
+      {
+        source: "/clinics/:path*",
+        headers: [
+          { key: "X-Robots-Tag", value: "noindex, nofollow" },
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(self), payment=(), usb=()" },
+        ],
+      },
+    ];
+  },
+  // www.clindesk.co.uk → clindesk.co.uk (the clinic system's own domain; src/lib/brand.ts). Runs before the
+  // middleware, only for that host: ClinForms' hosts are untouched.
+  async redirects() {
+    return [
+      {
+        source: "/:path*",
+        has: [{ type: "host", value: "www\\.clindesk\\.co\\.uk" }],
+        destination: "https://clindesk.co.uk/:path*",
+        permanent: true,
+      },
     ];
   },
   async rewrites() {

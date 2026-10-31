@@ -4,11 +4,12 @@ import { cn } from "@/lib/utils";
 import { PRODUCT_NAME } from "@/lib/account-copy";
 import { LogoMark } from "@/components/marketing/logo";
 
-export function BrandMark({ className, compact = false }: { className?: string; compact?: boolean }) {
+/** The mark and the product name (default ClinForms; the brand of the request where a page knows it – src/lib/brand.ts). */
+export function BrandMark({ className, compact = false, name = PRODUCT_NAME }: { className?: string; compact?: boolean; name?: string }) {
   return (
     <span className={cn("inline-flex shrink-0 items-center gap-2 font-semibold text-slate-900", className)}>
       <LogoMark className="h-7 w-7" />
-      {compact ? <span className="sr-only sm:not-sr-only">{PRODUCT_NAME}</span> : PRODUCT_NAME}
+      {compact ? <span className="sr-only sm:not-sr-only">{name}</span> : name}
     </span>
   );
 }
@@ -31,13 +32,26 @@ export function LegalLinks() {
   );
 }
 
-export function AuthShell({ title, subtitle, children, footer }: { title: string; subtitle?: React.ReactNode; children: React.ReactNode; footer?: React.ReactNode }) {
+/** `productName`: the brand of the request's host (src/server/brand.ts currentBrand) – default ClinForms. */
+export function AuthShell({
+  title,
+  subtitle,
+  children,
+  footer,
+  productName = PRODUCT_NAME,
+}: {
+  title: string;
+  subtitle?: React.ReactNode;
+  children: React.ReactNode;
+  footer?: React.ReactNode;
+  productName?: string;
+}) {
   return (
     <main className="flex min-h-screen items-start justify-center bg-slate-50 px-4 py-12 text-slate-900 sm:items-center">
       <div className="w-full max-w-md">
         <div className="mb-6 flex justify-center">
-          <Link href="/" className="rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-700" aria-label={`${PRODUCT_NAME} home`}>
-            <BrandMark />
+          <Link href="/" className="rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-700" aria-label={`${productName} home`}>
+            <BrandMark name={productName} />
           </Link>
         </div>
         <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">

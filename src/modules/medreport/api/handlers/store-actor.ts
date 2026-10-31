@@ -39,6 +39,7 @@ import type { StoreAuditEntry, TenantStore } from "../store-port";
 import { requireActor, type Actor } from "../../auth/actor";
 import { countHit } from "../../auth/shared-limits";
 import { WORDING } from "../../core/wording";
+import type { Report } from "../../core/types";
 
 export interface TenantActor {
   /** A clinic member (via "user" or "user+launch"); never the public demo. */
@@ -207,4 +208,19 @@ export function pathParam(params: Record<string, string>, name: string, pattern:
     throw new HttpError(422, "Invalid path", { code: "VALIDATION_FAILED", issues: [{ path: name, message: `Not a valid ${name}.` }] });
   }
   return value;
+}
+
+/**
+ * M10 H2: whether the member may read this report (MedreportDeps.mayReadReport – the host's rule for reports drafted
+ * from its own clinic-system record). No host rule → readable (every ClinForms report behaves as before). A host
+ * rule that fails refuses (fail closed): the caller answers 404, exactly as for a report the clinic does not hold.
+ */
+export async function reportReadable(actor: Actor, deps: MedreportDeps, report: Report): Promise<boolean> {
+  if (!deps.mayReadReport) return true;
+  try {
+    return await deps.mayReadReport(actor, report);
+  } catch {
+    logEvent("report_access_check_failed", {});
+    return false;
+  }
 }

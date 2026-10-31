@@ -9,6 +9,7 @@ import { NodeSqliteDialect, openSqliteDatabase, type SqliteDatabaseLike } from "
 import { applySqliteMigrations } from "../migrations";
 import type { Database } from "../schema";
 import { createMigratedPgliteDb } from "./pglite";
+import { createRealPgDb, realPgTestUrl } from "./real-pg";
 
 export interface TestDb {
   db: Kysely<Database>;
@@ -22,7 +23,10 @@ export function createSqliteTestDb(): TestDb & { sqlite: SqliteDatabaseLike } {
   return { db, sqlite, close: () => db.destroy() };
 }
 
+/** PGlite – or, with CLINFORMS_TEST_PG_URL, a fresh database on a real local Postgres (real-pg.ts). */
 export async function createPgliteTestDb(): Promise<TestDb> {
+  const realUrl = realPgTestUrl();
+  if (realUrl) return createRealPgDb(realUrl);
   const { db } = await createMigratedPgliteDb();
   return { db, close: () => db.destroy() };
 }

@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<title>Invoice detail</title>
+<script src="./vendor/react.js"></script>
+<script src="./vendor/react-dom.js"></script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+*{box-sizing:border-box}
+a{color:#0B7970}a:hover{color:#095E57}
+:focus-visible{outline:2px solid #0E958A;outline-offset:2px}
+@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+</style>
+</helmet>
+<div style="min-height: 100vh; background: #F8FAFC; color: #0F172A; font-family: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 14px; line-height: 20px; display: flex; flex-direction: column; position: relative">
+<header style="background: #FFFFFF; border-bottom: 1px solid #E2E8F0; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 10px 16px; min-height: 56px">
+<div style="display: flex; align-items: center; gap: 10px">
+<span aria-hidden="true" style="width: 28px; height: 28px; border-radius: 8px; background: #0B7970; color: #FFFFFF; display: inline-flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg></span>
+<nav aria-label="Product areas" style="display: flex; background: #F1F5F9; border-radius: 10px; padding: 3px; gap: 2px">
+<a href="AppShell.dc.html" aria-current="page" style="height: 30px; padding: 0 12px; border-radius: 8px; background: #FFFFFF; box-shadow: 0 1px 2px rgba(15,23,42,.08); font-weight: 600; color: #0F172A; text-decoration: none; display: inline-flex; align-items: center">{{product}}</a>
+<a href="#clinforms" style="height: 30px; padding: 0 12px; border-radius: 8px; font-weight: 500; color: #475569; text-decoration: none; display: inline-flex; align-items: center">ClinForms</a>
+</nav>
+</div>
+<button type="button" style="height: 36px; padding: 0 10px; border: 1px solid #CBD5E1; border-radius: 8px; background: #FFFFFF; font: inherit; font-weight: 500; display: inline-flex; align-items: center; gap: 8px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0B7970" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0zM12 7a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"></path></svg>Harbour Road<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg></button>
+<button type="button" style="margin-left: auto; height: 40px; padding: 0 8px 0 4px; border: 0; border-radius: 8px; background: transparent; font: inherit; display: inline-flex; align-items: center; gap: 8px; color: #0F172A">
+<span aria-hidden="true" style="width: 32px; height: 32px; border-radius: 999px; background: #FEF3C7; color: #864E0E; display: inline-flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px">JT</span>
+<span style="display: flex; flex-direction: column; align-items: flex-start; line-height: 16px"><span style="font-weight: 600">Jess Taylor</span><span style="font-size: 12px; color: #64748B">Reception</span></span>
+</button>
+</header>
+
+<main style="flex: 1; padding: 20px 24px 32px; display: flex; flex-direction: column; gap: 16px; max-width: 1440px; width: 100%; margin: 0 auto">
+<nav aria-label="Breadcrumb" style="font-size: 13px; color: #64748B; display: flex; gap: 6px; align-items: center"><a href="BillingList.dc.html">Billing</a><span aria-hidden="true">/</span><span>INV-04830</span></nav>
+<div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center">
+<h1 style="margin: 0; font-size: 22px; line-height: 30px; font-weight: 600">Invoice INV-04830</h1>
+<span style="display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 10px 0 8px; border-radius: 999px; font-size: 13px; font-weight: 500; white-space: nowrap; background: {{st.bg}}; color: {{st.fg}}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{st.icon}}"></path></svg>{{st.label}}</span>
+<div style="margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap">
+<button type="button" onClick="{{openPay}}" disabled="{{paidOff}}" style="height: 36px; padding: 0 14px; border-radius: 8px; border: 0; background: {{payBg}}; color: {{payFg}}; font: inherit; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; cursor: pointer"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2zM1 10h22"></path></svg>Record payment</button>
+<button type="button" onClick="{{copyLink}}" style="height: 36px; padding: 0 14px; border-radius: 8px; border: 1px solid #E2E8F0; background: #FFFFFF; font: inherit; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; cursor: pointer"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>{{linkLabel}}</button>
+<button type="button" onClick="{{openCredit}}" style="height: 36px; padding: 0 14px; border-radius: 8px; border: 1px solid #E2E8F0; background: #FFFFFF; font: inherit; font-weight: 500; cursor: pointer">Credit note</button>
+<button type="button" onClick="{{openRefund}}" style="height: 36px; padding: 0 14px; border-radius: 8px; border: 1px solid #E2E8F0; background: #FFFFFF; font: inherit; font-weight: 500; cursor: pointer">Refund</button>
+<button type="button" style="height: 36px; padding: 0 14px; border-radius: 8px; border: 1px solid #E2E8F0; background: #FFFFFF; color: #BA1C1C; font: inherit; font-weight: 500">Void</button>
+</div>
+</div>
+
+<div style="display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start">
+<div style="flex: 999 1 520px; min-width: 0; display: flex; flex-direction: column; gap: 16px">
+<section aria-label="Split billing" style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 16px 20px; display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; gap: 8px; align-items: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1842B4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg><h2 style="margin: 0; font-size: 15px; font-weight: 600">Insured visit – split between patient and insurer</h2></div>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 12px">
+<div style="border: 1px solid #E2E8F0; border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px"><span style="font-size: 12px; color: #64748B">Patient excess</span><strong>Liam O'Connor · INV-04829</strong><span style="display: flex; justify-content: space-between; font-variant-numeric: tabular-nums"><span>£20.00</span><span style="display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px 0 6px; border-radius: 999px; font-size: 12px; font-weight: 500; background: #DCFCE7; color: #166534"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"></path></svg>Paid</span></span></div>
+<div style="border: 2px solid #0E958A; border-radius: 12px; padding: 11px 13px; display: flex; flex-direction: column; gap: 4px"><span style="font-size: 12px; color: #0B5F58; font-weight: 600">This invoice · insurer balance</span><strong>Bluewell Health (fictional)</strong><span style="display: flex; justify-content: space-between; font-variant-numeric: tabular-nums"><span>£165.00</span><span>{{balanceText}}</span></span></div>
+</div>
+<dl style="margin: 0; display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 6px 12px; font-size: 13px">
+<dt style="color: #64748B">Policy / member no.</dt><dd style="margin: 0">BWH-771204</dd>
+<dt style="color: #64748B">Authorisation</dt><dd style="margin: 0">BW-54410 · 3 of 6 sessions used</dd>
+<dt style="color: #64748B">Case</dt><dd style="margin: 0"><a href="PatientRecord.dc.html">Right ankle sprain – Liam O'Connor</a></dd>
+</dl>
+</section>
+
+<section aria-labelledby="lines-h" style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; overflow: hidden">
+<h2 id="lines-h" style="margin: 0; font-size: 15px; font-weight: 600; padding: 14px 20px; border-bottom: 1px solid #E2E8F0">Items</h2>
+<div style="overflow-x: auto">
+<table style="width: 100%; border-collapse: collapse; min-width: 560px; font-variant-numeric: tabular-nums">
+<thead><tr style="background: #F8FAFC; text-align: left; font-size: 12px; color: #475569"><th scope="col" style="padding: 8px 20px">Date</th><th scope="col" style="padding: 8px 12px">Item</th><th scope="col" style="padding: 8px 12px">Practitioner</th><th scope="col" style="padding: 8px 12px; text-align: right">Fee</th><th scope="col" style="padding: 8px 12px; text-align: right">Excess</th><th scope="col" style="padding: 8px 20px; text-align: right">Insurer pays</th></tr></thead>
+<tbody>
+<tr style="border-top: 1px solid #E2E8F0"><td style="padding: 10px 20px">12/10/2026</td><td style="padding: 10px 12px">Follow-up 30 min</td><td style="padding: 10px 12px">Priya Shah</td><td style="padding: 10px 12px; text-align: right">£75.00</td><td style="padding: 10px 12px; text-align: right">−£20.00</td><td style="padding: 10px 20px; text-align: right">£55.00</td></tr>
+<tr style="border-top: 1px solid #E2E8F0"><td style="padding: 10px 20px">19/10/2026</td><td style="padding: 10px 12px">Follow-up 30 min</td><td style="padding: 10px 12px">Priya Shah</td><td style="padding: 10px 12px; text-align: right">£75.00</td><td style="padding: 10px 12px; text-align: right">−£20.00</td><td style="padding: 10px 20px; text-align: right">£55.00</td></tr>
+<tr style="border-top: 1px solid #E2E8F0"><td style="padding: 10px 20px">26/10/2026</td><td style="padding: 10px 12px">Follow-up 30 min</td><td style="padding: 10px 12px">Priya Shah</td><td style="padding: 10px 12px; text-align: right">£75.00</td><td style="padding: 10px 12px; text-align: right">−£20.00</td><td style="padding: 10px 20px; text-align: right">£55.00</td></tr>
+</tbody>
+<tfoot>
+<tr style="border-top: 2px solid #CBD5E1; font-weight: 600"><td colspan="5" style="padding: 10px 20px; text-align: right">Total due from insurer</td><td style="padding: 10px 20px; text-align: right">£165.00</td></tr>
+</tfoot>
+</table>
+</div>
+</section>
+
+<section aria-labelledby="pay-h" style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 14px 20px; display: flex; flex-direction: column; gap: 8px">
+<h2 id="pay-h" style="margin: 0; font-size: 15px; font-weight: 600">Payments and adjustments</h2>
+<sc-for list="{{payments}}" as="p" hint-placeholder-count="2">
+<div style="display: flex; gap: 12px; align-items: center; padding: 8px 0; border-top: 1px solid #F1F5F9; flex-wrap: wrap; font-variant-numeric: tabular-nums"><span style="width: 100px; color: #475569">{{p.date}}</span><span style="flex: 1; min-width: 200px">{{p.what}}</span><span style="font-weight: 600; color: {{p.fg}}">{{p.amt}}</span></div>
+</sc-for>
+<div style="display: flex; justify-content: space-between; border-top: 2px solid #CBD5E1; padding-top: 8px; font-weight: 600; font-variant-numeric: tabular-nums"><span>Balance</span><span>{{balance}}</span></div>
+</section>
+</div>
+
+<aside aria-label="Invoice PDF preview" style="flex: 1 1 380px; min-width: 0; display: flex; flex-direction: column; gap: 8px">
+<div style="display: flex; align-items: center; gap: 8px"><strong style="flex: 1">PDF preview</strong><button type="button" style="height: 32px; padding: 0 10px; border-radius: 8px; border: 1px solid #E2E8F0; background: #FFFFFF; font: inherit; font-size: 13px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"></path></svg>Download</button><button type="button" style="height: 32px; padding: 0 10px; border-radius: 8px; border: 1px solid #E2E8F0; background: #FFFFFF; font: inherit; font-size: 13px; font-weight: 500">Email</button></div>
+<div style="background: #E2E8F0; border-radius: 12px; padding: 16px; display: flex; justify-content: center">
+<div style="background: #FFFFFF; width: 100%; max-width: 420px; aspect-ratio: 210 / 297; box-shadow: 0 4px 16px rgba(15,23,42,.12); padding: 28px 26px; display: flex; flex-direction: column; gap: 14px; font-size: 9px; line-height: 13px; color: #0F172A">
+<div style="display: flex; justify-content: space-between; gap: 12px">
+<div style="display: flex; flex-direction: column"><strong style="font-size: 12px; line-height: 16px">Northgate Physiotherapy Group (fictional)</strong><span>Harbour Road clinic</span><span>12 Harbour Road, Northgate ZZ99 9AA</span><span>accounts@example.com · 07700 900000</span></div>
+<div style="text-align: right; display: flex; flex-direction: column"><strong style="font-size: 16px; line-height: 20px">INVOICE</strong><span>INV-04830</span><span>Issued 26/10/2026</span><span>Due 25/11/2026</span></div>
+</div>
+<div style="display: flex; justify-content: space-between; gap: 12px">
+<div style="display: flex; flex-direction: column"><strong>Bill to</strong><span>Bluewell Health (fictional)</span><span>Claims Dept., PO Box 000</span></div>
+<div style="display: flex; flex-direction: column; text-align: right"><strong>Patient</strong><span>Liam O'Connor · DOB 21/06/1985</span><span>Member BWH-771204 · Auth BW-54410</span></div>
+</div>
+<div style="display: grid; grid-template-columns: 56px 1fr 44px 44px 50px; gap: 4px 6px; border-top: 1px solid #0F172A; padding-top: 6px; font-variant-numeric: tabular-nums">
+<strong>Date</strong><strong>Item</strong><strong style="text-align: right">Fee</strong><strong style="text-align: right">Excess</strong><strong style="text-align: right">Due</strong>
+<span>12/10/2026</span><span>Follow-up – P Shah, PH-DEMO-01</span><span style="text-align: right">£75.00</span><span style="text-align: right">£20.00</span><span style="text-align: right">£55.00</span>
+<span>19/10/2026</span><span>Follow-up – P Shah, PH-DEMO-01</span><span style="text-align: right">£75.00</span><span style="text-align: right">£20.00</span><span style="text-align: right">£55.00</span>
+<span>26/10/2026</span><span>Follow-up – P Shah, PH-DEMO-01</span><span style="text-align: right">£75.00</span><span style="text-align: right">£20.00</span><span style="text-align: right">£55.00</span>
+</div>
+<div style="align-self: flex-end; width: 50%; display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; border-top: 1px solid #0F172A; padding-top: 6px; font-variant-numeric: tabular-nums"><span>Total</span><span>£165.00</span><span>Paid</span><span>{{pdfPaid}}</span><strong>Balance due</strong><strong>{{balance}}</strong></div>
+<div style="margin-top: auto; border-top: 1px solid #CBD5E1; padding-top: 6px; display: flex; flex-direction: column; gap: 2px"><span>Pay by bank transfer: Northgate Physio (fictional) · sort code 00-00-00 · account 00000000 · ref INV-04830</span><span>Not VAT-registered: physiotherapy is exempt from VAT.</span></div>
+</div>
+</div>
+</aside>
+</div>
+</main>
+
+<sc-if value="{{dlgOpen}}" hint-placeholder-val="{{false}}">
+<div style="position: absolute; inset: 0; background: rgba(15,23,42,.45); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 30">
+<div role="dialog" aria-modal="true" aria-labelledby="dlg-h" style="background: #FFFFFF; border-radius: 12px; width: 100%; max-width: 460px; box-shadow: 0 24px 48px rgba(15,23,42,.24); display: flex; flex-direction: column">
+<div style="padding: 18px 20px 0; display: flex; align-items: center"><h2 id="dlg-h" style="margin: 0; font-size: 17px; font-weight: 600; flex: 1">{{dlg.title}}</h2><button type="button" aria-label="Close" onClick="{{closeDlg}}" style="height: 36px; width: 36px; border: 0; background: transparent; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"></path></svg></button></div>
+<div style="padding: 12px 20px; display: flex; flex-direction: column; gap: 12px">
+<p style="margin: 0; color: #475569">{{dlg.body}}</p>
+<div style="display: flex; flex-direction: column; gap: 4px"><label for="d-amt" style="font-weight: 500">Amount</label><div style="height: 40px; padding: 0 12px; border: 1px solid #CBD5E1; border-radius: 8px; display: flex; align-items: center; gap: 4px"><span aria-hidden="true" style="color: #475569">£</span><input id="d-amt" type="text" inputmode="decimal" value="{{dlg.amount}}" style="border: 0; font: inherit; font-size: 16px; flex: 1; min-width: 0; font-variant-numeric: tabular-nums"></div></div>
+<sc-if value="{{dlg.isPay}}" hint-placeholder-val="{{true}}">
+<fieldset style="border: 0; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px">
+<legend style="font-weight: 500; margin-bottom: 8px; padding: 0">Method</legend>
+<sc-for list="{{methods}}" as="m" hint-placeholder-count="4"><label style="display: flex; gap: 8px; align-items: center; min-height: 44px; padding: 0 12px; border: 1px solid {{m.bd}}; background: {{m.bg}}; border-radius: 8px; cursor: pointer"><input type="radio" name="d-m" checked="{{m.on}}" onChange="{{m.pick}}" style="width: 16px; height: 16px; margin: 0; accent-color: #0B7970">{{m.label}}</label></sc-for>
+</fieldset>
+<div style="display: flex; flex-direction: column; gap: 4px"><label for="d-ref" style="font-weight: 500">Reference</label><input id="d-ref" type="text" value="BW-RA-7802" style="height: 36px; padding: 0 10px; border: 1px solid #CBD5E1; border-radius: 8px; font: inherit"></div>
+</sc-if>
+<sc-if value="{{dlg.isOther}}" hint-placeholder-val="{{false}}">
+<div style="display: flex; flex-direction: column; gap: 4px"><label for="d-r" style="font-weight: 500">Reason</label><select id="d-r" style="height: 36px; padding: 0 10px; border: 1px solid #CBD5E1; border-radius: 8px; font: inherit; background: #FFFFFF"><option>{{dlg.reason}}</option></select></div>
+</sc-if>
+</div>
+<div style="padding: 12px 20px 20px; display: flex; gap: 8px; justify-content: flex-end"><button type="button" onClick="{{closeDlg}}" style="height: 40px; padding: 0 16px; border-radius: 8px; border: 1px solid #E2E8F0; background: #FFFFFF; font: inherit; font-weight: 500; cursor: pointer">Cancel</button><button type="button" onClick="{{confirmDlg}}" style="height: 40px; padding: 0 16px; border-radius: 8px; border: 0; background: #0B7970; color: #FFFFFF; font: inherit; font-weight: 600; cursor: pointer">{{dlg.cta}}</button></div>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{hasToast}}" hint-placeholder-val="{{false}}">
+<div role="status" style="position: absolute; right: 24px; bottom: 24px; z-index: 40; background: #0F172A; color: #FFFFFF; border-radius: 12px; padding: 12px 16px; display: flex; gap: 10px; align-items: center; box-shadow: 0 12px 32px rgba(15,23,42,.24)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5EEAD4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"></path></svg>{{toast}}</div>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1120}}'>
+class Component extends DCLogic {
+  constructor(p) { super(p); this.state = { paid: 110, dlg: null, method: 'Bank transfer', toast: '', extra: [], linked: false }; }
+  renderVals() {
+    const st = this.state;
+    const bal = 165 - st.paid;
+    const f = n => '£' + n.toFixed(2);
+    const S = bal <= 0
+      ? { label: 'Paid', bg: '#DCFCE7', fg: '#166534', icon: 'M20 6L9 17l-5-5' }
+      : { label: 'Part-paid', bg: '#FEF3C7', fg: '#864E0E', icon: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 2v20' };
+    const D = {
+      pay: { title: 'Record payment', body: 'Bluewell Health (fictional) · INV-04830 · balance ' + f(bal), amount: bal.toFixed(2), cta: 'Record ' + f(bal), isPay: true, isOther: false },
+      refund: { title: 'Refund', body: 'Refunds go back to the original payment method where possible.', amount: '55.00', cta: 'Refund £55.00', isPay: false, isOther: true, reason: 'Overpayment' },
+      credit: { title: 'Credit note', body: 'Reduces the amount owed on this invoice. The invoice itself is not changed.', amount: '55.00', cta: 'Issue credit note', isPay: false, isOther: true, reason: 'Session not authorised by insurer' }
+    };
+    const methods = ['Bank transfer', 'Card terminal', 'Card – keyed', 'Cash'].map(m => ({ label: m, on: st.method === m, bg: st.method === m ? '#F0FDFA' : '#FFFFFF', bd: st.method === m ? '#0E958A' : '#E2E8F0', pick: () => this.setState({ method: m }) }));
+    const payments = [{ date: '26/10/2026', what: 'Remittance BW-RA-7781 · bank transfer', amt: '−£110.00', fg: '#166534' }].concat(st.extra);
+    return {
+      product: 'Clinic system', st: S, balance: f(Math.max(0, bal)), pdfPaid: f(st.paid),
+      balanceText: bal <= 0 ? 'Paid in full' : f(bal) + ' outstanding',
+      paidOff: bal <= 0, payBg: bal <= 0 ? '#E2E8F0' : '#0B7970', payFg: bal <= 0 ? '#64748B' : '#FFFFFF',
+      payments, methods,
+      linkLabel: st.linked ? 'Payment link copied' : 'Copy payment link',
+      copyLink: () => this.setState({ linked: true, toast: 'Payment link copied – valid for 14 days' }),
+      dlgOpen: !!st.dlg, dlg: st.dlg ? D[st.dlg] : D.pay,
+      openPay: () => this.setState({ dlg: 'pay' }), openRefund: () => this.setState({ dlg: 'refund' }), openCredit: () => this.setState({ dlg: 'credit' }),
+      closeDlg: () => this.setState({ dlg: null }),
+      confirmDlg: () => {
+        if (st.dlg === 'pay') this.setState({ dlg: null, paid: 165, extra: st.extra.concat([{ date: '27/10/2026', what: st.method + ' · ref BW-RA-7802 · recorded by Jess Taylor', amt: '−' + f(bal), fg: '#166534' }]), toast: 'Payment of ' + f(bal) + ' recorded – invoice paid' });
+        else this.setState({ dlg: null, toast: st.dlg === 'refund' ? 'Refund of £55.00 recorded' : 'Credit note CN-00112 issued' });
+      },
+      hasToast: !!st.toast, toast: st.toast
+    };
+  }
+}
+</script>
+</body>
+</html>

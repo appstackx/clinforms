@@ -28,6 +28,7 @@ const SOURCE: Record<ConnectorId, NonNullable<StudioEventProps["source"]>> = {
   tm3: "clinic_system",
   "tm3-sim": "simulated_clinic_system",
   "file-import": "export_upload",
+  native: "clinic_system",
 };
 
 /** Whole numbers 0 – 100 000 only (anything else is dropped). */

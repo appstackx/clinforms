@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 600 400" width="600" height="400" aria-hidden="true">
+  <rect width="600" height="400" fill="#CFE7D8"/>
+  <defs>
+    <circle id="clock" cx="104" cy="74" r="46"/>
+    <rect id="front" x="46" y="252" width="508" height="170" rx="6"/>
+    <rect id="top" x="24" y="222" width="552" height="32" rx="9"/>
+    <path id="base" d="M84 222 L100 170 H196 L212 222 Z"/>
+    <path id="hand" d="M70 154 C70 134 92 132 98 146 L198 146 C204 132 226 134 226 154 C226 168 212 172 200 166 L96 166 C84 172 70 168 70 154 Z"/>
+    <path id="bookL" d="M244 214 L250 92 C280 84 312 86 340 98 L338 214 C312 204 276 204 244 214 Z"/>
+    <path id="bookR" d="M338 214 L340 98 C368 86 400 84 430 92 L436 214 C404 204 368 204 338 214 Z"/>
+    <path id="ribbon" d="M392 210 V246 L402 238 L412 246 V208 Z"/>
+    <rect id="pot" x="474" y="168" width="56" height="54" rx="6"/>
+  </defs>
+  <g transform="translate(9 9)">
+    <use href="#clock" xlink:href="#clock" fill="#FBF4E8"/>
+    <use href="#front" xlink:href="#front" fill="#C4432B"/>
+    <use href="#top" xlink:href="#top" fill="#F6C34A"/>
+    <use href="#base" xlink:href="#base" fill="#0F3B35"/>
+    <use href="#hand" xlink:href="#hand" fill="#0B6B65"/>
+    <use href="#bookL" xlink:href="#bookL" fill="#FBF4E8"/>
+    <use href="#bookR" xlink:href="#bookR" fill="#FBF4E8"/>
+    <use href="#ribbon" xlink:href="#ribbon" fill="#C4432B"/>
+    <use href="#pot" xlink:href="#pot" fill="#0B6B65"/>
+  </g>
+  <g fill="none" stroke="#0F3B35" stroke-width="9" stroke-linecap="round" stroke-linejoin="round">
+    <use href="#clock" xlink:href="#clock" stroke-width="11"/>
+    <path stroke-width="10" d="M104 74 L116 55 M104 74 L122 42"/>
+    <circle cx="104" cy="74" r="5" fill="#0F3B35"/>
+    <use href="#front" xlink:href="#front"/>
+    <path stroke-width="6" d="M130 262 V412 M214 262 V412 M298 262 V412 M382 262 V412 M466 262 V412"/>
+    <use href="#top" xlink:href="#top"/>
+    <use href="#base" xlink:href="#base"/>
+    <path stroke="#FBF4E8" stroke-width="7" d="M128 186 h2 M148 186 h2 M168 186 h2 M126 202 h2 M148 202 h2 M170 202 h2"/>
+    <use href="#hand" xlink:href="#hand"/>
+    <path stroke-width="5" d="M206 196 c14 -4 14 10 0 8 c14 -4 14 10 0 8 c14 -4 14 10 0 8"/>
+    <use href="#bookL" xlink:href="#bookL"/>
+    <use href="#bookR" xlink:href="#bookR"/>
+    <path stroke-width="5" d="M262 238 L300 230 M266 120 H322 M266 142 H322 M266 186 H322 M356 120 H414 M356 164 H414 M356 186 H414"/>
+    <path stroke="#F6C34A" stroke-width="12" d="M268 164 H320 M358 142 H412"/>
+    <use href="#ribbon" xlink:href="#ribbon" stroke-width="6"/>
+    <use href="#pot" xlink:href="#pot"/>
+    <path stroke-width="12" stroke="#0F3B35" d="M488 164 L478 112 M504 164 V104 M520 164 L532 116"/>
+    <path stroke-width="6" stroke="#F6C34A" d="M488 160 L480 120"/>
+    <path stroke-width="6" stroke="#C4432B" d="M504 160 V112"/>
+    <path stroke-width="6" stroke="#FBF4E8" d="M520 160 L530 124"/>
+  </g>
+</svg>

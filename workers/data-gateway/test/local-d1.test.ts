@@ -4,12 +4,13 @@
  *      migration path (wrangler's own statement splitting, incl. the trigger bodies);
  *   2. getPlatformProxy() gives the local D1 binding; the gateway handler runs against it;
  *   3. checks: append-only triggers, batch atomicity, a ~700 KB chunk parameter, concurrent rate-limit hits,
- *      then the full repository suite through the app's D1 dialect.
+ *      then the full repository suites (ClinForms and the clinic system) through the app's D1 dialect.
  * Skipped when the Worker's dependencies are not installed (`npm ci` in workers/data-gateway).
  */
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { after, before, describe, it } from "node:test";
+import { definePmsRepoSuite } from "../../../src/server/repos/pms/testing/pms-suite";
 import { defineRepoSuite } from "../../../src/server/repos/testing/repo-suite";
 import { SIG_HEADER, TS_HEADER, signRequest } from "../src/auth";
 import { handleRequest } from "../src/index";
@@ -121,6 +122,21 @@ describe("gateway on local D1 (workerd via wrangler)", { skip: !available && "wr
 
 if (available) {
   defineRepoSuite("D1 via the gateway (local workerd D1, wrangler-applied migrations)", async () => {
+    const { proxy, dir } = await startLocalD1();
+    const db = gatewayDb(proxy.env.DB);
+    return {
+      db,
+      close: async () => {
+        await db.destroy();
+        await proxy.dispose();
+        fs.rmSync(dir, { recursive: true, force: true });
+      },
+    };
+  });
+}
+
+if (available) {
+  definePmsRepoSuite("D1 via the gateway (local workerd D1, wrangler-applied migrations)", async () => {
     const { proxy, dir } = await startLocalD1();
     const db = gatewayDb(proxy.env.DB);
     return {

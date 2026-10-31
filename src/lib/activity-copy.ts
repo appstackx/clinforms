@@ -6,7 +6,12 @@
  *
  * Every audit action the app writes should have a label here. An action without one is still shown, with a
  * readable name made from its code (activityLabel), so new actions never break the page.
+ *
+ * The clinic system's labels (pms.*) live with its modules (src/modules/pms/audit/<module>.ts) and are merged in
+ * below – a module adds its own codes there, never here.
  */
+import { PMS_AUDIT_ACTIONS, PMS_AUDIT_LABELS, PMS_AUDIT_TARGETS } from "../modules/pms/audit";
+import { CLINIC_SYSTEM_NAME } from "./brand";
 import { WORDING } from "../modules/medreport/core/wording";
 // bh2 W0 follow-up (seam "activity-labels"): the release's report audit actions are WF's (activity-copy-release.ts).
 import { RELEASE_REPORT_AUDIT_ACTIONS, RELEASE_REPORT_AUDIT_LABELS, describeReleaseReportAuditDetail } from "./activity-copy-release";
@@ -82,6 +87,9 @@ export const ACTIVITY_GROUPS: readonly ActivityGroup[] = [
   },
 ];
 
+/** The clinic system's filter group – added to the activity page only for clinics with that package. */
+export const CLINIC_SYSTEM_ACTIVITY_GROUP: ActivityGroup = { label: CLINIC_SYSTEM_NAME, actions: PMS_AUDIT_ACTIONS };
+
 export const ACTIVITY_LABELS: Readonly<Record<string, string>> = {
   "auth.sign_in": "Signed in",
   "auth.two_factor_enable": "Two-step verification set up",
@@ -145,6 +153,8 @@ export const ACTIVITY_LABELS: Readonly<Record<string, string>> = {
   "platform.clinic_create": "Clinic created",
   "platform.access_request_contacted": "Access request marked as contacted",
   "platform.access_request_reopened": "Access request marked as not contacted",
+  // The clinic system (src/modules/pms/audit/*), incl. package changes.
+  ...PMS_AUDIT_LABELS,
   "platform.trial_set": "Trial set up",
   "platform.trial_extended": "Trial extended",
   "platform.trial_ended": "Trial ended",
@@ -169,9 +179,11 @@ const NOUNS: Readonly<Record<string, string>> = {
   form: "Form",
   file: "File",
   settings: "Settings",
+  // The clinic's own (third-party) clinic system that opened ClinForms – a generic phrase, not CLINIC_SYSTEM_NAME (M10).
   launch: "Clinic system",
   platform: "Platform",
   notes: "Notes",
+  pms: CLINIC_SYSTEM_NAME,
 };
 
 const NOTES_FORMATS: Readonly<Record<string, string>> = {
@@ -292,6 +304,13 @@ export function describeActivityDetail(action: string, detail: Record<string, un
     case "platform.clinic_create":
     case "platform.owner_reset_link":
       return typeof detail.tenantId === "string" ? `Clinic id ${detail.tenantId}` : null;
+    case "clinic.package_change":
+    case "platform.entitlement_set": {
+      const name = detail.package === "clinic" ? CLINIC_SYSTEM_NAME : detail.package === "reports" ? "Reports" : null;
+      if (!name) return null;
+      const where = action === "platform.entitlement_set" && typeof detail.tenantId === "string" ? ` · clinic id ${detail.tenantId}` : "";
+      return `${name} ${detail.on === true ? "on" : "off"}${where}`;
+    }
     case "clinic.trial_set":
     case "platform.trial_set": {
       const days = typeof detail.days === "number" ? `${detail.days} ${detail.days === 1 ? "day" : "days"}` : null;
@@ -404,6 +423,7 @@ export const ACTIVITY_TARGETS: Readonly<Record<string, string>> = {
   template: "Report template",
   tenant_settings: "Clinic settings",
   access_request: "Access request",
+  ...PMS_AUDIT_TARGETS,
 };
 
 export const ACTIVITY_COPY = {

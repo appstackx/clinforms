@@ -90,7 +90,7 @@ import {
 } from "../../components/review/review-model";
 import { InlineAlert, ToastProvider, useMediaQuery, useToast } from "../../components/review/review-ui";
 import { emptyOptionalSummary, optionalBlankCandidates, optionalOpinionBlankCandidates, reviewItemLines, reviewItems } from "../../components/review/box-items";
-import { useReviewActions } from "../../components/review/use-review-actions";
+import { canFileBack, useReviewActions } from "../../components/review/use-review-actions";
 import { useReviewState } from "../../components/review/use-review-state";
 
 type PanelTab = "sources" | "flags" | "preview" | "activity";
@@ -384,6 +384,17 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
   );
 
   const actions = useReviewActions({ report, form, template, file, actor, hooks, dispatch, commit, validateNow, toast });
+  // 10/2026: a form opened from the clinic system's own record (connector "native") is filed back to its case as soon
+  // as it is approved ("Approve and file to case") – once; "Save to clinic record" stays for a retry.
+  const native = report.episodeRef.connectorId === "native";
+  const filedBack = filedEntries(report).length > 0;
+  const handOver = native ? (hooks.clinicRecordUrl?.({ connectorId: report.episodeRef.connectorId, patientId: report.episodeRef.patientId, episodeId: report.episodeRef.episodeId }) ?? null) : null;
+  const autoFiled = useRef(false);
+  useEffect(() => {
+    if (!native || report.status !== "signed" || filedBack || actions.filing || autoFiled.current) return;
+    autoFiled.current = true;
+    void actions.saveToRecord();
+  }, [native, report.status, filedBack, actions]);
   const answersCopy = useAnswersCopy({ report, form, actor, dispatch, toast });
   const router = useRouter();
   const aiMode = useAiMode();
@@ -617,6 +628,19 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
 
   return (
     <div className="space-y-5">
+      {handOver && (
+        <div role="region" aria-label="Hand-over" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-slate-800">
+          <span>
+            Opened from <strong>{report.bundleSnapshot.source.label ?? "the clinic system"}</strong> · {report.patientLabel} · Case: {report.bundleSnapshot.episodeTitle ?? "this case"}. When you
+            approve, the form is filed back on the case.
+          </span>
+          {!filedBack && (
+            <Link href={handOver} className="font-medium text-blue-800 underline underline-offset-2 hover:no-underline">
+              ← Back to the record without filing
+            </Link>
+          )}
+        </div>
+      )}
       <ReviewHeader
         report={report}
         template={template}
@@ -787,8 +811,8 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
           }
           filing={actions.filing}
           filed={filedEntries(report)}
-          canFile={report.episodeRef.connectorId === "tm3-sim"}
-          clinicRecordUrl={hooks.clinicRecordUrl?.({ connectorId: report.episodeRef.connectorId, patientId: report.episodeRef.patientId }) ?? null}
+          canFile={canFileBack(report.episodeRef.connectorId)}
+          clinicRecordUrl={hooks.clinicRecordUrl?.({ connectorId: report.episodeRef.connectorId, patientId: report.episodeRef.patientId, episodeId: report.episodeRef.episodeId }) ?? null}
           fileMissing={isForm && !questionSet && file.status === "missing"}
           onDownload={(k) => void actions.download(k)}
           onSave={() => void actions.saveToRecord()}

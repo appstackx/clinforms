@@ -8,7 +8,7 @@ import { confirmSetup, startSetup, type ConfirmState, type SetupState } from "./
 const IDLE_SETUP: SetupState = { status: "idle" };
 const IDLE_CONFIRM: ConfirmState = { status: "idle" };
 
-export function TwoFactorSetup({ email, enabled }: { email: string; enabled: boolean }) {
+export function TwoFactorSetup({ email, enabled, productName, continueHref }: { email: string; enabled: boolean; productName: string; continueHref: string }) {
   const [start, startAction] = useFormState(startSetup, IDLE_SETUP);
   const [confirm, confirmAction] = useFormState(confirmSetup, IDLE_CONFIRM);
 
@@ -17,7 +17,7 @@ export function TwoFactorSetup({ email, enabled }: { email: string; enabled: boo
       <div className="space-y-4">
         <Notice tone="success">Two-step verification is on for {email}.</Notice>
         <p className="text-sm text-slate-600">You can make new backup codes and see where you are signed in under Settings → Security.</p>
-        <Link href="/app" className="inline-flex h-10 w-full items-center justify-center rounded-lg bg-teal-700 px-4 text-sm font-semibold text-white hover:bg-teal-800">
+        <Link href={continueHref} className="inline-flex h-10 w-full items-center justify-center rounded-lg bg-teal-700 px-4 text-sm font-semibold text-white hover:bg-teal-800">
           Continue
         </Link>
       </div>
@@ -28,7 +28,7 @@ export function TwoFactorSetup({ email, enabled }: { email: string; enabled: boo
     return (
       <form action={confirmAction} className="space-y-5">
         <section className="space-y-3">
-          <h2 className="text-sm font-semibold">1. Add ClinForms to your authenticator app</h2>
+          <h2 className="text-sm font-semibold">1. Add {productName} to your authenticator app</h2>
           <p className="text-sm text-slate-600">
             Open an authenticator app on your phone (any app that shows six-digit sign-in codes works) and scan this code, or type the key
             below into the app.
