@@ -1,0 +1,80 @@
+// 16:30 · billing: the day's visits invoiced (Robert: his excess to him, the rest to the insurer), authorised sessions,
+// a payment link by text, Robert pays by card (TEST MODE: the local payment-provider stand-in marks the link paid).
+const fs = require("fs");
+const path = require("path");
+const { Take, L } = require("./rec.cjs");
+const originFix = require("./origin-fix.cjs");
+const P = "pat_01M725BQPE5KPDH2S2EJ27H543";
+const info = {};
+
+(async () => {
+  const t = new Take("s5-billing", { css: "[data-testid=invoice-payment-link]{visibility:hidden!important}" });
+  const page = await t.open("jess");
+  await originFix(page);
+  await page.goto(`${L.APP}/app/clinic/billing`);
+  await page.waitForSelector("text=Outstanding");
+  await page.waitForTimeout(800);
+  await t.roll();
+  t.mark("billing");
+  await t.hold(1500);
+  await t.click(page.getByText(/Attended, not invoiced/).first(), { mark: "uninvoiced" });
+  const row = page.locator("tr", { hasText: "Robert Hale" }).first();
+  await row.waitFor();
+  await t.hold(1500);
+  await t.moveToLoc(row.locator("td").nth(5), 800);
+  t.mark("robert-row");
+  await t.hold(1800);
+  await t.moveToLoc(page.locator("text=/visits selected/").first(), 900);
+  t.mark("selected");
+  await t.hold(1800);
+  await t.click(page.getByRole("button", { name: "Create and issue" }), { mark: "issue" });
+  await page.waitForTimeout(2500);
+  await t.hold(800);
+  await t.cut();
+  // Robert's record: invoices and the authorisation count
+  await page.goto(`${L.APP}/app/clinic/patients/${P}`);
+  await page.waitForSelector("text=Authorised sessions");
+  await page.waitForTimeout(800);
+  await t.roll();
+  t.mark("record");
+  await t.moveToLoc(page.locator("text=Authorised sessions").first(), 900);
+  await t.hold(2600);
+  await t.click(page.getByRole("link", { name: /^Invoices/ }).filter({ visible: true }).first(), { mark: "invoices-tab" });
+  await page.waitForSelector("text=/the patient owes/");
+  await t.hold(2200);
+  const patInv = page.locator("tr", { hasText: "Robert Hale" }).getByText(/^INV\d+$/).first();
+  info.patientInvoice = await patInv.innerText();
+  await t.click(patInv, { mark: "open-invoice" });
+  await page.waitForSelector("text=Insured visit");
+  await page.waitForTimeout(800);
+  t.mark("invoice");
+  await t.moveToLoc(page.locator("text=Insured visit").first(), 900);
+  await t.hold(2800);
+  await t.click(page.getByRole("button", { name: "Text payment link" }), { mark: "text-link" });
+  await page.waitForTimeout(2000);
+  await t.hold(1200);
+  await t.cut();
+  // The text Robert receives (from the local test inbox; shown in the edit with the link hidden).
+  const q = await (await fetch("http://localhost:8026/api/v1/search?query=" + encodeURIComponent("to:447700900417@sms.local"))).json();
+  const msg = await (await fetch(`http://localhost:8026/api/v1/message/${q.messages[0].ID}`)).json();
+  info.sms = msg.Text.split("\n").filter((l) => l.trim() && !/^\(Local test/.test(l)).join(" ").replace(/https?:\/\/\S+/g, "[link]");
+  // TEST MODE: Robert pays on the provider's test page – the local stand-in marks the link paid.
+  await page.reload();
+  await page.waitForSelector("[data-testid=invoice-payment-link]", { state: "attached" });
+  const link = (await page.locator("[data-testid=invoice-payment-link]").textContent()).trim().split("/").pop();
+  info.payStatus = (await fetch(`http://127.0.0.1:3321/__pay?link=${link}`, { method: "POST" })).status;
+  await page.waitForTimeout(1200);
+  await t.roll();
+  t.mark("check");
+  await t.hold(900);
+  await t.click(page.locator("[data-testid=check-payment]"), { mark: "check-click" });
+  await page.waitForTimeout(2500);
+  t.mark("paid");
+  await t.moveToLoc(page.locator("[data-testid=invoice-balance]"), 900);
+  await t.hold(2800);
+  info.after = (await page.locator("main").innerText()).slice(0, 600);
+  await t.shot("paid");
+  await t.close();
+  fs.writeFileSync(path.join(t.dir, "info.json"), JSON.stringify(info, null, 2));
+  console.log(JSON.stringify(info, null, 2));
+})().catch((e) => { console.error(e); process.exit(1); });

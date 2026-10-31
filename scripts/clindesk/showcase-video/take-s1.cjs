@@ -1,0 +1,66 @@
+// 08:00 · Jess at the front desk: multi-site diary, rooms, booking Robert Hale with Sophie at 09:15 in Room 1.
+const { Take, L } = require("./rec.cjs");
+const originFix = require("./origin-fix.cjs");
+
+(async () => {
+  const t = new Take("s1-diary");
+  const page = await t.open("jess");
+  await originFix(page);
+  await page.goto(`${L.APP}/app/clinic/diary`);
+  await page.waitForSelector("text=Sophie Marsh >> visible=true");
+  await page.waitForTimeout(1200);
+  await t.roll();
+  t.mark("diary");
+  await t.hold(2200);
+  await t.click(page.getByRole("link", { name: "Week", exact: true }).filter({ visible: true }).first(), { mark: "week" });
+  await t.hold(2400);
+  await t.click(page.getByRole("link", { name: "Day", exact: true }).filter({ visible: true }).first(), { mark: "day" });
+  await t.hold(1000);
+  await t.click(page.getByRole("link", { name: "Rooms", exact: true }).filter({ visible: true }).first(), { mark: "rooms" });
+  await t.hold(2200);
+  await t.click(page.getByRole("link", { name: "Practitioners", exact: true }).filter({ visible: true }).first(), { mark: "practitioners" });
+  await t.hold(1200);
+  // site switcher
+  const site = page.getByRole("button", { name: /^Site:/ }).filter({ visible: true }).first();
+  await t.click(site, { mark: "site-menu" });
+  await t.hold(2200);
+  await page.keyboard.press("Escape");
+  await t.hold(600);
+  // the 09:15 slot in Sophie's column (Room 1)
+  const col = await t.box(page.locator("text=Sophie Marsh >> visible=true").first());
+  const nine = await t.box(page.locator("text=09:00 >> visible=true").first());
+  const ten = await t.box(page.locator("text=10:00 >> visible=true").first());
+  const y = nine.y + nine.height / 2 + (ten.y - nine.y) * 0.25 + 8;
+  await t.moveTo(col.x + 120, y, 800);
+  await t.hold(300);
+  t.mark("slot-click");
+  await page.mouse.down(); await page.waitForTimeout(70); await page.mouse.up();
+  await page.waitForSelector("#bk-search");
+  await t.hold(1200);
+  t.mark("dialog");
+  await t.type(page.locator("#bk-search"), "Robert Ha", { cps: 9 });
+  const opt = page.locator("[role=option]").first();
+  await opt.waitFor();
+  await t.hold(700);
+  await t.click(opt, { mark: "patient" });
+  await t.hold(1500);
+  await t.moveToLoc(page.locator("#bk-svc"));
+  const fu = await page.locator("#bk-svc option").filter({ hasText: /^Follow-up/ }).first().getAttribute("value");
+  await page.selectOption("#bk-svc", fu);
+  t.mark("service");
+  await t.hold(1400);
+  await t.moveToLoc(page.locator("text=Slot available").first(), 700);
+  t.mark("slot-ok");
+  await t.hold(1800);
+  await t.click(page.getByRole("button", { name: "Book appointment" }), { mark: "book" });
+  await page.waitForSelector("#bk-search", { state: "detached" }).catch(() => {});
+  await t.hold(1800);
+  t.mark("booked");
+  await t.click(page.getByRole("button", { name: "Back to diary" }).or(page.getByRole("link", { name: "Back to diary" })).first(), { mark: "back" });
+  await t.hold(900);
+  await t.moveTo(1300, 760, 700);
+  t.mark("in-diary");
+  await t.hold(2800);
+  await t.shot("end");
+  await t.close();
+})().catch((e) => { console.error(e); process.exit(1); });

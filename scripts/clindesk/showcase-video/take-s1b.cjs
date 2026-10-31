@@ -1,0 +1,75 @@
+// 08:00 · a new patient (Lucy Barnes, fictional) books online on her phone – today 12:15 with Sophie at Northgate.
+// Then Jess's diary shows it (take s1c).
+const { Take, L } = require("./rec.cjs");
+
+(async () => {
+  const t = new Take("s1b-phone", { w: 390, h: 844, scale: 3, mobile: true });
+  const page = await t.open(null);
+  await page.goto(`${L.APP}/clinics/pebblegate-demo/book`);
+  await page.waitForSelector("text=Where would you like to be seen?");
+  await page.waitForTimeout(800);
+  await t.roll();
+  t.mark("start");
+  await t.hold(1600);
+  await t.click(page.getByText("Northgate (fictional)").first(), { ms: 300, mark: "site" });
+  await t.hold(1300);
+  await t.click(page.getByText("Initial assessment").first(), { ms: 300, mark: "service" });
+  await t.hold(1300);
+  await t.click(page.getByText("Sophie Marsh").first(), { ms: 300, mark: "who" });
+  await page.getByRole("button", { name: "12:15" }).waitFor();
+  await t.hold(1500);
+  await t.click(page.getByRole("button", { name: "12:15" }), { ms: 300, mark: "time" });
+  await t.hold(700);
+  await t.click(page.getByRole("button", { name: "Continue" }).filter({ visible: true }).last(), { ms: 300 });
+  await page.waitForSelector("input[name=firstName]");
+  await t.hold(800);
+  t.mark("details");
+  const fill = async (sel, v) => { await t.click(page.locator(sel), { ms: 250, pause: 120 }); await page.keyboard.type(v, { delay: 45 }); await t.hold(200); };
+  await fill("input[name=firstName]", "Lucy");
+  await fill("input[name=lastName]", "Barnes");
+  await t.click(page.locator("input[name=dateOfBirth]"), { ms: 250 });
+  await page.fill("input[name=dateOfBirth]", "1990-06-03");
+  await t.hold(300);
+  await fill("input[name=phoneMobile]", "07700 900612");
+  await fill("input[name=email]", "lucy.barnes@example.com");
+  await t.click(page.locator("input[name=paying]").first(), { ms: 300 });
+  await t.hold(600);
+  await t.click(page.getByRole("button", { name: "Continue" }).filter({ visible: true }).last(), { ms: 300 });
+  await page.getByRole("button", { name: "Confirm booking" }).waitFor();
+  await t.hold(1600);
+  t.mark("review");
+  await t.click(page.getByRole("button", { name: "Confirm booking" }), { ms: 300, mark: "confirm" });
+  await page.waitForSelector("text=You're booked");
+  await t.hold(400);
+  t.mark("booked");
+  await t.hold(2200);
+  await t.click(page.getByRole("link", { name: "Fill in your forms" }).or(page.getByRole("button", { name: "Fill in your forms" })).first(), { ms: 300, mark: "forms" });
+  await page.waitForSelector("text=Consent to assessment and treatment");
+  await t.hold(1400);
+  t.mark("form");
+  await t.click(page.getByText("I agree to be assessed and treated", { exact: false }).first(), { ms: 300 });
+  await t.hold(500);
+  await t.click(page.getByText("I understand that the clinic keeps", { exact: false }).first(), { ms: 300 });
+  await t.hold(500);
+  await t.click(page.getByText("Yes", { exact: true }).first(), { ms: 300 });
+  await t.hold(500);
+  await t.click(page.getByText("I have read the clinic", { exact: false }).first(), { ms: 300 });
+  await t.hold(1500);
+  await t.shot("end");
+  await t.close();
+
+  // Jess's diary, a moment later: the online booking is there (globe icon).
+  const d = new Take("s1c-diary-online");
+  const p2 = await d.open("jess");
+  await p2.goto(`${L.APP}/app/clinic/diary`);
+  await p2.waitForSelector("text=Lucy Barnes >> visible=true");
+  await p2.waitForTimeout(1000);
+  await d.roll();
+  d.mark("start");
+  await d.hold(1000);
+  await d.moveToLoc(p2.locator("text=Lucy Barnes >> visible=true").first(), 900);
+  d.mark("hover");
+  await d.hold(2500);
+  await d.shot("end");
+  await d.close();
+})().catch((e) => { console.error(e); process.exit(1); });

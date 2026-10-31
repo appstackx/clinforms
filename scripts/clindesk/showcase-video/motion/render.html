@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<title>ClinDesk showcase – render</title>
+<style>
+@font-face { font-family: "Bricolage"; src: url(fonts/Bricolage_Grotesque-normal.woff2) format("woff2"); font-weight: 200 800; font-stretch: 75% 100%; }
+@font-face { font-family: "Figtree"; src: url(fonts/Figtree-normal.woff2) format("woff2"); font-weight: 300 900; }
+@font-face { font-family: "Figtree"; src: url(fonts/Figtree-italic.woff2) format("woff2"); font-weight: 300 900; font-style: italic; }
+@font-face { font-family: "Shantell"; src: url(fonts/Shantell_Sans-normal.woff2) format("woff2"); font-weight: 300 800; }
+:root {
+  --couch-roll: #FBF4E8; --pine: #0F3B35; --ink: #1A2723; --muted: #4C5954; --muted-on-dark: #BBD0C9;
+  --tape-coral: #C4432B; --coral-glow: #F07A5A; --sun: #F6C34A; --sun-soft: #FDE8B4; --sage: #CFE7D8; --sky: #D3E7EF;
+  --blush: #F8D5CA; --cardboard: #F0DDBD; --tape-pink: #F3A9BA; --teal: #0B6B65; --line: #E6DAC6;
+  --display: "Bricolage", "Arial Narrow", Arial, sans-serif; --text: "Figtree", Arial, sans-serif; --pen: "Shantell", cursive;
+  --shadow: 0 40px 80px -24px rgba(15,59,53,.38), 0 8px 24px -8px rgba(15,59,53,.18);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: var(--couch-roll); }
+body { font-family: var(--text); color: var(--ink); -webkit-font-smoothing: antialiased; }
+#stage { position: absolute; inset: 0; overflow: hidden; perspective: 2200px; }
+.layer { position: absolute; will-change: transform, opacity; }
+.ground { inset: 0; }
+.panel { overflow: hidden; border-radius: 22px; box-shadow: var(--shadow); background: #fff; transform-origin: 50% 60%; }
+.panel img { position: absolute; left: 0; top: 0; transform-origin: 0 0; image-rendering: auto; }
+.panel.crop { border-radius: 16px; box-shadow: 0 50px 90px -20px rgba(15,59,53,.5), 0 0 0 1.5px rgba(15,59,53,.12); }
+.phone { border-radius: 58px; background: #12201d; box-shadow: var(--shadow); padding: 16px; }
+.phone .scr { position: absolute; inset: 16px; border-radius: 44px; overflow: hidden; background: #fff; }
+.phone .scr img { position: absolute; left: 0; top: 0; width: 100%; }
+.phone .notch { position: absolute; left: 50%; top: 24px; width: 120px; height: 30px; margin-left: -60px; border-radius: 20px; background: #12201d; z-index: 3; }
+.ring { border: 5px solid var(--tape-coral); border-radius: 14px; box-shadow: 0 0 0 6px rgba(196,67,43,.16), 0 10px 30px rgba(196,67,43,.25); }
+.callout { font-family: var(--pen); font-weight: 600; font-variation-settings: "INFM" 60, "BNCE" 25; font-size: 34px; line-height: 1.15; color: var(--pine);
+  background: var(--sun-soft); padding: 10px 18px 12px; border-radius: 12px; box-shadow: 0 10px 24px -8px rgba(15,59,53,.35); white-space: nowrap; }
+.callout.dark { background: var(--pine); color: var(--sun); }
+.ftag { font: 600 22px/1.2 var(--text); color: var(--pine); background: var(--sun-soft); padding: 7px 13px; border-radius: 8px; box-shadow: 0 2px 6px rgba(15,59,53,.18); white-space: nowrap; }
+.chip { font: 700 22px/1.2 var(--text); color: var(--couch-roll); background: var(--pine); padding: 8px 15px; border-radius: 999px; white-space: nowrap; box-shadow: 0 6px 16px -6px rgba(15,59,53,.4); }
+.chip.coral { background: var(--tape-coral); color: #fff; }
+.marker { font-family: var(--pen); font-weight: 600; font-variation-settings: "INFM" 60, "BNCE" 25; font-size: 36px; color: var(--pine); white-space: nowrap; transform-origin: left center; }
+.on-dark .marker, .marker.dark { color: var(--sun); }
+#cap { position: absolute; left: 50%; bottom: 34px; transform: translateX(-50%); z-index: 50; max-width: 1400px; text-align: center; }
+#cap .pill { display: inline-block; background: rgba(15,59,53,.94); color: var(--couch-roll); font: 600 38px/1.32 var(--text); letter-spacing: .002em;
+  padding: 12px 30px 14px; border-radius: 16px; box-shadow: 0 12px 30px rgba(15,59,53,.35); white-space: pre-line; }
+/* cards */
+.card { inset: 0; overflow: hidden; }
+.disp { font-family: var(--display); font-variation-settings: "wdth" 85; font-weight: 800; color: var(--pine); letter-spacing: -.025em; line-height: .95; }
+.on-dark .disp { color: var(--couch-roll); }
+.tape { position: absolute; display: block; border-radius: 6px; background-color: var(--tc, var(--tape-coral));
+  background-image: repeating-linear-gradient(45deg, rgba(255,255,255,.12) 0 3px, transparent 3px 9px); box-shadow: inset 0 1px 0 rgba(255,255,255,.25), 0 1px 2px rgba(15,59,53,.15); }
+.lead { font: 500 34px/1.4 var(--text); color: var(--ink); }
+.on-dark .lead { color: var(--muted-on-dark); }
+.lead b { font-weight: 700; color: var(--pine); }
+.on-dark .lead b { color: var(--couch-roll); }
+.addon { display: inline-flex; align-items: center; padding: 8px 18px; border-radius: 999px; background: var(--sun-soft); color: var(--pine); border: 2.5px solid rgba(15,59,53,.3);
+  font: 700 26px/1.2 var(--text); letter-spacing: .08em; text-transform: uppercase; }
+.logo { display: flex; align-items: center; gap: 16px; }
+.logo .word { font-family: var(--display); font-variation-settings: "wdth" 85; font-weight: 800; color: var(--pine); letter-spacing: -.02em; }
+.btn { display: inline-flex; align-items: center; gap: 14px; padding: 0 40px; height: 92px; border-radius: 18px; font: 700 40px/1 var(--text); }
+.btn-pine { background: var(--pine); color: var(--couch-roll); }
+.btn-light { background: var(--couch-roll); color: var(--pine); }
+svg.wl path { fill: none; stroke: var(--wl, var(--tape-coral)); stroke-width: 3.5; stroke-linecap: round; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="cap"></div>
+<script src="engine.js"></script>
+</body>
+</html>
