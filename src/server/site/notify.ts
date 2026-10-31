@@ -3,13 +3,20 @@
  * the owner's other apps use). Optional: without MAILERSEND_API_KEY (and MAILERSEND_FROM_EMAIL) nothing
  * is sent and the request is only stored – the platform admin sees it in the database.
  *
+ * ClinDesk's demo requests (source "clindesk") can go to their own recipient and through ClinDesk's own MailerSend
+ * account – see mailerSendSettingsFromEnv.
+ *
  * Internal email (to us, not to the clinic). Never contains patient information: the form asks for none.
  */
 import "server-only";
 import { EmailParams, MailerSend, Recipient, Sender } from "mailersend";
+import { BRANDS } from "@/lib/brand";
 import { COMPANY } from "@/lib/site";
 import { PRODUCT } from "@/modules/medreport/config.public";
+import { clinicMailAccount, EmailConfigError } from "@/server/email/providers";
+import { logAuthEvent } from "@/server/email/log";
 import type { NotificationPayload } from "./access-request";
+import type { AccessRequestSource } from "./demo-request";
 
 export function escapeHtml(value: string): string {
   return value
@@ -75,14 +82,43 @@ export interface MailerSendSettings {
   apiKey: string;
   fromEmail: string;
   to: string;
+  /** Sender name; default PRODUCT.name (ClinForms). "ClinDesk" when sent through ClinDesk's own account. */
+  fromName?: string;
 }
 
-/** MailerSend settings from the environment, or null when email is not configured. */
-export function mailerSendSettingsFromEnv(env: Readonly<Record<string, string | undefined>> = process.env): MailerSendSettings | null {
+type Env = Readonly<Record<string, string | undefined>>;
+
+/** Recipient of ClinDesk's demo-request notifications; unset = CLINFORMS_ACCESS_REQUEST_TO (as before). */
+export const CLINIC_ACCESS_REQUEST_TO_VAR = "CLINFORMS_ACCESS_REQUEST_TO_CLINIC";
+
+/**
+ * MailerSend settings from the environment for a request from `source`, or null when email is not configured.
+ *
+ *   clinforms (default) – unchanged: MAILERSEND_API_KEY + MAILERSEND_FROM_EMAIL as ClinForms, to
+ *                         CLINFORMS_ACCESS_REQUEST_TO (default COMPANY.contactEmail).
+ *   clindesk            – to CLINFORMS_ACCESS_REQUEST_TO_CLINIC (unset: as ClinForms). Sent through ClinDesk's own
+ *                         MailerSend account as "ClinDesk" when both MAILERSEND_API_KEY_CLINIC and
+ *                         MAILERSEND_FROM_EMAIL_CLINIC are set (clinicMailAccount); otherwise through ClinForms'
+ *                         account as before. A malformed clinic sender address falls back to ClinForms' account (one
+ *                         `email.not_configured` line; never a key or an address).
+ */
+export function mailerSendSettingsFromEnv(env: Env = process.env, source: AccessRequestSource = "clinforms"): MailerSendSettings | null {
+  const defaultTo = env.CLINFORMS_ACCESS_REQUEST_TO?.trim() || COMPANY.contactEmail;
   const apiKey = env.MAILERSEND_API_KEY?.trim();
   const fromEmail = env.MAILERSEND_FROM_EMAIL?.trim();
-  if (!apiKey || !fromEmail) return null;
-  return { apiKey, fromEmail, to: env.CLINFORMS_ACCESS_REQUEST_TO?.trim() || COMPANY.contactEmail };
+  const clinforms: MailerSendSettings | null = apiKey && fromEmail ? { apiKey, fromEmail, to: defaultTo } : null;
+  if (source !== "clindesk") return clinforms;
+
+  const to = env[CLINIC_ACCESS_REQUEST_TO_VAR]?.trim() || defaultTo;
+  let account: ReturnType<typeof clinicMailAccount> = null;
+  try {
+    account = clinicMailAccount(null, env);
+  } catch (err) {
+    if (!(err instanceof EmailConfigError)) throw err;
+    logAuthEvent("email.not_configured", { kind: "access_request_notification", using: "clinforms" });
+  }
+  if (account) return { apiKey: account.apiKey, fromEmail: account.sender.email, fromName: BRANDS.clinic.productName, to };
+  return clinforms && { ...clinforms, to };
 }
 
 /** Sends the access-request notification (throws on failure; the caller keeps the stored request). */
@@ -93,7 +129,7 @@ export async function sendAccessRequestNotification(
 ): Promise<void> {
   const email = accessRequestEmail(request);
   const params = new EmailParams()
-    .setFrom(new Sender(settings.fromEmail, PRODUCT.name))
+    .setFrom(new Sender(settings.fromEmail, settings.fromName ?? PRODUCT.name))
     .setTo([new Recipient(settings.to, `${request.product ?? PRODUCT.name} team`)])
     .setReplyTo(new Recipient(request.email, oneLine(request.contactName, 100)))
     .setSubject(email.subject)

@@ -196,6 +196,7 @@ npm run medreport:eslint-boundary          # regenerate .eslintrc.json (never ha
   Gateway Worker secret: `GATEWAY_SECRET` (= `CLINFORMS_D1_GATEWAY_SECRET`).
 - **Optional / later:** `MAILERSEND_API_KEY`, `MAILERSEND_FROM_EMAIL`, `CLINFORMS_EMAIL_REPLY_TO` (reply-to on every
   ClinForms email; production value `khuram@appstackx.co.uk`, set by Khuram), `CLINFORMS_ACCESS_REQUEST_TO`,
+  `CLINFORMS_ACCESS_REQUEST_TO_CLINIC` (ClinDesk demo-request recipient; production value `hello@clindesk.co.uk`),
   `NEXT_PUBLIC_POSTHOG_HOST` (default `/ingest`), `NEXT_PUBLIC_POSTHOG_DEBUG`, `APP_ORIGIN`, `DATABASE_URL`
   (+ `DATABASE_SSL`, `DATABASE_CA_CERT`, `DATABASE_POOL_MAX` – Supabase later), `CLINFORMS_SQLITE_PATH` (local),
   `CLINFORMS_TENANT_LIVE_CALLS_PER_MINUTE` / `_PER_DAY`, `MEDREPORT_MODEL`, `MEDREPORT_SOFFICE_PATH`, `TM3_SIM_BASE_URL`.
