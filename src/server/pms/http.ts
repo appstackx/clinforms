@@ -1,7 +1,10 @@
 /**
  * Route handlers of the clinic system (src/app/app/clinic/**\/route.ts), when a server action does not fit (file
  * downloads, polling the diary, JSON for client components). Same checks as the pages and actions
- * (./actor.ts) plus, for anything but GET/HEAD, a same-origin check (server actions get theirs from Next):
+ * (./actor.ts) plus, for anything but GET/HEAD, an origin check (server actions get theirs from Next): the Origin
+ * must be one of this app's own origins – the ones sign-in trusts (src/server/auth/config.ts allowedAppOrigins:
+ * BETTER_AUTH_URL + CLINFORMS_AUTH_ORIGINS, a preview's own hostnames), so the clinic brand's host (clindesk.co.uk)
+ * passes as well as clinforms.co.uk, and any other origin is refused:
  *
  *   export const GET = clinicRoute({ permission: "diary.view" }, async (req, actor, params) => Response.json(…));
  *
@@ -10,6 +13,7 @@
  */
 import "server-only";
 import type { PmsPermission } from "../../modules/pms/core/permissions";
+import { isAllowedAppOrigin } from "../auth/config";
 import { logAuthEvent } from "../email/log";
 import { RepoInputError } from "../repos/context";
 import { actorErrorMessage, actorErrorStatus, clinicActionActor, type ClinicActor } from "./actor";
@@ -18,14 +22,13 @@ function json(status: number, body: unknown): Response {
   return Response.json(body, { status, headers: { "cache-control": "no-store" } });
 }
 
-export function sameOrigin(req: Request): boolean {
-  const origin = req.headers.get("origin");
-  if (!origin) return false;
-  try {
-    return new URL(origin).origin === new URL(req.url).origin;
-  } catch {
-    return false;
-  }
+/**
+ * Whether a write comes from this app's own pages: its Origin is one of the configured app origins. Not compared
+ * with the request URL – `next start` builds that from its own localhost:<port>, so a page on the clinic brand's
+ * host (clinic.localhost locally) was refused there.
+ */
+export function sameOrigin(req: Request, env: Readonly<Record<string, string | undefined>> = process.env): boolean {
+  return isAllowedAppOrigin(req.headers.get("origin"), env);
 }
 
 export function clinicRoute<P = Record<string, string>>(

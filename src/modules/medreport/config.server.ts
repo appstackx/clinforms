@@ -357,8 +357,30 @@ export function appOrigin(req?: Request): string {
 }
 
 /**
+ * The other brand origins sign-in trusts (CLINFORMS_AUTH_ORIGINS, e.g. https://clindesk.co.uk – validated by the host's
+ * src/server/auth/config.ts, which refuses to start sign-in on a bad value; here only bare http(s) origins are
+ * taken). Ignored on a preview without BETTER_AUTH_URL, exactly as sign-in ignores it there.
+ */
+function brandAuthOrigins(): string[] {
+  if (env("VERCEL") && !env("BETTER_AUTH_URL")) return [];
+  const out: string[] = [];
+  for (const raw of (env("CLINFORMS_AUTH_ORIGINS") ?? "").split(",").map((v) => v.trim()).filter(Boolean)) {
+    try {
+      const url = new URL(raw);
+      if ((url.protocol !== "https:" && url.protocol !== "http:") || (url.pathname !== "/" && url.pathname !== "") || url.search || url.username) continue;
+      out.push(url.origin);
+    } catch {
+      // not an origin: skipped
+    }
+  }
+  return out;
+}
+
+/**
  * Origins a state-changing browser request may come from (CSRF check in api/http.ts bindHandler): the
- * request's own origin, APP_ORIGIN, BETTER_AUTH_URL, this Vercel deployment's hostnames and TM3_SIM_BASE_URL.
+ * request's own origin, APP_ORIGIN, BETTER_AUTH_URL, the other brand origins (CLINFORMS_AUTH_ORIGINS – the
+ * clinic brand's host, e.g. clindesk.co.uk, where the clinic system opens the Studio), this Vercel deployment's
+ * hostnames and TM3_SIM_BASE_URL.
  */
 export function allowedRequestOrigins(req: Request): string[] {
   const list: string[] = [];
@@ -368,6 +390,7 @@ export function allowedRequestOrigins(req: Request): string[] {
     const o = originOf(raw);
     if (o) list.push(o);
   }
+  list.push(...brandAuthOrigins());
   for (const h of vercelHosts()) list.push(`https://${h}`);
   return Array.from(new Set(list.map((o) => o.toLowerCase())));
 }

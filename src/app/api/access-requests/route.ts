@@ -29,7 +29,7 @@ function log(event: string, detail: Record<string, unknown> = {}): void {
 }
 
 export async function POST(req: Request): Promise<Response> {
-  if (!isSameOrigin(req.headers, req.url)) return json(403, { ok: false, error: "This form can only be sent from the ClinForms website." });
+  if (!isSameOrigin(req.headers)) return json(403, { ok: false, error: "This form can only be sent from the ClinForms website." });
   if (!(req.headers.get("content-type") ?? "").toLowerCase().startsWith("application/json")) {
     return json(415, { ok: false, error: "Send the form as JSON." });
   }
