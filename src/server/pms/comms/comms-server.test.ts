@@ -36,7 +36,7 @@ describe("providers: outbox by default, test on request, nothing live", () => {
   it("chooses by env and refuses anything else", () => {
     assert.deepEqual(Object.values(resolveCommsProviders({})).map((p) => p.mode), ["outbox", "outbox"]);
     assert.deepEqual(Object.values(resolveCommsProviders({ CLINIC_SMS_PROVIDER: "test", CLINIC_EMAIL_PROVIDER: "outbox" })).map((p) => p.mode), ["test", "outbox"]);
-    assert.throws(() => resolveCommsProviders({ CLINIC_SMS_PROVIDER: "gateway-x" }), /must be outbox or test/);
+    assert.throws(() => resolveCommsProviders({ CLINIC_SMS_PROVIDER: "gateway-x" }), /must be outbox, smsworks or test/);
     assert.throws(() => resolveCommsProviders({ CLINIC_EMAIL_PROVIDER: "test", VERCEL_ENV: "production" }), /refused on production/);
     assert.equal(resolveCommsProviders({ CLINIC_EMAIL_PROVIDER: "test", VERCEL_ENV: "production", CLINIC_ALLOW_TEST_PROVIDER: "1" }).email.mode, "test");
     assert.deepEqual(providerStatus({ CLINIC_SMS_PROVIDER: "nope" }), { sms: "misconfigured", email: "misconfigured" });

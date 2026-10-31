@@ -82,13 +82,13 @@ export function defineCreditsRepoSuite(label: string, factory: () => Promise<Cre
     });
 
     it("purchase: credited once per payment reference, with the pack's 20 % line; ledger = balance", async () => {
-      const r = await creditSmsPack(ctx, A, { kind: "purchase", pack: "sms_1000", amountPence: 5500, paymentRef: "pi_test_A1", eventRef: "cs_test_A1" }, SYSTEM);
+      const r = await creditSmsPack(ctx, A, { kind: "purchase", mode: "test", pack: "sms_1000", amountPence: 7500, paymentRef: "pi_test_A1", eventRef: "cs_test_A1" }, SYSTEM);
       assert.equal(r.ok, true);
       assert.equal(r.ok && r.balance, 1000);
-      const again = await creditSmsPack(ctx, A, { kind: "purchase", pack: "sms_1000", amountPence: 5500, paymentRef: "pi_test_A1" }, SYSTEM);
+      const again = await creditSmsPack(ctx, A, { kind: "purchase", mode: "test", pack: "sms_1000", amountPence: 7500, paymentRef: "pi_test_A1" }, SYSTEM);
       assert.deepEqual(again, { ok: false, reason: "duplicate" });
       // Five deliveries of another payment at once: exactly one credit.
-      const five = await Promise.all(Array.from({ length: 5 }, () => creditSmsPack(ctx, A, { kind: "auto_topup", pack: "sms_500", amountPence: 3000, paymentRef: "pi_test_A2" }, SYSTEM)));
+      const five = await Promise.all(Array.from({ length: 5 }, () => creditSmsPack(ctx, A, { kind: "auto_topup", mode: "test", pack: "sms_500", amountPence: 4000, paymentRef: "pi_test_A2" }, SYSTEM)));
       assert.equal(five.filter((x) => x.ok).length, 1, JSON.stringify(five));
       const acct = await getSmsCreditAccount(ctx, A);
       assert.equal(acct.balance, 1500);
@@ -107,7 +107,7 @@ export function defineCreditsRepoSuite(label: string, factory: () => Promise<Cre
     });
 
     it("the same payment can never be credited to another clinic", async () => {
-      const r = await creditSmsPack(ctx, B, { kind: "purchase", pack: "sms_500", amountPence: 3000, paymentRef: "pi_test_A1" }, SYSTEM);
+      const r = await creditSmsPack(ctx, B, { kind: "purchase", mode: "test", pack: "sms_500", amountPence: 4000, paymentRef: "pi_test_A1" }, SYSTEM);
       assert.equal(r.ok, false);
       assert.equal((await getSmsCreditAccount(ctx, B)).balance, 0);
     });
@@ -151,14 +151,14 @@ export function defineCreditsRepoSuite(label: string, factory: () => Promise<Cre
     });
 
     it("webhook events: an event's credit carries its id – applied once everywhere; a replay changes nothing", async () => {
-      const r = await creditSmsPack(ctx, A, { kind: "purchase", pack: "sms_500", amountPence: 3000, paymentRef: "pi_test_A3", eventRef: "evt_test_1" }, SYSTEM);
+      const r = await creditSmsPack(ctx, A, { kind: "purchase", mode: "test", pack: "sms_500", amountPence: 4000, paymentRef: "pi_test_A3", eventRef: "evt_test_1" }, SYSTEM);
       assert.equal(r.ok, true);
       assert.equal(await webhookEventApplied(ctx, A, "evt_test_1"), true);
       assert.equal(await webhookEventApplied(ctx, B, "evt_test_1"), false);
       // The same event again (even naming another payment): nothing credited.
-      const replay = await creditSmsPack(ctx, A, { kind: "purchase", pack: "sms_500", amountPence: 3000, paymentRef: "pi_test_A4", eventRef: "evt_test_1" }, SYSTEM);
+      const replay = await creditSmsPack(ctx, A, { kind: "purchase", mode: "test", pack: "sms_500", amountPence: 4000, paymentRef: "pi_test_A4", eventRef: "evt_test_1" }, SYSTEM);
       assert.deepEqual(replay, { ok: false, reason: "duplicate" });
-      const elsewhere = await creditSmsPack(ctx, B, { kind: "purchase", pack: "sms_500", amountPence: 3000, paymentRef: "pi_test_B9", eventRef: "evt_test_1" }, SYSTEM);
+      const elsewhere = await creditSmsPack(ctx, B, { kind: "purchase", mode: "test", pack: "sms_500", amountPence: 4000, paymentRef: "pi_test_B9", eventRef: "evt_test_1" }, SYSTEM);
       assert.deepEqual(elsewhere, { ok: false, reason: "duplicate" }, "an event id is unique everywhere");
       assert.equal((await getSmsCreditAccount(ctx, A)).balance, 2000);
       assert.equal((await getSmsCreditAccount(ctx, B)).balance, 0);
@@ -180,7 +180,7 @@ export function defineCreditsRepoSuite(label: string, factory: () => Promise<Cre
       await adjustSmsCredits(ctx, B, { credits: 50, reason: "Small refill" }, OWNER_B);
       acct = await getSmsCreditAccount(ctx, B);
       assert.deepEqual([acct.lowWarned, acct.zeroWarned], [true, false]);
-      await creditSmsPack(ctx, B, { kind: "purchase", pack: "sms_500", amountPence: 3000, paymentRef: "pi_test_B1" }, SYSTEM);
+      await creditSmsPack(ctx, B, { kind: "purchase", mode: "test", pack: "sms_500", amountPence: 4000, paymentRef: "pi_test_B1" }, SYSTEM);
       acct = await getSmsCreditAccount(ctx, B);
       assert.deepEqual([acct.balance, acct.lowWarned, acct.zeroWarned], [550, false, false]);
     });

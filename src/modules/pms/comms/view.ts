@@ -44,7 +44,7 @@ export interface MessagesHomeView {
   /** Replies waiting for someone (the tab's and the nav's number). */
   toAction: number;
   /** "outbox" = nothing leaves the system; "test" = a test service; "mailpit" = a local Mailpit inbox; "misconfigured". */
-  mode: { sms: "outbox" | "test" | "mailpit" | "misconfigured"; email: "outbox" | "test" | "mailpit" | "misconfigured" };
+  mode: { sms: "outbox" | "test" | "mailpit" | "live" | "misconfigured"; email: "outbox" | "test" | "mailpit" | "live" | "misconfigured" };
   /** messages.templates: may change templates and settings, and run the due messages now. */
   canManage: boolean;
   /** messages.letters: may open and write letters. */

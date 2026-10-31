@@ -100,7 +100,8 @@ async function notifySafely(ctx: DbContext, tenantId: string, notice: CreditNoti
   }
 }
 
-export type TopUpResult = "not_due" | "busy" | "topped_up" | "failed" | "unavailable";
+/** "pending": charged, but recording the credit failed – the webhook (required for top-up) credits it later. */
+export type TopUpResult = "not_due" | "busy" | "topped_up" | "pending" | "failed" | "unavailable";
 
 /**
  * The automatic top-up, when the clinic has it on, a saved card, a pack, no pause, and the balance would drop
@@ -114,7 +115,10 @@ export async function autoTopUpIfDue(ctx: DbContext, tenantId: string, needed: n
   if (!due) return "not_due";
   const payments = deps.payments ? deps.payments() : null;
   const pack = smsPack(acct.autoTopupPack);
-  if (!payments || !pack || !acct.card || !acct.customerRef) return "unavailable";
+  // Review fix 31/10/2026: no automatic top-up without the webhook (it credits a charge this request could not
+  // record), and never with a customer or card saved in the other mode (a test card once live payments are on).
+  if (!payments || !payments.webhookReady || !pack || !acct.card || !acct.customerRef) return "unavailable";
+  if ((acct.customerMode ?? "test") !== payments.mode) return "unavailable";
   const token = `topup_${randomBytes(12).toString("base64url")}`;
   if (!(await claimTopUp(ctx, tenantId, token, CREDITS_SYSTEM_ACTOR))) return "busy";
   let outcome: Awaited<ReturnType<CardPayments["chargeSavedCard"]>>;
@@ -127,7 +131,16 @@ export async function autoTopUpIfDue(ctx: DbContext, tenantId: string, needed: n
     const p = outcome.payment;
     const good = p.status === "succeeded" && p.currency === "gbp" && p.amount === pack.pricePence && (!p.customer || p.customer === acct.customerRef);
     if (good) {
-      await creditSmsPack(ctx, tenantId, { kind: "auto_topup", pack: pack.key, amountPence: p.amount, paymentRef: p.id }, CREDITS_SYSTEM_ACTOR);
+      try {
+        await creditSmsPack(ctx, tenantId, { kind: "auto_topup", pack: pack.key, amountPence: p.amount, paymentRef: p.id, mode: payments.mode }, CREDITS_SYSTEM_ACTOR);
+      } catch {
+        // Charged but not recorded (review fix 31/10/2026): never charge again for it – the claim's time blocks a
+        // new attempt for TOPUP_CLAIM_MINUTES, and the payment's own webhook event (payment_intent.succeeded,
+        // metadata kind sms_auto_topup) credits it once by its payment reference.
+        await finishTopUp(ctx, tenantId, token, { ok: true }, CREDITS_SYSTEM_ACTOR).catch(() => undefined);
+        console.warn(JSON.stringify({ event: "sms_credits.topup_credit_pending", tenantId, payment: p.id }));
+        return "pending";
+      }
       await finishTopUp(ctx, tenantId, token, { ok: true }, CREDITS_SYSTEM_ACTOR);
       return "topped_up";
     }
@@ -206,7 +219,7 @@ export async function fulfilCheckout(ctx: DbContext, payments: CardPayments, ses
   if (session.mode !== "payment") return { status: "refused", why: "wrong_mode" };
   if (session.paymentStatus !== "paid" || session.status !== "complete" || !session.paymentIntent) return { status: "not_paid" };
   if (session.currency !== "gbp" || session.amountTotal !== pack.pricePence) return { status: "refused", why: "amount_mismatch" };
-  const r = await creditSmsPack(ctx, tenantId, { kind: "purchase", pack: pack.key, amountPence: session.amountTotal, paymentRef: session.paymentIntent, eventRef: opts.eventId ?? null }, actor);
+  const r = await creditSmsPack(ctx, tenantId, { kind: "purchase", pack: pack.key, amountPence: session.amountTotal, paymentRef: session.paymentIntent, mode: payments.mode, eventRef: opts.eventId ?? null }, actor);
   if (session.metadata.save_card === "1" && session.paymentMethod) await saveCardIfOurs(ctx, payments, tenantId, acct.customerRef, session.paymentMethod, actor).catch(() => false);
   if (!r.ok) return { status: "already" };
   return { status: "credited", credits: pack.credits, balance: r.balance };
@@ -238,7 +251,7 @@ export async function fulfilPaymentIntent(ctx: DbContext, payments: CardPayments
   if (!pack) return { status: "refused", why: "unknown_pack" };
   if (pi.status !== "succeeded") return { status: "not_paid" };
   if (pi.currency !== "gbp" || pi.amount !== pack.pricePence) return { status: "refused", why: "amount_mismatch" };
-  const r = await creditSmsPack(ctx, tenantId, { kind: kind === "sms_auto_topup" ? "auto_topup" : "purchase", pack: pack.key, amountPence: pi.amount, paymentRef: pi.id, eventRef: opts.eventId ?? null }, actor);
+  const r = await creditSmsPack(ctx, tenantId, { kind: kind === "sms_auto_topup" ? "auto_topup" : "purchase", pack: pack.key, amountPence: pi.amount, paymentRef: pi.id, mode: payments.mode, eventRef: opts.eventId ?? null }, actor);
   if (!r.ok) return { status: "already" };
   return { status: "credited", credits: pack.credits, balance: r.balance };
 }

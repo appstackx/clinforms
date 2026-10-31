@@ -56,6 +56,8 @@ const FAKE_LIVE = ["sk", "live", "abcdefghijklmnop"].join("_");
 /** An in-memory stand-in for the card payment service (test mode). */
 class FakePayments implements CardPayments {
   readonly live = false;
+  readonly mode = "test" as const;
+  webhookReady = true;
   sessions = new Map<string, CheckoutSessionInfo>();
   intents = new Map<string, PaymentIntentInfo>();
   cards = new Map<string, { customer: string; last4: string }>();
@@ -110,7 +112,7 @@ function session(over: Partial<CheckoutSessionInfo> & { id: string }): CheckoutS
     livemode: false,
     clientReferenceId: A,
     customer: "cus_test_A",
-    amountTotal: 5500,
+    amountTotal: 7500,
     currency: "gbp",
     metadata: { tenant_id: A, kind: "sms_pack", pack: "sms_1000", save_card: "0" },
     paymentIntent: `pi_${over.id}`,
@@ -298,6 +300,7 @@ describe("text credits around sends and payments", () => {
 
   it("automatic top-up failure: nothing credited, top-up paused, the owner told, the text goes by email or not at all", async () => {
     notices.length = 0;
+    clock += 11 * 60_000; // at most one automatic top-up per 10 minutes (review fix 31/10/2026)
     await adjustSmsCredits(ctx, A, { credits: -598, reason: "Empty it (fictional)" }, OWNER);
     payments.decline = "card_declined";
     const charges = payments.charges.length;
@@ -342,7 +345,7 @@ describe("text credits around sends and payments", () => {
 
   it("webhook: a paid checkout credits its pack once – a replayed event and the payment's own event change nothing", async () => {
     payments.sessions.set("cs_test_1", session({ id: "cs_test_1" }));
-    payments.intents.set("pi_cs_test_1", { id: "pi_cs_test_1", status: "succeeded", amount: 5500, amountReceived: 5500, currency: "gbp", customer: "cus_test_A", paymentMethod: "pm_test_A", livemode: false, metadata: { tenant_id: A, kind: "sms_pack", pack: "sms_1000" } });
+    payments.intents.set("pi_cs_test_1", { id: "pi_cs_test_1", status: "succeeded", amount: 7500, amountReceived: 7500, currency: "gbp", customer: "cus_test_A", paymentMethod: "pm_test_A", livemode: false, metadata: { tenant_id: A, kind: "sms_pack", pack: "sms_1000" } });
     const first = await webhook(completed("cs_test_1", "evt_1"));
     assert.equal(first.status, 200);
     assert.equal(((await first.json()) as { result: string }).result, "credited");
@@ -353,7 +356,7 @@ describe("text credits around sends and payments", () => {
     }
     assert.equal(await balance(), 1000);
     const purchase = (await listSmsCreditEntries(ctx, A, { kind: "purchase" }))[0];
-    assert.deepEqual([purchase.credits, purchase.pack, purchase.amountPence, purchase.paymentRef], [1000, "sms_1000", 5500, "pi_cs_test_1"]);
+    assert.deepEqual([purchase.credits, purchase.pack, purchase.amountPence, purchase.paymentRef], [1000, "sms_1000", 7500, "pi_cs_test_1"]);
     assert.equal((await g.db.selectFrom("pms_sms_credit_entries").select("event_ref").where("tenant_id", "=", A).where("id", "=", purchase.id).executeTakeFirst())?.event_ref, "evt_1", "the event id is on the entry");
     const acct = await getSmsCreditAccount(ctx, A);
     assert.equal(acct.lowThreshold, 200, "20 % of the 1,000 pack");
@@ -422,8 +425,8 @@ describe("card payment client (no network)", () => {
   it("every request is pinned to the API version and refuses an answer in the wrong mode; prices must match the packs", async () => {
     const seen: { url: string; headers: Record<string, string> }[] = [];
     let prices: Record<string, unknown>[] = [
-      { id: "price_1", lookup_key: "sms_500", unit_amount: 3000, currency: "gbp", type: "one_time", active: true, metadata: { sms_credits: "500" }, livemode: false },
-      { id: "price_2", lookup_key: "sms_1000", unit_amount: 5500, currency: "gbp", type: "one_time", active: true, metadata: { sms_credits: "1000" }, livemode: false },
+      { id: "price_1", lookup_key: "sms_500", unit_amount: 4000, currency: "gbp", type: "one_time", active: true, metadata: { sms_credits: "500" }, livemode: false },
+      { id: "price_2", lookup_key: "sms_1000", unit_amount: 7500, currency: "gbp", type: "one_time", active: true, metadata: { sms_credits: "1000" }, livemode: false },
     ];
     const fetchImpl = async (url: string, init: RequestInit) => {
       seen.push({ url, headers: init.headers as Record<string, string> });

@@ -107,9 +107,9 @@ async function check(id, what, fn) {
 let stub = null;
 const stubState = { customers: 0, sessions: new Map(), intents: new Map() };
 const PRICES = [
-  { id: "price_stub_500", lookup_key: "sms_500", unit_amount: 3000, credits: "500" },
-  { id: "price_stub_1000", lookup_key: "sms_1000", unit_amount: 5500, credits: "1000" },
-  { id: "price_stub_5000", lookup_key: "sms_5000", unit_amount: 25000, credits: "5000" },
+  { id: "price_stub_500", lookup_key: "sms_500", unit_amount: 4000, credits: "500" },
+  { id: "price_stub_1000", lookup_key: "sms_1000", unit_amount: 7500, credits: "1000" },
+  { id: "price_stub_5000", lookup_key: "sms_5000", unit_amount: 32500, credits: "5000" },
 ];
 function startStub() {
   return new Promise((resolve) => {
@@ -398,7 +398,7 @@ const waitFor = async (fn, ms = 60000, what = "condition") => {
       await owner.locator("[data-testid=credit-balance]").waitFor();
       assert.equal((await owner.locator("[data-testid=credit-balance]").innerText()).trim(), "1,000");
       const packs = await owner.locator("[data-testid=credit-packs]").innerText();
-      for (const s of ["500 credits", "£30.00", "1,000 credits", "£55.00", "5,000 credits", "£250.00"]) assert(packs.includes(s), `packs: ${s}`);
+      for (const s of ["500 credits", "£40.00", "1,000 credits", "£75.00", "5,000 credits", "£325.00"]) assert(packs.includes(s), `packs: ${s}`);
       assert.match(await owner.locator("[data-testid=credits-non-refundable]").innerText(), /not refundable/);
       assert.match(await owner.locator("[data-testid=credit-history]").innerText(), /Adjustment by support[\s\S]*\+1,000/);
       const body = await owner.locator("main").innerText();
@@ -469,7 +469,7 @@ const waitFor = async (fn, ms = 60000, what = "condition") => {
       assert.equal(balance(), 1500);
       assert.equal(entries("purchase").length, 1);
       const p = entries("purchase")[0];
-      assert.deepEqual([Number(p.credits), p.pack, Number(p.amount_pence)], [500, "sms_500", 3000]);
+      assert.deepEqual([Number(p.credits), p.pack, Number(p.amount_pence)], [500, "sms_500", 4000]);
       return `session ${sessionId ? sessionId.slice(0, 12) : "?"}…`;
     });
 

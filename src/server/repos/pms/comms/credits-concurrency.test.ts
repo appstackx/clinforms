@@ -41,7 +41,7 @@ describe("text credits: hammer on real Postgres", { skip: realUrl ? false : "CLI
     );
     assert.equal(releases.filter((r) => r.ok).length, 100);
     // Ten deliveries of one payment at once: credited once.
-    const pays = await Promise.all(Array.from({ length: 10 }, () => creditSmsPack(ctx, T, { kind: "purchase", pack: "sms_500", amountPence: 3000, paymentRef: "pi_test_hammer" }, SYS)));
+    const pays = await Promise.all(Array.from({ length: 10 }, () => creditSmsPack(ctx, T, { kind: "purchase", mode: "test", pack: "sms_500", amountPence: 4000, paymentRef: "pi_test_hammer" }, SYS)));
     assert.equal(pays.filter((p) => p.ok).length, 1);
     const check = await ledgerCheck(ctx, T);
     assert.deepEqual([check.ok, check.balance], [true, 801], JSON.stringify(check));

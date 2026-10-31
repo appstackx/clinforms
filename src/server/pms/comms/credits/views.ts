@@ -9,10 +9,11 @@ import "server-only";
 import { CREDIT_ENTRY_LABELS, SMS_PACKS, creditsText, pencePerCredit, smsPack, type CreditEntryView, type SmsPackKey, type TextCreditsView } from "../../../../modules/pms/comms/credits";
 import { formatPence } from "../../../../modules/pms/core/text";
 import type { PmsActor } from "../../../../modules/pms/core/types";
-import { getSmsCreditAccount, listSmsCreditEntries, removeCreditCard, saveAutoTopup, setCreditCustomer, type SmsCreditEntry } from "../../../repos/pms/comms/credits";
+import { getSmsCreditAccount, listSmsCreditEntries, removeCreditCard, saveAutoTopup, type SmsCreditEntry } from "../../../repos/pms/comms/credits";
 import { RepoInputError, pmsAuditQuery, writeWithAudit, type RepoContext } from "../../../repos/pms/context";
 import { providerStatus } from "../providers";
 import { cardPaymentsConfig, createCardPayments, CardPaymentsError, type CardPayments } from "./card-payments";
+import { clinicCustomerRef } from "./customer";
 import { CREDITS_PAGE_PATH } from "./notify";
 import { fulfilCheckout, type FulfilResult } from "./service";
 
@@ -87,13 +88,7 @@ export async function creditBalanceFor(actor: Pick<CreditsActor, "tenantId" | "r
 }
 
 async function customerFor(actor: CreditsActor, payments: CardPayments): Promise<string> {
-  const ctx = actor.repo();
-  const acct = await getSmsCreditAccount(ctx, actor.tenantId);
-  if (acct.customerRef) return acct.customerRef;
-  const created = await payments.createCustomer({ tenantId: actor.tenantId, clinicName: actor.clinicName });
-  await setCreditCustomer(ctx, actor.tenantId, created, actor.actor);
-  // Two tabs at once: the first customer saved wins (set once), and both checkouts use it.
-  return (await getSmsCreditAccount(ctx, actor.tenantId)).customerRef ?? created;
+  return clinicCustomerRef(actor.repo(), { tenantId: actor.tenantId, clinicName: actor.clinicName }, payments, actor.actor);
 }
 
 const returnUrls = (origin: string) => ({
@@ -152,8 +147,21 @@ export async function completeCheckoutFor(actor: CreditsActor, sessionId: string
   }
 }
 
-export async function saveAutoTopupFor(actor: CreditsActor, input: { enabled: boolean; threshold: number; pack: string }): Promise<CreditsResult<{ message: string }>> {
+export const TOPUP_NEEDS_WEBHOOK = "Automatic top-up is not available yet: card payment confirmations are not set up on this system.";
+
+export async function saveAutoTopupFor(
+  actor: CreditsActor,
+  input: { enabled: boolean; threshold: number; pack: string },
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): Promise<CreditsResult<{ message: string }>> {
   if (!actor.can("messages.send") || !canManageCredits(actor)) return { ok: false, error: MANAGE_ONLY };
+  if (input.enabled) {
+    // Review fix 31/10/2026: automatic top-up only with the webhook's signing secret set (it credits a charge the
+    // sending request could not record) and only while card payments are on.
+    const c = cardPaymentsConfig(env);
+    if (!c.ok) return { ok: false, error: PAYMENTS_OFF };
+    if (!c.config.webhookSecret) return { ok: false, error: TOPUP_NEEDS_WEBHOOK };
+  }
   try {
     const a = await saveAutoTopup(actor.repo(), actor.tenantId, { enabled: input.enabled, threshold: input.threshold, pack: input.pack as SmsPackKey }, actor.actor);
     const pack = smsPack(a.autoTopupPack);

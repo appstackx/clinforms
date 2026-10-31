@@ -42,6 +42,7 @@ export const COMMS_AUDIT_LABELS: Readonly<Record<string, string>> = {
   "pms.sms_credit.topup_claim": "Automatic top-up started",
   "pms.sms_credit.topup_failed": "Automatic top-up failed (paused)",
   "pms.sms_credit.warning": "Low text credit warning sent",
+  "pms.sms_credit.test_customer_cleared": "Test card payment details removed (live payments switched on)",
 };
 
 /** Names of the record types its audit rows point at (target_type → label). */

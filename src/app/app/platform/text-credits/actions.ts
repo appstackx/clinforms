@@ -17,7 +17,7 @@ export async function adjustTextCreditsAction(_prev: AdjustCreditsResult | null,
   if (!admin) return { ok: false, error: ACCOUNT_ERRORS.forbidden };
   const tenantId = String(form.get("tenantId") ?? "").trim().slice(0, 64);
   try {
-    const r = await adjustTextCreditsAsPlatform(getDb(), admin, { tenantId, credits: String(form.get("credits") ?? "").trim(), reason: String(form.get("reason") ?? "") });
+    const r = await adjustTextCreditsAsPlatform(getDb(), admin, { tenantId, credits: String(form.get("credits") ?? "").trim(), reason: String(form.get("reason") ?? ""), requestId: String(form.get("requestId") ?? "").slice(0, 80) || null });
     revalidatePath("/app/platform/text-credits");
     return { ok: true, message: `Done. ${tenantId} now has ${r.balance.toLocaleString("en-GB")} text credits.` };
   } catch (err) {

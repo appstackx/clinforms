@@ -27,11 +27,15 @@ export interface SmsPack {
   pricePence: number;
 }
 
-/** The packs on sale. The payment provider's prices must match these (checked before every checkout). */
+/**
+ * The packs on sale (repriced by Khuram 31/10/2026: £40 / £75 / £325 – the payment account's prices were updated with
+ * the same lookup keys, the old ones archived). The payment provider's prices must match these (checked before every
+ * checkout).
+ */
 export const SMS_PACKS: readonly SmsPack[] = [
-  { key: "sms_500", credits: 500, pricePence: 3000 },
-  { key: "sms_1000", credits: 1000, pricePence: 5500 },
-  { key: "sms_5000", credits: 5000, pricePence: 25000 },
+  { key: "sms_500", credits: 500, pricePence: 4000 },
+  { key: "sms_1000", credits: 1000, pricePence: 7500 },
+  { key: "sms_5000", credits: 5000, pricePence: 32500 },
 ];
 
 export function isSmsPackKey(value: unknown): value is SmsPackKey {
@@ -42,7 +46,7 @@ export function smsPack(key: unknown): SmsPack | null {
   return isSmsPackKey(key) ? (SMS_PACKS.find((p) => p.key === key) ?? null) : null;
 }
 
-/** Pence per credit, rounded to a tenth of a penny ("6.0p a text"). */
+/** Pence per credit, rounded to a tenth of a penny ("8p a text", "7.5p a text"). */
 export function pencePerCredit(pack: SmsPack): number {
   return Math.round((pack.pricePence / pack.credits) * 10) / 10;
 }
@@ -81,10 +85,19 @@ export function warningDue(state: { balance: number; lowThreshold: number; lowWa
 export const AUTO_TOPUP_DEFAULT_THRESHOLD = 100;
 export const AUTO_TOPUP_MAX_THRESHOLD = 100_000;
 
+/**
+ * The level that triggers an automatic top-up, never above the pack's own credits (review fix 31/10/2026: with a
+ * level above the pack one top-up could never lift the balance over it, and every text would charge again).
+ */
+export function effectiveTopUpThreshold(threshold: number, pack: SmsPackKey | null): number {
+  const p = smsPack(pack);
+  return p ? Math.min(threshold, p.credits) : threshold;
+}
+
 /** Whether an automatic top-up is due before using `needed` credits. */
 export function topUpDue(state: { autoTopup: boolean; paused: boolean; hasCard: boolean; pack: SmsPackKey | null; balance: number; threshold: number }, needed: number): boolean {
   if (!state.autoTopup || state.paused || !state.hasCard || !state.pack) return false;
-  return state.balance - Math.max(0, needed) < state.threshold;
+  return state.balance - Math.max(0, needed) < effectiveTopUpThreshold(state.threshold, state.pack);
 }
 
 export const CREDIT_ENTRY_KINDS = ["purchase", "auto_topup", "debit", "adjustment", "reversal"] as const;
@@ -113,6 +126,9 @@ export const AutoTopupInputSchema = z.object({
     .min(1, "Enter at least 1 credit")
     .max(AUTO_TOPUP_MAX_THRESHOLD, `Enter at most ${AUTO_TOPUP_MAX_THRESHOLD.toLocaleString("en-GB")} credits`),
   pack: SmsPackKeySchema,
+}).superRefine((v, ctx) => {
+  const p = smsPack(v.pack);
+  if (p && v.threshold > p.credits) ctx.addIssue({ code: "custom", path: ["threshold"], message: `Choose a level of at most ${p.credits.toLocaleString("en-GB")} credits (the size of the pack)` });
 });
 export type AutoTopupInput = z.infer<typeof AutoTopupInputSchema>;
 
@@ -155,7 +171,7 @@ export function creditsText(n: number): string {
 export interface CreditPackView {
   key: SmsPackKey;
   credits: number;
-  /** "£30.00" */
+  /** "£40" */
   price: string;
   /** "6p a text" */
   perText: string;
@@ -183,7 +199,7 @@ export interface TextCreditsView {
   paymentsReady: boolean;
   paymentsUnavailable: string | null;
   /** The text service in use ("outbox": texts are kept, not sent – credits are only checked). */
-  smsMode: "outbox" | "test" | "mailpit" | "misconfigured";
+  smsMode: "outbox" | "test" | "mailpit" | "live" | "misconfigured";
   packs: CreditPackView[];
   autoTopup: { enabled: boolean; threshold: number; pack: SmsPackKey | null; paused: boolean; failure: string | null };
   card: { brand: string; last4: string; expires: string } | null;

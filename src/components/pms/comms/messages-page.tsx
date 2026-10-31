@@ -144,10 +144,17 @@ function ProviderNotice({ mode }: { mode: MessagesHomeView["mode"] }) {
     );
   }
   if (mode.sms === "mailpit" || mode.email === "mailpit") {
-    const where = (m: typeof mode.sms) => (m === "mailpit" ? "a local Mailpit inbox on this computer" : m === "test" ? "a test service" : "the outbox (not sent)");
+    const where = (m: typeof mode.sms) => (m === "mailpit" ? "a local Mailpit inbox on this computer" : m === "test" ? "a test service" : m === "live" ? "patients" : "the outbox (not sent)");
     return (
       <PmsNotice tone="info" title="Local test inbox (Mailpit)">
         Emails go to {where(mode.email)}; texts go to {where(mode.sms)}. Nothing reaches a patient.
+      </PmsNotice>
+    );
+  }
+  if (mode.sms === "live") {
+    return (
+      <PmsNotice tone="info" title="Texts are switched on">
+        Texts go to patients and use your text credits. {mode.email === "outbox" ? "Patient emails are kept in the outbox until email sending is switched on." : ""}
       </PmsNotice>
     );
   }

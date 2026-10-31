@@ -40,13 +40,14 @@ export async function clinicCreditHistory(db: Kysely<Database>, tenantId: string
 export async function adjustTextCreditsAsPlatform(
   db: Kysely<Database>,
   admin: PlatformAdmin,
-  input: { tenantId: string; credits: unknown; reason: unknown },
+  input: { tenantId: string; credits: unknown; reason: unknown; requestId?: string | null },
 ): Promise<{ balance: number }> {
   const d = parseInput(CreditAdjustmentSchema, { credits: input.credits, reason: input.reason }, "Adjustment");
   const org = await db.selectFrom("organization").select(["id", "metadata"]).where("slug", "=", input.tenantId).executeTakeFirst();
   if (!org) throw new RepoInputError(`No clinic with the id "${input.tenantId}".`);
   if (org.metadata && /"offboardedAt"/.test(org.metadata)) throw new RepoInputError("That clinic account is closed.");
-  const r = await adjustSmsCredits({ db }, input.tenantId, d, { userId: PLATFORM_USER_ID, sessionId: null }, { by: "platform" });
+  // Review fix 31/10/2026: the form's one-time id makes a double submit one adjustment ("already recorded").
+  const r = await adjustSmsCredits({ db }, input.tenantId, d, { userId: PLATFORM_USER_ID, sessionId: null }, { by: "platform" }, { requestId: input.requestId ?? null });
   if (!r.ok) throw new RepoInputError(r.reason === "insufficient" ? "The clinic does not have that many credits – an adjustment never takes the balance below 0." : "That adjustment was already recorded.");
   await appendPlatformAudit({ db }, admin, {
     action: "platform.sms_credit_adjust",

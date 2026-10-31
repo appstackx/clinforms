@@ -4,11 +4,13 @@ import { useFormState } from "react-dom";
 import { SubmitButton } from "@/components/account/form-controls";
 import { adjustTextCreditsAction, type AdjustCreditsResult } from "./actions";
 
-export function AdjustCreditsForm({ tenantId, clinicName }: { tenantId: string; clinicName: string }) {
+/** `requestId`: a one-time id made by the page – a second submit of the same form adjusts nothing (review fix 31/10/2026). */
+export function AdjustCreditsForm({ tenantId, clinicName, requestId }: { tenantId: string; clinicName: string; requestId: string }) {
   const [state, action] = useFormState<AdjustCreditsResult | null, FormData>(adjustTextCreditsAction, null);
   return (
     <form action={action} className="flex flex-col gap-3" aria-label={`Adjust text credits for ${clinicName}`}>
       <input type="hidden" name="tenantId" value={tenantId} />
+      <input type="hidden" name="requestId" value={requestId} />
       <div className="flex flex-wrap items-end gap-3">
         <div>
           <label htmlFor="adjust-credits" className="mb-1 block text-sm font-medium text-slate-800">

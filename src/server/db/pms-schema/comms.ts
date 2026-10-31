@@ -229,6 +229,8 @@ export interface PmsSmsCreditAccountsTable {
   topup_claim: string | null;
   topup_claimed_at: IsoTimestamp | null;
   customer_ref: string | null;
+  /** 'test' | 'live' (migration 0144): the mode the customer was made in; NULL = before 0144 (test). */
+  customer_mode: string | null;
   card_method_ref: string | null;
   card_brand: string | null;
   card_last4: string | null;
@@ -257,6 +259,8 @@ export interface PmsSmsCreditEntriesTable {
   payment_ref: string | null;
   /** The payment provider's webhook event that made this entry (applied once). */
   event_ref: string | null;
+  /** 'test' | 'live' (migration 0145) on purchase / auto_topup entries; NULL otherwise and before 0145 (test). */
+  mode: string | null;
   reason: string | null;
   created_by: string | null;
   created_at: IsoTimestamp;

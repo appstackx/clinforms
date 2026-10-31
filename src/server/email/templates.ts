@@ -217,3 +217,73 @@ export function textCreditNoticeEmail(input: TextCreditNoticeEmailInput): EmailM
   const html = layout(name, subject, [escapeHtml(greeting(input.to)), escapeHtml(first), escapeHtml(second)], { label: "Open text credits", href: input.creditsUrl });
   return { kind: "text_credit_notice", to: input.to, subject, text, html, ...brandField(input.brand) };
 }
+
+/* ------------------------------------------------------------------------------------------------
+ * Payments and subscriptions (31/10/2026)
+ * ----------------------------------------------------------------------------------------------*/
+
+export interface PaymentAlertEmailInput {
+  to: EmailRecipient;
+  /** What happened, in a few plain words ("A paid checkout was refused"). */
+  what: string;
+  /** Ids and reason codes only (event, object, clinic id, why) – never card or patient details. */
+  facts: Record<string, string | null>;
+  platformUrl: string;
+}
+
+/** To ClinForms platform staff: a payment the system received but did not apply (to be checked by hand). */
+export function paymentAlertEmail(input: PaymentAlertEmailInput): EmailMessage {
+  const subject = `Payment needs checking – ${input.what}`;
+  const lines = Object.entries(input.facts).map(([k, v]) => `${k}: ${v ?? "–"}`);
+  const first = "A payment was received but not applied, because it did not match what the system expected. Nothing was credited or switched on.";
+  const text = [greeting(input.to), "", first, "", ...lines, "", "Check it in the payment account and on the platform page:", input.platformUrl, "", `${PRODUCT_TEAM} · ${COMPANY_NAME}`].join("\n");
+  const html = layout(PRODUCT_TEAM, subject, [escapeHtml(greeting(input.to)), escapeHtml(first), lines.map(escapeHtml).join("<br>")], { label: "Open the platform page", href: input.platformUrl });
+  return { kind: "payment_alert", to: input.to, subject, text, html };
+}
+
+const PRODUCT_TEAM = "ClinForms platform";
+
+export type BillingNotice =
+  | { kind: "payment_failed"; graceUntil: string }
+  | { kind: "read_only" }
+  | { kind: "payment_received" }
+  | { kind: "cancelled"; endsOn: string };
+
+export interface BillingNoticeEmailInput {
+  to: EmailRecipient;
+  brand?: BrandId;
+  clinicName: string;
+  notice: BillingNotice;
+  billingUrl: string;
+}
+
+/** To a clinic's owner and admins: the subscription's payment failed, the account is read-only, or it ends. */
+export function billingNoticeEmail(input: BillingNoticeEmailInput): EmailMessage {
+  const name = productNameOf(input.brand);
+  const n = input.notice;
+  const subject =
+    n.kind === "payment_failed"
+      ? `Payment for your plan did not go through – ${input.clinicName}`
+      : n.kind === "read_only"
+        ? `Your account is now read-only – ${input.clinicName}`
+        : n.kind === "payment_received"
+          ? `Payment received – ${input.clinicName}`
+          : `Your plan has been cancelled – ${input.clinicName}`;
+  const paragraphs =
+    n.kind === "payment_failed"
+      ? [
+          `The latest payment for ${input.clinicName}'s ${name} plan did not go through.`,
+          `Everything keeps working until ${n.graceUntil}. Please update the payment details before then, or the account becomes read-only: your records stay safe and can still be opened, but nothing new can be added until the payment is made.`,
+        ]
+      : n.kind === "read_only"
+        ? [
+            `The payment for ${input.clinicName}'s ${name} plan is still outstanding, so the account is now read-only.`,
+            "Your records are safe and can still be opened and downloaded. Update the payment details to carry on as normal.",
+          ]
+        : n.kind === "payment_received"
+          ? [`Thank you – the payment for ${input.clinicName}'s ${name} plan has been received and everything is working as normal.`]
+          : [`${input.clinicName}'s ${name} plan has been cancelled. It stays fully available until ${n.endsOn}. Your records are kept – you can choose a plan again at any time.`];
+  const text = [greeting(input.to), "", ...paragraphs.flatMap((p) => [p, ""]), "Plan and billing:", input.billingUrl, "", `${name} · ${COMPANY_NAME}`].join("\n");
+  const html = layout(name, subject, [escapeHtml(greeting(input.to)), ...paragraphs.map(escapeHtml)], { label: "Open plan and billing", href: input.billingUrl });
+  return { kind: "billing_notice", to: input.to, subject, text, html, ...brandField(input.brand) };
+}

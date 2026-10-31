@@ -167,6 +167,9 @@ export const ACTIVITY_LABELS: Readonly<Record<string, string>> = {
   "platform.demo_on": "Demo clinic switched on",
   "platform.demo_off": "Demo clinic switched off",
   "platform.sms_credit_adjust": "Text credits adjusted for a clinic",
+  "platform.payment_alert": "Payment received but not applied (to check)",
+  "platform.billing_go_live": "Live payments switched on: test payments cleared",
+  "clinic.billing_go_live": "Live payments switched on: test payments cleared",
   ...RELEASE_REPORT_AUDIT_LABELS,
 };
 

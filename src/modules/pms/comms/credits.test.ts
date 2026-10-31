@@ -57,15 +57,15 @@ describe("text credits: packs", () => {
     assert.deepEqual(
       SMS_PACKS.map((p) => [p.key, p.credits, p.pricePence]),
       [
-        ["sms_500", 500, 3000],
-        ["sms_1000", 1000, 5500],
-        ["sms_5000", 5000, 25000],
+        ["sms_500", 500, 4000],
+        ["sms_1000", 1000, 7500],
+        ["sms_5000", 5000, 32500],
       ],
     );
     assert.equal(smsPack("sms_1000")?.credits, 1000);
     assert.equal(smsPack("sms_2"), null);
     assert.equal(smsPack(undefined), null);
-    assert.deepEqual(SMS_PACKS.map(pencePerCredit), [6, 5.5, 5]);
+    assert.deepEqual(SMS_PACKS.map(pencePerCredit), [8, 7.5, 6.5]);
     assert.equal(creditsText(1), "1 credit");
     assert.equal(creditsText(1500), "1,500 credits");
   });

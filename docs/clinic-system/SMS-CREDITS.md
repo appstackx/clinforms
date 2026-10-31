@@ -11,7 +11,7 @@ Code map at the end. Comms background: [`comms.md`](comms.md).
   character outside GSM-7 (emoji, some accents, curly quotes the normaliser did not replace) is unicode: 70, then 67
   per segment (`creditsForSms` → `smsInfo`, `src/modules/pms/comms/sms.ts`). Counted on what is actually sent.
 - **Packs** (ClinDesk's own payment account, TEST mode, one-time prices with lookup keys, product `sms_credits`,
-  metadata `sms_credits=N` on each price): `sms_500` £30, `sms_1000` £55, `sms_5000` £250. The code holds the same
+  metadata `sms_credits=N` on each price): `sms_500` £40, `sms_1000` £75, `sms_5000` £325 (repriced 31/10/2026; old prices archived). The code holds the same
   table (`SMS_PACKS`) and refuses a checkout if the account's price differs in amount, currency, type or credits.
 - **Not enough credit** for an automatic text (confirmation, reminder, notice, waiting-list offer): it goes **by email
   instead** when the patient has an email address and allows email for that kind of message (PECR, per kind), unless
@@ -69,6 +69,7 @@ Every change is audited (`pms.sms_credit.*`, ids and counts only – no message 
 | `STRIPE_CLINDESK_WEBHOOK_SECRET` | Vercel Production (Sensitive) | the webhook endpoint's signing secret (`whsec_…`). Without it the webhook answers 503 (the success page still credits) |
 | `STRIPE_CLINDESK_PUBLISHABLE_KEY` | optional | not used by the hosted card payment page (kept for later) |
 | `STRIPE_CLINDESK_ALLOW_LIVE` | Vercel Production, at go-live only | `1` lets a live key work |
+| `CLINDESK_BILLING_LIVE` | Vercel Production, at go-live only (after the clean-up, §8) | `1` = live payments only: a test key is refused |
 | `STRIPE_CLINDESK_API_BASE` | **local e2e only** | a stand-in for the provider's API on this machine; anything but `api.stripe.com` or loopback is refused, and never with a live key |
 
 Without `STRIPE_CLINDESK_SECRET_KEY` the page shows "Card payments for text credits are not set up yet." and nothing
@@ -80,7 +81,8 @@ code: `2026-10-28.endive` (`CARD_API_VERSION`, `src/server/pms/comms/credits/car
 
 1. **Test first**: Dashboard (ClinDesk account, **Test mode/Sandbox**) → Developers → Webhooks → Add endpoint:
    - URL `https://clindesk.co.uk/api/clinic-messages/credit-payments` (same deployment serves clinforms.co.uk – either host works);
-   - events: `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `payment_intent.succeeded`;
+   - events: `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `payment_intent.succeeded`
+     (the subscription events too – one endpoint for everything, BILLING.md);
    - API version: `2026-10-28.endive` (the code re-reads every object with its own pinned version, so this only affects the event body).
    - Copy the signing secret → Vercel **Production** `STRIPE_CLINDESK_WEBHOOK_SECRET` (Sensitive); test secret key →
      `STRIPE_CLINDESK_SECRET_KEY`. Redeploy.
@@ -107,19 +109,80 @@ code: `2026-10-28.endive` (`CARD_API_VERSION`, `src/server/pms/comms/credits/car
 5. Smoke: buy the smallest pack on the internal test clinic with a real card, check the ledger on the platform page
    ("consistent"), refund it in the Dashboard and take the credits off with a **support adjustment** (refunds are
    not automatic – credits are non-refundable for clinics; a refund you choose to make is mirrored by hand).
-6. **A live SMS provider is still needed** before any text reaches a patient (§6) – until then everything stays in
-   the outbox and no credits are used.
+6. **Before** live billing: run the go-live clean-up (§8) – `npm run admin:billing-go-live -- --env production`
+   (preview), then `--confirm --yes` – and only then set `CLINDESK_BILLING_LIVE=1` on Vercel Production and redeploy.
+7. The text provider (The SMS Works) is set up separately (§7); until its key is set everything stays in the outbox
+   and no credits are used.
 
 ## 6. Still open
 
-- **SMS provider** (K2-COMMS-005/006): not chosen. It plugs in behind `SmsProvider` (`src/server/pms/comms/providers`),
-  a live key is refused until the provider exists; credits already wrap every provider call. Choose on UK
-  deliverability, alphanumeric sender, delivery receipts and price per segment (the margin: £30 / 500 = 6p per credit).
+- **SMS provider**: **The SMS Works** chosen (Khuram, 31/10/2026 – UK, charges only for delivered texts); adapter
+  built and tested with mocked HTTP (§7). No account yet – Khuram signs up when the first real clinic onboards.
+  Our price: £40 / 500 = 8p per credit.
 - Cron for the message run (comms.md – Vercel Pro or a Cloudflare cron): automatic top-up and warnings happen inside the run.
 - A refund or chargeback in the Dashboard does not change credits (support adjustment by hand).
 - Offboarding exports and deletes the clinic's credit rows with everything else (unused credits end with the account).
 
-## 7. Code map and tests
+## 7. Text provider – The SMS Works (built 31/10/2026, not switched on)
+
+**How it works.** `CLINIC_SMS_PROVIDER=smsworks` **and** `SMSWORKS_API_KEY` set → texts go out through
+`src/server/pms/comms/providers/smsworks.ts` (mode `live`); without the key texts stay in the outbox (nothing sent,
+nothing charged). A live text provider also means **live billing is required**: a test payment key is refused
+(`billingLiveRequired`, §8). Each text: `POST https://api.thesmsworks.co.uk/v1/message/send` with
+`Authorization: <JWT>`, sender (the clinic's own sender name from Messages → Settings when it is 4–11 letters/digits
+– spaces dropped – else `SMSWORKS_SENDER`, else `ClinDesk`), destination `447…`, the text, our clinic and message ids
+as metadata and, when `SMSWORKS_RECEIPT_SECRET` and the app origin are set, the receipt URL. Credits: reserved before
+the call; a 4xx refusal returns them; a 5xx / timeout / dropped connection is recorded as failed with
+`provider_unknown` and **keeps** them until the receipt (review fix 6).
+
+**Receipts** (`POST /api/clinic-messages/sms-receipts?token=<SMSWORKS_RECEIPT_SECRET>`,
+`src/server/pms/comms/sms-receipts.ts`): the provider does not sign receipts, so the token authenticates the URL and
+the report is **re-read** from the API (`GET /v1/message/{id}`) before anything changes. DELIVERED → the debit stands;
+UNDELIVERABLE / EXPIRED / REJECTED → the credits come back once (reversal) and the message is marked failed with the
+reason code; SCHEDULED / SENT → nothing yet. A timed-out send is found by its metadata and settled the same way.
+
+| Variable | Where | Meaning |
+|---|---|---|
+| `CLINIC_SMS_PROVIDER` | Vercel Production | `smsworks` (default `outbox`) |
+| `SMSWORKS_API_KEY` | Vercel Production (Sensitive) | the account's JSON Web Token |
+| `SMSWORKS_SENDER` | Vercel Production | default sender ID, e.g. `ClinDesk` (4–11 letters/digits, no spaces) |
+| `SMSWORKS_RECEIPT_SECRET` | Vercel Production (Sensitive) | 32+ random characters (`openssl rand -hex 24`) – the receipt URL's token |
+| `SMSWORKS_API_BASE` | local tests only | a loopback stand-in; anything else refused |
+
+**Khuram's set-up steps (when the first real clinic onboards):**
+1. Sign up at thesmsworks.co.uk as AppstackX Ltd (business email `khuram@appstackx.co.uk`); buy a small credit
+   top-up (they charge only for delivered texts).
+2. Sender ID: alphanumeric senders need no UK registration, but generic words are blocked (their error 4012) – use
+   `ClinDesk` and each clinic's own short name (Messages → Settings → sender name; 4–11 letters/digits). Send one test
+   text from their dashboard to your own phone with sender `ClinDesk` to confirm it is accepted.
+3. Dashboard → API Key → generate the key and secret → copy the **JSON Web Token** → Vercel Production
+   `SMSWORKS_API_KEY` (Sensitive). Generating a new key later invalidates the old token (update Vercel then).
+4. `SMSWORKS_RECEIPT_SECRET` = `openssl rand -hex 24` → Vercel Production (Sensitive). Optional belt-and-braces:
+   Dashboard → Delivery Reports → Webhook Configuration → `https://clindesk.co.uk/api/clinic-messages/sms-receipts?token=<the secret>`
+   (each text also carries this URL itself).
+5. Run the go-live clean-up and set `CLINDESK_BILLING_LIVE=1` (§8) – real texts must never be paid for with
+   test-mode credits. Then `CLINIC_SMS_PROVIDER=smsworks`, redeploy.
+6. Smoke on the internal test clinic (fictional patient, your own mobile): buy 500 credits with a real card, send one
+   text → Messages shows "Sent" then "Delivered", the credits show −1; a text to an invalid number comes back failed
+   and its credit returns.
+
+## 8. Review fixes (31/10/2026) and the go-live clean-up
+
+| # | Finding | Fix |
+|---|---|---|
+| 1 | Test-mode credits could leak into live (a test key on Production buys credits with card 4242) | `CLINDESK_BILLING_LIVE=1` (or a live text provider) refuses a test key outright (`billingLiveRequired`, `card-payments.ts`); customers carry their mode (`customer_mode`, migration 0144) and a test customer/card is never reused in live (replaced, card cleared – `credits/customer.ts`); paid entries carry their mode (`mode`, 0145); **`npm run admin:billing-go-live`** forgets test customers/cards and reverses test-mode packs once (support adjustment naming the purchase, reason "Test-mode payment reversed at go-live"); test-mode subscriptions likewise (BILLING.md) |
+| 2 | Automatic top-up could charge repeatedly (trigger level above the pack) | trigger level ≤ the pack's credits (schema + `effectiveTopUpThreshold` for stored values); at most one attempt per 10 minutes per clinic (`topup_claimed_at` kept as the last attempt; reset only when the owner switches top-up on again) |
+| 3 | "Paid but refused" answered 200 silently; top-up without webhook; a charge whose credit failed | refused paid payments raise a payment alert (platform audit `platform.payment_alert` + email to the platform admins, `src/server/billing/payment-alerts.ts`); automatic top-up needs the webhook signing secret; a charge whose credit could not be recorded is not retried (claim time) and is credited by its `payment_intent.succeeded` event |
+| 4 | The message run could strand debits after a crash | try/finally settles every planned debit (not reached the provider → returned; answered → by the answer; started but unanswered → kept) |
+| 5 | Settling skipped if recording the outcome failed | settled in `finally` (single send, Retry, the run, held texts) |
+| 6 | A timeout refunded a text that may have gone | provider errors without an answer → `provider_unknown`, credits kept until the receipt (§7) |
+| + | A double-submitted platform adjustment applied twice | one-time form id → `event_ref` `adj_<id>` (unique): the second submit is "already recorded" |
+
+**Go-live order (payments):** live prices and webhook as §5 → migrations 0144/0145 (+ BILLING.md's) on Supabase →
+deploy → `npm run admin:billing-go-live -- --env production` (preview, read it) → `… --confirm --yes` → Vercel
+`CLINDESK_BILLING_LIVE=1` + live key + `STRIPE_CLINDESK_ALLOW_LIVE=1` → redeploy → smoke (§5.5).
+
+## 9. Code map and tests
 
 | What | Where |
 |---|---|
@@ -130,4 +193,6 @@ code: `2026-10-28.endive` (`CARD_API_VERSION`, `src/server/pms/comms/credits/car
 | Warning emails | `credits/notify.ts`, `src/server/email/templates.ts` `textCreditNoticeEmail` |
 | Screens | `src/app/app/clinic/messages/credits/{page,done/page,cancelled/page,actions}.tsx`, `src/components/pms/comms/text-credits.tsx`; Messages header link; Set-up → Text credits |
 | Platform | `src/app/app/platform/text-credits/*`, `src/server/admin/text-credits.ts` |
+| Review fixes | `credits/credits-review-fixes.test.ts` (one test per finding), `src/server/admin/billing-go-live.ts` + `scripts/admin/billing-go-live.ts` |
+| Text provider | `providers/smsworks.ts`, receipts `sms-receipts.ts` + route `src/app/api/clinic-messages/sms-receipts/route.ts`; tests `providers/smsworks.test.ts` (HTTP mocked) |
 | Browser | `scripts/e2e/pms-sms-credits.cjs` (real TEST checkout + `stripe listen` forwarding when the key and CLI are there; else a local stand-in + signed webhooks) |

@@ -8,12 +8,15 @@
  *            addresses starting "bounce@" (so failures can be shown), and never contacts anyone.
  *   mailpit – LOCAL TESTING ONLY: the real message goes to a local Mailpit inbox (./mailpit.ts); never on Vercel.
  *
- * A real provider (a UK SMS gateway, a transactional email service) is added later as another implementation,
- * with the clinic's DPA in place and a key that is NOT kept in git.
+ *   smsworks – LIVE texts through The SMS Works (./smsworks.ts, 31/10/2026): only with SMSWORKS_API_KEY set and
+ *            CLINIC_SMS_PROVIDER=smsworks; mode "live".
+ *
+ * A transactional email service for patient emails is added later the same way, with a key that is NOT kept in git.
  */
 import type { SendOutcome } from "../../../repos/pms/comms/messages";
 
-export type ProviderMode = "outbox" | "test" | "mailpit";
+/** "live": a provider that really sends (The SMS Works – ./smsworks.ts, only with its key set). */
+export type ProviderMode = "outbox" | "test" | "mailpit" | "live";
 
 export interface OutboundSms {
   messageId: string;
@@ -22,6 +25,8 @@ export interface OutboundSms {
   /** Alphanumeric sender name, or null for the provider's number. */
   from: string | null;
   body: string;
+  /** The clinic (sent as metadata so a delivery receipt finds the text even if the send never answered). */
+  tenantId?: string;
 }
 
 export interface OutboundEmail {

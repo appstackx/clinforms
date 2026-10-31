@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { BrandMark, Notice, PageHeader, Panel } from "@/components/account/shell";
@@ -126,7 +127,7 @@ export default async function PlatformTextCreditsPage({ searchParams }: { search
               {history.check.ledgerSum.toLocaleString("en-GB")}).
             </p>
             <div className="mb-6">
-              <AdjustCreditsForm tenantId={chosen.tenantId} clinicName={chosen.name} />
+              <AdjustCreditsForm tenantId={chosen.tenantId} clinicName={chosen.name} requestId={randomBytes(16).toString("base64url")} />
             </div>
             <div className="-mx-3 overflow-x-auto">
               <table className="w-full min-w-[720px]" data-testid="platform-credit-history">

@@ -50,8 +50,16 @@ const A = "pms_sms_credit_accounts";
 const E = "pms_sms_credit_entries";
 /** Id prefix of ledger entries (comms: msg mtpl rrule msch cev ltr ltpl smsc). */
 export const CREDIT_ENTRY_PREFIX = "smsc";
-/** A top-up claim older than this is free again (a crashed request never blocks top-ups for long). */
+/**
+ * A top-up claim older than this is free again (a crashed request never blocks top-ups for long) – and, review fix
+ * 31/10/2026, at most ONE automatic top-up is attempted per clinic in this many minutes (the claim's time stays as
+ * "the last attempt" after a top-up ends), so a misconfiguration can never charge the card again and again.
+ */
 export const TOPUP_CLAIM_MINUTES = 10;
+
+/** The payment mode of a customer or a paid entry (migrations 0144 / 0145). */
+export type PaymentMode = "test" | "live";
+const modeOf = (v: string | null | undefined): PaymentMode | null => (v === "test" || v === "live" ? v : null);
 
 export interface SmsCreditAccount {
   tenantId: string;
@@ -67,6 +75,8 @@ export interface SmsCreditAccount {
   autoTopupPausedAt: string | null;
   autoTopupFailure: string | null;
   customerRef: string | null;
+  /** The mode the customer was made in (null = before migration 0144, i.e. test mode). */
+  customerMode: PaymentMode | null;
   card: { methodRef: string; brand: string; last4: string; expMonth: number; expYear: number } | null;
   rev: number;
   updatedAt: string | null;
@@ -83,6 +93,8 @@ export interface SmsCreditEntry {
   messageId: string | null;
   reversesId: string | null;
   paymentRef: string | null;
+  /** purchase / auto_topup: the payment's mode (null = before migration 0145, i.e. test mode). */
+  mode: PaymentMode | null;
   reason: string | null;
   createdBy: string | null;
   createdAt: string;
@@ -101,6 +113,7 @@ const EMPTY = (tenantId: string): SmsCreditAccount => ({
   autoTopupPausedAt: null,
   autoTopupFailure: null,
   customerRef: null,
+  customerMode: null,
   card: null,
   rev: 0,
   updatedAt: null,
@@ -124,6 +137,7 @@ function toAccount(r: Selectable<PmsSmsCreditAccountsTable>): SmsCreditAccount {
     autoTopupPausedAt: r.auto_topup_paused_at,
     autoTopupFailure: r.auto_topup_failure,
     customerRef: r.customer_ref,
+    customerMode: modeOf(r.customer_mode),
     card,
     rev: num(r.rev),
     updatedAt: r.updated_at,
@@ -142,6 +156,7 @@ function toEntry(r: Selectable<PmsSmsCreditEntriesTable>): SmsCreditEntry {
     messageId: r.message_id,
     reversesId: r.reverses_id,
     paymentRef: r.payment_ref,
+    mode: modeOf(r.mode),
     reason: r.reason,
     createdBy: r.created_by,
     createdAt: r.created_at,
@@ -223,8 +238,10 @@ export interface CreditChange {
   reversesId?: string | null;
   /** purchase / auto_topup: the payment provider's payment reference (credited once). */
   paymentRef?: string | null;
-  /** The webhook event that made it (applied once). */
+  /** The webhook event that made it (applied once) – or a platform adjustment's request id (submitted once). */
   eventRef?: string | null;
+  /** purchase / auto_topup: the payment's mode (test / live). */
+  mode?: PaymentMode | null;
   reason?: string | null;
   /** Audit detail besides the entry's own (ids and counts only). */
   detail?: Record<string, unknown>;
@@ -252,6 +269,7 @@ export async function changeSmsCredits(ctx: DbContext, tenantId: string, change:
   if (!Number.isInteger(delta) || delta === 0 || Math.abs(delta) > 1_000_000) throw new RepoInputError("A credit change must be a whole number of credits other than 0.");
   if ((change.kind === "debit") !== delta < 0 && change.kind !== "adjustment") throw new RepoInputError("A debit takes credits and every other change adds them.");
   if ((change.kind === "purchase" || change.kind === "auto_topup") && !change.paymentRef) throw new RepoInputError("A purchase needs its payment reference.");
+  if ((change.kind === "purchase" || change.kind === "auto_topup") && !modeOf(change.mode)) throw new RepoInputError("A purchase needs its payment mode (test or live).");
   if (change.kind === "reversal" && !change.reversesId) throw new RepoInputError("A reversal needs the debit it returns.");
   if (change.paymentRef) assertId(change.paymentRef, "payment reference");
   if (change.eventRef) assertId(change.eventRef, "event reference");
@@ -286,7 +304,7 @@ export async function changeSmsCredits(ctx: DbContext, tenantId: string, change:
 
   const insert = ctx.db
     .insertInto(E)
-    .columns(["tenant_id", "id", "kind", "credits", "balance_after", "pack", "amount_pence", "message_id", "reverses_id", "payment_ref", "event_ref", "reason", "created_by", "created_at"])
+    .columns(["tenant_id", "id", "kind", "credits", "balance_after", "pack", "amount_pence", "message_id", "reverses_id", "payment_ref", "event_ref", "mode", "reason", "created_by", "created_at"])
     .expression(
       ctx.db
         .selectFrom(A)
@@ -302,6 +320,7 @@ export async function changeSmsCredits(ctx: DbContext, tenantId: string, change:
           eb.val(change.reversesId ?? null).as("reverses_id"),
           eb.val(change.paymentRef ?? null).as("payment_ref"),
           eb.val(change.eventRef ?? null).as("event_ref"),
+          eb.val(modeOf(change.mode)).as("mode"),
           eb.val(change.reason ? change.reason.slice(0, 200) : null).as("reason"),
           eb.val(actor.userId).as("created_by"),
           eb.val(at).as("created_at"),
@@ -392,19 +411,37 @@ export async function releaseSmsCredits(ctx: DbContext, tenantId: string, input:
 export async function creditSmsPack(
   ctx: DbContext,
   tenantId: string,
-  input: { kind: "purchase" | "auto_topup"; pack: SmsPackKey; amountPence: number; paymentRef: string; eventRef?: string | null },
+  input: { kind: "purchase" | "auto_topup"; pack: SmsPackKey; amountPence: number; paymentRef: string; mode: PaymentMode; eventRef?: string | null },
   actor: PmsActor,
   extra: BatchQuery[] = [],
 ): Promise<CreditChangeResult> {
   const pack = smsPack(input.pack);
   if (!pack) throw new RepoInputError("Unknown text credit pack.");
-  return changeSmsCredits(ctx, tenantId, { kind: input.kind, credits: pack.credits, pack: pack.key, amountPence: input.amountPence, paymentRef: input.paymentRef, eventRef: input.eventRef ?? null }, actor, extra);
+  return changeSmsCredits(ctx, tenantId, { kind: input.kind, credits: pack.credits, pack: pack.key, amountPence: input.amountPence, paymentRef: input.paymentRef, mode: input.mode, eventRef: input.eventRef ?? null, detail: { mode: input.mode } }, actor, extra);
 }
 
-/** A support adjustment (+ or −) with its reason. A negative one larger than the balance is refused. */
-export async function adjustSmsCredits(ctx: DbContext, tenantId: string, input: CreditAdjustmentInput, actor: PmsActor, detail: Record<string, unknown> = {}): Promise<CreditChangeResult> {
+/**
+ * A support adjustment (+ or −) with its reason. A negative one larger than the balance is refused. `requestId`
+ * (review fix 31/10/2026): the form's one-time id – a second submit of the same form is "duplicate", not a second
+ * adjustment (kept in event_ref, unique everywhere, as "adj_<id>").
+ */
+export async function adjustSmsCredits(
+  ctx: DbContext,
+  tenantId: string,
+  input: CreditAdjustmentInput,
+  actor: PmsActor,
+  detail: Record<string, unknown> = {},
+  options: { requestId?: string | null; reversesId?: string | null } = {},
+): Promise<CreditChangeResult> {
   const d = parseInput(CreditAdjustmentSchema, input, "Adjustment");
-  return changeSmsCredits(ctx, tenantId, { kind: "adjustment", credits: d.credits, reason: d.reason, detail }, actor);
+  const requestId = options.requestId ? String(options.requestId) : null;
+  if (requestId !== null && !/^[A-Za-z0-9_-]{8,80}$/.test(requestId)) throw new RepoInputError("The form has expired. Reload the page and try again.");
+  return changeSmsCredits(
+    ctx,
+    tenantId,
+    { kind: "adjustment", credits: d.credits, reason: d.reason, detail, eventRef: requestId ? `adj_${requestId}` : null, reversesId: options.reversesId ?? null },
+    actor,
+  );
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -460,6 +497,7 @@ type AccountUpdate = UpdateQueryBuilder<Database, typeof A, typeof A, UpdateResu
 export async function saveAutoTopup(ctx: DbContext, tenantId: string, input: AutoTopupInput, actor: PmsActor): Promise<SmsCreditAccount> {
   assertTenantId(tenantId);
   const d = parseInput(AutoTopupInputSchema, input, "Automatic top-up");
+  // Review fix 31/10/2026: the schema refuses a trigger level above the pack's credits (repeated charges).
   if (d.enabled) {
     const acct = await getSmsCreditAccount(ctx, tenantId);
     if (!acct.card) throw new RepoInputError("Save a card first: automatic top-up charges the saved card.");
@@ -468,17 +506,80 @@ export async function saveAutoTopup(ctx: DbContext, tenantId: string, input: Aut
     ctx,
     tenantId,
     actor,
-    { auto_topup: d.enabled ? 1 : 0, auto_topup_threshold: d.threshold, auto_topup_pack: d.pack, ...(d.enabled ? { auto_topup_paused_at: null, auto_topup_failure: null } : {}) },
+    {
+      auto_topup: d.enabled ? 1 : 0,
+      auto_topup_threshold: d.threshold,
+      auto_topup_pack: d.pack,
+      // Switching it on is the owner's own decision: the pause and the 10-minute spacing start afresh (but never
+      // while a top-up is running – its claim keeps its time).
+      ...(d.enabled ? { auto_topup_paused_at: null, auto_topup_failure: null, topup_claimed_at: sql<string | null>`CASE WHEN topup_claim IS NULL THEN NULL ELSE topup_claimed_at END` as unknown as string | null } : {}),
+    },
     { action: "pms.sms_credit.settings", detail: { autoTopup: d.enabled, threshold: d.threshold, pack: d.pack } },
   );
   return getSmsCreditAccount(ctx, tenantId);
 }
 
-/** The payment provider's customer for this clinic, set once (later calls keep the first). True = set now. */
-export async function setCreditCustomer(ctx: DbContext, tenantId: string, customerRef: string, actor: PmsActor): Promise<boolean> {
+/**
+ * The payment provider's customer for this clinic in `mode`, set once per mode (later calls keep the first). A
+ * customer of the OTHER mode (a test customer once live payments are on – review fix 31/10/2026) is replaced, and the
+ * card saved with it is cleared and automatic top-up switched off: test references are never used in live mode.
+ * True = set now.
+ */
+export async function setCreditCustomer(ctx: DbContext, tenantId: string, customerRef: string, actor: PmsActor, mode: PaymentMode = "test"): Promise<boolean> {
   assertTenantId(tenantId);
   assertId(customerRef, "customer reference");
-  return accountChange(ctx, tenantId, actor, { customer_ref: customerRef }, { action: "pms.sms_credit.customer" }, (q) => q.where("customer_ref", "is", null));
+  if (!modeOf(mode)) throw new RepoInputError("The customer's payment mode must be test or live.");
+  const acct = await getSmsCreditAccount(ctx, tenantId);
+  const stale = acct.customerRef !== null && (acct.customerMode ?? "test") !== mode;
+  if (!stale) {
+    return accountChange(ctx, tenantId, actor, { customer_ref: customerRef, customer_mode: mode }, { action: "pms.sms_credit.customer", detail: { mode } }, (q) => q.where("customer_ref", "is", null));
+  }
+  const old = acct.customerRef as string;
+  return accountChange(
+    ctx,
+    tenantId,
+    actor,
+    { customer_ref: customerRef, customer_mode: mode, card_method_ref: null, card_brand: null, card_last4: null, card_exp_month: null, card_exp_year: null, auto_topup: 0 },
+    { action: "pms.sms_credit.customer", detail: { mode, replacedOtherMode: true } },
+    (q) => q.where("customer_ref", "=", old),
+  );
+}
+
+/**
+ * Go-live (npm run admin:billing-go-live): forgets the clinic's TEST customer and saved card (references only) and
+ * switches automatic top-up off. True = something was cleared.
+ */
+export async function clearTestCreditCustomer(ctx: DbContext, tenantId: string, actor: PmsActor): Promise<boolean> {
+  assertTenantId(tenantId);
+  return accountChange(
+    ctx,
+    tenantId,
+    actor,
+    { customer_ref: null, customer_mode: null, card_method_ref: null, card_brand: null, card_last4: null, card_exp_month: null, card_exp_year: null, auto_topup: 0 },
+    { action: "pms.sms_credit.test_customer_cleared" },
+    (q) => q.where("customer_ref", "is not", null).where((eb) => eb.or([eb("customer_mode", "is", null), eb("customer_mode", "=", "test")])),
+  );
+}
+
+/** Paid entries (purchase / auto_topup) of a mode other than live, not yet reversed (go-live). */
+export async function listUnreversedTestPurchases(ctx: DbContext, tenantId: string): Promise<SmsCreditEntry[]> {
+  assertTenantId(tenantId);
+  const rows = await ctx.db
+    .selectFrom(E)
+    .selectAll()
+    .where("tenant_id", "=", tenantId)
+    .where("kind", "in", ["purchase", "auto_topup"])
+    .where((eb) => eb.or([eb("mode", "is", null), eb("mode", "=", "test")]))
+    .where((eb) => eb.not(eb.exists(ctx.db.selectFrom(`${E} as r`).select("r.id").where("r.tenant_id", "=", tenantId).where(sql<boolean>`r.reverses_id = pms_sms_credit_entries.id`))))
+    .orderBy("id")
+    .execute();
+  return rows.map(toEntry);
+}
+
+/** Every clinic with a credit account (go-live: the clinics to clean). */
+export async function listCreditAccountTenants(ctx: DbContext): Promise<string[]> {
+  const rows = await ctx.db.selectFrom(A).select("tenant_id").orderBy("tenant_id").execute();
+  return rows.map((r) => r.tenant_id);
 }
 
 /** Saves the clinic's card for automatic top-up (references, brand, last four, expiry – never a card number). */
@@ -540,7 +641,9 @@ export async function claimTopUp(ctx: DbContext, tenantId: string, token: string
       .where("auto_topup", "=", 1)
       .where("auto_topup_paused_at", "is", null)
       .where("card_method_ref", "is not", null)
-      .where((eb) => eb.or([eb("topup_claim", "is", null), eb("topup_claimed_at", "<", stale)])),
+      // One attempt per TOPUP_CLAIM_MINUTES: topup_claimed_at stays as the last attempt after a top-up ends; a claim
+      // still held (topup_claim set) is free again only once it is stale.
+      .where((eb) => eb.or([eb.and([eb("topup_claim", "is", null), eb("topup_claimed_at", "is", null)]), eb("topup_claimed_at", "<", stale)])),
     commsAuditWhen(
       ctx,
       tenantId,
@@ -556,14 +659,15 @@ export async function claimTopUp(ctx: DbContext, tenantId: string, token: string
 export async function finishTopUp(ctx: DbContext, tenantId: string, token: string, outcome: { ok: true } | { ok: false; code: string }, actor: PmsActor): Promise<void> {
   assertTenantId(tenantId);
   if (outcome.ok) {
-    await runBatch(ctx.db, [ctx.db.updateTable(A).set({ topup_claim: null, topup_claimed_at: null }).where("tenant_id", "=", tenantId).where("topup_claim", "=", token)]);
+    // topup_claimed_at is kept: the last attempt's time (one attempt per TOPUP_CLAIM_MINUTES).
+    await runBatch(ctx.db, [ctx.db.updateTable(A).set({ topup_claim: null }).where("tenant_id", "=", tenantId).where("topup_claim", "=", token)]);
     return;
   }
   const at = nowIso(ctx);
   await runBatch(ctx.db, [
     ctx.db
       .updateTable(A)
-      .set({ topup_claim: null, topup_claimed_at: null, auto_topup_paused_at: at, auto_topup_failure: outcome.code.slice(0, 40), updated_at: at })
+      .set({ topup_claim: null, auto_topup_paused_at: at, auto_topup_failure: outcome.code.slice(0, 40), updated_at: at })
       .where("tenant_id", "=", tenantId)
       .where("topup_claim", "=", token),
     commsAuditWhen(

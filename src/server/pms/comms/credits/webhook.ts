@@ -10,12 +10,17 @@
  * - 200 for every event it has handled or does not need (so the provider stops sending it); 502 when the provider
  *   could not be reached to re-read (the provider retries the event later).
  *
+ * - a payment REFUSED after the re-read (another clinic's customer, an amount or pack that does not match, an unknown
+ *   clinic) is still answered 200 (a retry would give the same answer), but it raises a payment alert: an audit row
+ *   under the platform and an email to the platform administrators (src/server/billing/payment-alerts.ts).
+ *
  * Handled: checkout.session.completed, checkout.session.async_payment_succeeded (a pack bought or a card saved),
  * payment_intent.succeeded (a pack bought through checkout or an automatic top-up).
  */
 import { CardPaymentsError, verifyWebhookSignature, type CardPayments, type CardPaymentsConfig } from "./card-payments";
 import { fulfilCheckout, fulfilPaymentIntent, type FulfilResult } from "./service";
 import type { DbContext } from "../../../repos/pms/context";
+import type { PaymentAlerter } from "../../../billing/payment-alerts";
 
 export const CREDIT_WEBHOOK_PATH = "/api/clinic-messages/credit-payments";
 const MAX_BODY = 256 * 1024;
@@ -27,6 +32,8 @@ export interface CreditWebhookDeps {
   /** Wall-clock seconds (the provider signs with real time – never the clinic system's test clock). */
   nowSeconds?: () => number;
   log?: (entry: Record<string, string | number | boolean | null>) => void;
+  /** A paid payment that was refused (review fix 31/10/2026). */
+  alert?: PaymentAlerter;
 }
 
 const json = (status: number, body: Record<string, unknown>) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
@@ -78,5 +85,12 @@ export async function handleCreditWebhook(req: Request, deps: CreditWebhookDeps)
     return json(500, { error: "failed" });
   }
   log({ outcome: result.status, type, why: "why" in result ? result.why : null });
+  if (result.status === "refused" && deps.alert) {
+    const o = event.data?.object ?? {};
+    const md = (o.metadata && typeof o.metadata === "object" ? o.metadata : {}) as Record<string, unknown>;
+    await deps
+      .alert({ area: "text_credits", eventType: type, eventId, objectId, tenantId: typeof md.tenant_id === "string" ? md.tenant_id : null, why: result.why })
+      .catch(() => undefined);
+  }
   return json(200, { received: true, result: result.status });
 }

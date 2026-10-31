@@ -8,6 +8,10 @@
  *                                   refused unless STRIPE_CLINDESK_ALLOW_LIVE=1 (go-live step, SMS-CREDITS.md)
  *   STRIPE_CLINDESK_WEBHOOK_SECRET  the webhook endpoint's signing secret (whsec_…)
  *   STRIPE_CLINDESK_PUBLISHABLE_KEY not needed by the hosted checkout (kept for later; name only)
+ *   CLINDESK_BILLING_LIVE           "1" = production billing is live: a TEST key is refused (no test-mode payment,
+ *                                   credit or subscription can count once real money is taken – review fix 31/10/2026);
+ *                                   also implied when a live text provider is configured (CLINIC_SMS_PROVIDER other
+ *                                   than outbox / test / mailpit)
  *   STRIPE_CLINDESK_API_BASE        LOCAL runs only: a stand-in on this machine (http://127.0.0.1:<port>/v1) –
  *                                   anything that is not the provider's own host or a loopback address is refused
  *
@@ -46,6 +50,19 @@ export interface CardPaymentsConfig {
   webhookSecret: string | null;
   apiBase: string;
   live: boolean;
+  /** "live" / "test" – recorded on every customer and paid ledger entry (migrations 0144 / 0145). Default: from `live`. */
+  mode?: "test" | "live";
+}
+
+/**
+ * Whether only LIVE payments may count on this deployment (review fix 31/10/2026, "test-mode credits leak into
+ * live"): CLINDESK_BILLING_LIVE=1, or a text provider that really sends (anything but the outbox, the test provider
+ * and the local Mailpit – texts cost real money then, so test-mode credits must never pay for them).
+ */
+export function billingLiveRequired(env: Env = process.env): boolean {
+  if ((env.CLINDESK_BILLING_LIVE ?? "").trim() === "1") return true;
+  const sms = (env.CLINIC_SMS_PROVIDER ?? "").trim().toLowerCase();
+  return sms !== "" && sms !== "outbox" && sms !== "test" && sms !== "mailpit";
 }
 
 /** The configuration from env, or why card payments for credits are off (plain words, no values). */
@@ -56,6 +73,7 @@ export function cardPaymentsConfig(env: Env = process.env): { ok: true; config: 
   if (!m) return { ok: false, reason: "The card payment key is not valid, so card payments are off." };
   const live = m[2] === "live";
   if (live && env.STRIPE_CLINDESK_ALLOW_LIVE !== "1") return { ok: false, reason: "A live card payment key is set but live payments are not switched on, so card payments are off." };
+  if (!live && billingLiveRequired(env)) return { ok: false, reason: "Card payments are off: this deployment takes live payments only, and a test key is set." };
   let apiBase: string;
   try {
     apiBase = stripeApiBase(env.STRIPE_CLINDESK_API_BASE || undefined);
@@ -64,7 +82,7 @@ export function cardPaymentsConfig(env: Env = process.env): { ok: true; config: 
   }
   if (live && apiBase !== "https://api.stripe.com/v1") return { ok: false, reason: "Live card payments must use the provider's own address." };
   const hook = (env.STRIPE_CLINDESK_WEBHOOK_SECRET ?? "").trim();
-  return { ok: true, config: { secretKey: key, webhookSecret: hook.length >= 16 ? hook : null, apiBase, live } };
+  return { ok: true, config: { secretKey: key, webhookSecret: hook.length >= 16 ? hook : null, apiBase, live, mode: live ? "live" : "test" } };
 }
 
 function form(fields: Record<string, string | number | boolean>): string {
@@ -118,6 +136,12 @@ export type ChargeOutcome = { ok: true; payment: PaymentIntentInfo } | { ok: fal
 
 export interface CardPayments {
   readonly live: boolean;
+  readonly mode: "test" | "live";
+  /**
+   * The webhook signing secret is set, so a payment the app did not see finish (a crash after an off-session charge)
+   * is still credited by the webhook. Automatic top-up needs it (review fix 31/10/2026).
+   */
+  readonly webhookReady: boolean;
   /** The pack prices at the provider, checked against SMS_PACKS (amount, currency, one-off, credits metadata). */
   packPrices(): Promise<Map<SmsPackKey, string>>;
   createCustomer(input: { tenantId: string; clinicName: string }): Promise<string>;
@@ -205,6 +229,8 @@ export function createCardPayments(config: CardPaymentsConfig, fetchImpl: Fetch 
 
   return {
     live: config.live,
+    mode: config.mode ?? (config.live ? "live" : "test"),
+    webhookReady: Boolean(config.webhookSecret),
     async packPrices() {
       if (priceCache && Date.now() - priceCache.at < 10 * 60_000) return priceCache.map;
       const q = SMS_PACKS.map((p) => `lookup_keys[]=${encodeURIComponent(p.key)}`).join("&");

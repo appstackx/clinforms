@@ -10,6 +10,7 @@ import { getDb } from "@/server/db";
 import { cardPaymentsConfig, createCardPayments } from "@/server/pms/comms/credits/card-payments";
 import { handleCreditWebhook } from "@/server/pms/comms/credits/webhook";
 import { pmsNow } from "@/modules/pms/core/clock";
+import { paymentAlerter } from "@/server/billing/payment-alerts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,5 +20,6 @@ export async function POST(req: Request): Promise<Response> {
     config: () => cardPaymentsConfig(process.env),
     payments: (config) => createCardPayments(config),
     ctx: () => ({ db: getDb(), cipher: getDataCipher(), now: pmsNow }),
+    alert: paymentAlerter(getDb),
   });
 }
