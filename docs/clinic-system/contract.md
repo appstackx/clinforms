@@ -65,7 +65,8 @@ ClinForms, switched on per clinic. Demo first (fictional data only); onboarding 
     in on. Invitation and reset links go to the CLINIC's brand host (clinic package → clindesk.co.uk;
     `src/server/auth/brand-links.ts`); sign-in pages, emails and the authenticator entry name the brand. Without the
     variable everything is as before (one static base URL, ClinForms links). Sender per brand:
-    `MAILERSEND_FROM_EMAIL_CLINIC` (unset = the current sender).
+    ClinDesk's own MailerSend account – `MAILERSEND_API_KEY_CLINIC` + `MAILERSEND_FROM_EMAIL_CLINIC` (both, or
+    neither takes effect) and reply-to `CLINFORMS_EMAIL_REPLY_TO_CLINIC` (unset = the current sender, `docs/auth.md` §4).
 - Server components get the request's brand with `currentBrand()` (`src/server/brand.ts`).
 
 ## 3. Modules, ownership and migration numbers

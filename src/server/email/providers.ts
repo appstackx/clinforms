@@ -1,7 +1,8 @@
 /**
  * Email providers:
  *   mailersend – MailerSend API (MAILERSEND_API_KEY, MAILERSEND_FROM_EMAIL), the same service as the owner's
- *                other apps; optional CLINFORMS_EMAIL_REPLY_TO = where replies go (one address, checked);
+ *                other apps; optional CLINFORMS_EMAIL_REPLY_TO = where replies go (one address, checked). The clinic
+ *                brand (ClinDesk) can send through its OWN MailerSend account (clinicMailAccount below);
  *   log        – development: the message is printed to the server console (never on a Vercel deployment);
  *   none       – nothing is sent (the default until a MailerSend key exists). Invitation and reset links are
  *                then shown to the clinic administrator who asked for them, to pass on;
@@ -18,12 +19,20 @@ import type { DeliveryResult, EmailMessage, EmailProvider, EmailProviderName } f
 export const SENDER_NAME = "ClinForms";
 
 /**
- * Sender per brand (31/10/2026). The clinic brand's messages (a clinic with the clinic package) come from
- * MAILERSEND_FROM_EMAIL_CLINIC (e.g. no-reply@ + the clinic brand's domain, verified in MailerSend), with the clinic
- * brand's product name, ONLY when that variable is set. Unset (the default): every message, whatever its brand, comes
- * from the current sender – SENDER_NAME at MAILERSEND_FROM_EMAIL (or CLINFORMS_EMAIL_FROM).
+ * Sender per brand (31/10/2026). The clinic brand's messages (a clinic with the clinic package) can go through the
+ * clinic brand's own MailerSend account – a SEPARATE account from ClinForms' – with its own API key, sender address
+ * (verified in that account) and reply-to, as the clinic brand's product name ("ClinDesk"). MailerSend (production)
+ * switches ONLY when both MAILERSEND_API_KEY_CLINIC and MAILERSEND_FROM_EMAIL_CLINIC are set; with one of them only,
+ * nothing half-switches (the clinic brand's messages go as ClinForms' do, and that is logged once per process – the
+ * variable's name, never its value). Neither set (the default): every message, whatever its brand, goes as before –
+ * SENDER_NAME at MAILERSEND_FROM_EMAIL (or CLINFORMS_EMAIL_FROM) through MAILERSEND_API_KEY. ClinForms' messages never
+ * use the clinic brand's settings.
+ * Mailpit (local testing only, no account) follows MAILERSEND_FROM_EMAIL_CLINIC alone (senderFor).
  */
 export const CLINIC_BRAND_FROM_VAR = "MAILERSEND_FROM_EMAIL_CLINIC";
+export const CLINIC_BRAND_KEY_VAR = "MAILERSEND_API_KEY_CLINIC";
+/** Where replies to the clinic brand's messages go; unset = CLINFORMS_EMAIL_REPLY_TO (as before), if set. */
+export const CLINIC_BRAND_REPLY_TO_VAR = "CLINFORMS_EMAIL_REPLY_TO_CLINIC";
 
 export interface SenderIdentity {
   email: string;
@@ -64,20 +73,27 @@ export function resolveEmailProviderName(env: Env = process.env): EmailProviderN
 
 const EMAIL_ADDRESS = /^[^\s@<>",;]+@[^\s@<>",;]+\.[^\s@<>",;]+$/;
 
+/** One plain address from `name`, or null when unset; anything else is a configuration error (the value is not echoed). */
+function addressVar(env: Env, name: string, example: string): string | null {
+  const raw = (env[name] ?? "").trim();
+  if (!raw) return null;
+  if (raw.length > 254 || !EMAIL_ADDRESS.test(raw)) throw new EmailConfigError(`${name} must be a single email address, such as ${example}.`);
+  return raw;
+}
+
+/** The clinic brand's own sender (MAILERSEND_FROM_EMAIL_CLINIC as the clinic brand's name), or null when unset. */
+function clinicSender(env: Env): SenderIdentity | null {
+  const email = addressVar(env, CLINIC_BRAND_FROM_VAR, "no-reply@example.com");
+  return email ? { email, name: BRANDS.clinic.productName } : null;
+}
+
 /**
- * Who a message comes from: the clinic brand's own sender when the message is the clinic brand's and
- * MAILERSEND_FROM_EMAIL_CLINIC is set, else `fallbackFrom` as SENDER_NAME (the sender before brands existed). A
- * malformed MAILERSEND_FROM_EMAIL_CLINIC is a configuration error (the value is not echoed).
+ * Who a message comes from when there is no separate account (Mailpit): the clinic brand's own sender when the
+ * message is the clinic brand's and MAILERSEND_FROM_EMAIL_CLINIC is set, else `fallbackFrom` as SENDER_NAME (the sender
+ * before brands existed). A malformed MAILERSEND_FROM_EMAIL_CLINIC is a configuration error (the value is not echoed).
  */
 export function senderFor(message: Pick<EmailMessage, "brand">, fallbackFrom: string, env: Env = process.env): SenderIdentity {
-  if (message.brand === "clinic") {
-    const raw = (env[CLINIC_BRAND_FROM_VAR] ?? "").trim();
-    if (raw) {
-      if (raw.length > 254 || !EMAIL_ADDRESS.test(raw)) throw new EmailConfigError(`${CLINIC_BRAND_FROM_VAR} must be a single email address, such as no-reply@example.com.`);
-      return { email: raw, name: BRANDS.clinic.productName };
-    }
-  }
-  return { email: fallbackFrom, name: SENDER_NAME };
+  return (message.brand === "clinic" ? clinicSender(env) : null) ?? { email: fallbackFrom, name: SENDER_NAME };
 }
 
 /**
@@ -85,12 +101,46 @@ export function senderFor(message: Pick<EmailMessage, "brand">, fallbackFrom: st
  * One plain address only (no name, no list); anything else is a configuration error (the value is not echoed).
  */
 export function replyToAddress(env: Env = process.env): string | null {
-  const raw = (env.CLINFORMS_EMAIL_REPLY_TO ?? "").trim();
-  if (!raw) return null;
-  if (raw.length > 254 || !EMAIL_ADDRESS.test(raw)) {
-    throw new EmailConfigError("CLINFORMS_EMAIL_REPLY_TO must be a single email address, such as help@example.com.");
+  return addressVar(env, "CLINFORMS_EMAIL_REPLY_TO", "help@example.com");
+}
+
+/** The clinic brand's reply-to: CLINFORMS_EMAIL_REPLY_TO_CLINIC, else `fallback` (CLINFORMS_EMAIL_REPLY_TO). */
+export function clinicReplyToAddress(fallback: string | null, env: Env = process.env): string | null {
+  return addressVar(env, CLINIC_BRAND_REPLY_TO_VAR, "hello@example.com") ?? fallback;
+}
+
+/** The clinic brand's own MailerSend account: API key, sender and reply-to. */
+export interface ClinicMailAccount {
+  apiKey: string;
+  sender: SenderIdentity;
+  replyTo: string | null;
+}
+
+let incompleteClinicAccountLogged = false;
+
+/** TESTS ONLY: let the "clinic account incomplete" line be logged again. */
+export function resetClinicAccountLogForTests(): void {
+  incompleteClinicAccountLogged = false;
+}
+
+/**
+ * The clinic brand's own MailerSend account, or null: the clinic brand's messages then go through ClinForms' account
+ * as ClinForms' do. Needs BOTH MAILERSEND_API_KEY_CLINIC and MAILERSEND_FROM_EMAIL_CLINIC; one without the other is
+ * not a half-switch – null, logged once per process (the missing variable's name only; the key is never logged or
+ * echoed). With both set, a malformed sender or reply-to address is a configuration error (the clinic brand's sends
+ * then fail; ClinForms' are not affected).
+ */
+export function clinicMailAccount(fallbackReplyTo: string | null, env: Env = process.env): ClinicMailAccount | null {
+  const apiKey = (env[CLINIC_BRAND_KEY_VAR] ?? "").trim();
+  const hasFrom = (env[CLINIC_BRAND_FROM_VAR] ?? "").trim() !== "";
+  if (!apiKey || !hasFrom) {
+    if ((apiKey || hasFrom) && !incompleteClinicAccountLogged) {
+      incompleteClinicAccountLogged = true;
+      logAuthEvent("email.clinic_account_incomplete", { missing: apiKey ? CLINIC_BRAND_FROM_VAR : CLINIC_BRAND_KEY_VAR, using: "clinforms" });
+    }
+    return null;
   }
-  return raw;
+  return { apiKey, sender: clinicSender(env) as SenderIdentity, replyTo: clinicReplyToAddress(fallbackReplyTo, env) };
 }
 
 /**
@@ -125,7 +175,11 @@ export interface MailerSendOptions {
   timeoutMs?: number;
   /** Refuse reserved test addresses without calling MailerSend. Default: on, except with an injected (test) client. */
   skipReservedAddresses?: boolean;
+  /** TESTS: the client for the clinic brand's own account (default: a MailerSend client with MAILERSEND_API_KEY_CLINIC). */
+  clinicClient?: Pick<MailerSend, "email">;
 }
+
+type MailRoute = { mailer: Pick<MailerSend, "email">; sender: SenderIdentity; replyTo: string | null };
 
 export function mailerSendProvider(env: Env = process.env, client?: Pick<MailerSend, "email">, options: MailerSendOptions = {}): EmailProvider {
   const apiKey = env.MAILERSEND_API_KEY;
@@ -136,6 +190,16 @@ export function mailerSendProvider(env: Env = process.env, client?: Pick<MailerS
   const mailer = client ?? new MailerSend({ apiKey: apiKey as string });
   const timeoutMs = options.timeoutMs ?? SEND_TIMEOUT_MS;
   const skipReserved = options.skipReservedAddresses ?? !client;
+  const clinforms: MailRoute = { mailer, sender: { email: from, name: SENDER_NAME }, replyTo };
+  // The clinic brand's route: its own account, or ClinForms' (null), or a configuration error (only its sends fail).
+  let clinic: MailRoute | null | EmailConfigError;
+  try {
+    const account = clinicMailAccount(replyTo, env);
+    clinic = account && { mailer: options.clinicClient ?? new MailerSend({ apiKey: account.apiKey }), sender: account.sender, replyTo: account.replyTo };
+  } catch (err) {
+    if (!(err instanceof EmailConfigError)) throw err;
+    clinic = err;
+  }
   return {
     name: "mailersend",
     async send(message: EmailMessage): Promise<DeliveryResult> {
@@ -143,14 +207,12 @@ export function mailerSendProvider(env: Env = process.env, client?: Pick<MailerS
         logAuthEvent("email.failed", { provider: "mailersend", kind: message.kind, status: null, reason: "reserved_address" });
         return { status: "failed", provider: "mailersend" };
       }
-      let sender: SenderIdentity;
-      try {
-        sender = senderFor(message, from, env);
-      } catch (err) {
-        if (!(err instanceof EmailConfigError)) throw err;
+      const route = message.brand === "clinic" ? (clinic ?? clinforms) : clinforms;
+      if (route instanceof EmailConfigError) {
         logAuthEvent("email.not_configured", { kind: message.kind });
         return { status: "failed", provider: "mailersend" };
       }
+      const { sender } = route;
       const params = new EmailParams()
         .setFrom(new Sender(sender.email, sender.name))
         .setTo([new Recipient(message.to.email, message.to.name ?? undefined)])
@@ -158,9 +220,9 @@ export function mailerSendProvider(env: Env = process.env, client?: Pick<MailerS
         .setHtml(message.html)
         .setText(message.text)
         .setSettings({ ...NO_TRACKING });
-      if (replyTo) params.setReplyTo(new Recipient(replyTo, sender.name));
+      if (route.replyTo) params.setReplyTo(new Recipient(route.replyTo, sender.name));
       try {
-        await withTimeout(mailer.email.send(params), timeoutMs);
+        await withTimeout(route.mailer.email.send(params), timeoutMs);
         logAuthEvent("email.sent", { provider: "mailersend", kind: message.kind });
         return { status: "sent", provider: "mailersend" };
       } catch (err) {
@@ -207,13 +269,16 @@ export function mailpitProviderFor(env: Env = process.env, fetchImpl?: typeof fe
   if (refusal) throw new EmailConfigError(`CLINFORMS_EMAIL_PROVIDER=mailpit: ${refusal}`);
   const base = mailpitBaseUrl(env) as URL;
   const from = env.MAILERSEND_FROM_EMAIL || env.CLINFORMS_EMAIL_FROM || MAILPIT_DEFAULT_FROM;
-  const replyTo = replyToAddress(env);
+  const defaultReplyTo = replyToAddress(env);
   return {
     name: "mailpit",
     async send(message) {
       let sender: SenderIdentity;
+      let replyTo = defaultReplyTo;
       try {
-        sender = senderFor(message, from, env);
+        const own = message.brand === "clinic" ? clinicSender(env) : null;
+        sender = own ?? { email: from, name: SENDER_NAME };
+        if (own) replyTo = clinicReplyToAddress(defaultReplyTo, env);
       } catch (err) {
         if (!(err instanceof EmailConfigError)) throw err;
         logAuthEvent("email.not_configured", { kind: message.kind });
