@@ -228,6 +228,67 @@ demo clinic has messages (locally on Postgres 17: 848 ms for 1,787 statements at
 round trip through the pooler, so expect about 2–4 s from lhr1; M10's 12.7 s was the local D1 proxy). No production env
 var changes for K2: `CLINFORMS_DB=postgres` and the pooler URL + CA are already set.
 
+## 5b. ClinDesk domain go-live – clindesk.co.uk  **[K]**
+
+The ClinDesk website (`src/app/clindesk-site`, merged into `feat/clinic-system` at `205fa00`) ships in the same
+deployment as step 5; it shows only on ClinDesk's hosts (`src/lib/brand.ts`, `src/middleware.ts`). clinforms.co.uk is
+unchanged (tests: `src/server/site/clindesk-site.test.ts`, `scripts/e2e/clindesk-site.cjs`). Do these after step 5.
+
+1. **Fill-ins.** Fill `content/clindesk-site.json` (49 keys – `docs/clinic-system/CLINDESK-SITE-CONTENT.md`) on a
+   branch → `feat/clinic-system` → `main`. Production shows "[to confirm]" for anything left in brackets. Check:
+   `curl -s https://clindesk.co.uk/pricing | grep -o 'data-to-confirm="[^"]*"' | sort -u` lists what is still open.
+   Review the reused legal pages (`/privacy`, `/terms`, `/cookies` = ClinForms' text, which names ClinForms).
+2. **Vercel** → project `clinforms` → Settings → Domains → **Add** `clindesk.co.uk` (Production / `main`), then
+   **Add** `www.clindesk.co.uk` and set it to **redirect to clindesk.co.uk (308)**. (The app also redirects www → apex
+   itself – `next.config.mjs`.) No env var is needed for the website.
+3. **DNS at the registrar** (use the exact values Vercel's Domains panel shows if they differ):
+
+   | Type | Name | Value | Notes |
+   |---|---|---|---|
+   | A | `@` | `76.76.21.21` | apex → Vercel; delete any parking A/AAAA/ALIAS records on `@` |
+   | CNAME | `www` | `cname.vercel-dns.com.` | delete any other `www` record |
+   | CAA (only if CAA records exist) | `@` | `0 issue "letsencrypt.org"` | so Vercel can issue the certificate |
+
+   If the zone is on Cloudflare: DNS only (grey cloud) for both. Wait for "Valid Configuration" and the certificate on
+   both domains in Vercel.
+4. **Sign-in on the second host – code change still needed (HANDOVER / contract §2), NOT built.** Today Better Auth
+   has one static base URL (`BETTER_AUTH_URL=https://clinforms.co.uk`), so "Sign in" on clindesk.co.uk will be
+   refused (origin check) until:
+   - `trustedOrigins: ["https://clinforms.co.uk", "https://clindesk.co.uk"]` in `src/server/auth/create-auth.ts`;
+   - a per-request base URL limited to an allow-list (as previews do: `{ allowedHosts: ["clinforms.co.uk",
+     "clindesk.co.uk"], fallback: "https://clinforms.co.uk", protocol: "https" }` in `src/server/auth/config.ts`)
+     and `appOrigin()` per host, so invitation and reset links use the brand's host;
+   - a decision: one account across both hosts? Cookies are host-only – signing in on one host does not sign you in
+     on the other.
+   Until it is done, either keep the clinic package's users on clinforms.co.uk or point the site's "Sign in" links
+   (`src/components/clindesk/site-header.tsx`, `site-footer.tsx`, demo page) to `https://clinforms.co.uk/login`.
+5. **Email sender.** Nothing needed for the website: "Book a demo" uses the existing access-request notification
+   (MailerSend, `MAILERSEND_FROM_EMAIL`, subject "ClinDesk demo request: …", to `CLINFORMS_ACCESS_REQUEST_TO` or
+   khuram@appstackx.co.uk). Only if ClinDesk's own emails (invitations, resets, patient emails) should come from
+   `@clindesk.co.uk`: MailerSend → Domains → add `clindesk.co.uk`, set its SPF (TXT), DKIM (CNAME/TXT) and return-path
+   records at the registrar, plus `_dmarc` TXT `v=DMARC1; p=none; rua=mailto:khuram@appstackx.co.uk`; the sender per
+   brand is a code change (not built).
+6. **Smoke checks** (read-only, no sign-in):
+   ```bash
+   for p in / /features /reports /pricing /switching /security /demo /demo/thanks /privacy /terms /cookies /accessibility /robots.txt /sitemap.xml; do
+     printf '%s %s\n' "$p" "$(curl -s -o /dev/null -w '%{http_code}' https://clindesk.co.uk$p)"; done          # all 200
+   curl -sI https://clindesk.co.uk/ | grep -i x-robots-tag                                                  # nothing (indexable)
+   curl -sI https://clindesk.co.uk/reports | grep -i x-robots-tag                                           # nothing
+   curl -sI https://www.clindesk.co.uk/pricing | grep -iE '^HTTP|^location'                                 # 308 → https://clindesk.co.uk/pricing
+   curl -sI https://clindesk.co.uk/request-access | grep -iE '^HTTP|^location'                              # 308 → /demo
+   curl -s -o /dev/null -w '%{http_code}\n' https://clindesk.co.uk/clindesk-site/features                 # 404
+   curl -sI https://clindesk.co.uk/app | grep -iE '^HTTP|^location|x-robots'                               # 307 → /login, noindex
+   curl -s https://clindesk.co.uk/sitemap.xml | grep -c '<loc>'                                             # 11
+   # ClinForms unchanged:
+   curl -s https://clinforms.co.uk/ | grep -ci clindesk                                                     # 0
+   curl -s -o /dev/null -w '%{http_code}\n' https://clinforms.co.uk/features                               # 404
+   curl -s https://clinforms.co.uk/robots.txt; curl -s https://clinforms.co.uk/sitemap.xml | grep -c '<loc>' # as before; 7
+   curl -sI https://clinforms.co.uk/reports | grep -i x-robots-tag                                          # noindex, nofollow
+   ```
+   Then send one "Book a demo" with fictional details on clindesk.co.uk, check it on `/app/platform` (label
+   "ClinDesk demo") and mark it contacted.
+7. Rollback: remove the two domains in Vercel (ClinForms is not affected); the website code can stay.
+
 ## 6. Smoke tests (production, read-only, no sign-in) and feature-flag checks
 
 6a. As DEPLOY.md (c) step 4:
@@ -293,6 +354,8 @@ There is no down-migration in the repo. None is needed for the app rollback, bec
 6. Any switch of the clinic package to ON for any clinic (6d), and **every** change to a live clinic's Reports package.
 7. The decisions list in HANDOVER §21.5 (defaults are built; change any).
 8. Any rollback that is more than a Vercel one-step rollback (time-travel restore, DROP script).
+9. ClinDesk domain (step 5b): the fill-ins, the two Vercel domains, the registrar DNS records, the second-host sign-in
+   change (before anyone signs in on clindesk.co.uk) and, if wanted, a clindesk.co.uk email sender.
 
 ## Evidence on Postgres (30/10/2026, local Docker Postgres 17.11, en_US.UTF-8 – HANDOVER §22)
 
