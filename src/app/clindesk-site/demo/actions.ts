@@ -10,7 +10,7 @@ import { redirect } from "next/navigation";
 import { CLINIC_SYSTEM_NAME } from "@/lib/brand";
 import { COMPANY } from "@/lib/site";
 import { clientIpFrom, hashClientIp } from "@/server/site/access-request";
-import { demoRequestInput, submitDemoRequest } from "@/server/site/demo-request";
+import { CLINDESK_SOURCE, demoRequestInput, submitDemoRequest } from "@/server/site/demo-request";
 import { mailerSendSettingsFromEnv, sendAccessRequestNotification } from "@/server/site/notify";
 import { isSameOrigin, siteRepoContext } from "@/server/site/request";
 import type { DemoFormState } from "./form-state";
@@ -44,7 +44,7 @@ export async function bookDemoAction(previous: DemoFormState, form: FormData): P
   let done = false;
   try {
     const ip = clientIpFrom(h);
-    const mail = mailerSendSettingsFromEnv();
+    const mail = mailerSendSettingsFromEnv(process.env, CLINDESK_SOURCE);
     const outcome = await submitDemoRequest(raw, {
       ctx: siteRepoContext(),
       clientKey: ip ? hashClientIp(ip, process.env.BETTER_AUTH_SECRET ?? process.env.CLINFORMS_D1_GATEWAY_SECRET) : null,

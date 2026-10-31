@@ -8,7 +8,8 @@ import { createSqliteTestDb, testCipher, type TestDb } from "../db/testing/datab
 import { listAccessRequests } from "../repos/access-requests";
 import type { RepoContext } from "../repos/context";
 import { clientIpFrom, hashClientIp, storedMessage, submitAccessRequest, type NotificationPayload } from "./access-request";
-import { accessRequestEmail, escapeHtml, mailerSendSettingsFromEnv } from "./notify";
+import { resetClinicAccountLogForTests } from "../email/providers";
+import { accessRequestEmail, escapeHtml, mailerSendSettingsFromEnv, sendAccessRequestNotification } from "./notify";
 
 const VALID = {
   clinicName: "Riverside Physiotherapy (fictional)",
@@ -157,6 +158,88 @@ describe("helpers", () => {
       apiKey: "k",
       fromEmail: "noreply@example.com",
       to: "khuram@appstackx.co.uk",
+    });
+  });
+
+  describe("recipient and account by source (ClinDesk demo requests)", () => {
+    const BASE = { MAILERSEND_API_KEY: "cf-key", MAILERSEND_FROM_EMAIL: "hello@clinforms.example" };
+    const CLINIC_ACCOUNT = { MAILERSEND_API_KEY_CLINIC: "cd-key", MAILERSEND_FROM_EMAIL_CLINIC: "hello@clindesk.example" };
+    const quiet = async <T>(fn: () => T): Promise<{ result: T; logged: string }> => {
+      const lines: string[] = [];
+      const original = console.info;
+      console.info = (...args: unknown[]) => void lines.push(args.map(String).join(" "));
+      try {
+        return { result: fn(), logged: lines.join("\n") };
+      } finally {
+        console.info = original;
+      }
+    };
+    beforeEach(() => resetClinicAccountLogForTests());
+
+    test("ClinForms requests are unchanged: the clinic recipient and account are never used", () => {
+      const env = { ...BASE, ...CLINIC_ACCOUNT, CLINFORMS_ACCESS_REQUEST_TO: "team@clinforms.example", CLINFORMS_ACCESS_REQUEST_TO_CLINIC: "hello@clindesk.example" };
+      const expected = { apiKey: "cf-key", fromEmail: "hello@clinforms.example", to: "team@clinforms.example" };
+      assert.deepEqual(mailerSendSettingsFromEnv(env), expected);
+      assert.deepEqual(mailerSendSettingsFromEnv(env, "clinforms"), expected);
+      assert.equal(mailerSendSettingsFromEnv({ ...CLINIC_ACCOUNT, CLINFORMS_ACCESS_REQUEST_TO_CLINIC: "hello@clindesk.example" }, "clinforms"), null);
+    });
+
+    test("ClinDesk: CLINFORMS_ACCESS_REQUEST_TO_CLINIC, through ClinDesk's own account as ClinDesk", () => {
+      const env = { ...BASE, ...CLINIC_ACCOUNT, CLINFORMS_ACCESS_REQUEST_TO: "team@clinforms.example", CLINFORMS_ACCESS_REQUEST_TO_CLINIC: " hello@clindesk.example " };
+      assert.deepEqual(mailerSendSettingsFromEnv(env, "clindesk"), { apiKey: "cd-key", fromEmail: "hello@clindesk.example", fromName: "ClinDesk", to: "hello@clindesk.example" });
+      // ClinDesk's own account works even without ClinForms' account.
+      assert.deepEqual(mailerSendSettingsFromEnv({ ...CLINIC_ACCOUNT, CLINFORMS_ACCESS_REQUEST_TO_CLINIC: "hello@clindesk.example" }, "clindesk"), {
+        apiKey: "cd-key",
+        fromEmail: "hello@clindesk.example",
+        fromName: "ClinDesk",
+        to: "hello@clindesk.example",
+      });
+    });
+
+    test("ClinDesk fallbacks: recipient unset → CLINFORMS_ACCESS_REQUEST_TO → contact email; no clinic account → ClinForms' account", () => {
+      assert.deepEqual(mailerSendSettingsFromEnv({ ...BASE, CLINFORMS_ACCESS_REQUEST_TO_CLINIC: "hello@clindesk.example" }, "clindesk"), {
+        apiKey: "cf-key",
+        fromEmail: "hello@clinforms.example",
+        to: "hello@clindesk.example",
+      });
+      assert.deepEqual(mailerSendSettingsFromEnv({ ...BASE, CLINFORMS_ACCESS_REQUEST_TO: "team@clinforms.example", CLINFORMS_ACCESS_REQUEST_TO_CLINIC: "  " }, "clindesk"), {
+        apiKey: "cf-key",
+        fromEmail: "hello@clinforms.example",
+        to: "team@clinforms.example",
+      });
+      assert.deepEqual(mailerSendSettingsFromEnv(BASE, "clindesk"), { apiKey: "cf-key", fromEmail: "hello@clinforms.example", to: "khuram@appstackx.co.uk" });
+      assert.deepEqual(mailerSendSettingsFromEnv({ ...BASE, ...CLINIC_ACCOUNT }, "clindesk")?.to, "khuram@appstackx.co.uk");
+      assert.equal(mailerSendSettingsFromEnv({}, "clindesk"), null);
+      assert.equal(mailerSendSettingsFromEnv({ CLINFORMS_ACCESS_REQUEST_TO_CLINIC: "hello@clindesk.example" }, "clindesk"), null);
+    });
+
+    test("ClinDesk: a half-configured or malformed clinic account falls back to ClinForms' account, logging no key or address", async () => {
+      const half = await quiet(() => mailerSendSettingsFromEnv({ ...BASE, MAILERSEND_API_KEY_CLINIC: "cd-secret-key" }, "clindesk"));
+      assert.deepEqual(half.result, { apiKey: "cf-key", fromEmail: "hello@clinforms.example", to: "khuram@appstackx.co.uk" });
+      assert.match(half.logged, /email.clinic_account_incomplete/);
+      const bad = await quiet(() => mailerSendSettingsFromEnv({ ...BASE, MAILERSEND_API_KEY_CLINIC: "cd-secret-key", MAILERSEND_FROM_EMAIL_CLINIC: "not an address" }, "clindesk"));
+      assert.deepEqual(bad.result, { apiKey: "cf-key", fromEmail: "hello@clinforms.example", to: "khuram@appstackx.co.uk" });
+      assert.match(bad.logged, /email.not_configured/);
+      for (const logged of [half.logged, bad.logged]) {
+        assert.ok(!logged.includes("cd-secret-key") && !logged.includes("cf-key") && !logged.includes("not an address"), "no key or value logged");
+      }
+    });
+
+    test("the send uses the settings' sender name and recipient (ClinDesk) and stays ClinForms by default", async () => {
+      const calls: Array<{ from?: { email: string; name?: string }; to?: Array<{ email: string; name?: string }>; subject?: string }> = [];
+      const client = { email: { send: async (p: unknown) => (calls.push(p as never), { statusCode: 202 }) } } as never;
+      const base = { id: "req-1", clinicName: "Riverside Physiotherapy (fictional)", contactName: "Rita Reid", email: "rita@riverside.example", phone: null, sites: "1", message: null, createdAt: NOW.toISOString() };
+      const clinic = mailerSendSettingsFromEnv({ ...CLINIC_ACCOUNT, CLINFORMS_ACCESS_REQUEST_TO_CLINIC: "hello@clindesk.example" }, "clindesk");
+      assert.ok(clinic);
+      await sendAccessRequestNotification(clinic, { ...base, product: "ClinDesk" }, client);
+      await sendAccessRequestNotification(mailerSendSettingsFromEnv(BASE) as never, base, client);
+      assert.deepEqual({ ...calls[0].from }, { email: "hello@clindesk.example", name: "ClinDesk" });
+      assert.equal(calls[0].to?.[0].email, "hello@clindesk.example");
+      assert.equal(calls[0].to?.[0].name, "ClinDesk team");
+      assert.match(calls[0].subject ?? "", /^ClinDesk demo request: /);
+      assert.deepEqual({ ...calls[1].from }, { email: "hello@clinforms.example", name: "ClinForms" });
+      assert.equal(calls[1].to?.[0].email, "khuram@appstackx.co.uk");
+      assert.match(calls[1].subject ?? "", /^ClinForms access request: /);
     });
   });
 });

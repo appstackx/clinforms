@@ -171,6 +171,7 @@ copy it to `.env.local` (gitignored – never commit real values).
 | `NEXT_PUBLIC_POSTHOG_DEBUG` | `1` logs the analytics library's activity in the browser console (setup checks only, never in production) |
 | `MAILERSEND_API_KEY`, `MAILERSEND_FROM_EMAIL` | Email via MailerSend. With both set, each "Request access" submission also emails the team; without them requests are only stored |
 | `CLINFORMS_ACCESS_REQUEST_TO` | Optional recipient of those emails (default `khuram@appstackx.co.uk`) |
+| `CLINFORMS_ACCESS_REQUEST_TO_CLINIC` | Optional recipient of ClinDesk's "Book a demo" emails (production `hello@clindesk.co.uk`; unset = `CLINFORMS_ACCESS_REQUEST_TO`). Sent through ClinDesk's own MailerSend account when configured – see [`docs/auth.md`](docs/auth.md) §4 |
 
 In demo mode, unset secrets fall back to fixed public demo constants – except the launch and signing
 secrets on a **Vercel production** deployment (`VERCEL_ENV=production`), where they are derived from a
