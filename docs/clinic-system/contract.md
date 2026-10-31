@@ -59,10 +59,13 @@ ClinForms, switched on per clinic. Demo first (fictional data only); onboarding 
     statically); `src/server/auth/middleware.test.ts` fails until they agree.
   - The website's fill-ins (prices, terms, hosting, company details …) come only from `content/clindesk-site.json`
     (zod-checked; see `docs/clinic-system/CLINDESK-SITE-CONTENT.md`).
-  - **Before clindesk.co.uk goes live** (M11 run-sheet): Better Auth takes one base URL today, so sign-in on the
-    second host needs `trustedOrigins` + a per-request base URL (as for previews), invitation and reset links per
-    brand, and a decision on whether one account spans both hosts (cookies are host-only: signing in on one host does
-    not sign you in on the other). The website itself needs nothing else.
+  - **Sign-in on both hosts** (31/10/2026, `docs/auth.md` §1a): `CLINFORMS_AUTH_ORIGINS` (production
+    `https://clindesk.co.uk`) makes Better Auth's base URL per request among the app's own origins, each trusted for
+    the origin check. One account per person; cookies stay host-only, so a session belongs to the host it was signed
+    in on. Invitation and reset links go to the CLINIC's brand host (clinic package → clindesk.co.uk;
+    `src/server/auth/brand-links.ts`); sign-in pages, emails and the authenticator entry name the brand. Without the
+    variable everything is as before (one static base URL, ClinForms links). Sender per brand:
+    `MAILERSEND_FROM_EMAIL_CLINIC` (unset = the current sender).
 - Server components get the request's brand with `currentBrand()` (`src/server/brand.ts`).
 
 ## 3. Modules, ownership and migration numbers

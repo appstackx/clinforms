@@ -1,6 +1,6 @@
 /**
  * ClinDesk website fill-ins: every value Khuram must confirm (prices, plans, hosting region, certifications, contract
- * and support details, timelines, company number, registered office, response times …) comes from ONE file,
+ * and support details, timelines, company number, registered office, response times, the legal pages' open points …) comes from ONE file,
  * content/clindesk-site.json, read when the site is built (the pages are static). How to edit it and the list of
  * keys: docs/clinic-system/CLINDESK-SITE-CONTENT.md.
  *
@@ -66,6 +66,14 @@ export const CLINDESK_CONTENT_KEYS = [
   "security.subProcessorsDocument",
   "security.issueResponseTime",
   "demo.callLength",
+  "legal.termsEffectiveFrom",
+  "legal.accountRetention",
+  "legal.demoRequestRetention",
+  "legal.providerLocations",
+  "legal.humanCheckStorage",
+  "legal.medicalDeviceStatus",
+  "legal.liabilityCap",
+  "legal.paymentProviderTerms",
 ] as const;
 
 export type ClindeskContentKey = (typeof CLINDESK_CONTENT_KEYS)[number];

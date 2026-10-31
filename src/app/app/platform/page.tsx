@@ -18,6 +18,7 @@ import {
 import { TRIAL_COPY } from "@/lib/account-copy";
 import { getDb } from "@/server/db";
 import { emailProviderName } from "@/server/email";
+import { baseUrlSetting, brandOrigin } from "@/server/auth/config";
 import { SignOutForm } from "../session-forms";
 import { setAccessRequestContactedAction, setClinicPackageAction } from "./actions";
 import { CreateClinicForm, DemoClinicForm, OwnerResetForm, PackageForm, TrialForms } from "./forms";
@@ -108,7 +109,7 @@ export default async function PlatformPage() {
         />
 
         <Panel title="Create a clinic" description="Creates the clinic account and an invitation for its owner. Do this once the data processing agreement is signed." className="mb-6">
-          <CreateClinicForm emailOn={emailOn} />
+          <CreateClinicForm emailOn={emailOn} clinicBrandHost={servesClinicBrandHost()} />
         </Panel>
 
         <Panel title="Trials and drafting limits" description={TRIAL_COPY.platformDescription} className="mb-6">
@@ -359,4 +360,14 @@ export default async function PlatformPage() {
       </main>
     </>
   );
+}
+
+/** Whether this deployment signs people in on the clinic brand's own host (CLINFORMS_AUTH_ORIGINS – docs/auth.md). */
+function servesClinicBrandHost(): boolean {
+  try {
+    const setting = baseUrlSetting();
+    return brandOrigin(setting, "clinic") !== brandOrigin(setting, "clinforms");
+  } catch {
+    return false;
+  }
 }

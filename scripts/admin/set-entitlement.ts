@@ -14,7 +14,8 @@
 import { getDb } from "../../src/server/db";
 import { isEntitlementStatus, isPackageId, isPriceSource } from "../../src/modules/pms/core/entitlements";
 import { setClinicEntitlement } from "../../src/server/pms/admin";
-import { CliError, applyTarget, flag, parseArgs, requireYesForProduction, resolveTarget, runCli, str } from "./cli";
+import { BRANDS } from "../../src/lib/brand";
+import { CliError, applyTarget, brandAppUrl, flag, parseArgs, requireYesForProduction, resolveTarget, runCli, str } from "./cli";
 
 void runCli(async () => {
   const args = parseArgs(process.argv.slice(2));
@@ -46,4 +47,13 @@ void runCli(async () => {
   console.log(`  before: ${word(plan.before.on)} (${plan.before.status ?? "no row – the default"})`);
   console.log(`  after:  ${word(plan.after.on)} (${plan.after.status})`);
   if (plan.dryRun) console.log(`Run again with --confirm${target === "production" ? " --yes" : ""} to apply it.`);
+  if (pkg === "clinic") {
+    // Invitation and reset links follow the clinic package (docs/auth.md "Two brand hosts").
+    try {
+      const link = brandAppUrl(target, args, plan.after.on ? "clinic" : "clinforms");
+      console.log(`  links ${plan.dryRun ? "would go" : "now go"} to: ${link.origin} (${BRANDS[link.brand].productName}); open invitations keep their link, which works on either host`);
+    } catch {
+      // no app origin known for this target (preview without --app-url): nothing to print
+    }
+  }
 });

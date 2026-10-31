@@ -5,7 +5,12 @@
  * (/app/platform) instead.
  *
  *   npm run admin:create-clinic -- --name "Riverside Physiotherapy" --slug riverside --owner-email owner@example.com
- *       [--retention-days 365] [--env preview|production] [--app-url https://…] [--yes]
+ *       [--retention-days 365] [--brand clinforms|clinic] [--env preview|production] [--app-url https://…] [--yes]
+ *
+ * --brand clinic: the owner's invitation goes to the clinic brand's host (clindesk.co.uk on production once
+ * CLINFORMS_AUTH_ORIGINS lists it – the secrets file's PRODUCTION_CLINFORMS_AUTH_ORIGINS) and speaks for that brand –
+ * for a clinic that is to have the clinic package (switch it on with admin:set-entitlement; later invitations and
+ * reset links follow the package). Default: ClinForms (a new clinic has no clinic package yet).
  *
  * Runbook: docs/auth.md.
  */
@@ -13,7 +18,8 @@ import { authSecret } from "../../src/server/auth/config";
 import { createClinic } from "../../src/server/auth/platform";
 import { getDb, getDbKind } from "../../src/server/db";
 import { ukDateTime } from "../../src/server/email/templates";
-import { applyTarget, appUrl, parseArgs, requireYesForProduction, resolveTarget, runCli, str } from "./cli";
+import { BRANDS } from "../../src/lib/brand";
+import { applyTarget, brandAppUrl, brandArg, parseArgs, requireYesForProduction, resolveTarget, runCli, str } from "./cli";
 
 void runCli(async () => {
   const args = parseArgs(process.argv.slice(2));
@@ -24,13 +30,14 @@ void runCli(async () => {
   const slug = str(args, "slug", true) as string;
   const ownerEmail = str(args, "owner-email", true) as string;
   const retention = str(args, "retention-days");
-  const origin = appUrl(target, args);
+  const { origin, brand } = brandAppUrl(target, args, brandArg(args) ?? "clinforms");
   const created = await createClinic(getDb(), {
     name,
     slug,
     ownerEmail,
     retentionDays: retention ? Number(retention) : undefined,
     appOrigin: origin,
+    brand,
     linkSecret: authSecret(), // the target app's BETTER_AUTH_SECRET: the link only works on that app
     sendEmail: false, // never from a script (see above)
   });
@@ -39,6 +46,9 @@ void runCli(async () => {
   console.log(`  organization id:     ${created.organizationId}`);
   console.log(`  owner invitation:    expires ${ukDateTime(created.invitationExpiresAt)}`);
   console.log("  email:               not sent (this command never sends email)");
+  console.log(`  signs in on:         ${origin} (${BRANDS[brand].productName})`);
+  if (brandArg(args) === "clinic" && brand !== "clinic") console.log(`  note:                this target does not serve the ${BRANDS.clinic.productName} host (CLINFORMS_AUTH_ORIGINS) – the link uses ${origin}`);
+  if (brand === "clinic") console.log(`  next:                switch the ${BRANDS.clinic.productName} package on (npm run admin:set-entitlement -- --package clinic --on …)`);
   console.log("");
   console.log("Invitation link (shown once – send it to the owner yourself, and only to them):");
   console.log(`  ${created.inviteLink}`);

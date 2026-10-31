@@ -11,6 +11,7 @@ import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { Kysely } from "kysely";
+import type { BrandId } from "../../lib/brand";
 import type { DataCipher } from "../crypto/envelope";
 import { runBatch, type BatchQuery } from "../db/batch";
 import { GATEWAY_MAX_STATEMENTS } from "../db/dialects/d1-http";
@@ -79,8 +80,10 @@ export interface CreateClinicInput {
   slug: string;
   ownerEmail: string;
   retentionDays?: number;
-  /** The app's public origin, for the invitation link (e.g. https://clinforms.co.uk). */
+  /** The app's public origin, for the invitation link (e.g. https://clinforms.co.uk; the brand's – config.ts brandOrigin). */
   appOrigin: string;
+  /** The brand the invitation email speaks for (default ClinForms) – the brand of `appOrigin`. */
+  brand?: BrandId;
   /** BETTER_AUTH_SECRET of the target app: signs the invitation link (an invitation id alone is not a link). */
   linkSecret: string;
   /**
@@ -148,7 +151,7 @@ export async function createClinic(db: Kysely<Database>, input: CreateClinicInpu
       inviterId: PLATFORM_USER_ID,
     }),
   ]);
-  const message = invitationEmail({ to: { email: ownerEmail }, clinicName: name, role: "owner", inviterName: null, link, expiresAt: invitationExpiresAt });
+  const message = invitationEmail({ to: { email: ownerEmail }, clinicName: name, role: "owner", inviterName: null, link, expiresAt: invitationExpiresAt, brand: input.brand });
   const email: DeliveryResult = input.sendEmail === false ? { status: "withheld", provider: "none" } : await deliverEmail(message);
   await appendAudit({ db }, slug, {
     userId: PLATFORM_USER_ID,
@@ -156,7 +159,13 @@ export async function createClinic(db: Kysely<Database>, input: CreateClinicInpu
     targetType: "organization",
     targetId: organizationId,
     // The invitation by its one-way reference only: never the link or its token.
-    detail: { invitation: invitationRef(invitationId), retentionDays, emailProvider: email.provider, emailStatus: email.status },
+    detail: {
+      invitation: invitationRef(invitationId),
+      retentionDays,
+      emailProvider: email.provider,
+      emailStatus: email.status,
+      ...(input.brand && input.brand !== "clinforms" ? { linkBrand: input.brand } : {}),
+    },
   });
   return { organizationId, tenantId: slug, invitationId, inviteLink: link, invitationExpiresAt, email };
 }

@@ -3,11 +3,11 @@
   "values": {
     "company.number": {
       "value": "[Company number]",
-      "description": "Companies House number of AppstackX Ltd, e.g. 12345678. Footer of every page."
+      "description": "Companies House number of AppstackX Ltd, e.g. 12345678. Footer of every page. Also the privacy policy and the terms (\"company number …\")."
     },
     "company.registeredOffice": {
       "value": "[Registered address]",
-      "description": "Registered office address on one line, e.g. \"1 High Street, Town, AB1 2CD\". Footer of every page."
+      "description": "Registered office address on one line, e.g. \"1 High Street, Town, AB1 2CD\". Footer of every page. Also the privacy policy and the terms (\"registered office …\")."
     },
     "contact.responseTime": {
       "value": "[response time]",
@@ -19,7 +19,7 @@
     },
     "pricing.vat": {
       "value": "[exclude / include]",
-      "description": "Whether prices include VAT: \"exclude\" or \"include\" (reads \"Prices … VAT\"). Pricing page, top and the VAT question."
+      "description": "Whether prices include VAT: \"exclude\" or \"include\" (reads \"Prices … VAT\"). Pricing page, top and the VAT question. Also the terms (\"fees … VAT\")."
     },
     "pricing.trialSummary": {
       "value": "[length and terms]",
@@ -51,7 +51,7 @@
     },
     "pricing.dataExport": {
       "value": "[How export works: formats, timescale and any cost]",
-      "description": "How a clinic exports its data when it leaves: formats, timescale and any cost. Pricing page FAQ."
+      "description": "How a clinic exports its data when it leaves: formats, timescale and any cost. Pricing page FAQ. Also the terms, after \"How the data is returned:\"."
     },
     "pricing.switchingFee": {
       "value": "[Switching fee, if any]",
@@ -83,11 +83,11 @@
     },
     "support.hours": {
       "value": "[Support hours, e.g. Monday to Friday, 08:00–18:00]",
-      "description": "Support hours (\"When can we get support?\"). Pricing page FAQ."
+      "description": "Support hours (\"When can we get support?\"). Pricing page FAQ. Also the terms, in brackets after the support channels."
     },
     "support.channels": {
       "value": "[email, phone or in-app]",
-      "description": "How to reach support, after \"by\", e.g. \"email and phone\". Pricing page FAQ."
+      "description": "How to reach support, after \"by\", e.g. \"email and phone\". Pricing page FAQ. Also the terms (\"Support is by …\")."
     },
     "hosting.summary": {
       "value": "[UK data hosting – region to confirm]",
@@ -139,7 +139,7 @@
     },
     "security.region": {
       "value": "[UK region]",
-      "description": "The hosting region, e.g. \"the UK (London)\" – used for the data and the backups (\"stored in …\"). Security page."
+      "description": "The hosting region, e.g. \"the UK (London)\" – used for the data and the backups (\"stored in …\"). Security page. Also the privacy policy (sub-processors and \"clinic data is stored in …\")."
     },
     "security.hostingDetails": {
       "value": "[Hosting details]",
@@ -147,7 +147,7 @@
     },
     "security.icoRegistration": {
       "value": "[UK GDPR / ICO registration – to confirm]",
-      "description": "ICO registration line, e.g. \"Registered with the ICO, number ZA123456\". Security page top."
+      "description": "ICO registration line, e.g. \"Registered with the ICO, number ZA123456\". Security page top. Also the privacy policy, after \"ICO registration:\"."
     },
     "security.certifications": {
       "value": "[Certifications – to confirm]",
@@ -167,11 +167,11 @@
     },
     "security.backupRetention": {
       "value": "[period]",
-      "description": "How long backups are kept, after \"kept for\", e.g. \"7 days\". Security page, Backups."
+      "description": "How long backups are kept, after \"kept for\", e.g. \"7 days\". Security page, Backups. Also the privacy policy (\"Backups are kept for …\")."
     },
     "security.retentionGuidance": {
       "value": "[professional and legal guidance]",
-      "description": "Which guidance record retention follows, e.g. \"HCPC and Records Management Code guidance\". Security page, Retention."
+      "description": "Which guidance record retention follows, e.g. \"HCPC and Records Management Code guidance\". Security page, Retention. Also the privacy policy, Retention."
     },
     "security.deletionProcess": {
       "value": "[Deletion process]",
@@ -179,7 +179,7 @@
     },
     "security.auditRetention": {
       "value": "[audit retention period]",
-      "description": "How long the audit trail is kept, after \"Kept for\", e.g. \"8 years\". Security page, Audit trail."
+      "description": "How long the audit trail is kept, after \"Kept for\", e.g. \"8 years\". Security page, Audit trail. Also the privacy policy (\"kept for …\")."
     },
     "security.overviewDocument": {
       "value": "[Security overview]",
@@ -187,7 +187,7 @@
     },
     "security.subProcessorsDocument": {
       "value": "[List of sub-processors]",
-      "description": "Title of the sub-processor list you send on request, e.g. \"Sub-processors (PDF)\". Security page, Documents."
+      "description": "Title of the sub-processor list you send on request, e.g. \"Sub-processors (PDF)\". Security page, Documents. Also the privacy policy, sub-processors."
     },
     "security.issueResponseTime": {
       "value": "[timeframe]",
@@ -196,6 +196,38 @@
     "demo.callLength": {
       "value": "[length, e.g. 30–45 minutes]",
       "description": "Length of the demo call, after \"Online,\", e.g. \"30–45 minutes\". Book a demo page, \"What to expect\"."
+    },
+    "legal.termsEffectiveFrom": {
+      "value": "[Date these terms take effect]",
+      "description": "The date the terms take effect, after \"These terms apply from\", e.g. \"1 December 2026\". Terms page, top."
+    },
+    "legal.accountRetention": {
+      "value": "[How long a clinic user's account data is kept after the clinic's account closes]",
+      "description": "How long clinic user accounts (name, email, sign-in records) are kept after a clinic's account closes, e.g. \"deleted within 90 days\". Privacy page, table of data we control."
+    },
+    "legal.demoRequestRetention": {
+      "value": "[How long demo requests are kept]",
+      "description": "How long \"Book a demo\" requests are kept, e.g. \"Up to 24 months after our last contact, unless your clinic becomes a customer\". Privacy page, table of data we control."
+    },
+    "legal.providerLocations": {
+      "value": "[Where the messaging, card payment and human-check services process data, and the safeguards]",
+      "description": "Where the patient messaging, card payment and human-check services (all only where switched on) process data, and the transfer safeguards. Privacy page, \"Where data is stored\"."
+    },
+    "legal.humanCheckStorage": {
+      "value": "[What the human check stores in the browser, if anything]",
+      "description": "What the human check on the booking page and portal sign-in (only where switched on) stores in the browser, if anything, and for how long. Cookie page."
+    },
+    "legal.medicalDeviceStatus": {
+      "value": "[Medical device status – to confirm with a lawyer]",
+      "description": "One sentence on whether the clinic system is a medical device, checked by a lawyer, e.g. \"It is not a medical device.\" Terms page, clinical responsibility."
+    },
+    "legal.liabilityCap": {
+      "value": "[Liability limit – to confirm with a lawyer]",
+      "description": "Each party's total liability in any 12-month period, after \"is limited to\", e.g. \"the fees paid and payable by the clinic in the 12 months before the claim\". Terms page, liability."
+    },
+    "legal.paymentProviderTerms": {
+      "value": "[How the card payment provider's own terms apply – to confirm]",
+      "description": "One sentence on whether the card payment provider's own terms also apply to a clinic that switches on card payments. Terms page, fees and payments."
     }
   }
 }

@@ -9,6 +9,8 @@ import os from "node:os";
 import path from "node:path";
 import { readSecretsFile, SECRETS_FILE } from "../db/provision-gateway-secrets";
 import { isLoopbackPostgresUrl } from "../../src/server/db/dialects/postgres";
+import { BRANDS, type BrandId } from "../../src/lib/brand";
+import { baseUrlSetting, linkTarget } from "../../src/server/auth/config";
 
 export type Target = "current" | "preview" | "production";
 
@@ -23,6 +25,7 @@ export const TARGET_VARS = [
   "DATABASE_SSL",
   "DATABASE_CA_CERT",
   "BETTER_AUTH_URL",
+  "CLINFORMS_AUTH_ORIGINS",
   "BETTER_AUTH_SECRET",
   "CLINFORMS_EMAIL_PROVIDER",
   "MAILERSEND_API_KEY",
@@ -112,6 +115,39 @@ export function appUrl(target: Target, args: Map<string, string | true>, env: Re
     return url.origin;
   } catch {
     throw new CliError("--app-url must be an https URL (http only for localhost).");
+  }
+}
+
+/** --brand clinforms | clinic (the brand whose host a printed link goes to), or null when not given. */
+export function brandArg(args: Map<string, string | true>): BrandId | null {
+  const v = str(args, "brand");
+  if (v === undefined) return null;
+  if (v === "clinforms" || v === "clinic") return v;
+  throw new CliError(`--brand must be clinforms or clinic (${BRANDS.clinic.productName}).`);
+}
+
+/**
+ * The origin for a link of one brand (docs/auth.md "Two brand hosts"): --app-url when given (used as is), else the
+ * brand's origin among the target's BETTER_AUTH_URL + CLINFORMS_AUTH_ORIGINS – exactly what the deployment itself
+ * uses (src/server/auth/config.ts brandOrigin). A target that does not serve the brand's host gets its primary origin.
+ */
+export function brandAppUrl(
+  target: Target,
+  args: Map<string, string | true>,
+  brand: BrandId,
+  env: Record<string, string | undefined> = process.env,
+): { origin: string; brand: BrandId } {
+  const primary = appUrl(target, args, env);
+  if (str(args, "app-url")) return { origin: primary, brand };
+  try {
+    const setting = baseUrlSetting({
+      BETTER_AUTH_URL: primary,
+      CLINFORMS_AUTH_ORIGINS: env.CLINFORMS_AUTH_ORIGINS,
+      ...(target === "current" ? {} : { VERCEL: "1", VERCEL_ENV: target }),
+    });
+    return linkTarget(setting, brand);
+  } catch (err) {
+    throw new CliError(err instanceof Error ? err.message : String(err));
   }
 }
 

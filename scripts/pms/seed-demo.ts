@@ -27,7 +27,7 @@ import { seedDemoModules } from "./seed-modules";
 import { createClinic } from "../../src/server/auth/platform";
 import { getDataCipher } from "../../src/server/crypto";
 import { getDb, getDbKind } from "../../src/server/db";
-import { CliError, appUrl, applyTarget, flag, isLoopbackPostgres, parseArgs, requireYesForProduction, resolveTarget, runCli, str } from "../admin/cli";
+import { CliError, applyTarget, brandAppUrl, flag, isLoopbackPostgres, parseArgs, requireYesForProduction, resolveTarget, runCli, str } from "../admin/cli";
 import { pmsNow } from "../../src/modules/pms/core/clock";
 
 void runCli(async () => {
@@ -65,11 +65,15 @@ void runCli(async () => {
     if (!local) throw new CliError(`No clinic "${slug}" on ${target}: create it first (npm run admin:create-clinic).`);
     const secret = process.env.BETTER_AUTH_SECRET;
     if (!secret || secret.length < 32) throw new CliError("Set BETTER_AUTH_SECRET (32+ characters) in .env.local first: the owner's invitation link is signed with it.");
+    // The demo clinic gets the clinic package: its owner's link goes to the clinic brand's host when this app serves
+    // one (CLINFORMS_AUTH_ORIGINS, docs/auth.md "Two brand hosts"), else to the app's own origin as before.
+    const link = brandAppUrl(target, args, "clinic", { ...process.env, BETTER_AUTH_URL: process.env.BETTER_AUTH_URL ?? `http://localhost:${process.env.PORT ?? "3180"}` });
     const created = await createClinic(db, {
       name: str(args, "name") ?? DEMO_CLINIC.name,
       slug,
       ownerEmail: str(args, "owner-email") ?? DEMO_CLINIC.ownerEmail,
-      appOrigin: appUrl(target, args, { ...process.env, BETTER_AUTH_URL: process.env.BETTER_AUTH_URL ?? `http://localhost:${process.env.PORT ?? "3180"}` }),
+      appOrigin: link.origin,
+      brand: link.brand,
       linkSecret: secret,
     });
     console.log(`Created the clinic ${slug}. Owner invitation (shown once, expires ${created.invitationExpiresAt}):`);

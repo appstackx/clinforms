@@ -15,6 +15,12 @@ export const CONTACT_EMAIL = COMPANY.contactEmail;
 /** "Last updated" of the accessibility statement (ISO). Change it whenever its text changes. */
 export const ACCESSIBILITY_LAST_UPDATED = "2026-10-30";
 
+/**
+ * "Last updated" of ClinDesk's own privacy policy, terms and cookie policy (ISO). Change it whenever their text
+ * changes. (ClinForms' legal pages keep their own dates in src/lib/site.ts.)
+ */
+export const CLINDESK_LEGAL_LAST_UPDATED = "2026-10-31";
+
 /** Date the site's pages last changed (sitemap lastModified). */
 export const CLINDESK_SITE_UPDATED = "2026-10-30";
 
