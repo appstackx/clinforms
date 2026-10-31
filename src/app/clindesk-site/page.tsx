@@ -5,6 +5,7 @@ import { DefaultCtaBand } from "@/components/clindesk/cta-band";
 import { Fill } from "@/components/clindesk/fill";
 import { Drawing } from "@/components/clindesk/drawing";
 import { SitePage } from "@/components/clindesk/site-page";
+import { TourLink } from "@/components/clindesk/tour-link";
 import "@/components/clindesk/styles/home.css";
 
 /**
@@ -57,6 +58,7 @@ function Hero() {
             {" "}
             <a className="btn btn-outline" href="#reports">See an insurer form filled <span className="arr" aria-hidden="true">↓</span></a>
           </div>
+          <p className="hero-tour"><TourLink /></p>
           <p className="small muted hero-signin">Already using {CLINIC_SYSTEM_NAME}? <a className="link" href="/login">Sign in</a></p>
         </div>
         <div className="hero-art">

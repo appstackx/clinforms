@@ -36,6 +36,9 @@ export function SiteFooter() {
                 <a href="/features">Features</a>
               </li>
               <li>
+                <a href="/tour">Watch the 3-minute tour</a>
+              </li>
+              <li>
                 <a href="/reports">
                   Referrer reports <span className="addon">Add-on</span>
                 </a>

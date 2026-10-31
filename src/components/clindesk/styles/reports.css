@@ -19,6 +19,7 @@
 .cd-site .rp-hero-copy .display-xxl { max-width: 11ch; }
 .cd-site .rp-ctas { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 4px; }
 .cd-site .rp-hero-copy .rp-price { margin-top: -6px; }
+.cd-site .rp-hero-copy .rp-tour { margin-top: -14px; }
 .cd-site .rp-hero-art { grid-column: 7 / 13; position: relative; min-height: 640px; align-self: stretch; }
 .cd-site .rp-plane { position: absolute; left: 70px; right: calc(-1 * var(--margin)); top: -72px; bottom: -80px; background: var(--sky); clip-path: polygon(110px 0, 100% 0, 100% 100%, 0 100%); }
 .cd-site .rp-k9 { position: absolute; left: 40px; top: 6px; width: 560px; }

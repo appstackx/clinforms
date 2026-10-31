@@ -234,10 +234,16 @@ describe("clindesk.co.uk legal pages", () => {
       ["Card payments", /Card payments \(only where the clinic switches them on\)/],
       ["Human check", /Human check \(only where switched on\)/],
       ["Drafting service", /Drafting service \(only for clinics with the Reports add-on\)/],
+      ["Media delivery", /Media delivery – keeps our tour video in the EU and delivers it when a visitor presses play on the tour page/],
     ];
+    // The tour video (/tour): what reaches the media host, and when.
+    assert.match(text, /Tour video plays \(only if you play or download our 3-minute tour ?\)/);
+    assert.match(text, /Opening the page loads nothing from that provider: the poster image comes from this website/);
+    assert.match(text, /It carries no cookies, the video sets none/);
     for (const [name, re] of subs) assert.match(text, re, name);
-    // ClinDesk's hosts have no analytics and no demo video; the database region is a fill-in, not the old "EU".
-    for (const absent of [/Product analytics/, /Media delivery/, /demo video/i, /\(EU\)/, /stored in the EU/, /Cookie settings/]) assert.ok(!absent.test(text), String(absent));
+    // ClinDesk's hosts have no analytics and no ClinForms demo video (the tour video is ClinDesk's own, above); the
+    // database region is a fill-in, not the old "EU".
+    for (const absent of [/Product analytics/, /demo video/i, /\(EU\)/, /stored in the EU/, /Cookie settings/]) assert.ok(!absent.test(text), String(absent));
     for (const k of ["company.number", "company.registeredOffice", "security.icoRegistration", "security.region", "security.subProcessorsDocument", "legal.accountRetention", "legal.demoRequestRetention", "legal.providerLocations"]) {
       assert.ok(html.includes(`data-to-confirm="${k}"`), k);
     }

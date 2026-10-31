@@ -12,6 +12,7 @@
 .cd-site .hl { position: relative; display: inline-block; z-index: 0; }
 .cd-site .hl-tape { position: absolute; z-index: -1; left: -10px; right: -12px; top: 14%; height: 72%; width: auto; --rotate: -1.5deg; border-radius: 5px; }
 .cd-site .hero-ctas { display: flex; flex-wrap: wrap; gap: 14px; }
+.cd-site .hero-tour { margin-top: -14px; }
 .cd-site .hero-signin { margin-top: -10px; }
 .cd-site .hero-signin .link { min-height: 44px; font-weight: 600; }
 .cd-site .hero-art { position: absolute; z-index: 2; top: 0; bottom: 0; left: calc(50% + 12px); width: 760px; }

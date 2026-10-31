@@ -1,5 +1,6 @@
 import { CLINDESK_CONTENT } from "@/lib/clindesk/content";
 import { ACCESSIBILITY_LAST_UPDATED, CLINDESK_LEGAL_LAST_UPDATED, CLINDESK_PAGES, CLINDESK_SITE_UPDATED, clindeskUrl } from "@/lib/clindesk/site";
+import { TOUR_PATH, TOUR_VIDEO } from "@/lib/clindesk-site/tour-video";
 
 /**
  * /sitemap.xml on ClinDesk's hosts (src/middleware.ts rewrites it here; clinforms.co.uk keeps src/app/sitemap.ts):
@@ -12,6 +13,7 @@ function lastModified(path: string): string {
   // ClinDesk's own legal text (31/10/2026), not ClinForms' dates.
   if (path === "/privacy" || path === "/terms" || path === "/cookies") return CLINDESK_LEGAL_LAST_UPDATED;
   if (path === "/accessibility") return ACCESSIBILITY_LAST_UPDATED;
+  if (path === TOUR_PATH) return TOUR_VIDEO.publishedOn;
   return CLINDESK_SITE_UPDATED;
 }
 
