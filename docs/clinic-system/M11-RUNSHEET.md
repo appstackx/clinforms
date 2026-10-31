@@ -265,7 +265,9 @@ website shows only on ClinDesk's hosts (`src/lib/brand.ts`, `src/middleware.ts`)
    | `CLINFORMS_AUTH_ORIGINS` | **add** (Production only – never Preview) | `https://clindesk.co.uk` |
    | `BETTER_AUTH_URL` | keep | `https://clinforms.co.uk` (the primary origin and the fallback for any other host) |
    | `APP_ORIGIN` | check it is **not set** (if set to clinforms.co.uk, patient portal links stay on clinforms.co.uk) | – |
-   | `MAILERSEND_FROM_EMAIL_CLINIC` | add **only after step 5** (domain verified in MailerSend) | `no-reply@clindesk.co.uk` |
+   | `MAILERSEND_API_KEY_CLINIC` | add **only in step 5** (ClinDesk's own MailerSend account) – sensitive, set by Khuram's script | – (secret) |
+   | `MAILERSEND_FROM_EMAIL_CLINIC` | add **only in step 5** (domain verified in ClinDesk's MailerSend account) | `no-reply@clindesk.co.uk` |
+   | `CLINFORMS_EMAIL_REPLY_TO_CLINIC` | add in step 5 | `hello@clindesk.co.uk` |
 
    No other variable changes (secrets, cookies, database, `CLINFORMS_PLATFORM_ADMINS` stay). A bad
    `CLINFORMS_AUTH_ORIGINS` value (not https, a path, a host that is not a brand host) stops sign-in from starting on
@@ -277,16 +279,33 @@ website shows only on ClinDesk's hosts (`src/lib/brand.ts`, `src/middleware.ts`)
    and reset emails link to the **clinic's** brand host (clinic package → clindesk.co.uk, otherwise clinforms.co.uk) and
    are branded to match; the authenticator entry is "ClinDesk" when set up on clindesk.co.uk. Open invitations keep the
    link they were sent with – it works on either host.
-5. **MailerSend – only if ClinDesk's emails should come from `@clindesk.co.uk`** (otherwise skip: they come from
-   `MAILERSEND_FROM_EMAIL` as "ClinForms", as today):
-   1. MailerSend → Domains → **Add domain** `clindesk.co.uk` (same account as clinforms.co.uk; check the plan allows a second sending domain).
+5. **MailerSend – ClinDesk's OWN account** (needs the code on `fix/clindesk-mail-account` merged and deployed; only
+   if ClinDesk's emails should come from `@clindesk.co.uk` – otherwise skip: they come from `MAILERSEND_FROM_EMAIL` as
+   "ClinForms" through ClinForms' account, as today). ClinDesk sends through a **separate MailerSend account**, never
+   ClinForms'; ClinForms' key, sender and reply-to stay as they are:
+   1. Create (or sign in to) ClinDesk's MailerSend account → Domains → **Add domain** `clindesk.co.uk`.
    2. Add the records it shows in Cloudflare DNS, **DNS only**: SPF `TXT @ v=spf1 include:_spf.mailersend.net ~all`
       (merge into one SPF record if one exists), DKIM (the `mlsend2._domainkey` CNAME/TXT exactly as shown), the
       return-path CNAME (e.g. `mta` → as shown), and `TXT _dmarc v=DMARC1; p=none; rua=mailto:khuram@appstackx.co.uk`.
    3. Wait for "Verified"; Domains → clindesk.co.uk → Advanced settings: switch **click, open and content tracking
-      off** (as for clinforms.co.uk); check the API key's domain access includes clindesk.co.uk.
-   4. Vercel Production: add `MAILERSEND_FROM_EMAIL_CLINIC=no-reply@clindesk.co.uk`, Redeploy. A malformed value makes
-      only the clinic brand's sends "failed" (the link is then shown to the administrator); remove it to go back.
+      off** (as for clinforms.co.uk; the app also switches them off per message); create an API token in **ClinDesk's**
+      account with sending access to clindesk.co.uk.
+   4. Vercel **Production only** – the four ClinDesk email variables, then Redeploy:
+
+      | Variable | Value |
+      |---|---|
+      | `MAILERSEND_API_KEY_CLINIC` | ClinDesk account's token – **sensitive**, set by Khuram's script (never pasted in chat, never in git; NOT `scripts/dev-tools/set-mailersend-key.sh`, which is for the ClinForms account only) |
+      | `MAILERSEND_FROM_EMAIL_CLINIC` | `no-reply@clindesk.co.uk` |
+      | `CLINFORMS_EMAIL_REPLY_TO_CLINIC` | `hello@clindesk.co.uk` |
+      | `CLINFORMS_EMAIL_PROVIDER` | keep `mailersend` (with `MAILERSEND_API_KEY`, `MAILERSEND_FROM_EMAIL`, `CLINFORMS_EMAIL_REPLY_TO` unchanged) |
+
+      The switch needs **both** the key and the from address: with only one, ClinDesk's emails stay on ClinForms'
+      account and sender, and the logs show one `email.clinic_account_incomplete` line (the missing variable's name).
+      With both, a malformed from or reply-to address makes only the clinic brand's sends "failed" (the link is then
+      shown to the administrator). To go back: remove `MAILERSEND_API_KEY_CLINIC` (or the from address) and redeploy.
+   5. Check: invite a test member to a clinic-package clinic → the email arrives from "ClinDesk
+      <no-reply@clindesk.co.uk>", reply-to hello@clindesk.co.uk, and shows in ClinDesk's MailerSend activity (not
+      ClinForms'); a ClinForms clinic's invitation still comes from ClinForms' sender.
    The demo-request notification keeps `MAILERSEND_FROM_EMAIL` (it goes to Khuram).
 6. **Smoke checks** (read-only, no sign-in):
    ```bash
