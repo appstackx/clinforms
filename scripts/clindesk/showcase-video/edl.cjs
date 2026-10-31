@@ -24,7 +24,7 @@ const chapters = [
   { id: 0, title: "Welcome", ground: "var(--sky)", gaps: [1.0], p0: 0.9 },
   { id: 1, title: "08:00 · Front desk: diary and online booking", time: "08:00", who: "Jess, front desk", ground: "var(--sky)", art: "reception-desk.svg", gaps: [0.6, 1.6], p0: 0.8 },
   { id: 2, title: "09:15 · Notes, amendments and letters", time: "09:15", who: "Sophie, room 1", ground: "var(--couch-roll)", art: "treatment-room.svg", gaps: [1.5, 0.9, 0.8], p0: 0.8 },
-  { id: 3, title: "11:40 · ClinDesk Reports – powered by ClinForms (add-on)", time: "11:40", who: "Sophie, an insurer’s form", ground: "var(--sun)", art: "in-tray-clipboard.svg", gaps: [1.0, 3.6, 0.6, 0.6, 0.6], p0: 0.8, card: 4.6 },
+  { id: 3, label: "Insurer forms from signed notes", title: "11:40 · ClinDesk Reports – powered by ClinForms (add-on)", time: "11:40", who: "Sophie, an insurer’s form", ground: "var(--sun)", art: "in-tray-clipboard.svg", gaps: [1.0, 3.6, 0.6, 0.6, 0.6], p0: 0.8, card: 4.6 },
   { id: 4, title: "13:05 · Group office: sites, numbers and roles", time: "13:05", who: "Sam, group office", ground: "var(--pine)", dark: true, art: "laptop-chart.svg", gaps: [0.7, 0.7], p0: 0.8 },
   { id: 5, title: "16:30 · Billing, authorisations and card payment", time: "16:30", who: "Robert, on his sofa", ground: "var(--blush)", art: "card-terminal.svg", gaps: [0.7, 0.7], p0: 0.8 },
   { id: 6, title: "18:30 · Audit trail, switching and booking a demo", time: "18:30", who: "lights off", ground: "var(--ink)", dark: true, art: "records-box.svg", gaps: [0.9, 0.9], p0: 0.8, tail: 4.8 },
@@ -98,7 +98,9 @@ function ground(start, end, color, o = {}) {
   return add({ type: "ground", start, end, color, z: 0, enter: o.enter ?? "cut", exit: o.exit ?? "cut", inDur: 0.4, outDur: 0.4, cls: o.cls });
 }
 function marker(ch, start, end) {
-  return html(start, end, `<div class="marker ${ch.dark ? "dark" : ""}" style="transform: rotate(-1.5deg)">${esc(ch.time)} · ${esc(ch.who)}</div>`, { box: { x: B.x + 6, y: 30 }, enter: "fade", z: 44 });
+  // top-left label for the whole chapter: the handwritten time line + the chapter name (never at the bottom)
+  const name = (ch.label ?? ch.title.replace(/^\d\d:\d\d · /, "")).replace(/ \(add-on\)$/, "");
+  return html(start, end, `<div style="display:flex;align-items:center;gap:18px;white-space:nowrap"><span class="marker ${ch.dark ? "dark" : ""}" style="transform: rotate(-1.5deg)">${esc(ch.time)} · ${esc(ch.who)}</span>${ch.noChip ? "" : `<span class="chip" style="font-size:20px;padding:6px 13px;${ch.dark ? "background:var(--couch-roll);color:var(--pine)" : ""}">${esc(name)}</span>`}</div>`, { box: { x: B.x + 6, y: 24 }, enter: "fade", z: 44 });
 }
 const LOGO = (size = 64) => `<svg width="${size}" height="${size}" viewBox="0 0 40 40"><defs><pattern id="wv${size}" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="1.6" height="5" fill="rgba(255,255,255,.2)"/></pattern></defs><g transform="rotate(-30 20 20)"><rect x="3" y="15" width="34" height="10" rx="4" fill="#0B6B65"/><rect x="3" y="15" width="34" height="10" rx="4" fill="url(#wv${size})"/></g><g transform="rotate(30 20 20)"><rect x="3" y="15" width="34" height="10" rx="4" fill="#C4432B"/><rect x="3" y="15" width="34" height="10" rx="4" fill="url(#wv${size})"/></g></svg>`;
 const SAMPLE = (start, end, o = {}) => tag("Sample data (fictional)", start, end, o);
@@ -181,7 +183,7 @@ function chapterCard(ch, extra = "") {
   ring(b4, R(440, 340, 1000, 480), W("c1p1", "booked") + 0.15, A.c1p2 - 0.2);
   // Lucy books online on her phone; it lands in the diary; consent form
   const PH = "s1b-phone";
-  const pbox = { x: 230, y: 92, w: 440, h: 930 };
+  const pbox = { x: 150, y: 110, w: 420, h: 890 };
   const ps = A.c1p2 - 0.2;
   const pc = [
     [M(PH, "service") - 0.4, ps, ps + 1.2],
@@ -191,7 +193,7 @@ function chapterCard(ch, extra = "") {
     [M(PH, "form") + 0.2, W("c1p2", "and") - 0.1, ch.end],
   ];
   pc.forEach(([from, s, e], i) => add({ type: "phone", take: PH, seq: takes[PH].seq, n: takes[PH].n, W: 1170, H: 2532, from, rate: 1.4, start: s, end: e, box: pbox, enter: i === 0 ? "rise" : "fade", exit: "cut", inDur: i === 0 ? 0.6 : 0.15, z: 20 + i }));
-  html(ps + 0.3, ch.end, `<div class="callout" style="transform:rotate(-3deg)">Lucy, on the bus</div>`, { box: { x: 120, y: 980 }, enter: "pop", z: 46 });
+  html(ps + 0.3, ch.end, `<div class="callout" style="transform:rotate(-3deg)">Lucy, on the bus</div>`, { box: { x: 600, y: 600 }, enter: "pop", z: 46 });
   const c1 = app("s1c-diary-online", 1.4, W("c1p2", "lands") - 0.2, ch.end, { box: { x: 760, y: 250, w: 1010, h: 568 }, enter: "rise", rate: 1, cam: [cam(0, 600, 470, 1.25), cam(1, 520, 520, 1.6)] });
   ring(c1, R(301, 615, 665, 670), W("c1p2", "lands") + 0.5, ch.end - 0.1);
   callout(c1, R(301, 615, 665, 670), "booked online", W("c1p2", "diary"), ch.end - 0.1, { dx: 14, dy: -20, ay: 0.5 });
@@ -377,7 +379,7 @@ function chapterCard(ch, extra = "") {
   const S6 = "s6-audit";
   const h3 = app(S6, M(S6, "file") - 0.6, bring, W("c6p1", "check") - 0.05, { rate: 1.3, cam: [cam(0, 820, 300, 1.25), cam(1, 820, 330, 1.3)] });
   ground(bring, ch.end, "var(--cardboard)");
-  marker({ ...ch, time: "18:30", who: "moving day", dark: false }, bring, A.c6p2 - 0.1);
+  marker({ ...ch, time: "18:30", who: "moving day", dark: false, label: "Switching from your current system" }, bring, A.c6p2 - 0.1);
   const h4 = app(S6, M(S6, "checked") + 0.4, W("c6p1", "check") - 0.05, W("c6p1", "undo") - 0.05, { rate: 0.6, cam: [cam(0, 820, 330, 1.35), cam(1, 820, 360, 1.5)] });
   ring(h4, R(261, 273, 1394, 349), W("c6p1", "row") - 0.3, W("c6p1", "undo") - 0.05, { pad: 6 });
   const h5 = app(S6, M(S6, "import") + 0.3, W("c6p1", "undo") - 0.05, A.c6p2 - 0.1, { freeze: M(S6, "import") + 0.3, cam: [cam(0, 700, 220, 1.6), cam(1, 700, 210, 1.8)] });

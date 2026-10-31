@@ -57,7 +57,7 @@ fs.writeFileSync(path.join(OUT, `${NAME}.srt`), srt);
 const chapTxt = TL.chapters.map((c) => `${mmss(c.start)} ${c.title}`).join("\n") + "\n";
 fs.writeFileSync(path.join(OUT, "chapters.txt"), chapTxt);
 const meta = [";FFMETADATA1", "title=ClinDesk – a day at Pebblegate Physio (fictional)", "artist=ClinDesk", "comment=Product showcase. Sample data is fictional. clindesk.co.uk", ""];
-TL.chapters.forEach((c) => meta.push("[CHAPTER]", "TIMEBASE=1/1000", `START=${Math.round(c.start * 1000)}`, `END=${Math.round(c.end * 1000)}`, `title=${c.title}`, ""));
+false && TL.chapters.forEach((c) => meta.push("[CHAPTER]", "TIMEBASE=1/1000", `START=${Math.round(c.start * 1000)}`, `END=${Math.round(c.end * 1000)}`, `title=${c.title}`, ""));
 const metaFile = path.join(MIX, "meta.txt");
 fs.writeFileSync(metaFile, meta.join("\n"));
 
@@ -67,7 +67,7 @@ if (has("--preview")) {
   console.log("preview written");
   process.exit(0);
 }
-const common = ["-map_metadata", "2", "-map_chapters", "2", "-metadata:s:v", "handler_name=", "-metadata:s:a", "handler_name=", "-movflags", "+faststart"];
+const common = ["-map_metadata", "2", "-map_chapters", "-1", "-metadata:s:v", "handler_name=", "-metadata:s:a", "handler_name=", "-movflags", "+faststart"];
 const vcol = ["-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "tv"];
 const master = path.join(OUT, `${NAME}.mp4`);
 ff(["-framerate", "30", "-i", frames, "-i", voice, "-f", "ffmetadata", "-i", metaFile,

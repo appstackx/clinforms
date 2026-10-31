@@ -195,6 +195,27 @@
     return wait;
   }
 
+  /** QA: visible text boxes (labels, callouts, tags, card text, phone) that intersect the caption pill. */
+  window.capOverlaps = () => {
+    const pill = capEl.querySelector(".pill");
+    if (!pill) return [];
+    const c = pill.getBoundingClientRect();
+    const hits = [];
+    TL.layers.forEach((L, i) => {
+      const d = els[i];
+      if (d.style.display === "none" || parseFloat(d.style.opacity || "1") < 0.05) return;
+      if (L.type === "app" || L.type === "ground" || L.type === "ring") return;
+      const nodes = L.type === "phone" ? [d] : [...d.querySelectorAll("*")].filter((e) => e.children.length === 0 && (e.textContent.trim() || e.tagName === "IMG" || e.tagName === "svg"));
+      for (const e of nodes) {
+        const r = e.getBoundingClientRect();
+        if (!r.width || !r.height) continue;
+        let o = 1; for (let x = e; x && x !== document.body; x = x.parentElement) o *= parseFloat(getComputedStyle(x).opacity);
+        if (o < 0.05) continue;
+        if (r.left < c.right && r.right > c.left && r.top < c.bottom && r.bottom > c.top) hits.push(`${L.id}:${(e.textContent || e.tagName).trim().slice(0, 40)}`);
+      }
+    });
+    return hits;
+  };
   window.init = (tl) => {
     TL = tl;
     stage.innerHTML = "";
