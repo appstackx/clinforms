@@ -21,8 +21,8 @@ export const ACCESSIBILITY_LAST_UPDATED = "2026-10-30";
  */
 export const CLINDESK_LEGAL_LAST_UPDATED = "2026-10-31";
 
-/** Date the site's pages last changed (sitemap lastModified). */
-export const CLINDESK_SITE_UPDATED = "2026-10-30";
+/** Date the site's pages last changed (sitemap lastModified; /tour uses its video's publishedOn). */
+export const CLINDESK_SITE_UPDATED = "2026-10-31";
 
 export interface ClindeskPage {
   path: string;
@@ -41,6 +41,7 @@ export const CLINDESK_PAGES: readonly ClindeskPage[] = [
   { path: "/switching", indexed: true, changeFrequency: "monthly", priority: 0.8 },
   { path: "/security", indexed: true, changeFrequency: "monthly", priority: 0.8 },
   { path: "/demo", indexed: true, changeFrequency: "monthly", priority: 0.9 },
+  { path: "/tour", indexed: true, changeFrequency: "monthly", priority: 0.8 },
   { path: "/demo/thanks", indexed: false, changeFrequency: "yearly", priority: 0 },
   { path: "/privacy", indexed: true, changeFrequency: "yearly", priority: 0.3 },
   { path: "/terms", indexed: true, changeFrequency: "yearly", priority: 0.3 },
