@@ -230,64 +230,94 @@ var changes for K2: `CLINFORMS_DB=postgres` and the pooler URL + CA are already 
 
 ## 5b. ClinDesk domain go-live – clindesk.co.uk  **[K]**
 
-The ClinDesk website (`src/app/clindesk-site`, merged into `feat/clinic-system` at `205fa00`) ships in the same
-deployment as step 5; it shows only on ClinDesk's hosts (`src/lib/brand.ts`, `src/middleware.ts`). clinforms.co.uk is
-unchanged (tests: `src/server/site/clindesk-site.test.ts`, `scripts/e2e/clindesk-site.cjs`). Do these after step 5.
+The ClinDesk website (`src/app/clindesk-site`, `205fa00`) and sign-in on both hosts (`feat/clindesk-auth` `6ea6a1c`,
+merged into `feat/clinic-system` at `00faac8` – `docs/auth.md` §1a) ship in the same deployment as step 5. Without
+the variables below, production behaves exactly as before: one static base URL (`BETTER_AUTH_URL`), every link and
+email on clinforms.co.uk / ClinForms (tests: `src/server/auth/brand-hosts.test.ts` "regression", the e2e runs). The
+website shows only on ClinDesk's hosts (`src/lib/brand.ts`, `src/middleware.ts`). Do these after step 5.
 
-1. **Fill-ins.** Fill `content/clindesk-site.json` (49 keys – `docs/clinic-system/CLINDESK-SITE-CONTENT.md`) on a
-   branch → `feat/clinic-system` → `main`. Production shows "[to confirm]" for anything left in brackets. Check:
-   `curl -s https://clindesk.co.uk/pricing | grep -o 'data-to-confirm="[^"]*"' | sort -u` lists what is still open.
-   Review the reused legal pages (`/privacy`, `/terms`, `/cookies` = ClinForms' text, which names ClinForms).
-2. **Vercel** → project `clinforms` → Settings → Domains → **Add** `clindesk.co.uk` (Production / `main`), then
-   **Add** `www.clindesk.co.uk` and set it to **redirect to clindesk.co.uk (308)**. (The app also redirects www → apex
-   itself – `next.config.mjs`.) No env var is needed for the website.
-3. **DNS at the registrar** (use the exact values Vercel's Domains panel shows if they differ):
+1. **Fill-ins.** Fill `content/clindesk-site.json` (57 keys – `docs/clinic-system/CLINDESK-SITE-CONTENT.md`; the 8
+   `legal.*` keys and `security.region` / `security.icoRegistration` / `company.*` are the legal pages' [to confirm]
+   items, some for a lawyer) on a branch → `feat/clinic-system` → `main`. Production shows "[to confirm]" for anything
+   left in brackets. Check:
+   `for p in /pricing /privacy /terms /cookies; do curl -s https://clindesk.co.uk$p | grep -o 'data-to-confirm="[^"]*"'; done | sort -u`.
+   `/privacy`, `/terms`, `/cookies` are ClinDesk's own text now (ClinForms' pages unchanged); have them reviewed.
+2. **Vercel domains** – already added to project `clinforms` (`clindesk.co.uk` Production, `www.clindesk.co.uk`
+   308 → apex). Nothing to do; they show "Invalid Configuration" until step 3. (The app also redirects www → apex –
+   `next.config.mjs`.)
+3. **DNS on Cloudflare** (zone `clindesk.co.uk`) – both records **DNS only (grey cloud)**, TTL Auto; delete any other
+   `@` A/AAAA/CNAME and `www` record first (parking, registrar defaults):
 
-   | Type | Name | Value | Notes |
+   | Type | Name | Value | Proxy |
    |---|---|---|---|
-   | A | `@` | `76.76.21.21` | apex → Vercel; delete any parking A/AAAA/ALIAS records on `@` |
-   | CNAME | `www` | `cname.vercel-dns.com.` | delete any other `www` record |
-   | CAA (only if CAA records exist) | `@` | `0 issue "letsencrypt.org"` | so Vercel can issue the certificate |
+   | A | `@` | `76.76.21.21` | DNS only |
+   | CNAME | `www` | `cname.vercel-dns.com` | DNS only |
 
-   If the zone is on Cloudflare: DNS only (grey cloud) for both. Wait for "Valid Configuration" and the certificate on
-   both domains in Vercel.
-4. **Sign-in on the second host – code change still needed (HANDOVER / contract §2), NOT built.** Today Better Auth
-   has one static base URL (`BETTER_AUTH_URL=https://clinforms.co.uk`), so "Sign in" on clindesk.co.uk will be
-   refused (origin check) until:
-   - `trustedOrigins: ["https://clinforms.co.uk", "https://clindesk.co.uk"]` in `src/server/auth/create-auth.ts`;
-   - a per-request base URL limited to an allow-list (as previews do: `{ allowedHosts: ["clinforms.co.uk",
-     "clindesk.co.uk"], fallback: "https://clinforms.co.uk", protocol: "https" }` in `src/server/auth/config.ts`)
-     and `appOrigin()` per host, so invitation and reset links use the brand's host;
-   - a decision: one account across both hosts? Cookies are host-only – signing in on one host does not sign you in
-     on the other.
-   Until it is done, either keep the clinic package's users on clinforms.co.uk or point the site's "Sign in" links
-   (`src/components/clindesk/site-header.tsx`, `site-footer.tsx`, demo page) to `https://clinforms.co.uk/login`.
-5. **Email sender.** Nothing needed for the website: "Book a demo" uses the existing access-request notification
-   (MailerSend, `MAILERSEND_FROM_EMAIL`, subject "ClinDesk demo request: …", to `CLINFORMS_ACCESS_REQUEST_TO` or
-   khuram@appstackx.co.uk). Only if ClinDesk's own emails (invitations, resets, patient emails) should come from
-   `@clindesk.co.uk`: MailerSend → Domains → add `clindesk.co.uk`, set its SPF (TXT), DKIM (CNAME/TXT) and return-path
-   records at the registrar, plus `_dmarc` TXT `v=DMARC1; p=none; rua=mailto:khuram@appstackx.co.uk`; the sender per
-   brand is a code change (not built).
+   CAA: only if the zone has CAA records, add `@ CAA 0 issue "letsencrypt.org"`. SSL/TLS mode does not matter while
+   grey-clouded. Wait until Vercel → Settings → Domains shows "Valid Configuration" and a certificate for both, then
+   `curl -sI https://clindesk.co.uk/ | head -1` → 200 and `curl -sI https://www.clindesk.co.uk/ | grep -i ^location`
+   → `https://clindesk.co.uk/`. Rollback: delete the two records (or the domains in Vercel); ClinForms is not affected.
+4. **Vercel environment – Production only** (Settings → Environment Variables; values in a chmod 600 file on the
+   Desktop as usual; then **Redeploy** the current production deployment, without the build cache):
+
+   | Variable | Change | Value |
+   |---|---|---|
+   | `CLINFORMS_AUTH_ORIGINS` | **add** (Production only – never Preview) | `https://clindesk.co.uk` |
+   | `BETTER_AUTH_URL` | keep | `https://clinforms.co.uk` (the primary origin and the fallback for any other host) |
+   | `APP_ORIGIN` | check it is **not set** (if set to clinforms.co.uk, patient portal links stay on clinforms.co.uk) | – |
+   | `MAILERSEND_FROM_EMAIL_CLINIC` | add **only after step 5** (domain verified in MailerSend) | `no-reply@clindesk.co.uk` |
+
+   No other variable changes (secrets, cookies, database, `CLINFORMS_PLATFORM_ADMINS` stay). A bad
+   `CLINFORMS_AUTH_ORIGINS` value (not https, a path, a host that is not a brand host) stops sign-in from starting on
+   both hosts – to undo, remove the variable and redeploy. Also add `PRODUCTION_CLINFORMS_AUTH_ORIGINS=https://clindesk.co.uk`
+   to `~/.config/appstackx/clinforms.secrets.env`, so `npm run admin:create-clinic -- --env production --brand clinic …`
+   prints clindesk.co.uk links (without it the script prints clinforms.co.uk and says so).
+   What it does (`docs/auth.md` §1a): sign-in, two-step set-up, invitations, resets and the app work on both hosts; one
+   account per person; sessions are host-only (signing in on one host does not sign you in on the other); invitation
+   and reset emails link to the **clinic's** brand host (clinic package → clindesk.co.uk, otherwise clinforms.co.uk) and
+   are branded to match; the authenticator entry is "ClinDesk" when set up on clindesk.co.uk. Open invitations keep the
+   link they were sent with – it works on either host.
+5. **MailerSend – only if ClinDesk's emails should come from `@clindesk.co.uk`** (otherwise skip: they come from
+   `MAILERSEND_FROM_EMAIL` as "ClinForms", as today):
+   1. MailerSend → Domains → **Add domain** `clindesk.co.uk` (same account as clinforms.co.uk; check the plan allows a second sending domain).
+   2. Add the records it shows in Cloudflare DNS, **DNS only**: SPF `TXT @ v=spf1 include:_spf.mailersend.net ~all`
+      (merge into one SPF record if one exists), DKIM (the `mlsend2._domainkey` CNAME/TXT exactly as shown), the
+      return-path CNAME (e.g. `mta` → as shown), and `TXT _dmarc v=DMARC1; p=none; rua=mailto:khuram@appstackx.co.uk`.
+   3. Wait for "Verified"; Domains → clindesk.co.uk → Advanced settings: switch **click, open and content tracking
+      off** (as for clinforms.co.uk); check the API key's domain access includes clindesk.co.uk.
+   4. Vercel Production: add `MAILERSEND_FROM_EMAIL_CLINIC=no-reply@clindesk.co.uk`, Redeploy. A malformed value makes
+      only the clinic brand's sends "failed" (the link is then shown to the administrator); remove it to go back.
+   The demo-request notification keeps `MAILERSEND_FROM_EMAIL` (it goes to Khuram).
 6. **Smoke checks** (read-only, no sign-in):
    ```bash
-   for p in / /features /reports /pricing /switching /security /demo /demo/thanks /privacy /terms /cookies /accessibility /robots.txt /sitemap.xml; do
+   for p in / /features /reports /pricing /switching /security /demo /demo/thanks /privacy /terms /cookies /accessibility /robots.txt /sitemap.xml /login /reset-password; do
      printf '%s %s\n' "$p" "$(curl -s -o /dev/null -w '%{http_code}' https://clindesk.co.uk$p)"; done          # all 200
    curl -sI https://clindesk.co.uk/ | grep -i x-robots-tag                                                  # nothing (indexable)
-   curl -sI https://clindesk.co.uk/reports | grep -i x-robots-tag                                           # nothing
    curl -sI https://www.clindesk.co.uk/pricing | grep -iE '^HTTP|^location'                                 # 308 → https://clindesk.co.uk/pricing
    curl -sI https://clindesk.co.uk/request-access | grep -iE '^HTTP|^location'                              # 308 → /demo
    curl -s -o /dev/null -w '%{http_code}\n' https://clindesk.co.uk/clindesk-site/features                 # 404
    curl -sI https://clindesk.co.uk/app | grep -iE '^HTTP|^location|x-robots'                               # 307 → /login, noindex
+   curl -s https://clindesk.co.uk/login | grep -o '<title>[^<]*'                                            # Sign in · ClinDesk
    curl -s https://clindesk.co.uk/sitemap.xml | grep -c '<loc>'                                             # 11
+   # origin check: our origin accepted (401 = wrong password), a foreign one refused (403)
+   curl -s -o /dev/null -w '%{http_code}\n' -X POST https://clindesk.co.uk/api/auth/sign-in/email -H 'content-type: application/json' -H 'origin: https://clindesk.co.uk' -H 'cookie: x=1' -d '{"email":"nobody@example.com","password":"not-the-password"}'   # 401
+   curl -s -o /dev/null -w '%{http_code}\n' -X POST https://clindesk.co.uk/api/auth/sign-in/email -H 'content-type: application/json' -H 'origin: https://evil.example' -H 'cookie: x=1' -d '{"email":"nobody@example.com","password":"not-the-password"}'      # 403
    # ClinForms unchanged:
    curl -s https://clinforms.co.uk/ | grep -ci clindesk                                                     # 0
+   curl -s https://clinforms.co.uk/login | grep -o '<title>[^<]*'                                           # Sign in · ClinForms
    curl -s -o /dev/null -w '%{http_code}\n' https://clinforms.co.uk/features                               # 404
-   curl -s https://clinforms.co.uk/robots.txt; curl -s https://clinforms.co.uk/sitemap.xml | grep -c '<loc>' # as before; 7
+   curl -s https://clinforms.co.uk/sitemap.xml | grep -c '<loc>'                                            # 7
    curl -sI https://clinforms.co.uk/reports | grep -i x-robots-tag                                          # noindex, nofollow
    ```
-   Then send one "Book a demo" with fictional details on clindesk.co.uk, check it on `/app/platform` (label
-   "ClinDesk demo") and mark it contacted.
-7. Rollback: remove the two domains in Vercel (ClinForms is not affected); the website code can stay.
+   Then (Khuram, test clinic with the clinic package only): send one "Book a demo" with fictional details and mark it
+   contacted on `/app/platform`; sign in on clindesk.co.uk with your own account (lands on `/app/clinic` for a clinic
+   with the package, else `/app`); from that clinic invite a fictional address you control → the email links to
+   clindesk.co.uk; "Forgotten your password?" on clindesk.co.uk → the link goes to the clinic's brand host.
+   Never on Blue Heart's clinic (ClinForms only – its links stay on clinforms.co.uk).
+7. **Rollback:** remove `CLINFORMS_AUTH_ORIGINS` (and `MAILERSEND_FROM_EMAIL_CLINIC`) and redeploy → one static base URL
+   again; sign-in on clindesk.co.uk is then refused by the origin check, so also point the site's "Sign in" links to
+   `https://clinforms.co.uk/login` or remove the two Vercel domains. Sessions made on clindesk.co.uk simply stop being
+   used. ClinForms is never affected.
 
 ## 6. Smoke tests (production, read-only, no sign-in) and feature-flag checks
 
@@ -354,8 +384,9 @@ There is no down-migration in the repo. None is needed for the app rollback, bec
 6. Any switch of the clinic package to ON for any clinic (6d), and **every** change to a live clinic's Reports package.
 7. The decisions list in HANDOVER §21.5 (defaults are built; change any).
 8. Any rollback that is more than a Vercel one-step rollback (time-travel restore, DROP script).
-9. ClinDesk domain (step 5b): the fill-ins, the two Vercel domains, the registrar DNS records, the second-host sign-in
-   change (before anyone signs in on clindesk.co.uk) and, if wanted, a clindesk.co.uk email sender.
+9. ClinDesk domain (step 5b): the fill-ins (incl. the legal pages' [to confirm] items), the Cloudflare DNS records, the
+   Production variable `CLINFORMS_AUTH_ORIGINS=https://clindesk.co.uk` + redeploy (sign-in on both hosts is built:
+   `feat/clindesk-auth`, merged at `00faac8`) and, if wanted, the MailerSend domain + `MAILERSEND_FROM_EMAIL_CLINIC`.
 
 ## Evidence on Postgres (30/10/2026, local Docker Postgres 17.11, en_US.UTF-8 – HANDOVER §22)
 
