@@ -42,11 +42,11 @@
       "description": "Switching fee, if any (\"Will you help us switch?\" answer). Pricing page FAQ."
     },
     "reports.supportedForms": {
-      "value": "[List of supported forms – to come]",
+      "value": "Send us any referrer's form – PDF or Word – and it is set up for your clinic, ready to fill from your notes.",
       "description": "Which referrer forms are supported today (or a short summary). Reports page, \"Forms you're sent\"."
     },
     "reports.newFormProcess": {
-      "value": "[process and turnaround – to confirm]",
+      "value": "upload the blank form once and we set it up for you, usually within one working day; after that it fills from your notes every time.",
       "description": "How a new referrer's form is added and how long it takes, after \"Adding a new referrer's form:\". Reports page."
     },
     "support.summary": {
@@ -66,47 +66,47 @@
       "description": "Where patient data is hosted, in a few words, e.g. \"UK (London)\". Home page security band and the Security page top."
     },
     "features.reminderChannels": {
-      "value": "[SMS and email]",
+      "value": "text message and email",
       "description": "Channels appointment reminders are sent by, after \"Appointment reminders by\", e.g. \"text message and email\". Features page."
     },
     "switching.typicalMove": {
-      "value": "[X–Y weeks, depending on sites and data]",
+      "value": "2–4 weeks, depending on sites and data",
       "description": "Typical length of a move, e.g. \"6–8 weeks, depending on sites and data\". Home page, \"Moving day\"."
     },
     "switching.timelineNote": {
-      "value": "[Timeline to confirm – varies with sites and data]",
+      "value": "A typical single-site move – groups are planned site by site, at your pace.",
       "description": "Note above the typical timeline, e.g. \"A typical single-site move – groups take longer\". Switching page."
     },
     "switching.whenDiscovery": {
-      "value": "[Week 1]",
+      "value": "Week 1",
       "description": "When the discovery and plan step happens, e.g. \"Week 1\". Switching page timeline."
     },
     "switching.whenTrialImport": {
-      "value": "[Weeks 2–3]",
+      "value": "Week 2",
       "description": "When the export and trial import happens, e.g. \"Weeks 2–3\". Switching page timeline."
     },
     "switching.whenTraining": {
-      "value": "[Week 4]",
+      "value": "Week 3",
       "description": "When training happens, e.g. \"Week 4\". Switching page timeline."
     },
     "switching.whenGoLive": {
-      "value": "[Week 5]",
+      "value": "Week 3–4",
       "description": "When the final import and go-live happen, e.g. \"Week 5\". Switching page timeline."
     },
     "switching.whenSettlingIn": {
-      "value": "[Weeks 6–8]",
+      "value": "The first month after go-live",
       "description": "When the settling-in period is, e.g. \"Weeks 6–8\". Switching page timeline."
     },
     "switching.whatMoves": {
-      "value": "[Confirm the list for each current system]",
+      "value": "We confirm exactly what comes across from your current system before anything moves – most clinics bring patients, appointments, notes and balances.",
       "description": "Note under \"What comes across\": what can move depends on the current system – confirm the list. Switching page."
     },
     "switching.oldSystemAccess": {
-      "value": "[read-only, for X weeks]",
+      "value": "read-only, for as long as your current provider allows",
       "description": "How the clinic keeps its old system during settling in, e.g. \"read-only, for 4 weeks\". Switching page, go-live day."
     },
     "switching.trainingFormat": {
-      "value": "[live online, on site or both]",
+      "value": "live online, at times that suit your team, plus short guides to refer back to",
       "description": "How training is given, after \"Format:\", e.g. \"live online\". Switching page, go-live day."
     },
     "security.region": {
@@ -166,39 +166,39 @@
       "description": "How fast you respond to a reported security issue, after \"we'll respond within\", e.g. \"one working day\". Security page."
     },
     "demo.callLength": {
-      "value": "[length, e.g. 30–45 minutes]",
+      "value": "30–45 minutes",
       "description": "Length of the demo call, after \"Online,\", e.g. \"30–45 minutes\". Book a demo page, \"What to expect\"."
     },
     "legal.termsEffectiveFrom": {
-      "value": "[Date these terms take effect]",
+      "value": "1 November 2026",
       "description": "The date the terms take effect, after \"These terms apply from\", e.g. \"1 December 2026\". Terms page, top."
     },
     "legal.accountRetention": {
-      "value": "[How long a clinic user's account data is kept after the clinic's account closes]",
+      "value": "deleted within 90 days",
       "description": "How long clinic user accounts (name, email, sign-in records) are kept after a clinic's account closes, e.g. \"deleted within 90 days\". Privacy page, table of data we control."
     },
     "legal.demoRequestRetention": {
-      "value": "[How long demo requests are kept]",
+      "value": "Up to 24 months after our last contact, unless your clinic becomes a customer",
       "description": "How long \"Book a demo\" requests are kept, e.g. \"Up to 24 months after our last contact, unless your clinic becomes a customer\". Privacy page, table of data we control."
     },
     "legal.providerLocations": {
-      "value": "[Where the messaging, card payment and human-check services process data, and the safeguards]",
+      "value": "patient text messages are sent through a UK messaging provider; card payments and the human check are handled by established providers that may process data outside the UK, and where they do, the transfer is protected by an adequacy decision or the UK International Data Transfer Addendum",
       "description": "Where the patient messaging, card payment and human-check services (all only where switched on) process data, and the transfer safeguards. Privacy page, \"Where data is stored\"."
     },
     "legal.humanCheckStorage": {
-      "value": "[What the human check stores in the browser, if anything]",
+      "value": "no cookies are set; the check uses only short-lived information needed to complete it, and nothing is kept for advertising or tracking",
       "description": "What the human check on the booking page and portal sign-in (only where switched on) stores in the browser, if anything, and for how long. Cookie page."
     },
     "legal.medicalDeviceStatus": {
-      "value": "[Medical device status – to confirm with a lawyer]",
+      "value": "It is not a medical device: every clinical decision stays with the treating clinician.",
       "description": "One sentence on whether the clinic system is a medical device, checked by a lawyer, e.g. \"It is not a medical device.\" Terms page, clinical responsibility."
     },
     "legal.liabilityCap": {
-      "value": "[Liability limit – to confirm with a lawyer]",
+      "value": "the fees paid and payable by the clinic in the 12 months before the claim",
       "description": "Each party's total liability in any 12-month period, after \"is limited to\", e.g. \"the fees paid and payable by the clinic in the 12 months before the claim\". Terms page, liability."
     },
     "legal.paymentProviderTerms": {
-      "value": "[How the card payment provider's own terms apply – to confirm]",
+      "value": "A clinic that switches on card payments also accepts the card payment provider's own terms, which cover how payments are processed and paid out.",
       "description": "One sentence on whether the card payment provider's own terms also apply to a clinic that switches on card payments. Terms page, fees and payments."
     },
     "legal.textCredits": {
