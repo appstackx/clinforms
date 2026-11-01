@@ -46,6 +46,7 @@ void runCli(async () => {
   console.log(`${plan.dryRun ? "PREVIEW – nothing changed." : "Done."} ${plan.clinicName} (${plan.tenantId}), package "${plan.package}":`);
   console.log(`  before: ${word(plan.before.on)} (${plan.before.status ?? "no row – the default"})`);
   console.log(`  after:  ${word(plan.after.on)} (${plan.after.status})`);
+  if (plan.billingOverride) console.log("  billing override is now ON: the clinic's subscription no longer changes its packages (undo: npm run admin:set-billing-override -- --slug … --off)");
   if (plan.dryRun) console.log(`Run again with --confirm${target === "production" ? " --yes" : ""} to apply it.`);
   if (pkg === "clinic") {
     // Invitation and reset links follow the clinic package (docs/auth.md "Two brand hosts").

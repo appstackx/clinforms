@@ -54,7 +54,7 @@ function PricingHero() {
             <span className="t-long"><b>Pay monthly for each practitioner using {CLINIC_SYSTEM_NAME}.</b> Add Reports if you need it. Groups get a plan built around their sites.</span>
             <span className="t-short"><b>Pay monthly for each practitioner.</b> Add Reports if you need it.</span>
           </p>
-          <p className="p-vat">Prices <Fill k="pricing.vat" /> VAT · Free trial: <Fill k="pricing.trialSummary" /></p>
+          <p className="p-vat"><Fill k="pricing.vat" /> · Free trial: <Fill k="pricing.trialSummary" /></p>
           <div className="p-ctas">
             <a className="btn btn-coral" href="/demo">Book a demo <span className="arr" aria-hidden="true">→</span></a>
             {" "}
@@ -371,7 +371,7 @@ function FAQs() {
           </details>
           <details>
             <summary>Do prices include VAT?</summary>
-            <p className="body">Prices <Fill k="pricing.vat" /> VAT.</p>
+            <p className="body"><Fill k="pricing.vat" />.</p>
           </details>
         </div>
       </div>

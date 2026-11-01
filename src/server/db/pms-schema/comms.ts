@@ -11,6 +11,8 @@
  *   of the appointment they need; appointment_id refers to the diary (no foreign key).
  * - pms_consent_events: how and when a patient's message preferences changed (PECR evidence).
  * - pms_letters: letters to the patient, GP, referrer or payer; subject and body encrypted.
+ * - pms_sms_credit_accounts / pms_sms_credit_entries (0143): prepaid text credits – the cached balance and settings
+ *   per clinic, and the append-only ledger (a payment, a reversal and a webhook event each applied once).
  */
 import type { ColumnType } from "kysely";
 import type { IsoTimestamp } from "../schema";
@@ -210,6 +212,61 @@ export interface PmsLettersTable {
   updated_at: IsoTimestamp;
 }
 
+export interface PmsSmsCreditAccountsTable {
+  tenant_id: string;
+  balance: WithDefault<number>;
+  last_pack_credits: number | null;
+  low_threshold: WithDefault<number>;
+  low_warned: WithDefault<number>;
+  zero_warned: WithDefault<number>;
+  auto_topup: WithDefault<number>;
+  auto_topup_threshold: WithDefault<number>;
+  /** sms_500 | sms_1000 | sms_5000 */
+  auto_topup_pack: string | null;
+  auto_topup_paused_at: IsoTimestamp | null;
+  /** Why the last automatic top-up failed (a provider code, never card details). */
+  auto_topup_failure: string | null;
+  topup_claim: string | null;
+  topup_claimed_at: IsoTimestamp | null;
+  customer_ref: string | null;
+  /** 'test' | 'live' (migration 0144): the mode the customer was made in; NULL = before 0144 (test). */
+  customer_mode: string | null;
+  card_method_ref: string | null;
+  card_brand: string | null;
+  card_last4: string | null;
+  card_exp_month: number | null;
+  card_exp_year: number | null;
+  last_entry_id: string | null;
+  rev: WithDefault<number>;
+  updated_by: string | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
+export interface PmsSmsCreditEntriesTable {
+  tenant_id: string;
+  id: string;
+  /** purchase | auto_topup | debit | adjustment | reversal */
+  kind: string;
+  /** Signed: + bought / given back, − used. */
+  credits: number;
+  balance_after: number;
+  pack: string | null;
+  amount_pence: number | null;
+  message_id: string | null;
+  reverses_id: string | null;
+  /** The payment provider's payment reference (credited once). */
+  payment_ref: string | null;
+  /** The payment provider's webhook event that made this entry (applied once). */
+  event_ref: string | null;
+  /** 'test' | 'live' (migration 0145) on purchase / auto_topup entries; NULL otherwise and before 0145 (test). */
+  mode: string | null;
+  reason: string | null;
+  created_by: string | null;
+  created_at: IsoTimestamp;
+}
+
+
 export interface CommsTables {
   pms_comms_settings: PmsCommsSettingsTable;
   pms_message_templates: PmsMessageTemplatesTable;
@@ -219,6 +276,8 @@ export interface CommsTables {
   pms_consent_events: PmsConsentEventsTable;
   pms_letter_templates: PmsLetterTemplatesTable;
   pms_letters: PmsLettersTable;
+  pms_sms_credit_accounts: PmsSmsCreditAccountsTable;
+  pms_sms_credit_entries: PmsSmsCreditEntriesTable;
 }
 
 /** Foreign-key order (parents first). */
@@ -231,6 +290,8 @@ export const COMMS_TABLES = [
   "pms_consent_events",
   "pms_letter_templates",
   "pms_letters",
+  "pms_sms_credit_accounts",
+  "pms_sms_credit_entries",
 ] as const satisfies readonly (keyof CommsTables)[];
 
 export const COMMS_PRIMARY_KEYS: { readonly [T in (typeof COMMS_TABLES)[number]]: readonly (keyof CommsTables[T] & string)[] } = {
@@ -242,6 +303,8 @@ export const COMMS_PRIMARY_KEYS: { readonly [T in (typeof COMMS_TABLES)[number]]
   pms_consent_events: ["tenant_id", "id"],
   pms_letter_templates: ["tenant_id", "id"],
   pms_letters: ["tenant_id", "id"],
+  pms_sms_credit_accounts: ["tenant_id"],
+  pms_sms_credit_entries: ["tenant_id", "id"],
 };
 
 /** Timestamp columns (TEXT in SQLite, timestamptz in Postgres) besides created_at / updated_at. */
@@ -257,6 +320,8 @@ export const COMMS_TIMESTAMP_COLUMNS: readonly string[] = [
   "finalised_at",
   "voided_at",
   "hold_until",
+  "auto_topup_paused_at",
+  "topup_claimed_at",
 ];
 
 /** Every comms table is per clinic (offboarding exports them decrypted, then deletes them in reverse order). */

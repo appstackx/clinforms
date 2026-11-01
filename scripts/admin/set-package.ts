@@ -12,7 +12,7 @@
  *   npm run admin:set-package -- --slug riverside --show                                   # read only
  *       [--env preview|production] [--confirm] [--yes]
  *
- * Amounts are pounds ex VAT. A preset fills in what is not given (Custom has no defaults: --price, --reports and
+ * Amounts are pounds (no VAT is charged). A preset fills in what is not given (Custom has no defaults: --price, --reports and
  * --extra are required). Every change is written to the clinic's audit trail ("Package set by ClinForms").
  */
 import { removePackage, setPackage } from "../../src/server/admin/clinic-package";
@@ -82,7 +82,7 @@ export function describePackage(p: ClinicPackage | PackageInput | null): string[
   if (!p) return ["  no package"];
   const lines = [
     `  package:          ${packageLabel(p.package)}`,
-    `  price:            ${formatPence(p.monthlyPricePence)} a month (ex VAT)`,
+    `  price:            ${formatPence(p.monthlyPricePence)} a month`,
     `  reports included: ${reportsText(p.reportsIncluded)} a month`,
     `  extra report:     ${p.extraReportPence === null || p.extraReportPence === undefined ? "not set yet (counted, no price)" : `${formatPence(p.extraReportPence)} each`}`,
   ];

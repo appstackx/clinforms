@@ -182,7 +182,7 @@ export function NewReportScreen({
           title: explained && err instanceof ApiError ? err.problem.title : TENANT_COPY.reuse.failedTitle,
           message: explained && err instanceof ApiError ? (err.problem.detail ?? "") : errorMessage(err),
           // "Upload the notes below instead" – unless the server already said what to do.
-          offerUpload: !(err instanceof ApiError && (err.code === "NOT_FOUND" || err.code === "TRIAL_ENDED")),
+          offerUpload: !(err instanceof ApiError && (err.code === "NOT_FOUND" || err.code === "TRIAL_ENDED" || err.code === "PAYMENT_OVERDUE")),
         });
       }
     })();

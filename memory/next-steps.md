@@ -11,6 +11,9 @@ Rule: Khuram wants **a short plan first, build after his OK** for anything big �
 **Updated Sun 2026-10-25 ~14:50 UTC:** TOP-0 (usage/packages live; Dell's email waits for the trial bug fixes).
 Update this file at the end of every session (status, blockers, what changed).
 
+## TOP-billing – Sat 2026-10-31: subscription billing + SMS-credit fixes BUILT (branch `feat/clindesk-billing`, not merged)
+- Runbooks: `docs/clinic-system/BILLING.md` (go-live order §7), `docs/clinic-system/SMS-CREDITS.md` (§7 The SMS Works set-up, §8 review fixes).
+- Khuram: review + merge decision; VAT decision (nothing adds VAT today); live catalogue with the same lookup keys; live webhook (10 events) at `/api/billing/stripe-webhook`; migrations 0009/0144/0145 before deploy; `npm run admin:billing-go-live` then `CLINDESK_BILLING_LIVE=1`; The SMS Works sign-up when the first real clinic onboards.
 ## TOP-ADS – Sat 2026-10-31: Google Ads tracking built (branch `feat/google-ads-tracking`), waits for Khuram
 - Not merged, not deployed (D72). Before merging: Khuram reads the new cookie/privacy wording on both sites (Google
   named as a separate controller – legal review advised) and OKs the merge = production deploy.

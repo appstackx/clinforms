@@ -11,7 +11,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import * as React from "react";
-import { Moon, Send, Settings } from "lucide-react";
+import { MessageSquareText, Moon, Send, Settings } from "lucide-react";
 import type { LetterRowView, MessagesHomeView, OutboxRowView, ReplyRowView, ReplyThreadView, SendFormView, TemplateRowView } from "@/modules/pms/comms/view";
 import { CHANNEL_LABELS, INTENT_LABELS } from "@/modules/pms/comms/copy";
 import { cn } from "@/lib/utils";
@@ -38,6 +38,8 @@ export interface MessagesPageProps {
   letters: LetterRowView[] | null;
   send: SendFormView | null;
   failed: string | null;
+  /** Prepaid text credits: the balance (everyone with messages.send sees it; the link opens Text credits). */
+  credits?: { balance: number; low: boolean } | null;
 }
 
 const FILTERS: { key: OutboxFilterKey; label: string }[] = [
@@ -71,6 +73,17 @@ export function MessagesPage(props: MessagesPageProps) {
     <div className="mx-auto flex w-full min-w-0 max-w-[1180px] flex-col gap-4">
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="mr-auto text-2xl font-semibold text-foreground">Messages</h1>
+        {props.credits ? (
+          <Link
+            href={`${MESSAGES_PATH}/credits`}
+            className={cn("inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-medium", props.credits.low ? "bg-[#FFFBEB] text-[#92400E]" : "bg-[#F0FDF4] text-[#166534]", focusRing)}
+            data-testid="text-credits-link"
+          >
+            <MessageSquareText className="h-3.5 w-3.5" aria-hidden />
+            Text credits: {props.credits.balance.toLocaleString("en-GB")}
+            {props.credits.low ? <span className="sr-only"> (running low)</span> : null}
+          </Link>
+        ) : null}
         {home.canManage ? (
           <Link href={`${MESSAGES_PATH}/settings`} className={cn("inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#EFF4FF] px-3 text-sm font-medium text-[#1842B4]", focusRing)} data-testid="quiet-hours">
             <Moon className="h-3.5 w-3.5" aria-hidden />
@@ -131,10 +144,17 @@ function ProviderNotice({ mode }: { mode: MessagesHomeView["mode"] }) {
     );
   }
   if (mode.sms === "mailpit" || mode.email === "mailpit") {
-    const where = (m: typeof mode.sms) => (m === "mailpit" ? "a local Mailpit inbox on this computer" : m === "test" ? "a test service" : "the outbox (not sent)");
+    const where = (m: typeof mode.sms) => (m === "mailpit" ? "a local Mailpit inbox on this computer" : m === "test" ? "a test service" : m === "live" ? "patients" : "the outbox (not sent)");
     return (
       <PmsNotice tone="info" title="Local test inbox (Mailpit)">
         Emails go to {where(mode.email)}; texts go to {where(mode.sms)}. Nothing reaches a patient.
+      </PmsNotice>
+    );
+  }
+  if (mode.sms === "live") {
+    return (
+      <PmsNotice tone="info" title="Texts are switched on">
+        Texts go to patients and use your text credits. {mode.email === "outbox" ? "Patient emails are kept in the outbox until email sending is switched on." : ""}
       </PmsNotice>
     );
   }

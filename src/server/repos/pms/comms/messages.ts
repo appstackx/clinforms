@@ -113,6 +113,8 @@ function toMessage(ctx: Pick<RepoContext, "cipher">, r: Row): Message {
  * ----------------------------------------------------------------------------------------------*/
 
 export interface OutboundDraft {
+  /** The message's id when the caller chose it first (a text's credits are reserved under it before it is written). */
+  id?: string;
   /** The patient the message is to or about (null: a payer's statement). */
   patientId: string | null;
   channel: MessageChannel;
@@ -147,7 +149,7 @@ export function outboundInsertQuery(ctx: RepoContext, tenantId: string, draft: O
   assertTenantId(tenantId);
   if (!draft.body) throw new RepoInputError("A message needs some text.");
   if (draft.holdUntil && draft.status !== "queued") throw new RepoInputError("Only a queued message can be held.");
-  const id = pmsId(P.message, ctx);
+  const id = draft.id ? assertId(draft.id, "message id") : pmsId(P.message, ctx);
   const at = nowIso(ctx);
   const query = ctx.db.insertInto(T).values({
     tenant_id: tenantId,

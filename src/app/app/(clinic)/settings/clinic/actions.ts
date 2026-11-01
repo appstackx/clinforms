@@ -1,4 +1,5 @@
 "use server";
+import { holdRefusal } from "@/server/billing/access";
 /** Settings → Clinic: the clinic profile written into referrer forms (owners and administrators only). */
 import { revalidatePath } from "next/cache";
 import { ACCOUNT_ERRORS, RETENTION_MAX_DAYS, RETENTION_MIN_DAYS } from "@/lib/account-copy";
@@ -21,6 +22,9 @@ function text(form: FormData, name: string, max: number): string | null {
 export async function saveClinicProfile(_prev: ActionResult | null, form: FormData): Promise<ActionResult> {
   const ctx = await actionContext({ manage: true });
   if ("error" in ctx) return { ok: false, error: ACCOUNT_ERRORS.forbidden };
+  // Paused while a plan payment is overdue past its grace period (never clinical work – src/server/billing/access.ts).
+  const held = await holdRefusal(getDb(), ctx.membership.tenantId);
+  if (held) return { ok: false, error: held };
   let input;
   try {
     const displayName = text(form, "displayName", 200);

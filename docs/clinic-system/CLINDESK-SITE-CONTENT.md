@@ -8,7 +8,7 @@ file:
     content/clindesk-site.json
 
 It is read when the site is built (the pages are static) and validated with zod (`src/lib/clindesk/content.ts`).
-**57 keys.**
+**58 keys.**
 
 ## How to edit it
 
@@ -58,8 +58,8 @@ Not in this file, on purpose:
 
 | Key | Placeholder (current value) | What it is and where it shows |
 |---|---|---|
-| `pricing.fromPrice` | [£X a month, ex VAT – price and unit to confirm] | Lowest price line in the closing call to action ("From … · Reports is an add-on"), e.g. "£35 per practitioner a month, ex VAT". Home, Features, Reports and Switching pages. |
-| `pricing.vat` | [exclude / include] | Whether prices include VAT: "exclude" or "include" (reads "Prices … VAT"). Pricing page, top and the VAT question. Also the terms ("fees … VAT"). |
+| `pricing.fromPrice` | [£X a month – price and unit to confirm] | Lowest price line in the closing call to action ("From … · Reports is an add-on"), e.g. "£39 a month" (no VAT is charged). Home, Features, Reports and Switching pages. |
+| `pricing.vat` | No VAT is charged | The VAT sentence (01/11/2026: AppstackX is not VAT registered). Pricing page, top and the VAT question; the terms (fees). Change it if AppstackX registers for VAT (BILLING.md §8). |
 | `pricing.trialSummary` | [length and terms] | Free trial in a few words after "Free trial:", e.g. "14 days, no card" – or "none". Pricing page, top. |
 | `pricing.essentialsPrice` | [£X] | Price of the Essentials plan per practitioner a month, e.g. "£35". Pricing page, Essentials card. |
 | `pricing.completePrice` | [£X] | Price of the Complete plan per practitioner a month, e.g. "£49". Pricing page, Complete card. |
@@ -154,3 +154,4 @@ For Khuram and a lawyer: none of these may be guessed. Until filled in, the page
 | `legal.medicalDeviceStatus` | [Medical device status – to confirm with a lawyer] | One sentence on whether the clinic system is a medical device, checked by a lawyer, e.g. "It is not a medical device." Terms page, clinical responsibility. |
 | `legal.liabilityCap` | [Liability limit – to confirm with a lawyer] | Each party's total liability in any 12-month period, after "is limited to", e.g. "the fees paid and payable by the clinic in the 12 months before the claim". Terms page, liability. |
 | `legal.paymentProviderTerms` | [How the card payment provider's own terms apply – to confirm] | One sentence on whether the card payment provider's own terms also apply to a clinic that switches on card payments. Terms page, fees and payments. |
+| `legal.textCredits` | FILLED (31/10/2026): prepaid text credits – one credit per text segment, nothing sent on credit, unused credits stay while the account is open, not refundable, no cash value | The prepaid text credits line (Khuram's decision). Terms page, fees and payments. Edit only if the decision changes (docs/clinic-system/SMS-CREDITS.md). |

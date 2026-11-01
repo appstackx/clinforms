@@ -69,6 +69,12 @@ export interface ClinicProfile {
    * other clinic: 403 DEMO_NUMBER_NOT_ALLOWED). Absent / false = a real clinic, unchanged.
    */
   demoClinic?: boolean;
+  /**
+   * 31/10/2026: a payment for the clinic's plan is overdue past its grace period (the host's subscription billing):
+   * nothing new can be created – exactly what an ended trial blocks (auth/clinic-access.ts, 403 PAYMENT_OVERDUE) –
+   * existing records stay readable and downloadable. Absent / false = not on hold.
+   */
+  paymentOverdue?: boolean;
 }
 
 /** One fixed window of a shared counter (rate_limits). */

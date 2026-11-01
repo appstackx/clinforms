@@ -289,6 +289,8 @@ export const PROBLEM_CODES = [
   "SIGNER_NOT_AUTHOR",
   // 10/2026: the clinic's trial has ended – nothing new is created (auth/clinic-access.ts).
   "TRIAL_ENDED",
+  // 31/10/2026: a payment for the clinic's plan is overdue past its grace period – nothing new is created.
+  "PAYMENT_OVERDUE",
   // 10/2026: a made-up PH-DEMO number approves in a demo clinic only (sign; core/demo-clinic.ts).
   "DEMO_NUMBER_NOT_ALLOWED",
   // bh2 W0 follow-up (bh2-base2): the refusals the release's designs name, defined once here (no handler sends them yet).

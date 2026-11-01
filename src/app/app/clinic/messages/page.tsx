@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { MessagesPage, type MessagesTab, type OutboxFilterKey } from "@/components/pms/comms/messages-page";
 import { requireClinicActor } from "@/server/pms/actor";
 import { lettersFor, messagesHomeFor, outboxFor, repliesFor, sendFormFor, templatesFor } from "@/server/pms/comms/views";
+import { creditBalanceFor } from "@/server/pms/comms/credits/views";
 import { nowIso } from "@/server/repos/pms/context";
 
 export const dynamic = "force-dynamic";
@@ -26,7 +27,7 @@ export default async function MessagesRoute({ searchParams }: { searchParams: Re
   const tab: MessagesTab = TABS.includes(tabParam) ? tabParam : "outbox";
   const filterParam = one(searchParams.filter) as OutboxFilterKey;
   const filter: OutboxFilterKey = FILTERS.includes(filterParam) ? filterParam : "all";
-  const home = await messagesHomeFor(actor);
+  const [home, credits] = await Promise.all([messagesHomeFor(actor), creditBalanceFor(actor).catch(() => null)]);
   const [outbox, replies, templates, letters, send] = await Promise.all([
     tab === "outbox" ? outboxFor(actor, filter) : null,
     tab === "replies" ? repliesFor(actor) : null,
@@ -48,6 +49,7 @@ export default async function MessagesRoute({ searchParams }: { searchParams: Re
       letters={letters && letters.ok ? letters.value : null}
       send={send && send.ok ? send.value : null}
       failed={failed}
+      credits={credits}
     />
   );
 }

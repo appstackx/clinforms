@@ -80,6 +80,7 @@ describe("shell navigation by permission", () => {
         "Intake forms",
         "Billing settings",
         "Message settings",
+        "Text credits",
         "Report targets",
         "Audit trail",
         "Import data",

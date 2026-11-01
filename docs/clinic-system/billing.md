@@ -1,79 +1,207 @@
-# Billing (clinic system)
+# Subscription billing – ClinDesk and ClinForms (runbook)
 
-Internal. What the billing module does, where its code lives and the rules it keeps. Requirements: `requirements.md`
-§3 BILL-*. Build contract: `contract.md`. Product name on screen only through `CLINIC_SYSTEM_NAME`.
+**Internal.** 31/10/2026 (updated 01/11/2026: hold never blocks clinical work, yearly Reports add-on, no VAT), branch `feat/clindesk-billing` (on `feat/clindesk-sms-credits` + `main`). Not merged, not
+deployed. Text credits: [`SMS-CREDITS.md`](SMS-CREDITS.md) (same payment account, same key, same webhook).
 
-## What it does
+## 1. What it does
 
-- **Invoices from the diary.** Chargeable visits (`CHARGEABLE_STATUSES`: completed, did not attend, late cancellation –
-  the last two only with the fee flag) are read on the server from the diary adapter
-  (`src/server/pms/diary/billing-visits.ts`); the browser sends appointment ids only, never amounts. Prices: the case's
-  price list → the default list → the service's price. Insured visits bill the payer account; the patient's part is
-  billed to the patient (see *Excess modes*). DNA and late-cancellation fees always bill the patient.
-- **States.** Draft → issued → part paid / paid / overdue; credit notes of kind credit, write-off, void, transfer.
-  Void is refused while payments are on the invoice. Numbers: clinic prefix + 5 digits (≤ 10 characters), sequential.
-- **Payments.** Card on file (saved TEST card), card now, cash with change, bank transfer, payment link; refunds to the
-  card through the test provider; remittances from payers allocated per invoice (leave / write off / move to patient).
-- **Documents.** A4 print pages for invoices and statements (print stylesheet; "Save as PDF"); react-pdf PDFs
-  (`src/server/pms/billing/pdf.tsx`) for emailed documents.
-- **Reports and exports.** Aged debt, statements, "attended, not invoiced", the invoice list CSV (`reports.export`,
-  formula-looking cells defused, audited).
-- **Insurer claims (BILL-011).** Billing → *Insurer claims* (`/app/clinic/billing/claims`): a payer account and invoice
-  dates → the issued invoices to claim → *Download claims file (CSV)*, one row per treatment with membership number,
-  claim reference and authorisation code. Each invoice is logged as sent (`pms_invoice_exports`, audit row in the same
-  batch). **Healthcode e-billing is listed as not connected and never sends** – a real connection needs this system's
-  own Healthcode registration and agreement (a commercial step, Khuram's decision).
+- **One payment account for both products** (`acct_1UWi2yLYNzei2exh`, public name ClinDesk, descriptor `CLINDESK` –
+  CLAUDE.md's deliberate exception). **One customer per clinic** (shared with text credits:
+  `pms_sms_credit_accounts.customer_ref` + its mode) and **one subscription per clinic** with one or two items.
+- **Plans** (GBP; **no VAT is charged** – AppstackX is not VAT registered, Khuram 01/11/2026; prices found by lookup key and checked against `src/lib/billing/plans.ts` before every
+  checkout – amount, interval, `reports_included` metadata):
 
-## Excess modes (Khuram, 28/10/2026)
+  | Plan | Practitioners | Monthly | Yearly (10×) | Lookup keys |
+  |---|---|---|---|---|
+  | ClinDesk Solo | 1 | £39 | £390 | `clindesk_solo_monthly` / `_yearly` |
+  | ClinDesk Small | 2–5 | £89 | £890 | `clindesk_small_*` |
+  | ClinDesk Practice | 6–10 | £169 | £1,690 | `clindesk_practice_*` |
+  | ClinDesk Group | 11–25 | £299 | £2,990 | `clindesk_group_*` |
+  | ClinDesk Multi-site | 26–60 | £499 | £4,990 | `clindesk_multisite_*` |
+  | Reports add-on 25 / 100 / 250 / 500 a month | – | £79 / £159 / £279 / £439 | £790 / £1,590 / £2,790 / £4,390 | `clindesk_reports_<n>_monthly` / `_yearly` |
+  | ClinForms Starter / Practice / Group / Group Plus (25/100/250/500) | – | £99 / £199 / £349 / £549 | – | `clinforms_<tier>_monthly` |
+  | Extra report above the allowance | – | £1.50 each | – | `extra_report` (one-off) |
 
-Per payer account (`pms_payer_billing_terms`), overridable per case (`pms_case_billing_terms`):
+  **Decision (Khuram 01/11/2026):** the hosted payment page refuses mixed billing intervals in one subscription
+  ("Checkout does not support multiple prices with different billing intervals", also with flexible billing mode), so
+  the Reports add-on has **yearly prices too** (10 × monthly, `clindesk_reports_<n>_yearly`, created in TEST mode
+  01/11/2026 with `reports_included` metadata) and the add-on always takes the plan's interval. The allowance stays a
+  **month's** (25/100/250/500 reports a month) on either interval; a subscription whose items mix intervals is refused
+  (`mixed_intervals`). `clinforms_setup` (£250) is not sold
+  online – add it by hand as an invoice item when agreed.
+- **Plan and billing** (`/app/settings/billing`, owners and admins, both brands; nav "Plan and billing"): current plan,
+  status, price ("£X a month" / "£X a year" – "No VAT is charged"), next payment (DD/MM/YYYY), notices; choose a plan (ClinDesk band monthly/yearly + optional Reports
+  add-on, or ClinForms on its own – the default follows the clinic's packages / host, `?product=` switches); the hosted
+  payment page in **subscription mode** (card incl. wallets, Bacs Direct Debit, Revolut Pay – the account's settings);
+  success page `/done` (re-reads and applies at once, idempotent with the webhook), `/cancelled`; **Manage billing** =
+  the hosted billing page (card / Direct Debit details, invoices, cancel at period end; a configuration with
+  `metadata.app=clindesk` is created on first use; plan changes stay in the app). A running plan is **changed** (items
+  replaced, prorated on the next invoice), never bought twice. No vendor name on screen (neutral-wording test now bans
+  "stripe" in the screens).
+- **Entitlements follow the subscription** (`src/server/billing/sync.ts`, re-read from the payment service every time):
 
-- **Excess per case** (default): one amount (the case's `excess_pence`) used up visit by visit from the first visits.
-- **Patient contribution per visit**: a fixed amount on every visit; the insurer pays the rest.
+  | Subscription | Packages |
+  |---|---|
+  | **active** (first invoice paid) | ClinDesk band → `clinic` active (`plan_code` `clindesk-<band>`, `limits.practitioners_max`); Reports add-on / ClinForms tier → `reports` active + `clinic_package` (allowance from the price's `reports_included`, extra £1.50); ClinDesk without the add-on → `reports` **paused**; ClinForms on its own leaves `clinic` alone (cancelled if this subscription had switched it on); a running 3-day trial is converted (`paid`) |
+  | **pending_payment** (Bacs not cleared, incomplete) | **nothing switched on** – Bacs activates only on its cleared payment (`checkout.session.async_payment_succeeded` / `invoice.paid` / the subscription update that follows) |
+  | **past_due / unpaid** | everything works for **7 days** (owner + admins emailed once, banner), then **on hold** (§4: admin settings, invites, imports, marketing and new reports paused – **never clinical work**) until paid; paid → "payment received" email |
+  | cancel at period end | the packages get the period end as `ends_at` (they switch off by themselves); "cancelled" email |
+  | **canceled** | packages the subscription switched on → `cancelled` (no data deleted) |
 
-A visit the patient's part covers in full is billed to the patient only – no £0 insurer invoice or line, nothing taken
-off the authorisation's value. Authorisation *sessions* are counted once, by the diary on completion; billing counts
-value.
+  Every change is audited (ids, plan keys, states only): `clinic.subscription_<state>`, `clinic.package_change`,
+  `clinic.package_set/removed`, `clinic.trial_converted`, `clinic.subscription_checkout/change`, `clinic.billing_portal`,
+  `clinic.extra_reports_billed` (activity labels in `src/lib/activity-copy.ts`; actor "Automatic").
+- **Seat band check**: active practitioners (`pms_practitioners.active`) above the band → warning with the suggested
+  band on Plan and billing and a banner for owners/admins (ClinDesk shell, clinic area, Studio). **Never blocks.**
+- **Extra reports** (`src/server/billing/extras.ts`) – decision: per completed **UK calendar month**, exactly what
+  "Plan & usage" shows (`clinic_usage.billable_reports` − `plan_reports_included`), as **one invoice item**
+  (`extra_report` × count), once per month (row first, idempotency key `extra-<clinic>-<YYYY-MM>`, then marked billed
+  with the item id – unique; months without extras recorded `skipped`):
+  - **monthly plans**: on `invoice.created` for the renewal (billing_reason `subscription_cycle`, still a draft for
+    ~1 hour) the item goes onto that invoice;
+  - **yearly plans** (and any month a webhook missed): the daily cron (`/api/cron/retention`, after retention –
+    `billExtrasFromCron`) adds the item and, for a yearly plan, raises an invoice for it at once (charged
+    automatically – a year is too long to wait); a monthly plan's pending item rides on its next renewal.
+- **Platform page** `/app/platform/billing` (link "Subscriptions" on /app/platform): every clinic's plan, status, next
+  payment / end, grace or READ-ONLY, practitioners vs band, test/live, override; buttons **Re-read** (apply the
+  service's current copy) and **Manage by hand (override)** / **Follow the subscription again**.
 
-## Tables (migrations 0130–0138, each with its Postgres twin in `supabase/migrations/2026102400013N_*.sql`)
+## 2. Manual overrides (platform overrides win)
 
-| Migration | Tables / columns |
+`clinic_subscription.override = 1` → the subscription is still recorded (state, next payment) but changes **no
+package** and puts **no hold** on the account. Switched on:
+- explicitly – platform page, or `npm run admin:set-billing-override -- --slug <id> --on [--note "…"]`;
+- **automatically by any manual change** for a clinic with a running subscription: `admin:set-entitlement`,
+  `admin:set-package`, the platform page's package switches and package form (`src/server/admin/billing.ts
+  overrideForManualChange`; the script prints "billing override is now ON").
+
+Switched off only explicitly (`… --off` or the platform button), which re-applies the subscription at once (forced, so
+the manual settings are replaced) when payments are configured, else at its next event. Trials (`admin:set-trial`) and
+drafting limits are independent of the override (a paid subscription converts a running trial). Audited twice
+(`clinic.billing_override_on|off`, `platform.billing_override_on|off`).
+
+## 3. One webhook
+
+**`POST /api/billing/stripe-webhook`** (`src/server/billing/webhook.ts`) handles subscriptions **and** text credits.
+`/api/clinic-messages/credit-payments` is now an **alias** of the same handler (an endpoint registered there keeps
+working – move it to the new URL at go-live and delete the old endpoint). 503 until key + signing secret are set; 400
+without a valid signature (5 minutes); every object **re-read** with our key; checked: clinic id in the metadata (and
+`client_reference_id` on checkouts), the clinic's own customer in the same mode, prices we sell, the key's mode; a
+refused **paid** object → 200 + payment alert (platform audit `platform.payment_alert` + email to
+`CLINFORMS_PLATFORM_ADMINS`). Idempotent (state re-applied; extras once per month; credits once per event/payment).
+
+**Events to register** (Developers → Webhooks → endpoint `https://clindesk.co.uk/api/billing/stripe-webhook`, API
+version `2026-10-28.endive`): `checkout.session.completed`, `checkout.session.async_payment_succeeded`,
+`checkout.session.async_payment_failed`, `customer.subscription.created`, `customer.subscription.updated`,
+`customer.subscription.deleted`, `invoice.created`, `invoice.paid`, `invoice.payment_failed`, `payment_intent.succeeded`.
+
+## 4. On hold (payment overdue past the grace period) – never blocks clinical work
+
+`src/server/billing/access.ts` (`holdOf`): state past_due, `grace_until` (past_due_since + 7 days) passed, no override,
+not a test-mode row once live billing is on. **Khuram 01/11/2026: a hold never blocks clinical work** – clinical notes
+(write, sign, amend), appointments and the diary, patient records, patient billing, letters, the patient portal and
+messages to patients all keep working. **Paused** until the payment is made:
+
+| Paused | How |
 |---|---|
-| 0130 | `pms_billing_settings`, `pms_service_vat`, `pms_invoices`, `pms_invoice_lines`, `pms_credit_notes`, `pms_credit_note_lines` |
-| 0131 | `pms_payments`, `pms_payment_allocations`, `pms_payment_links`, `pms_invoice_exports` |
-| 0132 | credit note kinds (credit / write_off / void / transfer) |
-| 0133, 0135 | `site_id` on invoices and payments (site scope) |
-| 0134 | `pms_invoices.voided_at` |
-| 0136 | `pms_saved_cards` (TEST cards only) |
-| 0137 | `pms_payer_billing_terms`, `pms_case_billing_terms` |
-| 0138 | `pms_invoices.per_visit_contribution_pence` |
+| Admin settings other than billing: clinic-system set-up (`settings.setup`), message templates (`messages.templates`), member access (`settings.members`, role changes), Settings → Clinic, new API keys | `clinicActionActor` (`HOLD_PAUSED_PERMISSIONS` → "payment_overdue"); `holdRefusal` in the settings actions |
+| New staff invitations | `holdRefusal` in `inviteMember` |
+| Data imports (`settings.import`) | `clinicActionActor` |
+| Marketing messages (purpose "marketing") | `holdRefusal` in `sendMessageAction` |
+| Report drafting / ClinForms generation | the Report API's **403 `PAYMENT_OVERDUE`** (new report, drafting, uploads, form readings, launch – existing reports open, edit, approve and download) |
 
-Every table: `tenant_id` first in the primary key and every foreign key; money in whole pence; free text that may hold
-personal detail in `_enc` columns.
+Always available: Plan and billing (pay, Manage billing), removing a member, revoking an API key, members' signing
+details. Message (`HOLD_MESSAGE`, banner, email): "Clinical work – notes, the diary, patient records, letters and
+messages to patients – carries on as normal." Fail open: an unreadable table never pauses anything. To give a clinic
+more time, switch the override on (it lifts the hold).
 
-## Permissions
+## 5. Tables (migration 0009)
 
-`billing.view` (look), `billing.edit` (draft, issue), `billing.pay` (take payments, remittances), `billing.refund`
-(refunds, credit notes, write-offs), `billing.void`, `reports.export` (CSV and the claims file), `settings.setup`
-(payer-account billing terms). Every read applies the member's sites (`actor.siteIds`); out of scope reads as "no such
-invoice".
+`db/migrations/sqlite/0009_clinic_billing.sql` + `supabase/migrations/20261031000009_clinic_billing.sql` (RLS on,
+anon/authenticated revoked): **`clinic_subscription`** (one row per clinic; mode, status, our state, plan, allowance,
+band max, amount, period, cancel, activated, past due / grace, notices, override, applied packages, last event) and
+**`clinic_billing_extras`** (per clinic and month; unique item id). Plus text credits' 0144/0145 (mode columns).
+Offboarding: the rows stay with a closed clinic's id (billing records); with `--release-slug` they are deleted in a
+batch after the main one. **Cancel the clinic's subscription in the Dashboard before offboarding.**
 
-## Rules kept
+## 6. Environment variables (names only)
 
-- Permission first, then ids read back from the member's clinic and sites, zod on input, plain-English errors.
-- Every write has its audit row **in the same batch** (conditional `INSERT … WHERE EXISTS` – `billingAuditWhen`);
-  audit rows hold ids and counts, never patient data.
-- **Test mode only.** Card payments go through `stripe_test` (`src/server/pms/billing/payments/`), which refuses a live
-  key. Live card payments need the clinic system's own Stripe account (one account per product – CLAUDE.md), not
-  set up yet.
-
-## Where the code lives
-
-| Part | Path |
+| Variable | Meaning |
 |---|---|
-| Pure rules (VAT, numbering, states, aged debt, statements, excess, claims CSV) | `src/modules/pms/billing/` |
-| Repositories | `src/server/repos/pms/billing/` |
-| Server layer (views, writes, access, PDFs, e-billing channels, claims) | `src/server/pms/billing/` |
-| Screens | `src/app/app/clinic/billing/**`, `src/components/pms/billing/**`, record Invoices tab |
-| Seed | `scripts/pms/seed-billing.ts` |
-| Tests | billing repo suite + service suite on SQLite, PGlite, the D1 stand-in and local D1; e2e `scripts/e2e/pms-billing-screens.cjs` |
+| `STRIPE_CLINDESK_SECRET_KEY` | the account's key (test until go-live; restricted key needs Checkout Sessions, Customers, Subscriptions, Invoices, Invoice Items, Prices read, Billing Portal, Payment Intents, Payment Methods) |
+| `STRIPE_CLINDESK_WEBHOOK_SECRET` | the ONE endpoint's signing secret |
+| `STRIPE_CLINDESK_ALLOW_LIVE` | `1` lets a live key work (go-live) |
+| `CLINDESK_BILLING_LIVE` | `1` = live billing only: a test key is refused, test-mode rows never count (after the go-live clean-up) |
+| `CLINFORMS_PLATFORM_ADMINS` | also the recipients of payment alerts |
+| `STRIPE_CLINDESK_API_BASE` | local tests only |
+
+Local: test key `STRIPE_CLINDESK_TEST_SECRET_KEY` in `~/.config/appstackx/clinforms.secrets.env` (never printed).
+
+## 7. Go-live (exact order)
+
+1. **Dashboard (live mode, ClinDesk account)**: activate the account; check public details (ClinDesk, descriptor
+   CLINDESK, support `hello@clindesk.co.uk`) are not another product's (CLAUDE.md); recreate the catalogue **in live
+   mode with the same lookup keys, amounts, intervals and metadata** – the code refuses any mismatch:
+   - `clindesk_{solo,small,practice,group,multisite}_{monthly,yearly}` (yearly = 10×);
+   - `clindesk_reports_{25,100,250,500}_monthly` (£79/£159/£279/£439) **and `_yearly`** (£790/£1,590/£2,790/£4,390,
+     recurring yearly), all with metadata `reports_included` = 25/100/250/500 (a month's allowance);
+   - `clinforms_{starter,practice,group,group_plus}_monthly` with `reports_included`;
+   - `extra_report` one-off £1.50; `clinforms_setup` £250; `sms_500/1000/5000` (£40/£75/£325, `sms_credits`);
+   - tax behaviour exclusive on every price; **do not enable Stripe Tax** (no VAT is charged – §8).
+   Payment methods: card (+ wallets), Bacs Direct Debit (needs the Bacs mandate set-up in live), Revolut Pay.
+2. **Webhook endpoint (live)**: `https://clindesk.co.uk/api/billing/stripe-webhook`, the 10 events of §3, API version
+   `2026-10-28.endive` → copy the signing secret. (Delete the old `/api/clinic-messages/credit-payments` endpoint once
+   the new one shows deliveries.)
+3. **Migrations BEFORE the code**, on Supabase (session pooler, as M11-RUNSHEET §4):
+   `CLINFORMS_DB=postgres npm run db:migrate` – applies **0009** (subscriptions), **0144**, **0145** (text credit mode
+   columns); D1 previews `CLINFORMS_DB=d1 npm run db:migrate -- --d1-env preview`.
+4. **Deploy** the code (merge to `main` = production – Khuram's go).
+5. **Clean-up of test mode**: `npm run admin:billing-go-live -- --env production` (preview – read it), then
+   `npm run admin:billing-go-live -- --env production --confirm --yes`: test customers/cards forgotten, test-mode
+   credit packs reversed (reason "Test-mode payment reversed at go-live"), test-mode subscriptions ended and the
+   packages they switched on cancelled (overridden clinics untouched). Re-set any internal clinic by hand afterwards.
+6. **Vercel Production env**: `STRIPE_CLINDESK_SECRET_KEY` = live key, `STRIPE_CLINDESK_WEBHOOK_SECRET` = live secret,
+   `STRIPE_CLINDESK_ALLOW_LIVE=1`, `CLINDESK_BILLING_LIVE=1` (Sensitive). Redeploy.
+7. **Smoke** on the internal clinic: choose ClinDesk Solo monthly with a real card → active, packages on; Manage
+   billing opens; cancel at period end in the billing page → "Ends on"; refund in the Dashboard; set the internal
+   clinic back by hand (override on).
+
+## 8. VAT (not registered today)
+
+AppstackX is **not VAT registered** (Khuram 01/11/2026): no VAT is charged, screens and emails say "£X a month" and
+"No VAT is charged" where a note is needed, and Stripe Tax stays **off**. Every price is created with tax behaviour
+**exclusive**, so switching to VAT later needs **no new prices and no code change to the price ids**:
+1. Register for VAT once taxable turnover passes the HMRC registration threshold (£90,000 over a rolling 12 months
+   from 1 April 2024 – check the current figure on gov.uk), or voluntarily earlier.
+2. Dashboard → Tax: add the VAT registration number, switch on Stripe Tax (or a 20 % UK VAT tax rate), set the
+   default product tax code; then enable automatic tax on Checkout and subscriptions (one parameter each in
+   `src/server/billing/payments.ts`: `automatic_tax[enabled]=true`; existing subscriptions: update them once) – the
+   exclusive prices then show "+ VAT" on invoices at the same pence.
+3. Change the copy: `src/app/app/(clinic)/settings/billing/page.tsx` ("No VAT is charged" → "plus VAT"),
+   `src/lib/packages.ts` `PLAN_COPY.exVat`, the platform page labels, the billing emails, the legal pages; add the VAT
+   number to invoices (Dashboard → Settings → Invoices).
+
+## 9. Known limits
+
+- Plan changes are prorated onto the next invoice (not charged at once); a downgrade credits the difference.
+- The last part-month's extra reports after a subscription ends are not billed (no further invoice) – add by hand.
+- A yearly plan changed to monthly (or back) is re-invoiced at once by the payment service (the billing cycle resets).
+- No dunning beyond the payment service's own retries; the "on hold" email goes when the next sync after the grace
+  period runs (a retry's `invoice.payment_failed`, the success page or "Re-read").
+- One subscription per clinic: a second running subscription for the same customer (made outside the app) is ignored
+  once it is older than the recorded one.
+- `clinforms_setup` is not sold online.
+
+## 10. Code map and tests
+
+| What | Where |
+|---|---|
+| Plans, prices, states (pure) | `src/lib/billing/plans.ts` |
+| Payment service (fetch, pinned version, shared config) | `src/server/billing/payments.ts` (+ `paymentsHttp` in `src/server/pms/comms/credits/card-payments.ts`) |
+| Sync / entitlements | `src/server/billing/sync.ts`; hold `access.ts`; extras `extras.ts`; emails `notify.ts` (+ `billingNoticeEmail`); banner `banner.ts`; go-live `go-live.ts` |
+| Webhook | `src/server/billing/webhook.ts`, `webhook-route.ts`; routes `src/app/api/billing/stripe-webhook`, alias `src/app/api/clinic-messages/credit-payments` |
+| Screens | `src/app/app/(clinic)/settings/billing/{page,forms,actions,done,cancelled}`; banner `src/components/account/billing-banner.tsx` |
+| Platform | `src/app/app/platform/billing/*`, `src/server/admin/billing.ts`; scripts `admin:set-billing-override`, `admin:billing-go-live` |
+| Repos | `src/server/repos/clinic-subscription.ts` |
+| Unit tests (payment service mocked) | `src/server/billing/billing.test.ts` → `testing/billing-suite.ts` on SQLite + PGlite (test:db) |
+| Browser, real TEST mode | `scripts/e2e/billing-subscriptions.cjs` (card 4242, Bacs 10-88-00 / 00012345, `stripe listen` forwarding to the one webhook) |

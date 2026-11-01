@@ -180,3 +180,110 @@ export function twoFactorEnabledEmail(input: TwoFactorEnabledEmailInput): EmailM
   ]);
   return { kind: "two_factor_enabled", to: input.to, subject, text, html, ...brandField(input.brand) };
 }
+
+export type TextCreditNotice = { kind: "low"; balance: number; lowThreshold: number } | { kind: "zero" } | { kind: "topup_failed" };
+
+export interface TextCreditNoticeEmailInput {
+  to: EmailRecipient;
+  /** Default ClinForms (a clinic with the clinic package: "clinic"). */
+  brand?: BrandId;
+  clinicName: string;
+  notice: TextCreditNotice;
+  /** The clinic's Text credits page. */
+  creditsUrl: string;
+}
+
+/**
+ * Text credits (the clinic system's prepaid texts): the warning at 20 % of the last pack, at zero, and when an
+ * automatic top-up did not go through. To the clinic's owner and admins. No patient data; never the payment
+ * provider's name.
+ */
+export function textCreditNoticeEmail(input: TextCreditNoticeEmailInput): EmailMessage {
+  const name = productNameOf(input.brand);
+  const n = input.notice;
+  const subject =
+    n.kind === "low" ? `Text credits running low – ${input.clinicName}` : n.kind === "zero" ? `Text credits used up – ${input.clinicName}` : `Automatic top-up did not go through – ${input.clinicName}`;
+  const first =
+    n.kind === "low"
+      ? `${input.clinicName} has ${n.balance.toLocaleString("en-GB")} text ${n.balance === 1 ? "credit" : "credits"} left.`
+      : n.kind === "zero"
+        ? `${input.clinicName} has no text credits left.`
+        : `The card payment for the automatic top-up of ${input.clinicName}'s text credits did not go through. Nothing was charged, and automatic top-up is paused.`;
+  const second =
+    n.kind === "topup_failed"
+      ? "Check the saved card or buy a pack, then switch automatic top-up on again. Until then, automatic messages go by email where the patient has an email address and allows email; otherwise they are not sent."
+      : "When credits run out, automatic messages go by email where the patient has an email address and allows email; otherwise they are not sent. Texts are never sent on credit.";
+  const text = [greeting(input.to), "", first, "", second, "", "Buy more credits or change automatic top-up here:", input.creditsUrl, "", `${name} · ${COMPANY_NAME}`].join("\n");
+  const html = layout(name, subject, [escapeHtml(greeting(input.to)), escapeHtml(first), escapeHtml(second)], { label: "Open text credits", href: input.creditsUrl });
+  return { kind: "text_credit_notice", to: input.to, subject, text, html, ...brandField(input.brand) };
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Payments and subscriptions (31/10/2026)
+ * ----------------------------------------------------------------------------------------------*/
+
+export interface PaymentAlertEmailInput {
+  to: EmailRecipient;
+  /** What happened, in a few plain words ("A paid checkout was refused"). */
+  what: string;
+  /** Ids and reason codes only (event, object, clinic id, why) – never card or patient details. */
+  facts: Record<string, string | null>;
+  platformUrl: string;
+}
+
+/** To ClinForms platform staff: a payment the system received but did not apply (to be checked by hand). */
+export function paymentAlertEmail(input: PaymentAlertEmailInput): EmailMessage {
+  const subject = `Payment needs checking – ${input.what}`;
+  const lines = Object.entries(input.facts).map(([k, v]) => `${k}: ${v ?? "–"}`);
+  const first = "A payment was received but not applied, because it did not match what the system expected. Nothing was credited or switched on.";
+  const text = [greeting(input.to), "", first, "", ...lines, "", "Check it in the payment account and on the platform page:", input.platformUrl, "", `${PRODUCT_TEAM} · ${COMPANY_NAME}`].join("\n");
+  const html = layout(PRODUCT_TEAM, subject, [escapeHtml(greeting(input.to)), escapeHtml(first), lines.map(escapeHtml).join("<br>")], { label: "Open the platform page", href: input.platformUrl });
+  return { kind: "payment_alert", to: input.to, subject, text, html };
+}
+
+const PRODUCT_TEAM = "ClinForms platform";
+
+export type BillingNotice =
+  | { kind: "payment_failed"; graceUntil: string }
+  | { kind: "read_only" }
+  | { kind: "payment_received" }
+  | { kind: "cancelled"; endsOn: string };
+
+export interface BillingNoticeEmailInput {
+  to: EmailRecipient;
+  brand?: BrandId;
+  clinicName: string;
+  notice: BillingNotice;
+  billingUrl: string;
+}
+
+/** To a clinic's owner and admins: the payment failed, the account is on hold (settings and new reports paused), or the plan ends. */
+export function billingNoticeEmail(input: BillingNoticeEmailInput): EmailMessage {
+  const name = productNameOf(input.brand);
+  const n = input.notice;
+  const subject =
+    n.kind === "payment_failed"
+      ? `Payment for your plan did not go through – ${input.clinicName}`
+      : n.kind === "read_only"
+        ? `Some features are paused – ${input.clinicName}`
+        : n.kind === "payment_received"
+          ? `Payment received – ${input.clinicName}`
+          : `Your plan has been cancelled – ${input.clinicName}`;
+  const paragraphs =
+    n.kind === "payment_failed"
+      ? [
+          `The latest payment for ${input.clinicName}'s ${name} plan did not go through.`,
+          `Please update the payment details by ${n.graceUntil}. After that date, settings changes, new staff invitations, imports, marketing messages and new reports are paused until the payment is made. Clinical work – notes, the diary, patient records, letters and messages to patients – always carries on.`,
+        ]
+      : n.kind === "read_only"
+        ? [
+            `The payment for ${input.clinicName}'s ${name} plan is still outstanding, so settings changes, new staff invitations, imports, marketing messages and new reports are now paused.`,
+            "Clinical work – notes, the diary, patient records, letters and messages to patients – carries on as normal. Update the payment details to switch everything back on.",
+          ]
+        : n.kind === "payment_received"
+          ? [`Thank you – the payment for ${input.clinicName}'s ${name} plan has been received and everything is working as normal.`]
+          : [`${input.clinicName}'s ${name} plan has been cancelled. It stays fully available until ${n.endsOn}. Your records are kept – you can choose a plan again at any time.`];
+  const text = [greeting(input.to), "", ...paragraphs.flatMap((p) => [p, ""]), "Plan and billing:", input.billingUrl, "", `${name} · ${COMPANY_NAME}`].join("\n");
+  const html = layout(name, subject, [escapeHtml(greeting(input.to)), ...paragraphs.map(escapeHtml)], { label: "Open plan and billing", href: input.billingUrl });
+  return { kind: "billing_notice", to: input.to, subject, text, html, ...brandField(input.brand) };
+}

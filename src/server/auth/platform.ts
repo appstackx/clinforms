@@ -7,6 +7,7 @@
  * using Better Auth's encodings: ids are random strings, timestamps ISO-8601, booleans true/false (stored
  * 0/1 on SQLite/D1).
  */
+import { isMissingBillingTable } from "../repos/clinic-subscription";
 import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -434,6 +435,16 @@ export async function offboardClinic(db: Kysely<Database>, cipher: DataCipher | 
       );
     }
   }
+  // 31/10/2026: a released id also loses its subscription records (billing only, no patient data) – a batch of its
+  // own after the main one (offboard-batch.test.ts headroom). Cancel the subscription at the payment service FIRST
+  // (docs/clinic-system/BILLING.md "Offboarding"); a database before migration 0009 has nothing to delete.
+  if (input.releaseSlug) {
+    try {
+      await runBatch(db, [db.deleteFrom("clinic_billing_extras").where("tenant_id", "=", tenantId), db.deleteFrom("clinic_subscription").where("tenant_id", "=", tenantId)]);
+    } catch (err) {
+      if (!isMissingBillingTable(err)) throw err;
+    }
+  }
   // Rows written to a clinic-system table that was empty when it was read (a member still working until the batch
   // above removed every membership) – none in practice; deleted here so nothing of the closed clinic stays behind.
   const late = await countPmsRows(db, tenantId);
@@ -488,7 +499,8 @@ export function offboardDeleteQueries(db: Kysely<Database>, input: OffboardDelet
     db.deleteFrom("clinic_plan").where("tenant_id", "=", tenantId),
     db.deleteFrom("clinic_package").where("tenant_id", "=", tenantId),
     // The usage counters are billing records (no patient data) and stay with the closed clinic's id – unless the id
-    // is released for reuse, when a new clinic must not inherit them.
+    // is released for reuse, when a new clinic must not inherit them. (The subscription records likewise – deleted
+    // after this batch, see offboardClinic, so the batch keeps its headroom.)
     ...(input.releaseSlug
       ? [
           db.deleteFrom("clinic_usage").where("tenant_id", "=", tenantId),

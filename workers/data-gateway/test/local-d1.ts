@@ -30,6 +30,8 @@ export async function startLocalD1(): Promise<{ proxy: Proxy; dir: string }> {
     cwd: WORKER_DIR,
     env: { ...process.env, CI: "1", WRANGLER_SEND_METRICS: "false", CLOUDFLARE_ACCOUNT_ID: "a04ab546d0f1be2aa339bafebcdb3ffa" },
     stdio: "pipe",
+    // wrangler prints every migration it applies: past 1 MB (the default) the run failed with ENOBUFS.
+    maxBuffer: 64 * 1024 * 1024,
   });
   const require = createRequire(path.join(WORKER_DIR, "package.json"));
   const wrangler = (await import(require.resolve("wrangler"))) as {

@@ -147,8 +147,8 @@ export default function ClindeskTermsPage() {
 
         <h2 id="fees">7. Fees and payments</h2>
         <p>
-          Fees are set out in the order. Unless the order says otherwise, invoices are payable within 30 days and fees{" "}
-          <Fill k="pricing.vat" /> VAT. We may change fees for a renewal term by giving at least 60 days&rsquo; notice
+          Fees are set out in the order. Unless the order says otherwise, invoices are payable within 30 days.{" "}
+          <Fill k="pricing.vat" />. We may change fees for a renewal term by giving at least 60 days&rsquo; notice
           before it starts. If an invoice is unpaid 14 days after we have reminded the clinic, we may suspend the service
           until it is paid.
         </p>
@@ -156,6 +156,9 @@ export default function ClindeskTermsPage() {
           The clinic sets its own prices for patients and payers and is responsible for its invoices, VAT and claims to
           insurers. Card payments from patients are optional and are taken by our card payment provider.{" "}
           <Fill k="legal.paymentProviderTerms" />
+        </p>
+        <p id="text-credits">
+          <Fill k="legal.textCredits" />
         </p>
 
         <h2 id="ip">8. Intellectual property</h2>

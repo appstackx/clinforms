@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { DemoClinicBanner } from "@/components/account/demo-clinic-banner";
 import { TrialBannerBar } from "@/components/account/trial-banner";
+import { BillingBannerBar } from "@/components/account/billing-banner";
+import { billingBannerFor } from "@/server/billing/banner";
 import { ProductSwitchBar } from "@/components/pms/shell/product-switch";
 import { CLINIC_SYSTEM_NAME } from "@/lib/brand";
 import { StudioShell } from "@/modules/medreport/ui/components/shared/studio-shell";
@@ -35,7 +37,7 @@ export default async function TenantStudioLayout({ children }: { children: React
   const { context } = access;
   // A clinic with the Reports package switched off (a clinic-system-only clinic) has no Studio.
   // Both packages in one read (src/server/pms/entitlements.ts, never throws: Reports on, clinic system off if unreadable).
-  const packages = await clinicPackages(context.tenantId);
+  const [packages, billing] = await Promise.all([clinicPackages(context.tenantId), billingBannerFor(getDb(), context.tenantId, context.member.role === "owner" || context.member.role === "admin")]);
   if (!packages.reports) notFound();
   const clinicSystem = packages.clinic;
   return (
@@ -44,6 +46,7 @@ export default async function TenantStudioLayout({ children }: { children: React
       {/* A demo clinic (made-up data only; clinic_plan.demo_clinic read on the server): the banner, and the header pill. */}
       <DemoClinicBanner on={context.demoClinic} />
       <TrialBannerBar access={context.trial} />
+      <BillingBannerBar banner={billing} />
       <TenantHost
         clinic={{
           tenantId: context.tenantId,

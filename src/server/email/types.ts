@@ -1,7 +1,7 @@
 /** Transactional email: message and provider types (src/server/email). */
 import type { BrandId } from "../../lib/brand";
 
-export type EmailKind = "invitation" | "password_reset" | "two_factor_enabled";
+export type EmailKind = "invitation" | "password_reset" | "two_factor_enabled" | "text_credit_notice" | "payment_alert" | "billing_notice";
 
 export type EmailProviderName = "mailersend" | "log" | "mailpit" | "none";
 

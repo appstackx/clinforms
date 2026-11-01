@@ -6,6 +6,8 @@ import { CLINIC_SYSTEM_NAME } from "@/lib/brand";
 import { isManager } from "@/server/auth/roles";
 import { DemoClinicBanner } from "@/components/account/demo-clinic-banner";
 import { TrialBannerBar } from "@/components/account/trial-banner";
+import { BillingBannerBar } from "@/components/account/billing-banner";
+import { billingBannerFor } from "@/server/billing/banner";
 import { isDemoClinic, noteClinicVisit } from "@/server/admin/clinic-plan";
 import { requireAppContext } from "@/server/auth/session";
 import { currentBrand } from "@/server/brand";
@@ -23,10 +25,11 @@ export default async function ClinicLayout({ children }: { children: React.React
   // A demo clinic (clinic_plan.demo_clinic, set by ClinForms staff only): the same banner as the Studio.
   // Packages (src/server/pms/entitlements.ts, never throws): a clinic without the clinic system sees exactly what it
   // saw before. Read alongside the other two (one round-trip less).
-  const [trial, demoClinic, packages] = await Promise.all([
+  const [trial, demoClinic, packages, billing] = await Promise.all([
     noteClinicVisit(getDb(), { tenantId: membership.tenantId, userId: session.user.id, sessionId: session.session.id, role: membership.role }),
     isDemoClinic(getDb(), membership.tenantId),
     clinicPackages(membership.tenantId),
+    billingBannerFor(getDb(), membership.tenantId, manager),
   ]);
   const items: NavItem[] = [
     { href: "/app", label: "Overview" },
@@ -37,6 +40,7 @@ export default async function ClinicLayout({ children }: { children: React.React
     { href: "/app/settings/security", label: "Security" },
     // 25/10/2026: every role – owners and administrators see the package and full usage, everyone else "X of N".
     { href: "/app/settings/plan", label: "Plan & usage" },
+    ...(manager ? [{ href: "/app/settings/billing", label: "Plan and billing" }] : []), // 31/10/2026: the plan and paying for it
     ...(manager ? [{ href: "/app/settings/api-keys", label: "API keys" }] : []),
     // Every role: owners and administrators see the whole clinic's activity, everyone else their own.
     { href: "/app/settings/activity", label: "Activity" },
@@ -68,6 +72,7 @@ export default async function ClinicLayout({ children }: { children: React.React
         </div>
       </header>
       <TrialBannerBar access={trial} />
+      <BillingBannerBar banner={billing} />
       <main className="mx-auto max-w-5xl px-4 py-8">{children}</main>
     </>
   );

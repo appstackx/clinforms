@@ -54,7 +54,7 @@ describe("usage: months, prices and money (pure)", () => {
     assert.equal(periodLabel("2026-10"), "October 2026");
   });
 
-  it("the price list presets match the agreed packages (ex VAT)", () => {
+  it("the price list presets match the agreed packages", () => {
     assert.deepEqual(
       Object.values(PACKAGE_PRESETS).map((p) => [p.id, p.monthlyPricePence, p.reportsIncluded, p.extraReportPence]),
       [

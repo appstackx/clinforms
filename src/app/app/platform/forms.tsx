@@ -298,7 +298,7 @@ export function PackageForm({ clinics, today }: { clinics: PlanClinicOption[]; t
             ))}
           </select>
         </div>
-        <Field label="Monthly price (£, ex VAT)" name="monthlyPrice" inputMode="decimal" required defaultValue={pounds(PACKAGE_PRESETS.practice.monthlyPricePence)} />
+        <Field label="Monthly price (£)" name="monthlyPrice" inputMode="decimal" required defaultValue={pounds(PACKAGE_PRESETS.practice.monthlyPricePence)} />
         <Field label="Reports included a month" name="reportsIncluded" type="number" inputMode="numeric" required defaultValue={PACKAGE_PRESETS.practice.reportsIncluded ?? 0} />
         <Field
           label="Extra report price (£ each)"

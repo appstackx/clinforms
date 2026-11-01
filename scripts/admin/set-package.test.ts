@@ -70,7 +70,7 @@ test("describePackage prints the package in plain words", () => {
     startsOn: "2026-11-01",
   });
   assert.ok(lines.includes("  package:          Group"));
-  assert.ok(lines.includes("  price:            £349 a month (ex VAT)"));
+  assert.ok(lines.includes("  price:            £349 a month"));
   assert.ok(lines.includes("  extra report:     £1.25 each"));
   assert.ok(lines.includes("  set-up fee:       £250 (paid)"));
 });

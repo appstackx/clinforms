@@ -118,7 +118,7 @@ export default async function PlatformPage() {
 
         <Panel
           title="Packages"
-          description="A clinic's package: price, reports included a month and the price of each extra report (all ex VAT). The clinic sees it on its Plan & usage page. A report counts when its answers are first drafted, or when it is approved if nothing needed drafting. Every change is recorded here and in the clinic's own activity."
+          description="A clinic's package: price, reports included a month and the price of each extra report (no VAT is charged). The clinic sees it on its Plan & usage page. A report counts when its answers are first drafted, or when it is approved if nothing needed drafting. Every change is recorded here and in the clinic's own activity."
           className="mb-6"
         >
           <PackageForm clinics={openClinics} today={ukDateOf(new Date())} />
@@ -127,6 +127,18 @@ export default async function PlatformPage() {
               Usage across clinics
             </Link>{" "}
             <span className="text-slate-600">– reports, drafting calls, tokens, estimated drafting cost and margin per month.</span>
+          </p>
+          <p className="mt-2 text-sm">
+            <Link href="/app/platform/text-credits" className="font-medium text-teal-700 underline-offset-4 hover:underline">
+              Text credits
+            </Link>{" "}
+            <span className="text-slate-600">– prepaid texts per clinic: balance, history and support adjustments.</span>
+          </p>
+          <p className="mt-2 text-sm">
+            <Link href="/app/platform/billing" className="font-medium text-teal-700 underline-offset-4 hover:underline">
+              Subscriptions
+            </Link>{" "}
+            <span className="text-slate-600">– each clinic&apos;s plan, status, next payment and the manual override.</span>
           </p>
         </Panel>
 

@@ -29,6 +29,20 @@ export const COMMS_AUDIT_LABELS: Readonly<Record<string, string>> = {
   "pms.letter.void": "Letter withdrawn",
   "pms.letter.download": "Letter downloaded (Word or PDF)",
   "pms.comms_demo.seed": "Demonstration messages and letters loaded",
+  "pms.sms_credit.purchase": "Text credits bought",
+  "pms.sms_credit.auto_topup": "Text credits topped up automatically",
+  "pms.sms_credit.debit": "Text credit used",
+  "pms.sms_credit.reversal": "Text credit returned (text not sent)",
+  "pms.sms_credit.adjust": "Text credits adjusted by support",
+  "pms.sms_credit.settings": "Automatic top-up changed",
+  "pms.sms_credit.customer": "Card payment account set up for text credits",
+  "pms.sms_credit.card_save": "Card saved for automatic top-up",
+  "pms.sms_credit.card_remove": "Saved card removed",
+  "pms.sms_credit.checkout": "Card payment started for text credits",
+  "pms.sms_credit.topup_claim": "Automatic top-up started",
+  "pms.sms_credit.topup_failed": "Automatic top-up failed (paused)",
+  "pms.sms_credit.warning": "Low text credit warning sent",
+  "pms.sms_credit.test_customer_cleared": "Test card payment details removed (live payments switched on)",
 };
 
 /** Names of the record types its audit rows point at (target_type → label). */
@@ -41,4 +55,6 @@ export const COMMS_AUDIT_TARGETS: Readonly<Record<string, string>> = {
   pms_consent_event: "Message preference",
   pms_letter_template: "Letter template",
   pms_letter: "Letter",
+  pms_sms_credit_entry: "Text credit entry",
+  pms_sms_credit_account: "Text credits",
 };
