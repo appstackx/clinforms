@@ -11,7 +11,8 @@ import { BANNED_TERM_PATTERNS } from "../../modules/medreport/core/wording";
 import { ACTIVITY_ACTORS, ACTIVITY_COPY, ACTIVITY_GROUPS, ACTIVITY_LABELS, ACTIVITY_TARGETS, activityLabel, describeActivityDetail } from "../../lib/activity-copy";
 import { createPgliteTestDb, createSqliteTestDb } from "../db/testing/databases";
 import { RESERVED_TENANT_SLUGS, tenantSlugProblem } from "../auth/tenant";
-import { activityCsv, activityHref, activityScope, csvCell, parseActivityParams } from "./activity";
+import { PLATFORM_USER_ID } from "../auth/create-auth";
+import { activityCsv, activityCsvFileName, activityHref, activityScope, csvCell, parseActivityParams } from "./activity";
 import { PLATFORM_AUDIT_TENANT, platformAdminFromSession, type PlatformSessionLike } from "./platform-console";
 import { defineAdminSuite } from "./testing/admin-suite";
 
@@ -98,6 +99,17 @@ describe("activity links and CSV", () => {
     assert.equal(csvCell("line\nbreak"), '"line\nbreak"');
     const csv = activityCsv([{ id: "A", at: "2026-10-09T10:00:00.000Z", action: "auth.sign_in", userId: null, targetType: null, targetId: "=1+1" }]);
     assert.equal(csv, "id,at,action,user_id,target_type,target_id\r\nA,2026-10-09T10:00:00.000Z,auth.sign_in,,,'=1+1\r\n");
+  });
+
+  it("the activity download is brand-neutral: file name and the platform's own user id", () => {
+    assert.equal(activityCsvFileName("blue-heart", new Date("2026-11-01T09:00:00Z")), "activity-blue-heart-2026-11-01.csv");
+    const csv = activityCsv([
+      { id: "B", at: "2026-11-01T09:00:00.000Z", action: "platform.trial_set", userId: PLATFORM_USER_ID, targetType: "clinic", targetId: "blue-heart" },
+      { id: "C", at: "2026-11-01T09:01:00.000Z", action: "auth.two_factor_reset", userId: "u-1", targetType: "user", targetId: PLATFORM_USER_ID },
+    ]);
+    assert.doesNotMatch(csv, /clinforms/i);
+    assert.match(csv, /^B,[^,]+,platform\.trial_set,support-team,clinic,blue-heart\r$/m);
+    assert.match(csv, /^C,[^,]+,auth\.two_factor_reset,u-1,user,support-team\r$/m);
   });
 });
 

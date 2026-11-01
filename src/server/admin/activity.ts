@@ -331,14 +331,26 @@ export function csvCell(value: string | null | undefined): string {
   return /[",\r\n]/.test(text) || text !== text.trim() ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
+/**
+ * What the download shows for the platform's own user (01/11/2026): a brand-neutral label, so a ClinDesk-only clinic
+ * never reads the stored id "clinforms-platform" (the id itself is unchanged in the database).
+ */
+export const ACTIVITY_CSV_SUPPORT_ID = "support-team";
+
+function csvUserId(id: string | null | undefined): string | null | undefined {
+  return id === PLATFORM_USER_ID ? ACTIVITY_CSV_SUPPORT_ID : id;
+}
+
 export function activityCsv(entries: ActivityCsvEntry[]): string {
   const lines = [ACTIVITY_CSV_COLUMNS.join(",")];
   for (const e of entries) {
-    lines.push([e.id, e.at, e.action, e.userId, e.targetType, e.targetId].map(csvCell).join(","));
+    const targetId = e.targetType === "user" ? csvUserId(e.targetId) : e.targetId;
+    lines.push([e.id, e.at, e.action, csvUserId(e.userId), e.targetType, targetId].map(csvCell).join(","));
   }
   return `${lines.join("\r\n")}\r\n`;
 }
 
+/** "activity-<clinic>-<date>.csv" – brand-neutral (the same download serves ClinForms and ClinDesk clinics). */
 export function activityCsvFileName(tenantId: string, now = new Date()): string {
-  return `clinforms-activity-${tenantId}-${now.toISOString().slice(0, 10)}.csv`;
+  return `activity-${tenantId}-${now.toISOString().slice(0, 10)}.csv`;
 }
