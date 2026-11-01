@@ -9,7 +9,7 @@ import { describe, it } from "node:test";
 import { CLINIC_ROLE_DESCRIPTIONS, ROLE_DESCRIPTIONS, roleDescriptions } from "./account-copy";
 import { ACTIVITY_ACTORS, ACTIVITY_LABELS } from "./activity-copy";
 import { BRANDS, BRAND_TAGLINES, CLINFORMS_NAME, CLINIC_SYSTEM_NAME, REPORTS_ADDON_NAME, brandMetadata } from "./brand";
-import { CLINDESK_OFFER, CLINDESK_OFFER_BUY_HREF, showClinDeskOffer } from "./clindesk-offer";
+import { CLINDESK_OFFER, CLINDESK_OFFER_BUY_HREF, defaultReportsAddon, showClinDeskOffer } from "./clindesk-offer";
 import { PLAN_COPY } from "./packages";
 import { PRODUCT } from "../modules/medreport/config.public";
 
@@ -29,6 +29,26 @@ describe("R2: the clinic-system offer to a ClinForms clinic", () => {
     assert.equal(CLINDESK_OFFER.infoHref, `${BRANDS.clinic.siteUrl}/features`);
     const text = Object.values(CLINDESK_OFFER).flat().join(" ");
     assert.doesNotMatch(text, /\b(AI|Claude|Anthropic|Stripe|Twilio|TM3)\b/);
+  });
+});
+
+describe("V-01: a ClinForms clinic choosing a clinic-system plan keeps its reports by default", () => {
+  const base = { matchingAddon: null, smallestAddon: "25" };
+  it("no plan, Reports on now: the smallest add-on; no plan, no Reports: none", () => {
+    assert.equal(defaultReportsAddon({ ...base, current: null, keepReports: true }), "25");
+    assert.equal(defaultReportsAddon({ ...base, current: null, keepReports: false }), "none");
+  });
+  it("a running plan keeps its own choice (clinic system) or the matching allowance (ClinForms)", () => {
+    assert.equal(defaultReportsAddon({ ...base, current: { product: "clindesk", reports: "50" }, keepReports: false }), "50");
+    assert.equal(defaultReportsAddon({ ...base, current: { product: "clindesk", reports: null }, keepReports: true }), "none");
+    assert.equal(defaultReportsAddon({ ...base, matchingAddon: "100", current: { product: "clinforms" }, keepReports: true }), "100");
+    assert.equal(defaultReportsAddon({ ...base, current: { product: "clinforms" }, keepReports: true }), "25");
+  });
+  it("the warning for choosing none says the reports stop", () => {
+    assert.match(CLINDESK_OFFER.dropReportsWarning, /Reports add-on/);
+    assert.match(CLINDESK_OFFER.dropReportsWarning, /stop/);
+    const src = fs.readFileSync(path.resolve("src/app/app/(clinic)/settings/billing/page.tsx"), "utf8");
+    assert.match(src, /<ChoosePlanForm view=\{view\} keepReports=\{!clinicSide && packages\.reports\} \/>/);
   });
 });
 

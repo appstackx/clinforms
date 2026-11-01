@@ -18,11 +18,33 @@ export const CLINDESK_OFFER = {
   pitch: `The full clinic management system: the diary, patient notes, billing, the patient portal and text reminders – with your ${CLINFORMS_NAME} reports built in.`,
   features: ["Diary and online booking", "Patient records and notes", "Invoices and payments", "Patient portal and text reminders"],
   switchNote: `Your ${CLINFORMS_NAME} reports carry on: your plan becomes a ${CLINIC_SYSTEM_NAME} plan with the Reports add-on, and any difference is charged today.`,
+  /**
+   * V-01 (01/11/2026): a ClinForms clinic choosing a clinic-system plan WITHOUT the Reports add-on – shown under the
+   * add-on choice, which starts on the smallest add-on for such a clinic, so its reports are never dropped silently.
+   */
+  dropReportsWarning: `Without the Reports add-on your ${CLINFORMS_NAME} reports stop when the ${CLINIC_SYSTEM_NAME} plan starts. Choose an allowance to keep them.`,
   buy: `See ${CLINIC_SYSTEM_NAME} plans`,
   info: "See what is included",
   infoHref: `${BRANDS.clinic.siteUrl}/features`,
   hide: "Hide this",
 } as const;
+
+/**
+ * The Reports add-on a clinic-system plan form starts on (V-01): the current clinic-system plan's; a running ClinForms
+ * plan's matching allowance; a clinic that has Reports now (`keepReports`: a ClinForms clinic, plan or no plan) the
+ * smallest add-on; otherwise none.
+ */
+export function defaultReportsAddon(input: {
+  current: { product: "clindesk"; reports?: string | null } | { product: "clinforms" } | null;
+  matchingAddon: string | null;
+  smallestAddon: string | null;
+  keepReports: boolean;
+}): string {
+  const c = input.current;
+  if (c?.product === "clindesk") return c.reports ?? "none";
+  if (c?.product === "clinforms") return input.matchingAddon ?? input.smallestAddon ?? "none";
+  return input.keepReports ? (input.smallestAddon ?? "none") : "none";
+}
 
 /** Whether a member sees the offer: a ClinForms clinic without the clinic system, and an owner or admin. */
 export function showClinDeskOffer(input: { clinicSystem: boolean; clinicBrand: BrandId; role: string }): boolean {

@@ -6,6 +6,7 @@ import { SubmitButton } from "@/components/account/form-controls";
 import { Notice, Panel } from "@/components/account/shell";
 import type { BillingView } from "@/server/billing/views";
 import { CLINFORMS_NAME } from "@/lib/brand";
+import { CLINDESK_OFFER, defaultReportsAddon } from "@/lib/clindesk-offer";
 import { choosePlanAction, manageBillingAction, type BillingActionResult } from "./actions";
 
 const CARD = "flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 bg-white p-3 text-sm has-[:checked]:border-teal-600 has-[:checked]:ring-2 has-[:checked]:ring-teal-600/30";
@@ -26,11 +27,19 @@ function Result({ state }: { state: BillingActionResult | null }) {
   );
 }
 
-export function ChoosePlanForm({ view }: { view: BillingView }) {
+/**
+ * `keepReports` (V-01): the clinic has Reports now (a ClinForms clinic) – a clinic-system plan starts with the smallest
+ * Reports add-on, and choosing none says what that means.
+ */
+export function ChoosePlanForm({ view, keepReports = false }: { view: BillingView; keepReports?: boolean }) {
   const [state, action] = useFormState(choosePlanAction, null as BillingActionResult | null);
   useRedirectOn(state);
   const current = view.current.choice;
   const [interval, setInterval] = React.useState<"month" | "year">(current?.product === "clindesk" ? current.interval : "month");
+  const [reports, setReports] = React.useState<string>(() =>
+    defaultReportsAddon({ current, matchingAddon: view.matchingAddon, smallestAddon: view.addons[0]?.key ?? null, keepReports }),
+  );
+  const dropsReports = reports === "none" && (keepReports || current?.product === "clinforms");
   const button = view.changesRunning ? "Change plan" : "Continue to payment";
   if (view.product === "clinforms") {
     return (
@@ -90,7 +99,9 @@ export function ChoosePlanForm({ view }: { view: BillingView }) {
         <select
           id="plan-reports"
           name="reports"
-          defaultValue={current?.product === "clindesk" ? (current.reports ?? "none") : current?.product === "clinforms" ? (view.matchingAddon ?? "none") : "none"}
+          value={reports}
+          onChange={(e) => setReports(e.target.value)}
+          aria-describedby={dropsReports ? "plan-reports-warning" : undefined}
           className="h-10 w-full max-w-md rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900"
         >
           <option value="none">No Reports add-on</option>
@@ -100,6 +111,11 @@ export function ChoosePlanForm({ view }: { view: BillingView }) {
             </option>
           ))}
         </select>
+        {dropsReports ? (
+          <p id="plan-reports-warning" role="alert" className="mt-2 text-sm font-medium text-amber-800" data-testid="plan-reports-warning">
+            {CLINDESK_OFFER.dropReportsWarning}
+          </p>
+        ) : null}
         <p className="mt-1 text-xs text-slate-600">
           {`The add-on is billed ${interval === "year" ? "yearly" : "monthly"} with your plan; the allowance is per month. Extra reports above it are ${view.extraReport} each, billed after each month.`}
         </p>

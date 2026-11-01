@@ -202,7 +202,7 @@ export default async function PlanBillingPage({ searchParams }: { searchParams: 
             ) : (
               <p className="mb-4 text-sm text-slate-700">Any difference is charged (or credited) today, and the change applies once the payment goes through.</p>
             )}
-            <ChoosePlanForm view={view} />
+            <ChoosePlanForm view={view} keepReports={!clinicSide && packages.reports} />
           </>
         )}
       </Panel>
