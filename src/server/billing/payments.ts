@@ -275,7 +275,11 @@ export function createSubscriptionPayments(config: CardPaymentsConfig, fetchImpl
       return ((Array.isArray(list.data) ? list.data : []) as Record<string, unknown>[]).map(subscriptionInfo);
     },
     async changeSubscription(input) {
-      const body: FormFields = { proration_behavior: "create_prorations", "metadata[tenant_id]": input.tenantId, "metadata[kind]": "clinic_plan" };
+      // Khuram 01/11/2026: a plan change is paid for at once (prepaid, as text credits) – the difference is invoiced and
+      // charged straight away, and the change only takes effect once that payment succeeds (pending_if_incomplete: a
+      // declined card leaves the plan as it was). The subscription's metadata was set at checkout and is not resent
+      // (Stripe refuses metadata on a pending-if-incomplete update).
+      const body: FormFields = { proration_behavior: "always_invoice", payment_behavior: "pending_if_incomplete" };
       let i = 0;
       for (const itemId of input.removeItemIds) {
         body[`items[${i}][id]`] = itemId;
@@ -287,7 +291,8 @@ export function createSubscriptionPayments(config: CardPaymentsConfig, fetchImpl
         body[`items[${i}][quantity]`] = 1;
         i++;
       }
-      await ok("POST", `/subscriptions/${encodeURIComponent(input.subscriptionId)}`, body, input.idempotencyKey);
+      const res = await ok("POST", `/subscriptions/${encodeURIComponent(input.subscriptionId)}`, body, input.idempotencyKey);
+      if (res.pending_update) throw new CardPaymentsError("The payment for the change did not go through, so the plan was not changed.", "payment_failed");
       return getSub(input.subscriptionId);
     },
     async portalSession(input) {
