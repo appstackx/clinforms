@@ -202,6 +202,37 @@ export function currentNavId(pathname: string, items: readonly ShellNavItem[]): 
   return best?.id ?? null;
 }
 
+/**
+ * The clinic account's administration area (/app – Overview, Members, Security, Plan and billing, API keys,
+ * Activity) as seen from the clinic system (01/11/2026: a new owner had no way back after opening the clinic
+ * system). OWNERS and ADMINISTRATORS only – the same rule as the Plan and billing page (billing/views.ts
+ * canManageBilling); everyone else gets no links (and the pages themselves check again).
+ *   menu   the user menu: "Plan and billing", "Clinic administration"
+ *   setup  the Set-up section's "Clinic account" group: "Plan and billing", "Members and security"
+ */
+export const ACCOUNT_AREA_PATH = "/app";
+export const PLAN_BILLING_PATH = "/app/settings/billing";
+export const MEMBERS_PATH = "/app/settings/members";
+export const SETUP_ACCOUNT_GROUP = "Clinic account";
+
+export function accountAdminLinks(manager: boolean): { menu: ShellNavItem[]; setup: ShellNavItem[] } {
+  if (!manager) return { menu: [], setup: [] };
+  const billing: ShellNavItem = { id: "account.billing", href: PLAN_BILLING_PATH, label: "Plan and billing", icon: "billing", exact: true };
+  return {
+    menu: [billing, { id: "account.admin", href: ACCOUNT_AREA_PATH, label: "Clinic administration", icon: "shield", exact: true }],
+    setup: [billing, { id: "account.members", href: MEMBERS_PATH, label: "Members and security", icon: "lock", exact: true }],
+  };
+}
+
+/** The Set-up section with the "Clinic account" group last (unchanged when there is no Set-up section or no links). */
+export function withSetupAccountLinks(nav: ShellNav, links: readonly ShellNavItem[]): ShellNav {
+  if (links.length === 0 || !nav.sections.some((s) => s.id === "setup")) return nav;
+  return {
+    ...nav,
+    sections: nav.sections.map((s) => (s.id === "setup" ? { ...s, groups: [...s.groups, { label: SETUP_ACCOUNT_GROUP, items: [...links] }] } : s)),
+  };
+}
+
 /** "Role: Reception · 3 sites" – the sites part of the user menu. */
 export function sitesSummary(accessible: number, total: number): string {
   if (total === 0) return "no sites yet";

@@ -7,7 +7,7 @@ import { currentBrand } from "@/server/brand";
 import { billingViewFor, canManageBilling } from "@/server/billing/views";
 import { getDb } from "@/server/db";
 import { clinicPackages } from "@/server/pms/entitlements";
-import { ChoosePlanForm, ManageBillingButton } from "./forms";
+import { AddReportsPanel, ChoosePlanForm, ManageBillingButton } from "./forms";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Plan and billing" };
@@ -37,6 +37,8 @@ export default async function PlanBillingPage({ searchParams }: { searchParams: 
   const view = await billingViewFor(getDb(), { tenantId: membership.tenantId, clinicName: membership.clinicName, role: membership.role, userId: session.user.id, sessionId: session.session.id }, { product });
   const c = view.current;
   const hasPlan = c.state !== "none";
+  // 01/11/2026: a running ClinDesk plan without Reports – adding the add-on is its own, obvious action.
+  const offerReports = view.paymentsReady && view.canChoose && view.changesRunning && c.choice?.product === "clindesk" && !c.choice.reports;
   return (
     <>
       <PageHeader title="Plan and billing" description="Your clinic's plan, payments and invoices. No VAT is charged." />
@@ -118,6 +120,8 @@ export default async function PlanBillingPage({ searchParams }: { searchParams: 
           </p>
         </Panel>
       </div>
+
+      <AddReportsPanel view={view} offer={offerReports} />
 
       <Panel title={view.changesRunning ? "Change your plan" : "Choose a plan"} className="mt-6">
         {!view.paymentsReady ? (

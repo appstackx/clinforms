@@ -33,7 +33,8 @@ export default async function ClinicLayout({ children }: { children: React.React
   ]);
   const items: NavItem[] = [
     { href: "/app", label: "Overview" },
-    ...(packages.clinic ? [{ href: "/app/clinic", label: CLINIC_SYSTEM_NAME }] : []),
+    // 01/11/2026: the way into the clinic system, said plainly ("Open ClinDesk").
+    ...(packages.clinic ? [{ href: "/app/clinic", label: `Open ${CLINIC_SYSTEM_NAME}` }] : []),
     ...(packages.reports ? [{ href: "/app/studio", label: "Studio" }] : []),
     { href: "/app/settings/clinic", label: "Clinic" },
     { href: "/app/settings/members", label: "Members" },

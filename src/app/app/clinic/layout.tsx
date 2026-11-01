@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { reportsSection } from "@/components/pms/reporting/reports-nav";
 import { ClinicShell } from "@/components/pms/shell/clinic-shell";
 import { ClinicSystemMark } from "@/components/clindesk/logo";
-import { clinicRoleLabel, shellNav, sitesSummary } from "@/components/pms/shell/nav-model";
+import { accountAdminLinks, clinicRoleLabel, shellNav, sitesSummary, withSetupAccountLinks } from "@/components/pms/shell/nav-model";
 import { resolveSiteChoice, SITE_COOKIE } from "@/components/pms/shell/site-cookie";
 import { ALL_SITES } from "@/components/pms/ui/site-switcher";
 import { roleLabel } from "@/lib/account-copy";
@@ -21,6 +21,7 @@ import { hasPackage } from "@/server/pms/entitlements";
 import { listSites } from "@/server/repos/pms/directory";
 import { BillingBannerBar } from "@/components/account/billing-banner";
 import { billingBannerFor } from "@/server/billing/banner";
+import { canManageBilling } from "@/server/billing/views";
 import { getDb } from "@/server/db";
 
 export const dynamic = "force-dynamic";
@@ -60,6 +61,8 @@ export default async function ClinicSystemLayout({ children }: { children: React
     unansweredRepliesFor(actor),
     billingBannerFor(getDb(), actor.tenantId, actor.role === "owner" || actor.role === "admin"),
   ]);
+  // Owners and admins: the way back to the clinic account (Plan and billing, members, security …) – the billing rule.
+  const account = accountAdminLinks(canManageBilling(actor.role));
   const mySites = scope ? sites.filter((s) => scope.has(s.id)) : sites;
   const siteValue = resolveSiteChoice(cookies().get(SITE_COOKIE)?.value, mySites.map((s) => s.id), ALL_SITES);
   return (
@@ -69,11 +72,12 @@ export default async function ClinicSystemLayout({ children }: { children: React
       homeHref={CLINIC_BASE_PATH}
       clinicName={actor.clinicName}
       user={{ name: actor.name, email: actor.email, roleLabel: clinicRoleLabel(actor.role, roleLabel(actor.role)), sitesSummary: sitesSummary(mySites.length, sites.length) }}
-      nav={shellNav(PMS_NAV, actor.can, { "comms.messages": { count: replies, label: "replies to answer" } }, reportsSection(actor.can))}
+      nav={withSetupAccountLinks(shellNav(PMS_NAV, actor.can, { "comms.messages": { count: replies, label: "replies to answer" } }, reportsSection(actor.can)), account.setup)}
       sites={{ options: mySites.map((s, i) => ({ id: s.id, name: s.name, note: i === 0 ? "Default" : undefined })), value: siteValue, total: sites.length }}
       searchHref={actor.can("patients.view") ? `${CLINIC_BASE_PATH}/patients` : null}
       clinForms={reports ? { href: "/app/studio", label: "ClinForms" } : null}
       accountHref="/app/clinic/account"
+      adminLinks={account.menu}
     >
       <BillingBannerBar banner={billing} className="mb-4 rounded-md border" />
       {children}

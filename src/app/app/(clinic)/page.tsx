@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { PageHeader, Panel } from "@/components/account/shell";
 import { DRAFTING_COPY, ROLE_DESCRIPTIONS, roleLabel } from "@/lib/account-copy";
+import { CLINIC_SYSTEM_NAME } from "@/lib/brand";
+import { clinicPackages } from "@/server/pms/entitlements";
 import { clinicTrialRunning } from "@/server/admin/clinic-plan";
 import { loadSetupChecklist } from "@/server/admin/setup-checklist";
 import { countMembers, listPendingInvitations } from "@/server/auth/membership";
@@ -17,9 +19,10 @@ export default async function ClinicOverviewPage() {
   const db = getDb();
   const [members, invitations] = await Promise.all([countMembers(db, membership.organizationId), listPendingInvitations(db, membership.organizationId)]);
   const manager = isManager(membership.role);
-  const [setup, trial] = await Promise.all([
+  const [setup, trial, packages] = await Promise.all([
     loadSetupChecklist(db, membership, { members, openInvitations: invitations.length }),
     clinicTrialRunning(db, membership.tenantId),
+    clinicPackages(membership.tenantId),
   ]);
   // Fix wave 2: a new clinic's first steps, for the owner and administrators (who can do them).
   const steps: Array<{ done: boolean; optional?: boolean; href: string; label: string; text: string }> = [
@@ -44,6 +47,7 @@ export default async function ClinicOverviewPage() {
     { href: "/app/settings/members", label: "Members", text: manager ? "Invite people, set roles and signing details." : "Who is in your clinic." },
     { href: "/app/settings/security", label: "Security", text: "Backup codes and where you are signed in." },
     { href: "/app/settings/plan", label: "Plan & usage", text: manager ? "Your package and the reports used this month." : "Reports your clinic has used this month." },
+    ...(manager ? [{ href: "/app/settings/billing", label: "Plan and billing", text: "Choose or change your plan, add the Reports add-on, payments and invoices." }] : []),
     ...(manager ? [{ href: "/app/settings/api-keys", label: "API keys", text: "Keys for connecting your practice-management system." }] : []),
     {
       href: "/app/settings/activity",
@@ -54,6 +58,22 @@ export default async function ClinicOverviewPage() {
   return (
     <>
       <PageHeader title={membership.clinicName} description={`Signed in as ${session.user.name} (${session.user.email}).`} />
+      {packages.clinic ? (
+        <Panel className="mb-6">
+          <div className="flex flex-wrap items-center justify-between gap-3" data-testid="open-clinic-system">
+            <div className="min-w-0">
+              <h2 className="text-base font-semibold">{CLINIC_SYSTEM_NAME}</h2>
+              <p className="mt-1 text-sm text-slate-600">Your diary, patients, notes, billing and messages.</p>
+            </div>
+            <Link
+              href="/app/clinic"
+              className="inline-flex h-10 items-center rounded-lg bg-teal-700 px-4 text-sm font-semibold text-white hover:bg-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-700 focus-visible:ring-offset-2"
+            >
+              Open {CLINIC_SYSTEM_NAME}
+            </Link>
+          </div>
+        </Panel>
+      ) : null}
       <div className="grid gap-4 md:grid-cols-3">
         <Panel>
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Your role</p>
@@ -119,29 +139,31 @@ export default async function ClinicOverviewPage() {
         </ul>
       </Panel>
 
-      <Panel title="Completing forms" className="mt-6">
-        <p className="text-sm text-slate-700">
-          The Studio is where your clinic completes referrers&apos; own forms: upload the patient&apos;s notes, choose the referrer&apos;s
-          form, and the treating clinician reviews and approves every answer before the form is issued.
-        </p>
-        {setup.draftingEnabled ? null : (
-          <p className="mt-2 text-sm text-amber-800">
-            Drafting from the notes is switched off for your clinic, so answers from the notes are left for the clinician to write.
-            {manager ? " You can switch it on in Clinic details." : " Your clinic's owner or an administrator can switch it on."}
+      {packages.reports ? (
+        <Panel title="Completing forms" className="mt-6">
+          <p className="text-sm text-slate-700">
+            The Studio is where your clinic completes referrers&apos; own forms: upload the patient&apos;s notes, choose the referrer&apos;s
+            form, and the treating clinician reviews and approves every answer before the form is issued.
           </p>
-        )}
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          <Link
-            href="/app/studio"
-            className="inline-flex h-10 items-center rounded-lg bg-teal-700 px-4 text-sm font-semibold text-white hover:bg-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-700 focus-visible:ring-offset-2"
-          >
-            Open the Studio
-          </Link>
-          <Link href="/reports" className="text-sm font-medium text-teal-700 underline-offset-4 hover:underline">
-            Try the demo with fictional patients
-          </Link>
-        </div>
-      </Panel>
+          {setup.draftingEnabled ? null : (
+            <p className="mt-2 text-sm text-amber-800">
+              Drafting from the notes is switched off for your clinic, so answers from the notes are left for the clinician to write.
+              {manager ? " You can switch it on in Clinic details." : " Your clinic's owner or an administrator can switch it on."}
+            </p>
+          )}
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <Link
+              href="/app/studio"
+              className="inline-flex h-10 items-center rounded-lg bg-teal-700 px-4 text-sm font-semibold text-white hover:bg-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-700 focus-visible:ring-offset-2"
+            >
+              Open the Studio
+            </Link>
+            <Link href="/reports" className="text-sm font-medium text-teal-700 underline-offset-4 hover:underline">
+              Try the demo with fictional patients
+            </Link>
+          </div>
+        </Panel>
+      ) : null}
     </>
   );
 }

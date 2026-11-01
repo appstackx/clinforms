@@ -21,7 +21,7 @@ import { billExtraReports } from "../extras";
 import { goLiveSubscriptions } from "../go-live";
 import type { InvoiceInfo, SubscriptionCheckoutInfo, SubscriptionInfo, SubscriptionPayments } from "../payments";
 import { applySubscription, syncSubscription, type BillingNoticeKind, type SyncDeps } from "../sync";
-import { billingViewFor, changePlan, completeCheckoutFor, startPlanCheckout } from "../views";
+import { billingViewFor, changePlan, checkoutDoneView, completeCheckoutFor, startPlanCheckout } from "../views";
 import { handleBillingWebhook } from "../webhook";
 import { catalogueItem, choiceItems, planOfItems } from "../../../lib/billing/plans";
 import { HOLD_MESSAGE, holdRefusal, pausedByHold } from "../access";
@@ -64,9 +64,12 @@ export class FakeSubscriptions implements SubscriptionPayments {
   async listSubscriptions() {
     return Array.from(this.subs.values());
   }
-  async changeSubscription(input: { subscriptionId: string; addPriceIds: string[] }) {
+  changes: { subscriptionId: string; removeItemIds: string[]; addPriceIds: string[] }[] = [];
+  async changeSubscription(input: { subscriptionId: string; removeItemIds: string[]; addPriceIds: string[] }) {
     const s = await this.getSubscription(input.subscriptionId);
-    const next = { ...s, items: input.addPriceIds.map((p, i) => item(p.replace(/^price_/, ""), `si_new_${i}`)) };
+    this.changes.push({ subscriptionId: input.subscriptionId, removeItemIds: [...input.removeItemIds], addPriceIds: [...input.addPriceIds] });
+    const kept = s.items.filter((i) => !input.removeItemIds.includes(i.itemId));
+    const next = { ...s, items: [...kept, ...input.addPriceIds.map((p, i) => item(p.replace(/^price_/, ""), `si_new_${this.changes.length}_${i}`))] };
     this.subs.set(s.id, next);
     return next;
   }
@@ -370,6 +373,65 @@ export function defineBillingSuite(label: string, factory: () => Promise<Billing
       const seat = (await billingViewFor(db, OWNER(D), { product: "clindesk" }, { STRIPE_CLINDESK_SECRET_KEY: FAKE_TEST }, now())).seat;
       assert.deepEqual([seat?.active, seat?.max, seat?.over], [7, 5, true]);
       assert.match(seat?.suggested ?? "", /Practice/);
+    });
+
+    it("add the Reports add-on to a running plan: only the add-on is added (monthly and yearly), Reports switched on in place", async () => {
+      const db = t.db;
+      const clients = { credits: { createCustomer: async () => "cus_never", mode: "test" as const, live: false } as Pick<CardPayments, "createCustomer" | "mode" | "live">, subs: fake };
+      const env = { STRIPE_CLINDESK_SECRET_KEY: FAKE_TEST };
+      for (const [slug, interval, suffix] of [["billing-clinic-f", "month", "monthly"], ["billing-clinic-g", "year", "yearly"]] as const) {
+        await clinic(db, slug, new Date(clock).toISOString());
+        const customer = `cus_test_${slug.replace(/-/g, "_")}`;
+        await setCreditCustomer({ db, now }, slug, customer, { userId: null, sessionId: null }, "test");
+        const sub = subscription({ id: `sub_test_${slug.replace(/-/g, "_")}`, tenantId: slug, customer, keys: [`clindesk_solo_${suffix}`], currentPeriodEnd: interval === "year" ? "2027-11-01T10:00:00.000Z" : "2026-12-01T10:00:00.000Z" });
+        fake.subs.set(sub.id, sub);
+        const synced = await applySubscription({ ...deps(), db }, fake, sub, { expectTenantId: slug });
+        assert.equal(synced.status === "synced" && synced.subscription.state, "active");
+        assert.equal((await getEntitlement({ db }, slug, "reports"))?.status, "paused", "ClinDesk without the add-on: Reports paused");
+        // The page offers the add-on as its own action: a running ClinDesk plan without Reports.
+        const before = await billingViewFor(db, OWNER(slug), { product: "clindesk" }, env, now());
+        assert.deepEqual([before.changesRunning, before.canChoose, before.current.choice], [true, true, { product: "clindesk", band: "solo", interval, reports: null }]);
+        // Reception may not.
+        assert.equal((await changePlan(db, { ...OWNER(slug), role: "staff" }, { choice: { product: "clindesk", band: "solo", interval, reports: "25" }, idempotencyKey: `${slug}-x` }, clients, { env: {} })).ok, false);
+        const r = await changePlan(db, OWNER(slug), { choice: { product: "clindesk", band: "solo", interval, reports: "25" }, idempotencyKey: `${slug}-add` }, clients, { env: {} });
+        assert.equal(r.ok, true, !r.ok ? r.error : "");
+        assert.match(r.ok ? r.value.message : "", /with Reports \(25 a month\)/);
+        assert.deepEqual(fake.changes.at(-1), { subscriptionId: sub.id, removeItemIds: [], addPriceIds: [`price_clindesk_reports_25_${suffix}`] }, "the plan item is kept, only the add-on added");
+        const reports = await getEntitlement({ db }, slug, "reports");
+        assert.equal(reports?.status, "active");
+        assert.equal((await getEntitlement({ db }, slug, "clinic"))?.status, "active");
+        const after = await billingViewFor(db, OWNER(slug), { product: "clindesk" }, env, now());
+        assert.deepEqual(after.current.choice, { product: "clindesk", band: "solo", interval, reports: "25" });
+        // A bigger allowance swaps only the add-on item; the same plan again is refused.
+        const up = await changePlan(db, OWNER(slug), { choice: { product: "clindesk", band: "solo", interval, reports: "100" }, idempotencyKey: `${slug}-up` }, clients, { env: {} });
+        assert.equal(up.ok, true);
+        const last = fake.changes.at(-1)!;
+        assert.deepEqual([last.removeItemIds.length, last.addPriceIds], [1, [`price_clindesk_reports_100_${suffix}`]]);
+        assert.deepEqual(fake.subs.get(sub.id)!.items.map((i) => i.lookupKey).sort(), [`clindesk_reports_100_${suffix}`, `clindesk_solo_${suffix}`]);
+        assert.match((await changePlan(db, OWNER(slug), { choice: { product: "clindesk", band: "solo", interval, reports: "100" }, idempotencyKey: `${slug}-same` }, clients, { env: {} })).ok ? "" : "already", /already/);
+      }
+      // Monthly → yearly replaces both items (the payment service cannot mix intervals).
+      const F = "billing-clinic-f";
+      const yearly = await changePlan(db, OWNER(F), { choice: { product: "clindesk", band: "solo", interval: "year", reports: "100" }, idempotencyKey: "f-yearly" }, clients, { env: {} });
+      assert.equal(yearly.ok, true);
+      assert.deepEqual([fake.changes.at(-1)!.removeItemIds.length, fake.changes.at(-1)!.addPriceIds], [2, ["price_clindesk_solo_yearly", "price_clindesk_reports_100_yearly"]]);
+    });
+
+    it("the success page: the plan bought and Open ClinDesk when active with the clinic system on; Direct Debit clearing: no way in yet", async () => {
+      const synced = (state: "active" | "pending_payment") => ({ status: "synced" as const, changed: true, subscription: { product: "clindesk", planKey: "solo", reportsKey: "25", interval: "month", state } as never });
+      const on = checkoutDoneView(synced("active"), true);
+      assert.deepEqual([on.state, on.tone, on.openClinicSystem], ["active", "success", true]);
+      assert.match(on.planLabel ?? "", /Solo with Reports \(25 a month\)/);
+      assert.match(on.detail, /You are now on .*Solo/);
+      assert.equal(checkoutDoneView(synced("active"), false).openClinicSystem, false, "a plan without the clinic system (ClinForms only)");
+      const bacs = checkoutDoneView(synced("pending_payment"), true);
+      assert.deepEqual([bacs.state, bacs.openClinicSystem], ["pending_payment", false]);
+      assert.match(bacs.title, /Direct Debit is being set up/);
+      assert.match(bacs.detail, /as soon as the first payment clears/);
+      for (const r of [{ status: "unavailable" as const }, { status: "refused" as const, why: "other_clinic", tenantId: null }]) {
+        const v = checkoutDoneView(r, true);
+        assert.deepEqual([v.state, v.openClinicSystem], ["unknown", false]);
+      }
     });
 
     it("the one webhook: signed subscription events sync; invoice.created bills extras; text credit events still route", async () => {
