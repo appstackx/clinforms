@@ -15,6 +15,7 @@
  * member's sites; the request is audited in its own write; a member without clinical.view (reception) may still start
  * a form, but ClinForms then receives no signed notes or outcome scores (the native connector checks it again).
  */
+import { REPORTS_ADDON_NAME } from "../../../lib/brand";
 import "server-only";
 import { createLaunchToken } from "../../../modules/medreport/auth/launch-token";
 import { isPlausibleRecordId } from "../../../modules/pms/records/form-values";
@@ -54,7 +55,7 @@ export interface ReferrerFormDeps {
 }
 
 /** M10 M1: the words when ClinForms' trial has ended (the partner launch answers 403 TRIAL_ENDED). */
-export const TRIAL_ENDED_MESSAGE = "Your ClinForms trial has ended, so no new forms can be started. Ask the clinic owner to choose a plan.";
+export const TRIAL_ENDED_MESSAGE = `Your ${REPORTS_ADDON_NAME} trial has ended, so no new forms can be started. Ask the clinic owner to choose a plan.`;
 
 /** null when ClinForms may start a form for this clinic; else the reason (its trial has ended). */
 async function launchRefusal(tenantId: string, deps: ReferrerFormDeps): Promise<string | null> {
@@ -243,7 +244,7 @@ export async function startReferrerFormFor(
   );
   if (!c) return fail("not_found", NOT_FOUND);
   if (!(await (deps.packageOn ?? hasPackage)(actor.tenantId, "reports")))
-    return fail("forbidden", "ClinForms is not switched on for this clinic.");
+    return fail("forbidden", `The ${REPORTS_ADDON_NAME} add-on is not switched on for this clinic.`);
   // M10 M1: the same trial-ended rule as ClinForms' partner launch (api/handlers/launch.ts) – before anything is written.
   const refusal = await launchRefusal(actor.tenantId, deps);
   if (refusal) return fail("forbidden", refusal);
@@ -254,7 +255,7 @@ export async function startReferrerFormFor(
   if (!form)
     return fail(
       "invalid",
-      "Choose a form from your clinic's ClinForms library.",
+      "Choose a form from your clinic's form library.",
     );
   try {
     const consentOn = input.consentRecorded

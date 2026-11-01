@@ -208,7 +208,7 @@ function professionTitle(profession: string): string {
 }
 
 export function readOnlyReason(actor: Pick<ScreenActor, "userId" | "role">, member: ClinicMember): string | null {
-  if (member.role === "owner") return "The owner always has full access at every site. Ownership is transferred in ClinForms settings.";
+  if (member.role === "owner") return "The owner always has full access at every site. Ownership is transferred in Clinic administration → Members.";
   if (member.userId === actor.userId) return "You cannot change your own access. Ask another administrator or the owner.";
   // M10 H4: a manager who is not an administrator (or the owner) never changes an administrator.
   if (member.role === "admin" && actor.role !== "owner" && actor.role !== "admin") return "Only the owner or an administrator can change an administrator's access.";

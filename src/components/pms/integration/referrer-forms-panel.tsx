@@ -5,6 +5,8 @@
  * request and opens the Studio with this case loaded; approved forms come back here (and to the record's Forms tab)
  * with who approved them and when.
  */
+import Link from "next/link";
+import { REPORTS_ADDON_NAME } from "@/lib/brand";
 import * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { FileText } from "lucide-react";
@@ -107,8 +109,15 @@ export function ReferrerFormsPanel({
       ) : null}
       {!clinForms ? (
         <p className="mt-3 text-sm text-[#334155]">
-          Completing a referrer&apos;s own form from this case needs ClinForms,
-          which is not switched on for this clinic.
+          Completing a referrer&apos;s own form from this case needs the{" "}
+          {REPORTS_ADDON_NAME} add-on, which is not switched on for this clinic.{" "}
+          <Link
+            href="/app/settings/billing"
+            className="text-primary-strong underline underline-offset-2"
+          >
+            Plan and billing
+          </Link>
+          .
         </p>
       ) : null}
       {filed.length === 0 ? (
@@ -167,16 +176,16 @@ export function ReferrerFormsPanel({
                 Choose a form
               </DialogPrimitive.Title>
               <DialogPrimitive.Description className="mt-1 text-[#475569]">
-                From your clinic&apos;s ClinForms library, filtered to this
+                From your clinic&apos;s form library, filtered to this
                 case&apos;s referrer and insurer.
               </DialogPrimitive.Description>
             </div>
             <div className="px-5 py-4">
               {library.length === 0 ? (
                 <PmsNotice tone="info" title="No forms in your library yet">
-                  Add the referrer&apos;s form in ClinForms (Forms → Upload a
-                  referrer form) and confirm its mapping, then come back to this
-                  case.
+                  Add the referrer&apos;s form in {REPORTS_ADDON_NAME} (Forms →
+                  Upload a referrer form) and confirm its mapping, then come back
+                  to this case.
                 </PmsNotice>
               ) : (
                 <div role="radiogroup" aria-label="Forms" className="space-y-2">
@@ -224,8 +233,8 @@ export function ReferrerFormsPanel({
               </label>
               <p className="mt-3 text-xs text-[#475569]">
                 {clinicalPrefill
-                  ? "ClinForms gets the patient, the case, the referrer and authorisations, appointments, and the signed notes and outcome scores of this case. Unsigned notes are never used."
-                  : "ClinForms gets the patient, the case, the referrer and authorisations and appointments. Clinical notes are not shared from your account – a clinician completes the clinical answers."}
+                  ? `${REPORTS_ADDON_NAME} gets the patient, the case, the referrer and authorisations, appointments, and the signed notes and outcome scores of this case. Unsigned notes are never used.`
+                  : `${REPORTS_ADDON_NAME} gets the patient, the case, the referrer and authorisations and appointments. Clinical notes are not shared from your account – a clinician completes the clinical answers.`}
               </p>
               {error ? (
                 <p role="alert" className="mt-3 text-sm text-[#B91C1C]">
@@ -235,7 +244,7 @@ export function ReferrerFormsPanel({
             </div>
             <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border px-5 py-3">
               <span className="mr-auto text-xs text-[#475569]">
-                Opens in the ClinForms area
+                Opens in {REPORTS_ADDON_NAME}
               </span>
               <DialogPrimitive.Close asChild>
                 <PmsButton variant="secondary" disabled={pending}>
@@ -249,7 +258,7 @@ export function ReferrerFormsPanel({
                 onClick={() => void openForm()}
                 data-testid="open-in-clinforms"
               >
-                Open in ClinForms
+                Open in {REPORTS_ADDON_NAME}
               </PmsButton>
             </div>
           </DialogPrimitive.Content>

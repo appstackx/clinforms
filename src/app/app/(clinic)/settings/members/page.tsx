@@ -17,6 +17,8 @@ import { ukDateTime } from "@/server/email/templates";
 import { cancelInvitation, removeMember } from "./actions";
 import { InviteForm, ResetLinkForm, RoleForm, SigningForm } from "./forms";
 
+import { hasPackage } from "@/server/pms/entitlements";
+
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Members" };
 
@@ -31,6 +33,7 @@ export default async function MembersPage() {
     // Invitation links go to the clinic's brand host (clinic package → the clinic brand; src/server/auth/brand-links.ts).
     clinicLinkBrand(db, membership.tenantId),
   ]);
+  const reports = await hasPackage(membership.tenantId, "reports");
   const manager = isManager(membership.role);
   const roles = assignableRoles(membership.role);
   const emailOff = emailProviderName() === "none";
@@ -47,7 +50,7 @@ export default async function MembersPage() {
               <Notice>Email is not set up yet: after inviting, copy the link shown and pass it on yourself.</Notice>
             </div>
           ) : null}
-          <InviteForm roles={roles} />
+          <InviteForm roles={roles} reports={reports} />
         </Panel>
       ) : null}
 

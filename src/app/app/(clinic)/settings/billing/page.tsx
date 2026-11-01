@@ -8,6 +8,12 @@ import { billingViewFor, canManageBilling } from "@/server/billing/views";
 import { getDb } from "@/server/db";
 import { clinicPackages } from "@/server/pms/entitlements";
 import { AddReportsPanel, ChoosePlanForm, ManageBillingButton } from "./forms";
+import { ClinDeskOfferCard } from "@/components/account/clindesk-offer";
+import { showClinDeskOffer } from "@/lib/clindesk-offer";
+import { clinicBrand, otherBrandSignIn } from "@/server/brand-home";
+import type { BillingView } from "@/server/billing/views";
+
+const c0 = (view: BillingView) => view.current.choice;
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Plan and billing" };
@@ -30,12 +36,32 @@ export default async function PlanBillingPage({ searchParams }: { searchParams: 
       </>
     );
   }
-  const packages = await clinicPackages(membership.tenantId);
+  const [packages, ownBrand] = await Promise.all([clinicPackages(membership.tenantId), clinicBrand(membership.tenantId)]);
   const raw = searchParams.product;
   const asked = Array.isArray(raw) ? raw[0] : raw;
-  const product = asked === "clinforms" || asked === "clindesk" ? asked : packages.clinic || currentBrand().id === "clinic" ? "clindesk" : "clinforms";
-  const view = await billingViewFor(getDb(), { tenantId: membership.tenantId, clinicName: membership.clinicName, role: membership.role, userId: session.user.id, sessionId: session.session.id }, { product });
+  // 01/11/2026 (Khuram's R1): a ClinDesk clinic is never offered ClinForms' own plans – the Reports add-on is its way to reports.
+  const clinicSide = packages.clinic || ownBrand === "clinic";
+  const product = clinicSide ? "clindesk" : asked === "clinforms" || asked === "clindesk" ? asked : currentBrand().id === "clinic" ? "clindesk" : "clinforms";
+  const view = await billingViewFor(
+    getDb(),
+    { tenantId: membership.tenantId, clinicName: membership.clinicName, role: membership.role, userId: session.user.id, sessionId: session.session.id },
+    { product, switchToClinDesk: !clinicSide && asked === "clindesk" },
+  );
+  // R2: the full clinic system offered to a ClinForms clinic (owners and admins – this page is theirs), plan or no plan.
+  const offer = showClinDeskOffer({ clinicSystem: packages.clinic, clinicBrand: ownBrand, role: membership.role }) && view.product === "clinforms";
+  // R3: a clinic whose plan now includes the clinic system, still on ClinForms' host – where to sign in to it.
+  const clinicSignIn = packages.clinic ? otherBrandSignIn("clinic") : null;
+  const movingToClinDesk = view.changesRunning && view.product === "clindesk" && c0(view)?.product === "clinforms";
   const c = view.current;
+  const included =
+    view.product === "clindesk"
+      ? [
+          "All your sites and staff",
+          `${CLINIC_SYSTEM_NAME} plans are by the number of active practitioners`,
+          `The Reports add-on includes a number of completed referrer forms a month; extra ones are ${view.extraReport} each`,
+          "Pay by card (including phone wallets) or Direct Debit",
+        ]
+      : ["All your sites and staff", `${CLINFORMS_NAME} plans include a number of completed referrer forms a month; extra ones are ${view.extraReport} each`, "Pay by card (including phone wallets) or Direct Debit"];
   const hasPlan = c.state !== "none";
   // 01/11/2026: a running ClinDesk plan without Reports – adding the add-on is its own, obvious action.
   const offerReports = view.paymentsReady && view.canChoose && view.changesRunning && c.choice?.product === "clindesk" && !c.choice.reports;
@@ -109,17 +135,32 @@ export default async function PlanBillingPage({ searchParams }: { searchParams: 
           ) : null}
         </Panel>
         <Panel title="What is included">
-          <ul className="space-y-1 text-sm text-slate-700">
-            <li>All your sites and staff</li>
-            <li>{CLINIC_SYSTEM_NAME} plans are by the number of active practitioners</li>
-            <li>The Reports add-on and {CLINFORMS_NAME} plans include a number of completed referrer forms a month; extra ones are {view.extraReport} each</li>
-            <li>Pay by card (including phone wallets) or Direct Debit</li>
+          <ul className="space-y-1 text-sm text-slate-700" data-testid="billing-included">
+            {included.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
           </ul>
           <p className="mt-3 text-xs text-slate-500">
-            Questions about billing: {currentBrand().contactEmail}. See also <Link href="/app/settings/plan" className="underline">Plan &amp; usage</Link>.
+            Questions about billing: {currentBrand().contactEmail}.
+            {packages.reports || ownBrand === "clinforms" ? (
+              <>
+                {" "}
+                See also <Link href="/app/settings/plan" className="underline">Plan &amp; usage</Link>.
+              </>
+            ) : null}
           </p>
         </Panel>
       </div>
+
+      {clinicSignIn ? (
+        <div className="mt-6" data-testid="billing-clinic-sign-in">
+          <Notice tone="info">
+            {CLINIC_SYSTEM_NAME} has its own address. <a href={clinicSignIn} className="font-medium underline">Sign in to {CLINIC_SYSTEM_NAME}</a> with the same email and password – you will be asked for your two-step code again.
+          </Notice>
+        </div>
+      ) : null}
+
+      {offer ? <ClinDeskOfferCard className="mt-6" showSwitchNote={view.changesRunning} /> : null}
 
       <AddReportsPanel view={view} offer={offerReports} />
 
@@ -132,22 +173,36 @@ export default async function PlanBillingPage({ searchParams }: { searchParams: 
           </p>
         ) : (
           <>
-            {!view.changesRunning ? (
+            {movingToClinDesk ? (
+              <p className="mb-4 text-sm text-slate-700" data-testid="billing-move-to-clinic">
+                Move your {CLINFORMS_NAME} plan to {CLINIC_SYSTEM_NAME}: choose a plan and keep your reports with the Reports add-on. Any difference is charged (or credited) today, and the change applies once the payment goes through.{" "}
+                <Link href="?product=clinforms" className="underline">
+                  Keep {CLINFORMS_NAME} on its own
+                </Link>
+                .
+              </p>
+            ) : !view.changesRunning ? (
               <p className="mb-4 text-sm text-slate-700">
                 {view.product === "clindesk" ? (
-                  <>
-                    {CLINIC_SYSTEM_NAME} – the full clinic system. Only need referrer forms completed? <Link href="?product=clinforms" className="underline">See {CLINFORMS_NAME} plans</Link>.
-                  </>
+                  clinicSide ? (
+                    <>{CLINIC_SYSTEM_NAME} – the full clinic system. Add the Reports add-on to have referrer forms completed for you.</>
+                  ) : (
+                    <>
+                      {CLINIC_SYSTEM_NAME} – the full clinic system, with your reports as the Reports add-on. Only need referrer forms completed?{" "}
+                      <Link href="?product=clinforms" className="underline">
+                        See {CLINFORMS_NAME} plans
+                      </Link>
+                      .
+                    </>
+                  )
                 ) : (
-                  <>
-                    {CLINFORMS_NAME} on its own. Want the full clinic system as well? <Link href="?product=clindesk" className="underline">See {CLINIC_SYSTEM_NAME} plans</Link>.
-                  </>
+                  <>{CLINFORMS_NAME} on its own: referrer forms completed from your notes.</>
                 )}
               </p>
             ) : (
               <p className="mb-4 text-sm text-slate-700">Any difference is charged (or credited) today, and the change applies once the payment goes through.</p>
             )}
-            <ChoosePlanForm view={view} />
+            <ChoosePlanForm view={view} keepReports={!clinicSide && packages.reports} />
           </>
         )}
       </Panel>

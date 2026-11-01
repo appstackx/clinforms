@@ -185,10 +185,10 @@ function normalise(html) {
           assert(/ClinDesk/.test(await page.title()), `title: ${await page.title()}`);
           assert(!res.headers()["x-robots-tag"], `x-robots-tag ${res.headers()["x-robots-tag"]}`);
           if (LEGAL_PAGES.includes(p)) {
-            // ClinDesk's own legal text: the product and the company, ClinForms only as the Reports add-on's "powered by".
+            // ClinDesk's own legal text: the product and the company, never ClinForms.
             const main = (await page.locator("main").innerText()).replace(/\s+/g, " ");
             assert(/ClinDesk/.test(main) && /Appstack X Ltd/.test(main), `${p}: names ClinDesk and Appstack X Ltd`);
-            assert(!/ClinForms/.test(main.replace(/Reports add-on[ ,(]+powered by ClinForms/g, "")), `${p}: ClinForms named outside the Reports add-on`);
+            assert(!/ClinForms/.test(main), `${p}: names ClinForms`);
           }
           // Load the lazy drawings (scroll through the page) before the full-page screenshot.
           await page.evaluate(async () => {

@@ -169,7 +169,7 @@ function issuedCopyChanged(what: "acknowledgements" | "document"): Response {
     detail:
       what === "acknowledgements"
         ? "The checks acknowledged on this report are not the ones it was approved with, so a final copy cannot be issued. Reload the approved report, or create an amended version and approve it again."
-        : "Filling the form now would not give the document that was approved, so a final copy cannot be issued. Ask ClinForms support to check this approval; create an amended version to issue it again.",
+        : "Filling the form now would not give the document that was approved, so a final copy cannot be issued. Ask support to check this approval; create an amended version to issue it again.",
   });
 }
 

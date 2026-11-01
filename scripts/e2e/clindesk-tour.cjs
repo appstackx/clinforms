@@ -222,7 +222,7 @@ async function layout(page, width) {
     const { context, page, media } = await open(browser, { width: 1440, height: 900 });
     await page.goto(`${SITE}/tour?t=67`, { waitUntil: "networkidle" });
     assert.equal(await video(page).evaluate((v) => v.currentTime), 67.167);
-    assert.equal(await page.locator(".tv-ch[aria-current='true']").innerText().then((t) => t.replace(/\s+/g, " ")), "1:07 11:40 ClinDesk Reports – powered by ClinForms (add-on)");
+    assert.equal(await page.locator(".tv-ch[aria-current='true']").innerText().then((t) => t.replace(/\s+/g, " ")), "1:07 11:40 ClinDesk Reports (add-on)");
     assert.deepEqual(media, [], "a ?t= link fetches nothing");
     const chapter = CHAPTERS[5];
     await page.getByRole("button", { name: new RegExp(`^2:08 .*${chapter.title}`) }).click();

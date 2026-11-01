@@ -1,8 +1,8 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Arimo, Bricolage_Grotesque, Courier_Prime, Figtree, Shantell_Sans, Source_Serif_4 } from "next/font/google";
 import { GoogleAdsTag } from "@/components/ads/google-ads-tag";
 import { ClindeskCookieConsent } from "@/components/clindesk/cookie-consent";
-import { CLINIC_SYSTEM_NAME } from "@/lib/brand";
+import { BRANDS, CLINIC_SYSTEM_NAME, brandViewport } from "@/lib/brand";
 import { CLINDESK_SITE_URL } from "@/lib/clindesk/site";
 import "@/components/clindesk/styles/site.css";
 import "@/components/clindesk/styles/consent.css";
@@ -35,6 +35,9 @@ export const metadata: Metadata = {
   applicationName: CLINIC_SYSTEM_NAME,
   robots: { index: true, follow: true },
 };
+
+/** ClinDesk's theme colour (the root layout's is ClinForms'). */
+export const viewport: Viewport = brandViewport(BRANDS.clinic);
 
 export default function ClindeskSiteLayout({ children }: { children: React.ReactNode }) {
   return (

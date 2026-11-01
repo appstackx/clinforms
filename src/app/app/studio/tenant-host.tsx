@@ -18,7 +18,7 @@
 import { useMemo, type ReactNode } from "react";
 import { track } from "@/components/analytics";
 import { COMPANY } from "@/lib/site";
-import { HostHooksProvider, type HostHooks, type StudioClinic, type StudioMember } from "@/modules/medreport/ui/host-hooks";
+import { HostHooksProvider, type HostHooks, type StudioBrand, type StudioClinic, type StudioMember } from "@/modules/medreport/ui/host-hooks";
 import { signOutAndReload } from "../session-forms";
 
 export const TENANT_STUDIO_BASE_PATH = "/app/studio";
@@ -27,7 +27,7 @@ export const TENANT_STUDIO_BASE_PATH = "/app/studio";
 export function tenantHooks(
   clinic: StudioClinic,
   member: StudioMember,
-  options: { onSignOut?: () => Promise<void> | void; supportEmail?: string } = {},
+  options: { onSignOut?: () => Promise<void> | void; supportEmail?: string; brand?: StudioBrand } = {},
 ): HostHooks {
   return {
     basePath: TENANT_STUDIO_BASE_PATH,
@@ -42,10 +42,24 @@ export function tenantHooks(
     supportEmail: options.supportEmail ?? COMPANY.contactEmail,
     track: (event, props) => track(event, { ...props, area: "app" }),
     ...(options.onSignOut ? { onSignOut: options.onSignOut } : {}),
+    // The host brand's chrome (F4; set by the layout): none on ClinForms' hosts.
+    ...(options.brand ? { brand: options.brand } : {}),
   };
 }
 
-export function TenantHost({ clinic, member, supportEmail, children }: { clinic: StudioClinic; member: StudioMember; supportEmail?: string; children: ReactNode }) {
+export function TenantHost({
+  clinic,
+  member,
+  supportEmail,
+  brand,
+  children,
+}: {
+  clinic: StudioClinic;
+  member: StudioMember;
+  supportEmail?: string;
+  brand?: StudioBrand;
+  children: ReactNode;
+}) {
   const { tenantId, name, draftingEnabled, clinicians, signers, demoClinic } = clinic;
   const { name: memberName, userId, role, email, roleLabel, hcpc, jobTitle, canSign } = member;
   const hooks = useMemo(
@@ -53,9 +67,9 @@ export function TenantHost({ clinic, member, supportEmail, children }: { clinic:
       tenantHooks(
         { tenantId, name, draftingEnabled, ...(clinicians ? { clinicians } : {}), ...(signers ? { signers } : {}), ...(demoClinic ? { demoClinic: true } : {}) },
         { name: memberName, userId, role, email, roleLabel, hcpc, jobTitle, canSign },
-        { onSignOut: () => signOutAndReload(), ...(supportEmail ? { supportEmail } : {}) },
+        { onSignOut: () => signOutAndReload(), ...(supportEmail ? { supportEmail } : {}), ...(brand ? { brand } : {}) },
       ),
-    [tenantId, name, draftingEnabled, clinicians, signers, demoClinic, memberName, userId, role, email, roleLabel, hcpc, jobTitle, canSign, supportEmail],
+    [tenantId, name, draftingEnabled, clinicians, signers, demoClinic, memberName, userId, role, email, roleLabel, hcpc, jobTitle, canSign, supportEmail, brand],
   );
   return <HostHooksProvider hooks={hooks}>{children}</HostHooksProvider>;
 }

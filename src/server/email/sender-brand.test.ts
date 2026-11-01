@@ -112,7 +112,7 @@ describe("email sender per brand", () => {
     for (const call of [...cd.calls, ...cf.calls]) assert.deepEqual(call.settings, { ...NO_TRACKING });
   });
 
-  it("MailerSend, neither set: every brand through ClinForms' account and sender, nothing logged", async () => {
+  it("MailerSend, neither set: every brand through ClinForms' account and address – the clinic brand's still named as itself (01/11/2026), nothing logged", async () => {
     const cf = recordingClient();
     const cd = recordingClient();
     const logs = await capturedLogs(async () => {
@@ -122,7 +122,8 @@ describe("email sender per brand", () => {
     });
     assert.equal(cd.calls.length, 0);
     assert.equal(cf.calls.length, 2);
-    for (const call of cf.calls) assert.deepEqual({ ...call.from }, { email: "no-reply@clinforms.co.uk", name: SENDER_NAME });
+    assert.deepEqual({ ...cf.calls[0].from }, { email: "no-reply@clinforms.co.uk", name: BRANDS.clinic.productName });
+    assert.deepEqual({ ...cf.calls[1].from }, { email: "no-reply@clinforms.co.uk", name: SENDER_NAME });
     assert.doesNotMatch(logs, /clinic_account_incomplete/);
   });
 
@@ -130,7 +131,7 @@ describe("email sender per brand", () => {
     ["key only", { MAILERSEND_API_KEY_CLINIC: "mlsn.clindesk-key" }, "MAILERSEND_FROM_EMAIL_CLINIC"],
     ["from only", { MAILERSEND_FROM_EMAIL_CLINIC: "no-reply@clindesk.co.uk" }, "MAILERSEND_API_KEY_CLINIC"],
   ] as const) {
-    it(`MailerSend, ${label}: no half-switch – ClinForms' account, sender and reply-to; logged once, without the key`, async () => {
+    it(`MailerSend, ${label}: no half-switch – ClinForms' account, address and reply-to (named as the clinic brand); logged once, without the key`, async () => {
       const cf = recordingClient();
       const cd = recordingClient();
       const logs = await capturedLogs(async () => {
@@ -143,8 +144,8 @@ describe("email sender per brand", () => {
       assert.equal(cd.calls.length, 0);
       assert.equal(cf.calls.length, 3);
       for (const call of cf.calls) {
-        assert.deepEqual({ ...call.from }, { email: "no-reply@clinforms.co.uk", name: SENDER_NAME });
-        assert.deepEqual({ ...call.reply_to }, { email: "khuram@appstackx.example", name: SENDER_NAME });
+        assert.deepEqual({ ...call.from }, { email: "no-reply@clinforms.co.uk", name: BRANDS.clinic.productName });
+        assert.deepEqual({ ...call.reply_to }, { email: "khuram@appstackx.example", name: BRANDS.clinic.productName });
       }
       const lines = logs.split("\n").filter((l) => l.includes("clinic_account_incomplete"));
       assert.equal(lines.length, 1);
@@ -168,7 +169,7 @@ describe("email sender per brand", () => {
   });
 
   it("senderFor (no account): the clinic brand's from address alone", () => {
-    assert.deepEqual(senderFor(invite("clinic"), "no-reply@clinforms.co.uk", {}), { email: "no-reply@clinforms.co.uk", name: SENDER_NAME });
+    assert.deepEqual(senderFor(invite("clinic"), "no-reply@clinforms.co.uk", {}), { email: "no-reply@clinforms.co.uk", name: BRANDS.clinic.productName });
     const env = { MAILERSEND_FROM_EMAIL_CLINIC: " no-reply@clindesk.co.uk " };
     assert.deepEqual(senderFor(invite("clinic"), "no-reply@clinforms.co.uk", env), { email: "no-reply@clindesk.co.uk", name: BRANDS.clinic.productName });
     assert.deepEqual(senderFor(invite(), "no-reply@clinforms.co.uk", env), { email: "no-reply@clinforms.co.uk", name: SENDER_NAME });

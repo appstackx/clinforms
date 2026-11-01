@@ -137,7 +137,7 @@ export const PLAN_COPY = {
   again: "Drafting a report again or approving it again does not count again, and nor does an amended version of an approved report.",
   chargingLater: "Charging for extra reports starts once billing is set up.",
   exVat: "No VAT is charged.",
-  noPackage: "Your clinic's package has not been set up yet. ClinForms will confirm it with you – until then, nothing is charged.",
+  noPackage: "Your clinic's package has not been set up yet. We will confirm it with you – until then, nothing is charged.",
   shortLine: (count: number, included: number | null) =>
     included === null ? `This month: ${reportsText(count)}.` : `This month: ${ofAllowanceText(count, included)}.`,
   wouldBeCharged: (extra: number, each: string, total: string) => `${extra} extra ${extra === 1 ? "report" : "reports"} × ${each} = ${total} would be charged.`,

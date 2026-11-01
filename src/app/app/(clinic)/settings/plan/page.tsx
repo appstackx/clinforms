@@ -2,7 +2,10 @@ import type { Metadata } from "next";
 import { PageHeader, Panel } from "@/components/account/shell";
 import { PLAN_COPY, SETUP_FEE_LABELS, formatPence, formatPenceExact, ofAllowanceText, reportsText, ukDateLabel } from "@/lib/packages";
 import { requireAppContext } from "@/server/auth/session";
+import { redirect } from "next/navigation";
 import { currentBrand } from "@/server/brand";
+import { hasReportsArea } from "@/server/brand-home";
+import { isManager } from "@/server/auth/roles";
 import { getDb } from "@/server/db";
 import { clinicPlanUsage, type ClinicPlanUsageManagerView } from "@/server/usage/view";
 
@@ -20,6 +23,8 @@ const TD = "px-3 py-2 text-sm text-slate-800";
  */
 export default async function PlanUsagePage() {
   const { membership } = await requireAppContext();
+  // 01/11/2026: a ClinDesk clinic without the Reports add-on has no reports usage – its plan is on Plan and billing.
+  if (!(await hasReportsArea(membership.tenantId))) redirect(isManager(membership.role) ? "/app/settings/billing" : "/app");
   const view = await clinicPlanUsage(getDb(), { tenantId: membership.tenantId, role: membership.role });
   if (view.kind === "member") {
     return (

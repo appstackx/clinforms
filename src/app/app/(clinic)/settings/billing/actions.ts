@@ -8,7 +8,8 @@ import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { ACCOUNT_ERRORS } from "@/lib/account-copy";
-import { isAllowedAppOrigin } from "@/server/auth/config";
+import { baseUrlSetting, isAllowedAppOrigin, linkTarget } from "@/server/auth/config";
+import { currentBrand } from "@/server/brand";
 import { actionContext } from "@/server/auth/session";
 import { getDb } from "@/server/db";
 import { commsLinkOrigin } from "@/server/pms/comms/links";
@@ -18,9 +19,19 @@ import { readClinicSubscription } from "@/server/repos/clinic-subscription";
 
 export type BillingActionResult = { ok: true; url?: string; message?: string } | { ok: false; error: string };
 
+/**
+ * The return address: the request's own origin when it is one of the app's, else (01/11/2026, R3) the origin of the
+ * host's brand – never the other brand's host.
+ */
 function ownOrigin(): string {
-  const origin = headers().get("origin");
-  return origin && isAllowedAppOrigin(origin) ? new URL(origin).origin : commsLinkOrigin();
+  const h = headers();
+  const origin = h.get("origin");
+  if (origin && isAllowedAppOrigin(origin)) return new URL(origin).origin;
+  try {
+    return linkTarget(baseUrlSetting(), currentBrand().id).origin;
+  } catch {
+    return commsLinkOrigin();
+  }
 }
 
 const key = () => `plan-${randomBytes(12).toString("base64url")}`;

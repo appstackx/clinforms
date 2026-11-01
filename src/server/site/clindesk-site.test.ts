@@ -207,12 +207,11 @@ describe("clindesk.co.uk legal pages", () => {
   }
 
   for (const page of ["privacy", "terms", "cookies", "accessibility"] as const) {
-    it(`/${page}: names ClinDesk and Appstack X Ltd; ClinForms only as the Reports add-on's "powered by"; neutral wording`, async () => {
+    it(`/${page}: names ClinDesk and Appstack X Ltd; never ClinForms; neutral wording`, async () => {
       const { text } = await mainOf(page);
       assert.match(text, /ClinDesk/);
       assert.match(text, /Appstack X Ltd/);
-      const rest = text.replace(/Reports add-on[ ,(]+powered by ClinForms/g, "");
-      assert.ok(!/ClinForms/.test(rest), `${page}: "ClinForms" outside the Reports add-on: …${rest.slice(Math.max(0, rest.indexOf("ClinForms") - 80), rest.indexOf("ClinForms") + 40)}…`);
+      assert.ok(!/ClinForms/.test(text), `${page}: names ClinForms: …${text.slice(Math.max(0, text.indexOf("ClinForms") - 80), text.indexOf("ClinForms") + 40)}…`);
       for (const re of BANNED_TERM_PATTERNS) assert.ok(!re.test(text), `${page}: ${re}`);
       for (const vendor of [/vercel/i, /cloudflare/i, /turnstile/i, /mailersend/i, /mailpit/i, /supabase/i, /stripe/i, /posthog/i, /anthropic/i, /healthcode/i]) {
         assert.ok(!vendor.test(text), `${page}: names a vendor (${vendor})`);
@@ -316,7 +315,7 @@ describe("clindesk.co.uk legal pages", () => {
   it("/terms: the clinic system as the service, the Reports add-on optional, lawyer points as fill-ins", async () => {
     const { text, html } = await mainOf("terms");
     assert.match(text, /the clinic management system, with its diary, patient records, billing, patient portal and messages/);
-    assert.match(text, /the Reports add-on \(powered by ClinForms\) if the order includes it/);
+    assert.match(text, /the Reports add-on if the order includes it/);
     assert.match(text, /governed by the law of England and Wales/);
     assert.ok(!/public demo/.test(text), "ClinDesk has no public demo");
     assert.match(text, /No VAT is charged\./, "not VAT registered (01/11/2026)");
@@ -337,5 +336,22 @@ describe("clindesk.co.uk legal pages", () => {
     assert.match(text, /Advertising \(optional\)/);
     assert.match(text, /Nothing is loaded from Google until you accept/);
     assert.ok(html.includes('data-to-confirm="legal.humanCheckStorage"'));
+  });
+});
+
+describe("clindesk.co.uk wording", () => {
+  it('never says "powered by" ClinForms (Khuram, 01/11/2026)', () => {
+    const roots = [path.join(process.cwd(), "src/app/clindesk-site"), path.join(process.cwd(), "src/lib/clindesk-site")];
+    const files: string[] = [];
+    const walk = (dir: string) => {
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const p = path.join(dir, e.name);
+        if (e.isDirectory()) walk(p);
+        else if (/\.tsx?$/.test(e.name) && !/\.test\./.test(e.name)) files.push(p);
+      }
+    };
+    roots.forEach(walk);
+    const hits = files.filter((f) => /powered by/i.test(fs.readFileSync(f, "utf8")));
+    assert.deepEqual(hits, []);
   });
 });

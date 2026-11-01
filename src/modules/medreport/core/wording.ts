@@ -371,7 +371,7 @@ const ACCESS: AccessWording = {
   storeLimitTitle: "Too many changes at once",
   storeLimitDetail: (seconds) => `Too many changes were saved to your clinic's records in a short time. The Studio will try again in ${seconds} s.`,
   storeDailyLimitDetail:
-    "Your clinic has added an unusually large amount of new data today, so new records are paused until tomorrow. Contact ClinForms support if you need more.",
+    "Your clinic has added an unusually large amount of new data today, so new records are paused until tomorrow. Contact support if you need more.",
   importLimitTitle: "Too many uploads at once",
   importLimitDetail: (seconds) => `Too many notes were uploaded or checked in a short time. Try again in ${seconds} s.`,
   passcodeDemoOnlyTitle: "No passcode needed",

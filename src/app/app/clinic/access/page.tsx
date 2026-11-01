@@ -32,7 +32,7 @@ export default async function StaffAccessPage() {
           </Link>
           . Invite or remove people in{" "}
           <Link href="/app/settings/members" className="text-primary-strong underline underline-offset-2">
-            ClinForms settings → Members
+            Clinic administration → Members
           </Link>
           .
         </p>

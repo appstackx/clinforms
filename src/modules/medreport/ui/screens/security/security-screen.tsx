@@ -27,8 +27,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { PRODUCT } from "../../../config.public";
-import { useStudioMode } from "../../host-hooks";
+import { useStudioBrand, useStudioMode } from "../../host-hooks";
 import { useStudioPaths } from "../../routes";
 import { WORDING } from "../../wording";
 import { StudioShell } from "../../components/shared/studio-shell";
@@ -76,15 +75,16 @@ const STATUS: Array<{ area: string; demo: string; live: string }> = [
 export function SecurityScreen() {
   const paths = useStudioPaths();
   const tenant = useStudioMode() === "tenant";
+  const { productName } = useStudioBrand();
   return (
     <StudioShell
       title="Security & data protection"
       description={
         tenant ? (
-          <>How {PRODUCT.name} protects patient data.</>
+          <>How {productName} protects patient data.</>
         ) : (
           <>
-            How {PRODUCT.name} protects patient data, and what is in place before any real patient data is used. This demo runs on
+            How {productName} protects patient data, and what is in place before any real patient data is used. This demo runs on
             fictional data only.
           </>
         )
@@ -94,7 +94,7 @@ export function SecurityScreen() {
         <Section icon={Building2} title="Who is responsible (UK GDPR)" id="roles">
           <Points
             items={[
-              <>The clinic is the <strong>controller</strong> of its patients&apos; data. {PRODUCT.name} acts as a <strong>processor</strong> under a written Data Processing Agreement (UK GDPR Article 28).</>,
+              <>The clinic is the <strong>controller</strong> of its patients&apos; data. {productName} acts as a <strong>processor</strong> under a written Data Processing Agreement (UK GDPR Article 28).</>,
               <>A <strong>Data Protection Impact Assessment</strong> is completed with the clinic before go-live – health data is special category data.</>,
               <>{WORDING.security.subProcessors}</>,
               <>A proof of concept uses <strong>anonymised data only</strong>: your own referrers&apos; forms with anonymised notes, before any identifiable patient data is processed.</>,
@@ -164,7 +164,7 @@ export function SecurityScreen() {
         <Section icon={UserCheck} title="Your patients' rights" id="rights">
           <Points
             items={[
-              <>Access, correction and deletion requests are handled by the clinic as controller, with full support from {PRODUCT.name}.</>,
+              <>Access, correction and deletion requests are handled by the clinic as controller, with full support from {productName}.</>,
               <>Disclosure to a referrer follows the consent recorded in the clinic system – the record check flags a missing consent before approval.</>,
             ]}
           />

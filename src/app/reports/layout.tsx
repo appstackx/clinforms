@@ -1,7 +1,12 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
+import { currentBrand } from "@/server/brand";
 import { PRODUCT } from "@/modules/medreport/config.public";
 import { StudioShell } from "@/modules/medreport/ui/components/shared/studio-shell";
 import { MedreportHost } from "./medreport-host";
+
+/** Where /reports/… goes on the clinic brand's hosts: ClinDesk's own Reports page. */
+const CLINIC_HOST_REPORTS_PATH = "/reports";
 
 const description = `${PRODUCT.tagline}. Demo with fictional data.`;
 
@@ -31,8 +36,13 @@ export const metadata: Metadata = {
 /**
  * /reports – the Studio. The studio chrome lives in ui/components/shared/studio-shell.tsx (studio-a).
  * Orchestrator-owned.
+ *
+ * ClinForms' public demo only (01/11/2026, F3): on the clinic brand's hosts /reports itself is ClinDesk's "Referrer
+ * reports" page (rewritten by src/middleware.ts, so it never reaches this layout), and every /reports/… subpath – which
+ * the middleware deliberately does not match – is sent there instead of showing ClinForms' demo Studio.
  */
 export default function ReportsLayout({ children }: { children: React.ReactNode }) {
+  if (currentBrand().id === "clinic") redirect(CLINIC_HOST_REPORTS_PATH);
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
       <MedreportHost>

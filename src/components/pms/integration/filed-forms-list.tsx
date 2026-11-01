@@ -3,6 +3,7 @@
  * ReferrerForm, Forms tab) – the form, where it came from, its status and who approved it when. "View" only for members
  * who may see clinical notes (the completed form holds clinical content).
  */
+import { REPORTS_ADDON_NAME } from "@/lib/brand";
 import { formatFiledLine, ukDateTimeAt } from "./format";
 
 export interface FiledFormsListRow {
@@ -69,7 +70,7 @@ export function FiledFormsList({ rows }: { rows: FiledFormsListRow[] }) {
                     {r.title}
                   </td>
                   <td className="px-4 py-2.5 text-[#334155]">
-                    ClinForms{r.caseTitle ? ` · case: ${r.caseTitle}` : ""}
+                    {REPORTS_ADDON_NAME}{r.caseTitle ? ` · case: ${r.caseTitle}` : ""}
                   </td>
                   <td className="px-4 py-2.5">
                     <span className="inline-flex h-6 items-center rounded-full border border-[#BBF7D0] bg-[#DCFCE7] px-2 text-xs font-semibold text-[#166534]">

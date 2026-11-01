@@ -40,7 +40,7 @@ export function humanCheckRequired(env: Env = process.env): boolean {
 
 /** Why public online booking may not run here, or null. */
 export function bookingNeedsHumanCheck(env: Env = process.env): string | null {
-  return humanCheckRequired(env) && !humanCheckSiteKey(env) ? "Online booking needs the bot check (Cloudflare Turnstile) set up on this deployment first. Ask ClinForms support." : null;
+  return humanCheckRequired(env) && !humanCheckSiteKey(env) ? "Online booking needs the bot check (Cloudflare Turnstile) set up on this deployment first. Ask our support team." : null;
 }
 
 /**

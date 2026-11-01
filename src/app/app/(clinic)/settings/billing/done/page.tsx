@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { cache } from "react";
 import { Notice, PageHeader } from "@/components/account/shell";
 import { CLINIC_SYSTEM_NAME } from "@/lib/brand";
 import { requireAppContext } from "@/server/auth/session";
@@ -7,9 +8,41 @@ import { emailBillingNotifier } from "@/server/billing/notify";
 import { billingClientsFromEnv, canManageBilling, checkoutDoneView, completeCheckoutFor } from "@/server/billing/views";
 import { getDb } from "@/server/db";
 import { hasPackage } from "@/server/pms/entitlements";
+import { otherBrandSignIn } from "@/server/brand-home";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Payment – Plan and billing" };
+/**
+ * The checkout applied once per request (React cache): the tab title and the page read the same result, so the title
+ * can say what the page says.
+ */
+const doneViewFor = cache(async (sessionId: string) => {
+  const { session, membership } = await requireAppContext();
+  const actor = { tenantId: membership.tenantId, clinicName: membership.clinicName, role: membership.role, userId: session.user.id, sessionId: session.session.id };
+  const r = canManageBilling(membership.role) ? await completeCheckoutFor(getDb(), actor, sessionId, billingClientsFromEnv(), { notify: emailBillingNotifier(getDb), alert: null }) : ({ status: "unavailable" } as const);
+  // Read after the sync above, so a plan that has just switched the clinic system on is seen.
+  const clinicOn = r.status === "synced" && r.subscription.state === "active" ? await hasPackage(membership.tenantId, "clinic") : false;
+  const view = checkoutDoneView(r, clinicOn);
+  // 01/11/2026 (R3): bought on ClinForms' host – the clinic system lives on its own host (sessions are host-only), so
+  // "Open ClinDesk" goes to its sign-in page there, with a line saying so.
+  const elsewhere = view.openClinicSystem ? otherBrandSignIn("clinic") : null;
+  return { view, elsewhere };
+});
+
+const sessionIdOf = (searchParams: Record<string, string | string[] | undefined>) => {
+  const raw = searchParams.session_id;
+  return (Array.isArray(raw) ? raw[0] : raw) ?? "";
+};
+
+const DONE_TITLE = "Payment – Plan and billing";
+
+/**
+ * The tab title (V-02): the host brand's as everywhere ("… · ClinForms"), except the hand-off – the clinic system just
+ * bought on ClinForms' host – which is titled for the clinic system the page sends the person to.
+ */
+export async function generateMetadata({ searchParams }: { searchParams: Record<string, string | string[] | undefined> }): Promise<Metadata> {
+  const { elsewhere } = await doneViewFor(sessionIdOf(searchParams));
+  return elsewhere ? { title: { absolute: `${DONE_TITLE} · ${CLINIC_SYSTEM_NAME}` } } : { title: DONE_TITLE };
+}
 
 /**
  * /app/settings/billing/done?session_id=… – back from the payment page. The checkout and its subscription are re-read
@@ -18,14 +51,7 @@ export const metadata: Metadata = { title: "Payment – Plan and billing" };
  * refused. 01/11/2026: the plan bought, and "Open ClinDesk" once the clinic package is on (checkoutDoneView).
  */
 export default async function BillingDonePage({ searchParams }: { searchParams: Record<string, string | string[] | undefined> }) {
-  const { session, membership } = await requireAppContext();
-  const raw = searchParams.session_id;
-  const sessionId = (Array.isArray(raw) ? raw[0] : raw) ?? "";
-  const actor = { tenantId: membership.tenantId, clinicName: membership.clinicName, role: membership.role, userId: session.user.id, sessionId: session.session.id };
-  const r = canManageBilling(membership.role) ? await completeCheckoutFor(getDb(), actor, sessionId, billingClientsFromEnv(), { notify: emailBillingNotifier(getDb), alert: null }) : ({ status: "unavailable" } as const);
-  // Read after the sync above, so a plan that has just switched the clinic system on is seen.
-  const clinicOn = r.status === "synced" && r.subscription.state === "active" ? await hasPackage(membership.tenantId, "clinic") : false;
-  const view = checkoutDoneView(r, clinicOn);
+  const { view, elsewhere } = await doneViewFor(sessionIdOf(searchParams));
   const back = "/app/settings/billing";
   return (
     <>
@@ -40,15 +66,21 @@ export default async function BillingDonePage({ searchParams }: { searchParams: 
           Plan: <span className="font-semibold text-slate-900">{view.planLabel}</span>
         </p>
       ) : null}
+      {elsewhere ? (
+        <p className="mt-4 text-sm text-slate-700" data-testid="billing-done-elsewhere">
+          {CLINIC_SYSTEM_NAME} has its own address: sign in there with the same email and password (and your two-step code).
+          Your clinic is used there from now on.
+        </p>
+      ) : null}
       <div className="mt-6 flex flex-wrap items-center gap-4">
         {view.openClinicSystem ? (
-          <Link
-            href="/app/clinic"
+          <a
+            href={elsewhere ?? "/app/clinic"}
             className="inline-flex h-10 items-center rounded-lg bg-teal-700 px-4 text-sm font-semibold text-white hover:bg-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-700 focus-visible:ring-offset-2"
             data-testid="open-clinic-system"
           >
-            Open {CLINIC_SYSTEM_NAME}
-          </Link>
+            {elsewhere ? `Sign in to ${CLINIC_SYSTEM_NAME}` : `Open ${CLINIC_SYSTEM_NAME}`}
+          </a>
         ) : null}
         <Link
           href={back}

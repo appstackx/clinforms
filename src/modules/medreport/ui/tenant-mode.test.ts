@@ -126,6 +126,22 @@ describe("StudioShell", () => {
     assertTenantClean(html);
   });
 
+  it("tenant under the host's brand (F4): the host's mark and names in the header, footer and security screen", () => {
+    const brand = { productName: "Desk Brand", studioName: "Reports", footerName: "Desk Brand Reports", mark: createElement("svg", { "data-mark": "clinic" }) };
+    const hooks: HostHooks = { ...TENANT, brand };
+    const html = shell(hooks, "/app/studio");
+    assert.match(html, /data-mark="clinic"/);
+    assert.doesNotMatch(html, /data-brand-mark/, "no ClinForms mark");
+    assert.match(html, /data-studio-name="">Reports</);
+    assert.match(text(html), /Desk Brand Reports v/);
+    assert.doesNotMatch(text(html), /ClinForms/);
+    const security = text(render(createElement(SecurityScreen), hooks, "/app/studio/security"));
+    assert.match(security, /How Desk Brand protects patient data/);
+    assert.doesNotMatch(security, /ClinForms/);
+    // Without a brand: ClinForms' own, as before.
+    assert.match(text(shell(TENANT, "/app/studio")), /ClinForms v/);
+  });
+
   it("the compact navigation (phones, tablets) wraps rather than scrolling sideways, with every page link in it", () => {
     for (const [hooks, pathname, sections] of [
       [{}, "/reports/batch", ["/reports", "/reports/new", "/reports/forms", "/reports/batch"]],

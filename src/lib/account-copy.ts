@@ -26,6 +26,19 @@ export const ROLE_DESCRIPTIONS = {
   staff: "Prepares forms for clinicians.",
 } as const;
 
+/** 01/11/2026: the roles described for a clinic without Reports (a ClinDesk clinic – no forms to complete). */
+export const CLINIC_ROLE_DESCRIPTIONS = {
+  owner: "Full control of the clinic account, including other owners.",
+  admin: "Manages clinic details, members, invitations and the plan.",
+  clinician: "Sees patients, writes notes and runs their diary.",
+  staff: "Books appointments and looks after the front desk.",
+} as const;
+
+/** The role descriptions for a clinic with Reports (ClinForms' wording) or without (the clinic system's). */
+export function roleDescriptions(reports: boolean): Readonly<Record<RoleKey, string>> {
+  return reports ? ROLE_DESCRIPTIONS : CLINIC_ROLE_DESCRIPTIONS;
+}
+
 export type RoleKey = keyof typeof ROLE_LABELS;
 
 export function roleLabel(role: string): string {

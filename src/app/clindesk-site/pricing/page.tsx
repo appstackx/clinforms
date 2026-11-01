@@ -223,7 +223,6 @@ function ReportsAddOn() {
         <div className="p-reports-text">
           <div className="lockup">
             <span className="display-m">{CLINIC_SYSTEM_NAME} Reports</span>
-            <span className="lockup-sub">powered by {CLINFORMS_NAME}</span>
             <span className="addon addon--tilt">Add-on</span>
           </div>
           <p className="pen marker" style={cssVars({"--tilt": "-1.5deg"})}>17:25 · the add-on</p>

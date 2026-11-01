@@ -19,7 +19,7 @@ export function CreateKeyForm() {
         <SecretBox
           label={`New key: ${state.name}`}
           value={state.key}
-          note="Copy it now and store it in your practice system's settings. It is shown only this once; ClinForms keeps only a fingerprint of it."
+          note="Copy it now and store it in your practice system's settings. It is shown only this once; only a fingerprint of it is kept."
         />
       ) : null}
     </div>

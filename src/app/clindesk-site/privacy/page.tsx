@@ -1,7 +1,7 @@
 import { Fill } from "@/components/clindesk/fill";
 import { LegalFrame } from "@/components/clindesk/legal-frame";
 import { LegalPage, LegalTable } from "@/components/marketing/legal-page";
-import { CLINFORMS_NAME, CLINIC_SYSTEM_NAME } from "@/lib/brand";
+import { CLINIC_SYSTEM_NAME } from "@/lib/brand";
 import { CLINDESK_LEGAL_LAST_UPDATED, CONTACT_EMAIL, clindeskMetadata } from "@/lib/clindesk/site";
 import { COMPANY } from "@/lib/site";
 
@@ -203,7 +203,7 @@ export default function ClindeskPrivacyPage() {
             <strong>Imports:</strong> records the clinic brings across from its previous system.
           </li>
           <li>
-            <strong>Referrer reports</strong> (only for clinics with the Reports add-on, powered by {CLINFORMS_NAME}): the
+            <strong>Referrer reports</strong> (only for clinics with the Reports add-on): the
             completed referrer forms, drafted from the clinic&rsquo;s signed notes.
           </li>
         </ul>

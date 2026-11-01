@@ -10,7 +10,7 @@ import path from "node:path";
 import { describe, it } from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { BRANDS, CLINIC_SYSTEM_NAME, brandContactEmail, brandForHost, brandIcons } from "@/lib/brand";
+import { BRANDS, CLINIC_SYSTEM_NAME, PUBLIC_SITE_BRAND, brandContactEmail, brandForHost, brandIcons, brandViewport } from "@/lib/brand";
 import { CONTACT_EMAIL, clindeskMetadata } from "@/lib/clindesk/site";
 import { COMPANY } from "@/lib/site";
 import { trialBanner } from "@/lib/trial-copy";
@@ -48,13 +48,49 @@ describe("brand chrome per host", () => {
   });
 
   it("the sign-in, signed-in and 404 layouts name the host brand's icons", () => {
-    for (const f of ["src/app/(auth)/layout.tsx", "src/app/app/layout.tsx", "src/app/not-found.tsx"]) {
+    for (const f of ["src/app/(auth)/layout.tsx", "src/app/app/layout.tsx", "src/app/not-found.tsx", "src/app/(public-clinic)/clinics/[clinicId]/layout.tsx"]) {
       const src = read(f);
       assert.match(src, /brandIcons\(brand\)/, f);
       assert.match(src, /\.\.\.\(icons \? \{ icons \} : \{\}\)/, f);
     }
     // Pages below /app that set metadata of their own never name another icon (they inherit /app's).
     for (const f of ["src/app/app/clinic/layout.tsx", "src/app/app/studio/layout.tsx"]) assert.doesNotMatch(read(f), /icons:/, f);
+  });
+
+  it("theme colour per brand (V3): ClinForms' teal, the clinic brand's coral; set by host where pages answer on both", () => {
+    assert.deepEqual(brandViewport(BRANDS.clinforms), { themeColor: "#0D9488" });
+    assert.deepEqual(brandViewport(brandForHost("clinic.localhost:3430")), { themeColor: "#C4432B" });
+    assert.equal(PUBLIC_SITE_BRAND.themeColor, "#0D9488");
+    assert.match(read("src/app/layout.tsx"), /viewport: Viewport = brandViewport\(PUBLIC_SITE_BRAND\)/);
+    assert.doesNotMatch(read("src/app/layout.tsx"), /#0D9488/, "no hard-coded colour in the root layout");
+    assert.match(read("src/app/clindesk-site/layout.tsx"), /brandViewport\(BRANDS\.clinic\)/);
+    for (const f of [
+      "src/app/(auth)/layout.tsx",
+      "src/app/app/layout.tsx",
+      "src/app/(public-clinic)/clinics/[clinicId]/layout.tsx",
+    ]) {
+      assert.match(read(f), /export function generateViewport\(\): Viewport \{\s*return brandViewport\(currentBrand\(\)\);/, f);
+    }
+    assert.match(read("src/app/not-found.tsx"), /brandViewport\(notFoundBrand\(\)\)/);
+  });
+
+  it("patient pages (F2) carry the host brand's application name, share cards and description", () => {
+    const src = read("src/app/(public-clinic)/clinics/[clinicId]/layout.tsx");
+    assert.match(src, /\.\.\.brandMetadata\(brand\)/);
+    assert.match(src, /const brand = currentBrand\(\)/);
+  });
+
+  it("F3: ClinForms' public demo Studio (/reports/…) is never shown on the clinic brand's hosts", () => {
+    const src = read("src/app/reports/layout.tsx");
+    assert.match(src, /if \(currentBrand\(\)\.id === "clinic"\) redirect\(CLINIC_HOST_REPORTS_PATH\)/);
+    assert.match(src, /const CLINIC_HOST_REPORTS_PATH = "\/reports";/);
+  });
+
+  it("F4: the clinic's Studio chrome follows the host brand (the clinic system's mark and Reports on its host)", () => {
+    const src = read("src/app/app/studio/layout.tsx");
+    assert.match(src, /studioName: REPORTS_ADDON_NAME/);
+    assert.match(src, /mark: <ClinicSystemMark/);
+    assert.match(src, /if \(brand\.id !== "clinic"\) return undefined;/);
   });
 
   it("the mark: ClinForms' document mark by default, the clinic system's crossed tapes for the clinic brand", () => {

@@ -15,6 +15,12 @@
 /** Name of the clinic system (package, area label and, on its own domain, the product and website name). */
 export const CLINIC_SYSTEM_NAME = "ClinDesk";
 
+/**
+ * What the clinic brand calls ClinForms inside its own app (01/11/2026, Khuram's R1): the "Reports" add-on – the
+ * ClinForms name appears on ClinDesk's public website only as the "works on its own" link (no "powered by", 01/11/2026).
+ */
+export const REPORTS_ADDON_NAME = "Reports";
+
 /** ClinForms' own product name (equals the module's PRODUCT.name; checked by src/lib/brand.test.ts). */
 export const CLINFORMS_NAME = "ClinForms";
 
@@ -57,6 +63,11 @@ export interface Brand {
    * that names no icon of its own (the 404 page) shows the brand's too.
    */
   icons: { icon: string; apple: string } | null;
+  /**
+   * The browser's theme colour (`<meta name="theme-color">`, the address bar on phones) on this brand's pages
+   * (01/11/2026, V3): ClinForms' teal; the clinic brand's coral tape (#C4432B, the accent of its mark and website).
+   */
+  themeColor: string;
 }
 
 export const BRANDS: Readonly<Record<BrandId, Brand>> = {
@@ -72,6 +83,7 @@ export const BRANDS: Readonly<Record<BrandId, Brand>> = {
     appHome: "/app",
     contactEmail: "hello@clinforms.co.uk",
     icons: null,
+    themeColor: "#0D9488",
   },
   clinic: {
     id: "clinic",
@@ -85,6 +97,7 @@ export const BRANDS: Readonly<Record<BrandId, Brand>> = {
     appHome: "/app/clinic",
     contactEmail: "hello@clindesk.co.uk",
     icons: { icon: "/clindesk/favicon.svg", apple: "/clindesk/apple-touch-icon.png" },
+    themeColor: "#C4432B",
   },
 };
 
@@ -123,6 +136,37 @@ export function brandIcons(brand: Pick<Brand, "icons">):
   | undefined {
   if (!brand.icons) return undefined;
   return { icon: [{ url: brand.icons.icon, type: "image/svg+xml" }], apple: [{ url: brand.icons.apple, sizes: "180x180" }] };
+}
+
+/**
+ * Next's `viewport` for a brand's pages (its theme colour). The root layout sets ClinForms' statically (its public pages
+ * are built once); the layouts that answer on either host (sign-in, /app, 404, patient pages, /reports) set the host
+ * brand's with generateViewport, and ClinDesk's website its own.
+ */
+export function brandViewport(brand: Pick<Brand, "themeColor">): { themeColor: string } {
+  return { themeColor: brand.themeColor };
+}
+
+/** One line about each product (page descriptions of the app, sign-in and error pages on the brand's hosts). */
+export const BRAND_TAGLINES: Readonly<Record<BrandId, string>> = {
+  clinforms: "Complete every referrer's own report form from your clinic notes",
+  clinic: "Clinic management for UK physiotherapy and MSK clinics: diary, notes, billing and messages",
+};
+
+/**
+ * The brand-wide part of Next's metadata for a brand's app, sign-in and error pages (01/11/2026, R3): the application
+ * name (home-screen / pinned-app name), the share cards' site name and title, the description and the base URL – the
+ * root layout sets ClinForms' for every page, so the clinic brand's pages override them with this.
+ */
+export function brandMetadata(brand: Pick<Brand, "id" | "productName" | "siteUrl">) {
+  const description = BRAND_TAGLINES[brand.id];
+  return {
+    metadataBase: new URL(brand.siteUrl),
+    applicationName: brand.productName,
+    description,
+    openGraph: { title: brand.productName, description, siteName: brand.productName, locale: "en_GB", type: "website" as const },
+    twitter: { card: "summary" as const, title: brand.productName, description },
+  };
 }
 
 /** The host every request on a brand's alias hosts is sent to (www.clindesk.co.uk → clindesk.co.uk). */
