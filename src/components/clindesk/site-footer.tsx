@@ -98,7 +98,7 @@ export function SiteFooter() {
           </nav>
         </div>
         <p className="small f-legal">
-          © 2026 {COMPANY.legalName} · Made in the UK · Company no. <Fill k="company.number" /> · Registered office: <Fill k="company.registeredOffice" /> ·{" "}
+          © 2026 {COMPANY.legalName} · Made in the UK · Company no. <Fill k="company.number" /> ·{" "}
           <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>
         </p>
         <p className="small f-fine">Names, clinics, insurers and figures shown on this site are fictional sample data.</p>

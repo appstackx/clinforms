@@ -43,8 +43,8 @@ export default function ClindeskPrivacyPage() {
       >
         <h2 id="who-we-are">1. Who we are</h2>
         <p>
-          {CLINIC_SYSTEM_NAME} is a product of {COMPANY.legalName}, company number <Fill k="company.number" />, registered
-          office <Fill k="company.registeredOffice" />. You can contact us about anything in this policy at{" "}
+          {CLINIC_SYSTEM_NAME} is a product of {COMPANY.legalName}, a company registered in England and Wales, company
+          number <Fill k="company.number" />. You can contact us about anything in this policy at{" "}
           <a href={`mailto:${email}`}>{email}</a>.
         </p>
         <p>

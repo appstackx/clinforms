@@ -7,8 +7,8 @@
  * (src/server/site/demo-request.ts); the browser's own required/type checks are only a first hint.
  *
  * Errors: a summary at the top (focused, links to each field) and a message under each field (aria-describedby,
- * aria-invalid). Fields keep what was typed. Added to the design: "Number of practitioners" (optional) and the
- * hidden honeypot field.
+ * aria-invalid). Fields keep what was typed. Added to the design: "Number of practitioners" (required; its options
+ * are the plan bands, src/lib/clindesk/demo-options.ts) and the hidden honeypot field.
  *
  * Advertising measurement: on submit, and only with advertising consent and an empty honeypot, the form leaves a
  * short-lived note in this tab (google-ads.ts noteDemoSent); the thank-you page – reached only through the server's
@@ -20,7 +20,7 @@ import { forgetDemoSent, noteDemoSent } from "@/components/ads/google-ads";
 import { useFormState, useFormStatus } from "react-dom";
 import { bookDemoAction } from "@/app/clindesk-site/demo/actions";
 import { INITIAL_DEMO_FORM_STATE, type DemoFormState } from "@/app/clindesk-site/demo/form-state";
-import { DEMO_INTERESTS, DEMO_SITE_BANDS } from "@/lib/clindesk/demo-options";
+import { DEMO_INTERESTS, DEMO_PRACTITIONER_BANDS, DEMO_SITE_BANDS } from "@/lib/clindesk/demo-options";
 
 const FIELD_IDS: Record<string, string> = {
   name: "f-name",
@@ -160,19 +160,18 @@ export function DemoForm() {
             </div>
             <div className="d-field">
               <label htmlFor="f-practitioners">
-                Number of practitioners <span className="opt">(optional)</span>
+                Number of practitioners <span className="req">(required)</span>
               </label>
-              <input
-                id="f-practitioners"
-                name="practitioners"
-                type="number"
-                inputMode="numeric"
-                min={1}
-                max={999}
-                step={1}
-                defaultValue={v.practitioners}
-                {...describe("f-practitioners", e.practitioners)}
-              />
+              <span className="d-select">
+                <select id="f-practitioners" name="practitioners" required defaultValue={v.practitioners ?? ""} {...describe("f-practitioners", e.practitioners)}>
+                  <option value="">Choose</option>
+                  {DEMO_PRACTITIONER_BANDS.map((band) => (
+                    <option key={band} value={band}>
+                      {band}
+                    </option>
+                  ))}
+                </select>
+              </span>
               <FieldError id="f-practitioners" message={e.practitioners} />
             </div>
           </div>

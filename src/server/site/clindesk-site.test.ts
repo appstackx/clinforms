@@ -221,6 +221,22 @@ describe("clindesk.co.uk legal pages", () => {
     });
   }
 
+  it("/privacy and /terms: company number 16287309, registered in England and Wales; no registered office shown (Khuram 01/11/2026)", async () => {
+    for (const page of ["privacy", "terms"] as const) {
+      const { text, html } = await mainOf(page);
+      assert.match(text, /AppstackX Ltd ?(\(.we., .us.\) ?)?, a company registered in England and Wales, company number 16287309 ?\./, page);
+      assert.ok(!/registered office/i.test(text), `${page}: no registered office`);
+      assert.ok(!html.includes('data-to-confirm="company.number"'), `${page}: company number filled`);
+    }
+  });
+
+  it("footer: company number 16287309, no registered office", async () => {
+    const { SiteFooter } = await import("@/components/clindesk/site-footer");
+    const text = renderToStaticMarkup(createElement(SiteFooter)).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+    assert.match(text, /Company no\. 16287309/);
+    assert.ok(!/registered office/i.test(text));
+  });
+
   it("/privacy: controller and processor roles, the data categories and the sub-processor list taken from the code", async () => {
     const { text, html } = await mainOf("privacy");
     assert.match(text, /Controller for the personal data of website visitors, people who book a demo, and the users of clinic accounts/);
@@ -255,7 +271,7 @@ describe("clindesk.co.uk legal pages", () => {
     assert.match(text, /withdraw consent at any time, where we rely on consent \(for advertising cookies, use .Cookie settings/);
     assert.match(text, /This website uses no analytics/);
     assert.ok(!/we do not use it for advertising/.test(text), "no longer true");
-    for (const k of ["company.number", "company.registeredOffice", "security.icoRegistration", "security.region", "security.subProcessorsDocument", "legal.accountRetention", "legal.demoRequestRetention", "legal.providerLocations"]) {
+    for (const k of ["security.icoRegistration", "security.region", "security.subProcessorsDocument", "legal.accountRetention", "legal.demoRequestRetention", "legal.providerLocations"]) {
       assert.ok(html.includes(`data-to-confirm="${k}"`), k);
     }
     assert.ok(text.includes(TO_CONFIRM));

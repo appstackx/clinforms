@@ -2,13 +2,13 @@
 
 **Internal.** ClinDesk's public website (clindesk.co.uk, built in `src/app/clindesk-site`) never invents a price, a
 term or a claim. Every value Khuram must confirm – prices, plans, hosting region, certifications, contract and support
-details, timelines, company number, registered office, response times, the legal pages' open points – comes from ONE
+details, timelines, company number, response times, the legal pages' open points – comes from ONE
 file:
 
     content/clindesk-site.json
 
 It is read when the site is built (the pages are static) and validated with zod (`src/lib/clindesk/content.ts`).
-**51 keys.**
+**50 keys.**
 
 ## How to edit it
 
@@ -50,8 +50,7 @@ Not in this file, on purpose:
 
 | Key | Placeholder (current value) | What it is and where it shows |
 |---|---|---|
-| `company.number` | [Company number] | Companies House number of AppstackX Ltd, e.g. 12345678. Footer of every page. Also the privacy policy and the terms ("company number …"). |
-| `company.registeredOffice` | [Registered address] | Registered office address on one line, e.g. "1 High Street, Town, AB1 2CD". Footer of every page. Also the privacy policy and the terms ("registered office …"). |
+| `company.number` | 16287309 | Companies House number of AppstackX Ltd (registered in England and Wales; Khuram 01/11/2026). Footer of every page. Also the privacy policy and the terms ("company number …"). |
 
 ### Contact
 

@@ -262,14 +262,14 @@ function normalise(html) {
       // The browser's own checks pass (type=email accepts "a@b"); the server's do not (no domain suffix).
       await page.fill("#f-email", "nina@pebblegate");
       await page.selectOption("#f-sites", "2–5");
-      await page.fill("#f-practitioners", "6");
+      await page.selectOption("#f-practitioners", "6–10");
       await page.click("button.d-submit");
       await page.waitForLoadState("load");
       assert(page.url() === `${SITE}/demo`, `stays on /demo: ${page.url()}`);
       await page.waitForSelector(".d-error-summary");
       assert(/valid work email/i.test(await page.locator("#f-email-error").innerText()), "email error");
       assert((await page.inputValue("#f-name")) === "Nina Patel (fictional)", "keeps what was typed");
-      assert((await page.inputValue("#f-practitioners")) === "6", "keeps the number");
+      assert((await page.inputValue("#f-practitioners")) === "6–10", "keeps the chosen band");
       assert((await page.getAttribute("#f-email", "aria-invalid")) === "true", "aria-invalid");
       assert((await page.getAttribute("#f-email", "aria-describedby")) === "f-email-error", "error described");
       await page.screenshot({ path: path.join(OUT, "demo-nojs-errors-375.png"), fullPage: true });
@@ -288,7 +288,7 @@ function normalise(html) {
       await page.fill("#f-email", "olly@pebblegate.example");
       await page.fill("#f-phone", "01908 000111");
       await page.selectOption("#f-sites", "6–15");
-      await page.fill("#f-practitioners", "12");
+      await page.selectOption("#f-practitioners", "11–25");
       await page.fill("#f-system", "Paper diary");
       await page.check("input[name=see][value=diary]");
       await page.check("input[name=see][value=reports]");
@@ -348,7 +348,7 @@ function normalise(html) {
         assert((await item.locator("text=ClinDesk demo").count()) === 1, "ClinDesk label");
         await item.locator("summary", { hasText: "Message" }).click();
         const msg = await item.locator("details p").innerText();
-        assert(msg === "Source: clindesk\nSites: 6–15\nPractitioners: 12\nCurrent system: Paper diary\nInterests: The diary, Reports add-on", `message: ${JSON.stringify(msg)}`);
+        assert(msg === "Source: clindesk\nSites: 6–15\nPractitioners: 11–25\nCurrent system: Paper diary\nInterests: The diary, Reports add-on", `message: ${JSON.stringify(msg)}`);
         assert((await page.locator("li", { hasText: "Pebblegate Physio (fictional)" }).locator("text=ClinDesk demo").count()) >= 1, "the no-JS request too");
         await page.screenshot({ path: path.join(OUT, "platform-requests.png"), fullPage: true });
         await ctx.close();

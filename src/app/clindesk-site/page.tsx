@@ -206,7 +206,7 @@ function FactStrip() {
         <ul className="facts-list">
           <li><span className="tb tb--sage tb-first" aria-hidden="true" />Notes lock when they’re signed</li>
           <li><span className="tb tb--sun" aria-hidden="true" />Referrers’ own report forms, filled from your signed notes (add-on)</li>
-          <li><span className="tb tb--sage" aria-hidden="true" />1 to 15 sites, one diary</li>
+          <li><span className="tb tb--sage" aria-hidden="true" />1 site or 50, one diary</li>
         </ul>
       </div>
     </section>
@@ -507,7 +507,7 @@ function Groups() {
         <div className="groups-text">
           <p className="pen marker" style={cssVars({"--tilt": "-2deg"})}>13:05 · Sam, group office</p>
           <p className="num-row">
-            <span className="numeral">1–15</span>
+            <span className="numeral">1–50</span>
             {" "}
             <span className="num-cap">sites, one diary</span>
           </p>

@@ -33,9 +33,10 @@ export const COMPANY: CompanyDetails = {
   brand: "AppStackX",
   website: "https://appstackx.co.uk",
   contactEmail: "hello@clinforms.co.uk",
-  // Unknown today: leave unset until confirmed (lines that need them are hidden).
-  registeredNumber: undefined,
-  registeredIn: undefined,
+  // Unset values stay hidden (the lines that need them are not rendered).
+  registeredNumber: "16287309",
+  registeredIn: "England and Wales",
+  // Not shown on the website (Khuram 01/11/2026); leave unset until he decides to publish one.
   registeredAddress: undefined,
   icoRegistration: undefined,
 };

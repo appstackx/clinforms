@@ -1,6 +1,6 @@
 /**
  * ClinDesk website fill-ins: every value Khuram must confirm (hosting region, certifications, contract
- * and support details, timelines, company number, registered office, response times, the legal pages' open points …) comes from ONE file,
+ * and support details, timelines, company number, response times, the legal pages' open points …) comes from ONE file,
  * content/clindesk-site.json, read when the site is built (the pages are static). How to edit it and the list of
  * keys: docs/clinic-system/CLINDESK-SITE-CONTENT.md.
  *
@@ -21,7 +21,6 @@ import raw from "../../../content/clindesk-site.json";
 /** Every key of content/clindesk-site.json (the pages use <Fill k=…/> with one of these). */
 export const CLINDESK_CONTENT_KEYS = [
   "company.number",
-  "company.registeredOffice",
   "contact.responseTime",
   "pricing.vat",
   "pricing.trialSummary",

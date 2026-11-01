@@ -2,12 +2,8 @@
   "_about": "ClinDesk website fill-ins (docs/clinic-system/CLINDESK-SITE-CONTENT.md). Edit only each \"value\". A value still in [square brackets] is NOT filled in: development and previews show it as written, production shows a neutral \"[to confirm]\" marker. A filled value must not contain [ or ]. The build fails if this file is invalid. Prices are not here: the website reads them from the billing plan table (src/lib/billing/plans.ts, text packs src/modules/pms/comms/credits.ts) via src/lib/clindesk/pricing.ts.",
   "values": {
     "company.number": {
-      "value": "[Company number]",
-      "description": "Companies House number of AppstackX Ltd, e.g. 12345678. Footer of every page. Also the privacy policy and the terms (\"company number …\")."
-    },
-    "company.registeredOffice": {
-      "value": "[Registered address]",
-      "description": "Registered office address on one line, e.g. \"1 High Street, Town, AB1 2CD\". Footer of every page. Also the privacy policy and the terms (\"registered office …\")."
+      "value": "16287309",
+      "description": "Companies House number of AppstackX Ltd (registered in England and Wales; Khuram 01/11/2026). Footer of every page. Also the privacy policy and the terms (\"company number …\")."
     },
     "contact.responseTime": {
       "value": "one working day",

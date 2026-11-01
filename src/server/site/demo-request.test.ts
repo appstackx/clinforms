@@ -9,7 +9,8 @@ import { createSqliteTestDb, testCipher, type TestDb } from "../db/testing/datab
 import { listAccessRequests } from "../repos/access-requests";
 import type { RepoContext } from "../repos/context";
 import { submitAccessRequest, type NotificationPayload } from "./access-request";
-import { DEMO_FIELD_NAMES, accessRequestSource, demoRequestInput, demoStoredMessage, submitDemoRequest, DemoRequestSchema } from "./demo-request";
+import { CLINDESK_BANDS } from "@/lib/billing/plans";
+import { DEMO_FIELD_NAMES, DEMO_PRACTITIONER_BANDS, DEMO_SITE_BANDS, accessRequestSource, demoRequestInput, demoStoredMessage, submitDemoRequest, DemoRequestSchema } from "./demo-request";
 import { accessRequestEmail } from "./notify";
 
 const VALID = {
@@ -18,7 +19,7 @@ const VALID = {
   email: "sarah@pebblegate-physio.example",
   phone: "01908 000000",
   sites: "2–5",
-  practitioners: "8",
+  practitioners: "6–10",
   currentSystem: "A spreadsheet",
   interests: ["billing", "diary"],
   website: "",
@@ -47,17 +48,17 @@ describe("submitDemoRequest", () => {
     assert.equal(row.email, VALID.email);
     assert.equal(row.phone, VALID.phone);
     // interests in the form's order, not the order posted
-    assert.equal(row.message, "Source: clindesk\nSites: 2–5\nPractitioners: 8\nCurrent system: A spreadsheet\nInterests: The diary, Billing and insurers");
+    assert.equal(row.message, "Source: clindesk\nSites: 2–5\nPractitioners: 6–10\nCurrent system: A spreadsheet\nInterests: The diary, Billing and insurers");
     assert.equal(accessRequestSource(row.message), "clindesk");
     assert.equal(row.createdAt, NOW.toISOString());
   });
 
   test("optional fields may be empty or missing", async () => {
-    const outcome = await submitDemoRequest({ name: "Tom Ellis", clinic: "Pebblegate Physio", email: "tom@pebblegate.example", sites: "1" }, deps({ clientKey: null }));
+    const outcome = await submitDemoRequest({ name: "Tom Ellis", clinic: "Pebblegate Physio", email: "tom@pebblegate.example", sites: "1", practitioners: "1" }, deps({ clientKey: null }));
     assert.equal(outcome.kind, "stored");
     const [row] = await listAccessRequests(ctx);
     assert.equal(row.phone, null);
-    assert.equal(row.message, "Source: clindesk\nSites: 1");
+    assert.equal(row.message, "Source: clindesk\nSites: 1\nPractitioners: 1");
   });
 
   test("every field is validated on the server; errors are keyed by the form's field names; nothing is stored", async () => {
@@ -67,7 +68,7 @@ describe("submitDemoRequest", () => {
       email: "not-an-email",
       phone: "call me <maybe>",
       sites: "11+",
-      practitioners: "0",
+      practitioners: "8",
       currentSystem: "a".repeat(121),
       interests: ["diary", "everything"],
     };
@@ -81,12 +82,23 @@ describe("submitDemoRequest", () => {
   test("required fields missing entirely", async () => {
     const outcome = await submitDemoRequest({}, deps());
     assert.equal(outcome.kind, "invalid");
-    if (outcome.kind === "invalid") assert.deepEqual(Object.keys(outcome.fieldErrors).sort(), ["clinic", "email", "name", "sites"]);
+    if (outcome.kind === "invalid") assert.deepEqual(Object.keys(outcome.fieldErrors).sort(), ["clinic", "email", "name", "practitioners", "sites"]);
   });
 
-  test("practitioners: whole numbers 1–999 only", () => {
-    for (const ok of ["", "1", "15", "999"]) assert.equal(DemoRequestSchema.safeParse({ ...VALID, practitioners: ok }).success, true, ok);
-    for (const bad of ["0", "1000", "2.5", "-3", "ten", "1e2"]) assert.equal(DemoRequestSchema.safeParse({ ...VALID, practitioners: bad }).success, false, bad);
+  test("practitioners: required, one of the plan bands from the billing plan table plus \"Over 200\"", () => {
+    const fromPlans = [...CLINDESK_BANDS.map((b) => (b.min === b.max ? `${b.min}` : `${b.min}–${b.max}`)), `Over ${CLINDESK_BANDS[CLINDESK_BANDS.length - 1].max}`];
+    assert.deepEqual([...DEMO_PRACTITIONER_BANDS], fromPlans);
+    assert.deepEqual([...DEMO_PRACTITIONER_BANDS], ["1", "2–5", "6–10", "11–25", "26–200", "Over 200"]);
+    for (const ok of DEMO_PRACTITIONER_BANDS) assert.equal(DemoRequestSchema.safeParse({ ...VALID, practitioners: ok }).success, true, ok);
+    for (const bad of ["", "8", "0", "2-5", "6–15", "Over 30", " 1", "over 200"]) assert.equal(DemoRequestSchema.safeParse({ ...VALID, practitioners: bad }).success, false, JSON.stringify(bad));
+    const { practitioners: _omit, ...rest } = VALID;
+    assert.equal(DemoRequestSchema.safeParse(rest).success, false, "missing");
+  });
+
+  test("sites: 1, 2–5, 6–15, 16–30, Over 30 only", () => {
+    assert.deepEqual([...DEMO_SITE_BANDS], ["1", "2–5", "6–15", "16–30", "Over 30"]);
+    for (const ok of DEMO_SITE_BANDS) assert.equal(DemoRequestSchema.safeParse({ ...VALID, sites: ok }).success, true, ok);
+    for (const bad of ["", "11+", "2-5", "31", "Over 200", "16-30"]) assert.equal(DemoRequestSchema.safeParse({ ...VALID, sites: bad }).success, false, JSON.stringify(bad));
   });
 
   test("one-line answers refuse line breaks (they become one line of the stored message)", async () => {
@@ -123,13 +135,13 @@ describe("submitDemoRequest", () => {
     assert.equal(ok.kind === "stored" && ok.notified, true);
     assert.equal(sent[0].product, "ClinDesk");
     assert.deepEqual(sent[0].details, [
-      ["Practitioners", "8"],
+      ["Practitioners", "6–10"],
       ["Current system", "A spreadsheet"],
       ["Interests", "The diary, Billing and insurers"],
     ]);
     const email = accessRequestEmail(sent[0]);
     assert.match(email.subject, /^ClinDesk demo request: Pebblegate Physio \(fictional\)$/);
-    assert.match(email.text, /Practitioners: 8\nCurrent system: A spreadsheet\nInterests: The diary, Billing and insurers\nReceived:/);
+    assert.match(email.text, /Number of sites: 2–5[\s\S]*Practitioners: 6–10\nCurrent system: A spreadsheet\nInterests: The diary, Billing and insurers\nReceived:/);
     const failed = await submitDemoRequest({ ...VALID, email: "x@p.example" }, deps({ clientKey: "k3", notify: async () => Promise.reject(new Error("down")) }));
     assert.equal(failed.kind === "stored" && failed.notified, false);
     assert.equal((await listAccessRequests(ctx)).length, 2);
@@ -142,7 +154,8 @@ describe("the posted form", () => {
     form.set("name", "Sarah Reid");
     form.set("clinic", "Pebblegate Physio");
     form.set("email", "sarah@pebblegate.example");
-    form.set("sites", "6–15");
+    form.set("sites", "16–30");
+    form.set("practitioners", "Over 200");
     form.set("current_system", "Paper");
     form.append("see", "diary");
     form.append("see", "multisite");
@@ -150,6 +163,7 @@ describe("the posted form", () => {
     const input = demoRequestInput(form);
     assert.deepEqual(input.interests, ["diary", "multisite"]);
     assert.equal(input.currentSystem, "Paper");
+    assert.equal(input.practitioners, "Over 200");
     assert.equal(DemoRequestSchema.safeParse(input).success, true);
     assert.deepEqual(Object.values(DEMO_FIELD_NAMES).sort(), ["clinic", "current_system", "email", "name", "phone", "practitioners", "see", "sites", "website"]);
   });
