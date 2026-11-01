@@ -10,7 +10,7 @@
       "description": "Registered office address on one line, e.g. \"1 High Street, Town, AB1 2CD\". Footer of every page. Also the privacy policy and the terms (\"registered office …\")."
     },
     "contact.responseTime": {
-      "value": "[response time]",
+      "value": "one working day",
       "description": "How fast you reply to an email or a demo request, e.g. \"one working day\". Book a demo page and its thank-you page (\"we'll reply within …\")."
     },
     "pricing.fromPrice": {

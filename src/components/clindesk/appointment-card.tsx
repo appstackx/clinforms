@@ -9,7 +9,7 @@ export interface AppointmentRows {
 }
 
 const DEFAULT_ROWS: Required<AppointmentRows> = {
-  with: "the AppstackX team",
+  with: `the ${CLINIC_SYSTEM_NAME} team`,
   where: "online, on your screen",
   when: "a day that suits you",
   bring: "your diary, and that form",
