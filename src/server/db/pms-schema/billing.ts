@@ -1,5 +1,5 @@
 /**
- * Tables of the billing module (migrations 0130–0131 / 20261024000130–…131): billing settings, VAT per appointment
+ * Tables of the billing module (migrations 0130–0139, 0212 and the Healthcode groundwork 0220–0229): billing settings, VAT per appointment
  * type, invoices and their lines, credit notes and their lines, payments and refunds, their allocations to
  * invoices, card payment links (test mode) and the e-billing export log. Conventions: docs/clinic-system/contract.md
  * §4 and docs/clinic-system/billing.md.
@@ -268,6 +268,22 @@ export interface PmsCaseBillingTermsTable {
   updated_at: IsoTimestamp;
 }
 
+/** 0220 (Healthcode, HC06): a payer account's Healthcode identifier and the clinic's provider number with it. */
+export interface PmsPayerHealthcodeTable {
+  tenant_id: string;
+  referrer_id: string;
+  rev: number;
+  /** The insurer's Healthcode identifier (e.g. "bup"). */
+  insurer_code: string | null;
+  /** The clinic's provider number with this insurer. */
+  provider_number: string | null;
+  /** 0/1; NULL = the default for the insurer's name (src/modules/pms/billing/healthcode.ts). */
+  diagnosis_required: number | null;
+  updated_by: string | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
 export interface BillingTables {
   pms_billing_settings: PmsBillingSettingsTable;
   pms_service_vat: PmsServiceVatTable;
@@ -282,6 +298,7 @@ export interface BillingTables {
   pms_saved_cards: PmsSavedCardsTable;
   pms_payer_billing_terms: PmsPayerBillingTermsTable;
   pms_case_billing_terms: PmsCaseBillingTermsTable;
+  pms_payer_healthcode: PmsPayerHealthcodeTable;
 }
 
 /** Foreign-key order (parents first). */
@@ -299,6 +316,7 @@ export const BILLING_TABLES = [
   "pms_saved_cards",
   "pms_payer_billing_terms",
   "pms_case_billing_terms",
+  "pms_payer_healthcode",
 ] as const satisfies readonly (keyof BillingTables)[];
 
 export const BILLING_PRIMARY_KEYS: { readonly [T in (typeof BILLING_TABLES)[number]]: readonly (keyof BillingTables[T] & string)[] } = {
@@ -315,6 +333,7 @@ export const BILLING_PRIMARY_KEYS: { readonly [T in (typeof BILLING_TABLES)[numb
   pms_saved_cards: ["tenant_id", "id"],
   pms_payer_billing_terms: ["tenant_id", "referrer_id"],
   pms_case_billing_terms: ["tenant_id", "case_id"],
+  pms_payer_healthcode: ["tenant_id", "referrer_id"],
 };
 
 /** Timestamp columns beyond created_at/updated_at (TEXT in SQLite, timestamptz in Postgres) – the D1 → Postgres copy. */

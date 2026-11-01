@@ -349,7 +349,7 @@ function PriceItems({ listId, items, services }: { listId: string; items: Prices
  * Referrers and insurers
  * ----------------------------------------------------------------------------------------------*/
 
-export function ReferrersSetup({ screen, isNew, kind }: { screen: ReferrersScreen; isNew: boolean; kind: string | null }) {
+export function ReferrersSetup({ screen, isNew, kind, extra }: { screen: ReferrersScreen; isNew: boolean; kind: string | null; extra?: React.ReactNode }) {
   const router = useRouter();
   const sel = isNew ? null : screen.selected;
   const q = (extra: string) => `${BASE}/referrers?${kind ? `kind=${kind}&` : ""}${extra}`;
@@ -380,6 +380,7 @@ export function ReferrersSetup({ screen, isNew, kind }: { screen: ReferrersScree
       >
         <ReferrerForm key={sel?.referrer.id ?? "new"} referrer={sel?.referrer ?? null} defaultKind={kind ?? "insurer"} onCreated={(id) => router.push(q(`referrer=${id ?? ""}`))} />
         {sel?.payer ? <PayerAccount key={`payer-${sel.referrer.id}`} referrerId={sel.referrer.id} name={sel.referrer.name} payer={sel.payer} /> : null}
+        {sel ? extra : null}
       </SetupSplit>
     </SetupPage>
   );

@@ -33,6 +33,9 @@ describe("migration ranges (contract §3)", () => {
     // M10 security fixes (handover §20): 0190 portal (clinic-device pairing); numbers up to 0199 reserved for M10.
     assert.equal(moduleForMigration(190), "portal");
     assert.equal(moduleForMigration(199), null);
+    // Healthcode e-billing groundwork: billing 0220–0229.
+    assert.equal(moduleForMigration(220), "billing");
+    assert.equal(moduleForMigration(229), "billing");
     assert.equal(postgresTwinName("0110_diary_core.sql"), "20261024000110_diary_core.sql");
   });
 

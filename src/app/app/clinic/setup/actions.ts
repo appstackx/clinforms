@@ -32,6 +32,7 @@ import {
   type SetupResult,
   type SiteFields,
 } from "@/server/pms/reporting/setup";
+import { savePayerHealthcodeFor, type PayerHealthcodeFields } from "@/server/pms/billing/healthcode-setup";
 
 export type SetupActionResult = { ok: true; id?: string; message?: string } | { ok: false; error: string; fieldErrors?: Record<string, string> };
 
@@ -125,4 +126,11 @@ export async function saveTargetsAction(fields: { rev: number; utilisationTarget
   const actor = await clinicActionActor({ permission: "settings.setup" });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) } as SetupActionResult;
   return done(actor, "targets", (a) => saveTargetsFor(a, fields));
+}
+
+/* Healthcode set-up (src/server/pms/billing/healthcode-setup.ts, docs/clinic-system/healthcode.md). */
+export async function savePayerHealthcodeAction(referrerId: string, fields: PayerHealthcodeFields) {
+  const actor = await clinicActionActor({ permission: "settings.setup" });
+  if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) } as SetupActionResult;
+  return done(actor, "referrers", (a) => savePayerHealthcodeFor(a, String(referrerId), fields), (v) => v.id);
 }
