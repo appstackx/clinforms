@@ -11,6 +11,15 @@ Rule: Khuram wants **a short plan first, build after his OK** for anything big �
 **Updated Sun 2026-10-25 ~14:50 UTC:** TOP-0 (usage/packages live; Dell's email waits for the trial bug fixes).
 Update this file at the end of every session (status, blockers, what changed).
 
+## TOP-ADS – Sat 2026-10-31: Google Ads tracking built (branch `feat/google-ads-tracking`), waits for Khuram
+- Not merged, not deployed (D72). Before merging: Khuram reads the new cookie/privacy wording on both sites (Google
+  named as a separate controller – legal review advised) and OKs the merge = production deploy.
+- After deploy: Khuram checks with Google Tag Assistant (steps in the branch's report), keeps "Include user-provided
+  data from your website" OFF in the Google tag settings, and makes ONE test demo request per site himself (it emails
+  hello@clindesk.co.uk / creates a request row) → Google Ads "Demo request" goes Unverified → Recording in 24–48 h.
+- Check on production once: ClinDesk `/demo` with JavaScript lands on the real thank-you page (local `next start`
+  shows 404 for server-action redirects on the clinic host; Vercel should not).
+
 ## TOP-0 – Sun 2026-10-25: usage/packages LIVE; Dell's email WAITS for the trial bug fixes
 - **Don't send Dell's invitation yet.** The help-video test run found bugs (F-37 opinion flag blocks a faithful answer; "Delete unused cells" left in the Word output; 24–28 blocking items; raw merge codes; etc.). Workflow **bh-trial-fixes** (wf_f6b079c8-f05) fixes them on `release/bh-trial-fixes` (worktree `clinforms-wt/bhfix-release`), verifies all 17 forms live on a local mirror (`scratchpad/bh-fix/verify`, port 3245), reviews, writes `scratchpad/bh-fix/deploy-runbook.md`. Then: merge **main** (now has plan-usage) into the release, full chain + a short e2e, deploy, then Khuram emails Dell (video `marketing/clinforms/blue-heart-help-video-v1/…-email.mp4`, guide PDF, sample notes, invite link from `~/Desktop/bh-deploy-20261024/blue-heart-invite.txt`).
 - **Usage/packages LIVE (D71):** Blue Heart = Trial £300/500 (extra price not set). Khuram's test clinic `appstackx-test` (demo, 17 forms) – he accepts the invite from `~/Desktop/pu-deploy-20261025/test-clinic-invite.txt` while signed in, then deletes the file; sets PH-DEMO-01 + may sign, drafting on.

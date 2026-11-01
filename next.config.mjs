@@ -13,6 +13,11 @@
  * - Cloudflare Turnstile (the clinic system's public booking / portal sign-in bot check,
  *   src/components/pms/portal/human-check.tsx): https://challenges.cloudflare.com joins script-src and frame-src
  *   only when NEXT_PUBLIC_CLINIC_TURNSTILE_SITE_KEY is set at build time; otherwise the policy is unchanged.
+ * - Advertising measurement (src/components/ads/google-ads.ts): the Google tag loads only on the PUBLIC website pages,
+ *   after consent. Its sources (GOOGLE_ADS_SOURCES) join the policy ONLY on those pages – ClinForms' site on its hosts,
+ *   ClinDesk's site on the clinic brand's hosts (the same path lists as src/middleware.ts; google-ads.test.ts holds
+ *   them equal). Every other route (the app, the demo, sign-in, patient pages, APIs) keeps the site-wide policy,
+ *   unchanged. Later header entries win for the same key, so these entries come after the site-wide one.
  * - skipTrailingSlashRedirect: the analytics API paths end in "/" and must not be redirected.
  */
 
@@ -34,18 +39,59 @@ function analyticsOrigin() {
 /** Turnstile's origin when the clinic system's bot check is set up on this build (see human-check.ts), else null. */
 const TURNSTILE_ORIGIN = process.env.NEXT_PUBLIC_CLINIC_TURNSTILE_SITE_KEY?.trim() ? "https://challenges.cloudflare.com" : null;
 
-function contentSecurityPolicy() {
+/**
+ * What the Google tag needs (the tracking spec's list, plus what Google documents for the Ads tag: the conversion
+ * script on googleadservices.com / googleads.g.doubleclick.net and the iframe on td.doubleclick.net).
+ */
+export const GOOGLE_ADS_SOURCES = Object.freeze({
+  "script-src": ["https://www.googletagmanager.com", "https://www.google.com", "https://www.googleadservices.com", "https://googleads.g.doubleclick.net"],
+  "connect-src": [
+    "https://www.google.com",
+    "https://www.googleadservices.com",
+    "https://*.doubleclick.net",
+    "https://www.google-analytics.com",
+    "https://www.googletagmanager.com",
+  ],
+  "img-src": ["https://www.google.com", "https://www.googleadservices.com", "https://*.doubleclick.net", "https://www.google.co.uk", "https://www.googletagmanager.com"],
+  "frame-src": ["https://td.doubleclick.net", "https://www.googletagmanager.com"],
+});
+
+/** ClinForms' public website pages (src/middleware.ts PUBLIC_SITE_PATHS). */
+export const CLINFORMS_PUBLIC_PATHS = ["/", "/demo", "/privacy", "/cookies", "/terms", "/security", "/request-access"];
+/** ClinDesk's public website pages (src/middleware.ts CLINDESK_SITE_PATHS without robots.txt / sitemap.xml). */
+export const CLINDESK_PUBLIC_PATHS = [
+  "/",
+  "/features",
+  "/reports",
+  "/pricing",
+  "/switching",
+  "/security",
+  "/demo",
+  "/demo/thanks",
+  "/tour",
+  "/privacy",
+  "/terms",
+  "/cookies",
+  "/accessibility",
+];
+/** The clinic brand's hosts (src/lib/brand.ts; same pattern as src/middleware.ts). */
+export const CLINDESK_HOSTS = "clindesk\\.co\\.uk|www\\.clindesk\\.co\\.uk|clinic\\.localhost";
+
+function contentSecurityPolicy({ googleAds = false } = {}) {
   const extra = analyticsOrigin();
+  const google = (name) => (googleAds ? GOOGLE_ADS_SOURCES[name] : []);
   const directives = {
     "default-src": ["'self'"],
-    "script-src": ["'self'", "'unsafe-inline'", ...(isDev ? ["'unsafe-eval'"] : []), ...(extra ? [extra] : []), ...(TURNSTILE_ORIGIN ? [TURNSTILE_ORIGIN] : [])],
+    "script-src": ["'self'", "'unsafe-inline'", ...(isDev ? ["'unsafe-eval'"] : []), ...(extra ? [extra] : []), ...(TURNSTILE_ORIGIN ? [TURNSTILE_ORIGIN] : []), ...google("script-src")],
     "style-src": ["'self'", "'unsafe-inline'"],
-    "img-src": ["'self'", "data:", "blob:"],
+    "img-src": ["'self'", "data:", "blob:", ...google("img-src")],
     "media-src": ["'self'", MEDIA_ORIGIN],
     "font-src": ["'self'", "data:"],
     "worker-src": ["'self'", "blob:"],
-    "connect-src": ["'self'", ...(extra ? [extra] : [])],
-    "frame-src": TURNSTILE_ORIGIN ? [TURNSTILE_ORIGIN] : ["'none'"],
+    "connect-src": ["'self'", ...(extra ? [extra] : []), ...google("connect-src")],
+    "frame-src": [...(TURNSTILE_ORIGIN ? [TURNSTILE_ORIGIN] : []), ...google("frame-src")].length
+      ? [...(TURNSTILE_ORIGIN ? [TURNSTILE_ORIGIN] : []), ...google("frame-src")]
+      : ["'none'"],
     "frame-ancestors": ["'none'"],
     "base-uri": ["'self'"],
     "form-action": ["'self'"],
@@ -64,6 +110,15 @@ const securityHeaders = [
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=(), usb=()" },
   { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
   { key: "Content-Security-Policy-Report-Only", value: contentSecurityPolicy() },
+];
+
+/** The policy on the public website pages: the site-wide one plus the Google tag's sources. */
+const publicPageCsp = [{ key: "Content-Security-Policy-Report-Only", value: contentSecurityPolicy({ googleAds: true }) }];
+
+/** Header entries that widen the policy on the public website pages only (each brand's pages on its own hosts). */
+export const PUBLIC_PAGE_CSP_HEADERS = [
+  ...CLINFORMS_PUBLIC_PATHS.map((source) => ({ source, missing: [{ type: "host", value: CLINDESK_HOSTS }], headers: publicPageCsp })),
+  ...CLINDESK_PUBLIC_PATHS.map((source) => ({ source, has: [{ type: "host", value: CLINDESK_HOSTS }], headers: publicPageCsp })),
 ];
 
 /** Never indexed: the APIs, the signed-in app, the public demo, the sign-in pages and the analytics proxy. */
@@ -100,6 +155,8 @@ const nextConfig = {
   async headers() {
     return [
       { source: "/:path*", headers: securityHeaders },
+      // Public website pages: the Google tag's sources (see the top of this file).
+      ...PUBLIC_PAGE_CSP_HEADERS,
       ...NOINDEX_SOURCES.map((source) => ({ source, headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }] })),
       // ClinForms' public demo at /reports: noindex – except on ClinDesk's hosts, where /reports is ClinDesk's
       // "Referrer reports" page (src/middleware.ts). Below /reports stays noindex on every host (list above).

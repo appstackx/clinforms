@@ -457,7 +457,7 @@ test("next.config: the CSP allows the media host for media only, and /demo is ne
 
 test("the privacy policy describes the player as it behaves, naming no vendor", () => {
   assert.match(PRIVACY, /lastUpdated=\{PRIVACY_LAST_UPDATED\}/);
-  assert.equal(PRIVACY_LAST_UPDATED, "2026-10-10");
+  assert.equal(PRIVACY_LAST_UPDATED, "2026-10-31"); // advertising measurement added on 31/10/2026
   assert.match(PRIVACY, /<h3 id="demo-video">The demo video<\/h3>/);
   assert.match(PRIVACY, /stored in the EU by our media delivery provider/);
   assert.match(PRIVACY, /Opening the page loads nothing from that provider: the poster image and the captions come from this website, and the video is fetched only when you press play or choose a chapter \(or download the file\)\./);

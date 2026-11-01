@@ -1,10 +1,14 @@
 import { CLINIC_SYSTEM_NAME } from "@/lib/brand";
 import { CONTACT_EMAIL } from "@/lib/clindesk/site";
 import { COMPANY } from "@/lib/site";
+import { CookieSettingsButton } from "@/components/consent/cookie-settings-button";
 import { Fill } from "./fill";
 import { Logo } from "./logo";
 
-/** Footer of every page: brand, product / company / legal links, company line (fill-ins) and the sample-data note. */
+/**
+ * Footer of every page: brand, product / company / legal links (with "Cookie settings", which reopens the cookie
+ * settings – cookie-consent.tsx), company line (fill-ins) and the sample-data note.
+ */
 export function SiteFooter() {
   return (
     <footer className="site-footer g-pine on-dark">
@@ -83,6 +87,9 @@ export function SiteFooter() {
               </li>
               <li>
                 <a href="/cookies">Cookies</a>
+              </li>
+              <li>
+                <CookieSettingsButton className="f-cookie-btn" />
               </li>
               <li>
                 <a href="/accessibility">Accessibility</a>

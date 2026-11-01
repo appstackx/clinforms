@@ -1,0 +1,49 @@
+/* ClinDesk public site – the cookie banner and the cookie settings dialog (src/components/clindesk/cookie-consent.tsx).
+   Not in the design export: built from the site's own tokens, buttons and type (styles/site.css). Every selector sits
+   under .cd-site. Contrast: ink on couch-roll and pine on couch-roll are well above 4.5:1; the focus ring is the
+   site's own (3px ink outline). */
+.cd-site.cd-consent-root { font-family: var(--font-text); color: var(--ink); }
+.cd-site .cd-consent { position: fixed; inset-inline: 0; bottom: 0; z-index: 60; padding: 12px 16px 16px; pointer-events: none; }
+.cd-site .cd-consent-card { pointer-events: auto; max-width: 960px; margin: 0 auto; display: flex; align-items: center; gap: 20px 28px; padding: 20px 24px; background: var(--couch-roll); color: var(--ink); border: 2px solid var(--pine); border-radius: 16px; box-shadow: var(--shadow-fragment); }
+.cd-site .cd-consent-text { flex: 1 1 auto; min-width: 0; margin: 0; font: 500 16px/1.5 var(--font-text); }
+.cd-site .cd-consent-link, .cd-site .cd-consent-manage { color: var(--pine); font: 600 16px/1.5 var(--font-text); text-decoration-line: underline; text-decoration-thickness: 2px; text-underline-offset: 4px; text-decoration-color: var(--tape-coral); }
+.cd-site .cd-consent-actions { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; }
+.cd-site .cd-consent-btn { min-height: 48px; min-width: 112px; padding: 0 22px; font-size: 16px; }
+.cd-site .cd-consent-manage { min-height: 44px; padding: 0 4px; background: none; border: 0; cursor: pointer; }
+.cd-site .cd-consent-manage:hover, .cd-site .cd-consent-link:hover { text-decoration-thickness: 3px; }
+.cd-site :is(.cd-consent, .cd-cookie-dialog) :focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; border-radius: 6px; }
+.cd-site .cd-consent .btn:focus-visible, .cd-site .cd-cookie-dialog .btn:focus-visible { border-radius: 12px; }
+
+.cd-site .cd-cookie-dialog { width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow-y: auto; margin: auto; padding: 28px; background: var(--couch-roll); color: var(--ink); border: 2px solid var(--pine); border-radius: 16px; box-shadow: var(--shadow-fragment); font: 500 16px/1.5 var(--font-text); }
+.cd-site .cd-cookie-dialog::backdrop { background: rgba(15, 59, 53, .55); }
+.cd-site .cd-cookie-title { margin: 0 0 8px; }
+.cd-site .cd-cookie-intro { margin: 0 0 18px; color: var(--muted); }
+.cd-site .cd-cookie-group { margin: 0 0 12px; padding: 16px 18px; background: #fff; border: 1.5px solid var(--line); border-radius: 12px; }
+.cd-site .cd-cookie-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.cd-site .cd-cookie-h { margin: 0; font: 700 17px/1.3 var(--font-text); color: var(--pine); }
+.cd-site .cd-cookie-desc { margin: 6px 0 0; color: var(--muted); font-size: 15px; }
+.cd-site .cd-cookie-always { padding: 4px 10px; border-radius: 999px; background: var(--sage); color: var(--pine); font: 700 13px/1.2 var(--font-text); letter-spacing: .04em; }
+.cd-site .cd-cookie-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 12px; margin-top: 18px; }
+.cd-site .cd-switch { position: relative; flex: none; width: 52px; height: 30px; padding: 0; border: 2px solid var(--pine); border-radius: 999px; background: var(--line); cursor: pointer; transition: background-color .15s var(--ease); }
+.cd-site .cd-switch[aria-checked="true"] { background: var(--pine); }
+.cd-site .cd-switch:disabled { cursor: not-allowed; opacity: .55; }
+.cd-site .cd-switch-knob { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: var(--shadow-chip); transition: transform .15s var(--ease); }
+.cd-site .cd-switch[aria-checked="true"] .cd-switch-knob { transform: translateX(22px); }
+.cd-site .f-cookie-btn { display: inline-flex; align-items: center; min-height: 44px; padding: 0; background: none; border: 0; cursor: pointer; color: var(--muted-on-dark); font: 500 16px/1.2 var(--font-text); text-align: left; }
+.cd-site .f-cookie-btn:hover { color: var(--couch-roll); text-decoration: underline 2px var(--sun); text-underline-offset: 4px; }
+.cd-site .cd-inline-btn { display: inline; padding: 0; background: none; border: 0; cursor: pointer; font: inherit; font-weight: 600; color: var(--pine); text-decoration: underline 2px var(--tape-coral); text-underline-offset: 3px; }
+.cd-site .cd-inline-btn:hover { text-decoration-thickness: 3px; }
+.cd-site .cd-inline-btn:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; border-radius: 4px; }
+
+@media (max-width: 767px) {
+  .cd-site .cd-consent { padding: 8px; }
+  .cd-site .cd-consent-card { flex-direction: column; align-items: stretch; padding: 16px; gap: 14px; }
+  .cd-site .cd-consent-actions { gap: 8px; }
+  .cd-site .cd-consent-btn { flex: 1 1 0; min-width: 0; }
+  .cd-site .cd-consent-manage { flex-basis: 100%; text-align: center; }
+  .cd-site .cd-cookie-dialog { padding: 20px; }
+  .cd-site .cd-cookie-actions .btn { flex: 1 1 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cd-site .cd-switch, .cd-site .cd-switch-knob { transition: none; }
+}
