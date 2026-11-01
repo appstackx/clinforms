@@ -18,6 +18,8 @@
  *   J4  Plan and billing → ClinDesk Solo monthly → TEST checkout (4242) → done page → "Open ClinDesk"
  *   J5  every page reachable from the clinic system's navigation and the account menu (crawl), plus every known
  *       route by direct URL
+ *   J5d (01/11/2026) the activity CSV download: brand-neutral file name, the support team's neutral id (V1/V2); the
+ *       ClinDesk theme colour (<meta name="theme-color">) on the app, sign-in and 404 pages (V3)
  *   J6  Manage billing → the hosted portal's return link → back on clinic.localhost
  *   J7  sign out → "Forgotten your password?" → emailed link → new password → sign in again (+ code)
  *   J8  404 pages
@@ -653,6 +655,40 @@ const livePages = [];
         rec.status = res ? res.status() : 0;
       }
       return `${n} routes opened directly`;
+    });
+
+    /* J5d – activity CSV (V1/V2) and theme colour (V3) */
+    await step("J5d", "activity CSV: file name activity-<clinic>-<date>.csv, no 'clinforms' inside; theme-color is ClinDesk's", async () => {
+      await owner.goto(`${DESK}/app`);
+      await owner.screenshot({ path: path.join(SHOTS, "final-clindesk-overview.png"), fullPage: true });
+      await owner.goto(`${DESK}/app/settings/activity`);
+      const res = await owner.context().request.get(`${DESK}/app/settings/activity/export`);
+      assert.equal(res.status(), 200, `export answered ${res.status()}`);
+      const disposition = res.headers()["content-disposition"] || "";
+      const csv = await res.text();
+      fs.writeFileSync(path.join(OUT, "activity.csv"), csv);
+      const name = (disposition.match(/filename="([^"]+)"/) || [])[1] || "";
+      assert.match(name, new RegExp(`^activity-${CLINIC.slug}-\\d{4}-\\d{2}-\\d{2}\\.csv$`), `file name "${name}"`);
+      assert.doesNotMatch(name, /clinforms/i);
+      assert.doesNotMatch(csv, /clinforms/i, "the CSV names ClinForms (platform user id?)");
+      const supportRows = csv.split("\r\n").filter((l) => l.split(",")[3] === "support-team").length;
+      assert.ok(supportRows > 0, "the support team's entries carry the neutral id");
+      const colours = {};
+      for (const p of ["/app", "/app/clinic", "/app/settings/activity"]) {
+        await owner.goto(`${DESK}${p}`);
+        colours[p] = await owner.locator("meta[name=theme-color]").getAttribute("content");
+      }
+      const anon = await newPage("anon-theme");
+      for (const p of ["/login", "/no-such-page-j5d", "/"]) {
+        await anon.goto(`${DESK}${p}`);
+        colours[`anon ${p}`] = await anon.locator("meta[name=theme-color]").getAttribute("content");
+      }
+      await anon.goto(`${FORMS}/login`);
+      const formsColour = await anon.locator("meta[name=theme-color]").getAttribute("content");
+      await anon.context().close();
+      for (const [p, c] of Object.entries(colours)) assert.equal(String(c).toUpperCase(), "#C4432B", `theme-color on ${p}: ${c}`);
+      assert.equal(String(formsColour).toUpperCase(), "#0D9488", "ClinForms' host keeps its teal");
+      return `file ${name}; ${supportRows} support-team rows; theme colours ${JSON.stringify(colours)}`;
     });
 
     /* J6 – Manage billing → hosted portal → its return link */

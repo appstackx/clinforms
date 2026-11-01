@@ -490,6 +490,7 @@ async function acceptInvite(page, link, email, name, label) {
       // 01/11/2026 (R2): the offer card for owners/admins, with the buy action and the info link.
       const card = owner.locator("[data-testid=clinic-system-offer]");
       assert.equal(await card.count(), 1, "the ClinDesk offer card is on the Overview");
+      await owner.screenshot({ path: path.join(OUT, "final-clinforms-overview-offer.png"), fullPage: true });
       assert.equal(await card.locator("a[data-testid=clinic-system-offer-buy]").getAttribute("href"), "/app/settings/billing?product=clindesk");
       const info = card.locator("a[target=_blank]");
       assert.match(await info.getAttribute("href"), /^https:\/\/clindesk\.co\.uk\/features$/);
@@ -511,7 +512,19 @@ async function acceptInvite(page, link, email, name, label) {
     await check("B1b", "?product=clindesk (the in-app offer): what a ClinForms-only owner sees", async () => {
       await owner.goto(`${FORMS}/app/settings/billing?product=clindesk`);
       const a = await audit(owner, "plan and billing clindesk plans", { promoPage: true });
-      return `title "${a.title}"; bands offered: ${await owner.locator("input[name=band]").count()}; mentions ${a.ctxs.length}`;
+      // V-01 (01/11/2026): no plan yet, Reports on – the smallest Reports add-on is preselected; "none" warns.
+      const select = owner.locator("#plan-reports");
+      assert.equal(await select.inputValue(), "25", "the smallest Reports add-on is preselected for a ClinForms clinic");
+      assert.equal(await owner.locator("[data-testid=plan-reports-warning]").count(), 0, "no warning while an add-on is chosen");
+      await select.scrollIntoViewIfNeeded();
+      await owner.screenshot({ path: path.join(OUT, "final-clindesk-plans-reports-preselected.png"), fullPage: true });
+      await select.selectOption("none");
+      const warning = owner.locator("[data-testid=plan-reports-warning]");
+      await warning.waitFor({ timeout: 5000 });
+      const warnText = (await warning.innerText()).trim();
+      assert.match(warnText, /reports stop/i, warnText);
+      await select.selectOption("25");
+      return `title "${a.title}"; bands offered: ${await owner.locator("input[name=band]").count()}; mentions ${a.ctxs.length}; warning on none: "${warnText}"`;
     });
     let checkoutText = "";
     await check("B2", "ClinForms Starter → TEST checkout (4242) → success page on localhost, plan active", async () => {

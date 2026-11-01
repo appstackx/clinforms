@@ -17,6 +17,8 @@
  *   A      the ClinDesk clinic ADDS the Reports add-on: Studio, its title/mark, navigation between ClinDesk and the
  *          Studio, links that leave the host
  *   X      the outbox: every email to a ClinDesk-only member speaks for ClinDesk and links to clinic.localhost
+ *   F1     password reset asked on the OTHER brand's host: the email and link follow the person's clinic brand
+ *   F3     /reports/<anything> on clinic.localhost goes to ClinDesk's /reports page (never ClinForms' demo Studio)
  *
  *   npm run build
  *   node scripts/e2e/journey-edge-brands.cjs       [PORT=3403] [E2E_OUT=…] [PLAYWRIGHT=<path to playwright>]
@@ -517,6 +519,66 @@ async function hostedPageFacts(page, ownOrigin) {
       assert.ok(m && m.links.some((l) => l.startsWith(`${DESK}/accept-invite`)), "link host");
       assert.doesNotMatch(m.subject + m.text, /clinforms/i);
     });
+    /* ---------------------------------------------------------------- F1 – reset email brand follows the clinic (01/11/2026) */
+    const askReset = async (origin, email) => {
+      const p = await newPage(`reset-${email.slice(0, 12)}`);
+      const before = mailsTo(email).length;
+      await p.goto(`${origin}/reset-password`);
+      await p.fill("#f-email", email);
+      await p.click("button[type=submit]");
+      await p.waitForSelector("text=If an account exists for that address");
+      let mail = null;
+      for (let i = 0; i < 40 && !mail; i++) {
+        mail = mailsTo(email).slice(before).filter((m) => /reset/i.test(m.subject)).at(-1) || null;
+        if (!mail) await new Promise((r) => setTimeout(r, 500));
+      }
+      await p.context().close();
+      return mail;
+    };
+    await check("F1a", "ClinDesk-only owner asks for a reset on LOCALHOST: ClinDesk email, clinic.localhost link", async () => {
+      const m = await askReset(FORMS, DESK_OWNER);
+      assert.ok(m, "reset email captured");
+      const link = m.links.find((l) => /\/reset-password\?token=/.test(l));
+      observe("F1a", { subject: m.subject, link: link && scrubLink(link) });
+      assert.match(m.subject, /ClinDesk/);
+      assert.doesNotMatch(m.subject + m.text, /clinforms/i);
+      assert.ok(link && link.startsWith(`${DESK}/reset-password`), `link ${link && scrubLink(link)}`);
+      return m.subject;
+    });
+    await check("F1b", "ClinForms-only owner asks for a reset on CLINIC.LOCALHOST: ClinForms email, localhost link", async () => {
+      const m = await askReset(DESK, FORMS_OWNER);
+      assert.ok(m, "reset email captured");
+      const link = m.links.find((l) => /\/reset-password\?token=/.test(l));
+      observe("F1b", { subject: m.subject, link: link && scrubLink(link) });
+      assert.match(m.subject, /ClinForms/);
+      assert.doesNotMatch(m.subject + m.text, /clindesk/i);
+      assert.ok(link && link.startsWith(`${FORMS}/reset-password`), `link ${link && scrubLink(link)}`);
+      return m.subject;
+    });
+
+    /* ---------------------------------------------------------------- F3 – no ClinForms demo Studio on the clinic host */
+    await check("F3", "/reports/new, /reports/forms on clinic.localhost → ClinDesk's /reports page; /reports/new on localhost stays the demo", async () => {
+      const p = await newPage("reports-subpaths");
+      const seen = [];
+      for (const sub of ["/reports/new", "/reports/forms", "/reports/security"]) {
+        await p.goto(`${DESK}${sub}`);
+        await p.waitForLoadState("networkidle").catch(() => {});
+        const scan = await brandScan(p);
+        seen.push({ sub, url: scan.url, title: scan.title, studio: await p.locator("nav[aria-label=Studio]").count() });
+      }
+      await p.goto(`${FORMS}/reports/new`);
+      const formsDemo = { url: p.url(), studio: await p.locator("nav[aria-label=Studio]").count() };
+      await p.context().close();
+      observe("F3", { seen, formsDemo });
+      for (const s of seen) {
+        assert.equal(s.url, `${DESK}/reports`, `${s.sub} → ${s.url}`);
+        assert.equal(s.studio, 0, `${s.sub}: the demo Studio's navigation is shown`);
+        assert.doesNotMatch(s.title, /ClinForms/, s.title);
+      }
+      assert.equal(new URL(formsDemo.url).pathname, "/reports/new");
+      assert.equal(formsDemo.studio, 1, "ClinForms' demo Studio still on localhost");
+    });
+
     const formsOnDesk = await newPage("forms-owner-on-clinic-host");
     await check("B2", "ClinForms-only owner signs in on clinic.localhost: what brand/host do they get? (R2: ClinForms throughout)", async () => {
       const r = await signInAt(formsOnDesk, `${DESK}/login`, FORMS_OWNER);
@@ -704,8 +766,16 @@ async function hostedPageFacts(page, ownOrigin) {
       await desk.waitForLoadState("networkidle").catch(() => {});
       const st = await brandScan(desk);
       await shot(desk, "a2-desk-studio");
-      observe("A2-studio", { url: st.url, title: st.title, icon: st.icon, marks: st.marks, brand: st.brandAttr, clinformsHits: hits(st, /clinforms/).slice(0, 6), foreign: foreignLinks(st, DESK), hops: desk.__hops });
+      const header = await desk.locator("header").first().innerText();
+      await desk.locator("header").first().screenshot({ path: path.join(OUT, "a2-desk-studio-header.png") }).catch(() => {});
+      observe("A2-studio", { url: st.url, title: st.title, icon: st.icon, marks: st.marks, brand: st.brandAttr, header: header.replace(/\s+/g, " ").slice(0, 120), clinformsHits: hits(st, /clinforms/).slice(0, 6), foreign: foreignLinks(st, DESK), hops: desk.__hops });
       assert.equal(new URL(st.url).origin, DESK);
+      // F4 (01/11/2026): the Studio's chrome on the clinic host – the clinic system's mark and "Reports", no ClinForms.
+      assert.ok(st.marks.includes("clinic"), `marks ${st.marks}`);
+      assert.equal(await desk.locator("header [data-brand-mark]").count(), 0, "no ClinForms mark in the Studio header");
+      assert.equal((await desk.locator("[data-studio-name]").innerText()).trim(), "Reports");
+      assert.doesNotMatch(header, /ClinForms/);
+      assert.equal(hits(st, /clinforms/).length, 0, hits(st, /clinforms/).join(" || "));
       assert.equal(foreignLinks(st, DESK).length, 0, foreignLinks(st, DESK).join(" || "));
     });
     await check("A3", "ClinDesk + Reports: every Studio page keeps clinic.localhost; links back to ClinDesk; no link to localhost", async () => {
