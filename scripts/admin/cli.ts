@@ -5,6 +5,7 @@
  *   --env preview | production = the PREVIEW_* / PRODUCTION_* values of ~/.config/appstackx/clinforms.secrets.env
  *   (read into this process only, never printed). Production changes also need --yes.
  */
+import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { readSecretsFile, SECRETS_FILE } from "../db/provision-gateway-secrets";
@@ -89,6 +90,14 @@ export function applyTarget(target: Target, env: Record<string, string | undefin
     }
   }
   if (!env.CLINFORMS_DB) throw new CliError(`No ${prefix}CLINFORMS_DB in ${file}: is the ${target} database provisioned?`);
+  // The secrets file holds one line per value, so DATABASE_CA_CERT may name a PEM file (e.g. ~/.config/appstackx/supabase-ca.crt)
+  // instead of holding the certificate itself (01/11/2026: production admin scripts reach Supabase, not the frozen D1).
+  const ca = env.DATABASE_CA_CERT;
+  if (set.includes("DATABASE_CA_CERT") && ca && !ca.includes("-----BEGIN")) {
+    const caPath = ca.startsWith("~/") ? path.join(os.homedir(), ca.slice(2)) : ca;
+    if (!fs.existsSync(caPath)) throw new CliError(`${prefix}DATABASE_CA_CERT names ${caPath}, which does not exist.`);
+    env.DATABASE_CA_CERT = fs.readFileSync(caPath, "utf8");
+  }
   return set;
 }
 
