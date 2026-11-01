@@ -1,7 +1,8 @@
 /**
  * Which brand's host a link in an email (or a link shown to an administrator) goes to – contract.md §2, docs/auth.md
- * "Two brand hosts". The rule is the CLINIC's, not the request's: a clinic with the clinic package is sent to the
- * clinic brand's host (clindesk.co.uk), every other clinic to ClinForms (clinforms.co.uk). The origin itself comes from
+ * "Two brand hosts". The rule is the CLINIC's, not the request's: a clinic with the clinic package – or one created for
+ * the clinic brand (organization.metadata signupBrand, 01/11/2026) – is sent to the clinic brand's host
+ * (clindesk.co.uk), every other clinic to ClinForms (clinforms.co.uk). The origin itself comes from
  * the auth settings (config.ts brandOrigin): a deployment that does not serve the clinic brand's host (previews,
  * production before CLINFORMS_AUTH_ORIGINS is set) keeps every link on its own origin.
  *
@@ -37,12 +38,38 @@ export function linkBrandHint(): BrandId | undefined {
   return hint.getStore();
 }
 
-/** "clinic" when the clinic (tenant id = organization slug) has the clinic package on, else "clinforms". */
+/** organization.metadata key: the brand a clinic was created for (01/11/2026; set by createClinic, never by the clinic). */
+export const SIGNUP_BRAND_KEY = "signupBrand";
+
+/** The brand a clinic was created for, from its organization.metadata JSON (null: none recorded, or unreadable). */
+export function signupBrandOf(metadata: string | null | undefined): BrandId | null {
+  if (!metadata) return null;
+  try {
+    const v = (JSON.parse(metadata) as Record<string, unknown>)[SIGNUP_BRAND_KEY];
+    return v === "clinic" || v === "clinforms" ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A clinic's own brand (01/11/2026, Khuram's R1/R2): the clinic package on → the clinic brand; else the brand it was
+ * created for (a ClinDesk clinic that has not paid yet, or whose plan lapsed, stays ClinDesk); else ClinForms.
+ */
+export function clinicBrandFor(packages: { clinic: boolean }, signupBrand: BrandId | null): BrandId {
+  if (packages.clinic) return "clinic";
+  return signupBrand ?? "clinforms";
+}
+
+/** clinicBrandFor of a clinic (tenant id = organization slug): its clinic package and the brand it was created for. */
 export async function clinicLinkBrand(db: Kysely<Database>, tenantId: string | null | undefined): Promise<BrandId> {
   if (!tenantId) return "clinforms";
   try {
     const rows = await listEntitlements({ db }, tenantId);
-    return packageIsOn("clinic", rows.find((e) => e.package === "clinic") ?? null, pmsNow()) ? "clinic" : "clinforms";
+    const clinic = packageIsOn("clinic", rows.find((e) => e.package === "clinic") ?? null, pmsNow());
+    if (clinic) return "clinic";
+    const org = await db.selectFrom("organization").select("metadata").where("slug", "=", tenantId).executeTakeFirst();
+    return clinicBrandFor({ clinic }, signupBrandOf(org?.metadata));
   } catch (err) {
     logAuthEvent("auth.link_brand_unreadable", { error: err instanceof Error ? err.name : "error" });
     return "clinforms";

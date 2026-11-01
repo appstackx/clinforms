@@ -445,6 +445,13 @@ export async function touchPatientLastSeen(ctx: RepoContext, tenantId: string, i
 }
 
 /** One patient, alerts and notes decrypted. */
+/** Whether the clinic has a patient with this id (no decryption – the clinic shell's 404 check, 01/11/2026). */
+export async function patientExists(ctx: RepoContext, tenantId: string, id: string): Promise<boolean> {
+  assertTenantId(tenantId);
+  const row = await ctx.db.selectFrom(T).select("id").where("tenant_id", "=", tenantId).where("id", "=", id).executeTakeFirst();
+  return Boolean(row);
+}
+
 export async function getPatient(ctx: RepoContext, tenantId: string, id: string): Promise<Patient | null> {
   assertTenantId(tenantId);
   const row = await ctx.db.selectFrom(T).selectAll().where("tenant_id", "=", tenantId).where("id", "=", id).executeTakeFirst();

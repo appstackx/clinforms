@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { AuthShell, TextLink } from "@/components/account/shell";
+import { AuthShell, Notice, TextLink } from "@/components/account/shell";
 import { safeNextPath } from "@/server/auth/config";
 import { getServerSession, hasTwoFactor } from "@/server/auth/session";
 import { LoginForm } from "./login-form";
@@ -9,7 +9,7 @@ import { currentBrand, landingPath } from "@/server/brand";
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Sign in" };
 
-export default async function LoginPage({ searchParams }: { searchParams: { next?: string } }) {
+export default async function LoginPage({ searchParams }: { searchParams: { next?: string; moved?: string } }) {
   const next = safeNextPath(searchParams.next, landingPath());
   // Fresh (not Better Auth's 5-minute cookie cache): a session revoked meanwhile (password reset, "sign out other
   // devices") must show the form, not bounce between /login and /app.
@@ -26,6 +26,12 @@ export default async function LoginPage({ searchParams }: { searchParams: { next
         </>
       }
     >
+      {/* 01/11/2026: sent here from the other brand's host (src/server/auth/brand-handoff.ts) – sessions are per site. */}
+      {searchParams.moved === "1" ? (
+        <div className="mb-4" data-testid="login-moved">
+          <Notice>Your clinic uses {currentBrand().productName} at this address. Please sign in here – the same email and password.</Notice>
+        </div>
+      ) : null}
       <LoginForm next={next} productName={currentBrand().productName} />
     </AuthShell>
   );

@@ -145,7 +145,8 @@ describe("usage pages: guards, scoping and wording (source checks)", () => {
       "no tokens or costs on a clinic's page",
     );
     const layout = read("src/app/app/(clinic)/layout.tsx");
-    assert.match(layout, /\{ href: "\/app\/settings\/plan", label: "Plan & usage" \},\n\s+\.\.\.\(manager/);
+    // 01/11/2026: every role of a clinic with Reports (or a ClinForms clinic); a ClinDesk clinic without the add-on has none.
+    assert.match(layout, /\.\.\.\(reportsArea \? \[\{ href: "\/app\/settings\/plan", label: "Plan & usage" \}\] : \[\]\),/);
   });
 
   it("customer-facing wording is neutral and says how a report counts", () => {

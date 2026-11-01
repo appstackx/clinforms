@@ -314,18 +314,31 @@ export function createAuth(input: CreateAuthInput) {
       },
       session: {
         create: {
-          // A new session opens the member's most recent clinic, so /app works straight after sign-in.
-          async before(session) {
+          // A new session opens the member's most recent clinic, so /app works straight after sign-in – 01/11/2026: the
+          // most recent clinic of the brand of the host they signed in on, when they have one (a member of a ClinForms
+          // and a ClinDesk clinic opens the one that belongs on this host; brand-handoff.ts sends the other home).
+          async before(session, ctx) {
             if (session.activeOrganizationId) return;
-            const m = await db
+            const rows = await db
               .selectFrom("member")
-              .select("organizationId")
-              .where("userId", "=", session.userId)
-              .orderBy("createdAt", "desc")
-              .limit(1)
-              .executeTakeFirst();
-            if (!m) return;
-            return { data: { ...session, activeOrganizationId: m.organizationId } };
+              .innerJoin("organization", "organization.id", "member.organizationId")
+              .select(["member.organizationId", "organization.slug"])
+              .where("member.userId", "=", session.userId)
+              .orderBy("member.createdAt", "desc")
+              .limit(50)
+              .execute();
+            if (rows.length === 0) return;
+            let pick = rows[0];
+            const host = rows.length > 1 ? await hostBrand(ctx as AnyCtx).catch(() => null) : null;
+            if (host) {
+              for (const r of rows) {
+                if ((await clinicLinkBrand(db, r.slug)) === host) {
+                  pick = r;
+                  break;
+                }
+              }
+            }
+            return { data: { ...session, activeOrganizationId: pick.organizationId } };
           },
           async after(session, ctx) {
             const c = ctx as AnyCtx;

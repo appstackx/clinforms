@@ -15,6 +15,12 @@
 /** Name of the clinic system (package, area label and, on its own domain, the product and website name). */
 export const CLINIC_SYSTEM_NAME = "ClinDesk";
 
+/**
+ * What the clinic brand calls ClinForms inside its own app (01/11/2026, Khuram's R1): the "Reports" add-on – the
+ * ClinForms name appears only on ClinDesk's public website ("powered by ClinForms").
+ */
+export const REPORTS_ADDON_NAME = "Reports";
+
 /** ClinForms' own product name (equals the module's PRODUCT.name; checked by src/lib/brand.test.ts). */
 export const CLINFORMS_NAME = "ClinForms";
 
@@ -123,6 +129,28 @@ export function brandIcons(brand: Pick<Brand, "icons">):
   | undefined {
   if (!brand.icons) return undefined;
   return { icon: [{ url: brand.icons.icon, type: "image/svg+xml" }], apple: [{ url: brand.icons.apple, sizes: "180x180" }] };
+}
+
+/** One line about each product (page descriptions of the app, sign-in and error pages on the brand's hosts). */
+export const BRAND_TAGLINES: Readonly<Record<BrandId, string>> = {
+  clinforms: "Complete every referrer's own report form from your clinic notes",
+  clinic: "Clinic management for UK physiotherapy and MSK clinics: diary, notes, billing and messages",
+};
+
+/**
+ * The brand-wide part of Next's metadata for a brand's app, sign-in and error pages (01/11/2026, R3): the application
+ * name (home-screen / pinned-app name), the share cards' site name and title, the description and the base URL – the
+ * root layout sets ClinForms' for every page, so the clinic brand's pages override them with this.
+ */
+export function brandMetadata(brand: Pick<Brand, "id" | "productName" | "siteUrl">) {
+  const description = BRAND_TAGLINES[brand.id];
+  return {
+    metadataBase: new URL(brand.siteUrl),
+    applicationName: brand.productName,
+    description,
+    openGraph: { title: brand.productName, description, siteName: brand.productName, locale: "en_GB", type: "website" as const },
+    twitter: { card: "summary" as const, title: brand.productName, description },
+  };
 }
 
 /** The host every request on a brand's alias hosts is sent to (www.clindesk.co.uk → clindesk.co.uk). */

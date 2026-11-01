@@ -1,4 +1,6 @@
+import Link from "next/link";
 import { AppNav, type NavItem } from "@/components/account/app-nav";
+import { listMemberships } from "@/server/auth/membership";
 import { BrandMark } from "@/components/account/shell";
 import { SubmitButton } from "@/components/account/form-controls";
 import { roleLabel } from "@/lib/account-copy";
@@ -11,6 +13,7 @@ import { billingBannerFor } from "@/server/billing/banner";
 import { isDemoClinic, noteClinicVisit } from "@/server/admin/clinic-plan";
 import { requireAppContext } from "@/server/auth/session";
 import { currentBrand } from "@/server/brand";
+import { requireClinicOnItsHost } from "@/server/brand-home";
 import { clinicPackages } from "@/server/pms/entitlements";
 import { getDb } from "@/server/db";
 import { SignOutForm } from "../session-forms";
@@ -19,18 +22,24 @@ export const dynamic = "force-dynamic";
 
 export default async function ClinicLayout({ children }: { children: React.ReactNode }) {
   const { session, membership } = await requireAppContext();
+  // 01/11/2026: a clinic is used on its own brand's host (src/server/auth/brand-handoff.ts) – never returns otherwise.
+  const ownBrand = await requireClinicOnItsHost(membership.tenantId);
   const manager = isManager(membership.role);
   const brand = currentBrand();
   // 10/2026: the clinic's trial – an owner's first visit starts a trial that waits for it; the banner says what is left.
   // A demo clinic (clinic_plan.demo_clinic, set by ClinForms staff only): the same banner as the Studio.
   // Packages (src/server/pms/entitlements.ts, never throws): a clinic without the clinic system sees exactly what it
   // saw before. Read alongside the other two (one round-trip less).
-  const [trial, demoClinic, packages, billing] = await Promise.all([
+  const [trial, demoClinic, packages, billing, memberships] = await Promise.all([
     noteClinicVisit(getDb(), { tenantId: membership.tenantId, userId: session.user.id, sessionId: session.session.id, role: membership.role }),
     isDemoClinic(getDb(), membership.tenantId),
     clinicPackages(membership.tenantId),
     billingBannerFor(getDb(), membership.tenantId, manager),
+    listMemberships(getDb(), session.user.id).catch(() => []),
   ]);
+  // 01/11/2026 (Khuram's R1): the reports pages (Plan & usage, API keys) only for a clinic that has Reports or is a
+  // ClinForms clinic – a ClinDesk clinic without the add-on sees none of them.
+  const reportsArea = packages.reports || ownBrand === "clinforms";
   const items: NavItem[] = [
     { href: "/app", label: "Overview" },
     // 01/11/2026: the way into the clinic system, said plainly ("Open ClinDesk").
@@ -40,9 +49,9 @@ export default async function ClinicLayout({ children }: { children: React.React
     { href: "/app/settings/members", label: "Members" },
     { href: "/app/settings/security", label: "Security" },
     // 25/10/2026: every role – owners and administrators see the package and full usage, everyone else "X of N".
-    { href: "/app/settings/plan", label: "Plan & usage" },
+    ...(reportsArea ? [{ href: "/app/settings/plan", label: "Plan & usage" }] : []),
     ...(manager ? [{ href: "/app/settings/billing", label: "Plan and billing" }] : []), // 31/10/2026: the plan and paying for it
-    ...(manager ? [{ href: "/app/settings/api-keys", label: "API keys" }] : []),
+    ...(manager && reportsArea ? [{ href: "/app/settings/api-keys", label: "API keys" }] : []),
     // Every role: owners and administrators see the whole clinic's activity, everyone else their own.
     { href: "/app/settings/activity", label: "Activity" },
   ];
@@ -61,6 +70,11 @@ export default async function ClinicLayout({ children }: { children: React.React
           </div>
           <div className="flex shrink-0 items-center gap-3">
             <span className="hidden text-sm text-slate-600 md:inline">{session.user.email}</span>
+            {memberships.length > 1 ? (
+              <Link href="/app/select-clinic" className="text-sm font-medium text-teal-700 underline-offset-4 hover:underline">
+                Switch clinic
+              </Link>
+            ) : null}
             <SignOutForm>
               <SubmitButton variant="secondary" className="h-8 px-3 text-xs" pendingText="Signing out…">
                 Sign out

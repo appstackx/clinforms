@@ -8,17 +8,21 @@ import { accountAdminLinks, clinicRoleLabel, shellNav, sitesSummary, withSetupAc
 import { resolveSiteChoice, SITE_COOKIE } from "@/components/pms/shell/site-cookie";
 import { ALL_SITES } from "@/components/pms/ui/site-switcher";
 import { roleLabel } from "@/lib/account-copy";
-import { CLINIC_SYSTEM_NAME } from "@/lib/brand";
+import { CLINFORMS_NAME, CLINIC_SYSTEM_NAME, REPORTS_ADDON_NAME } from "@/lib/brand";
+import { listMemberships } from "@/server/auth/membership";
 import { CLINIC_BASE_PATH } from "@/modules/pms/core/modules";
 import { PMS_NAV } from "@/modules/pms/nav";
 import { pagePermissionFor } from "@/modules/pms/core/page-permissions";
 import { REPORTS_PATH, isReportId, reportAccess } from "@/modules/pms/reporting/catalogue";
 import { currentBrand } from "@/server/brand";
+import { activeClinicPackages, notFoundTitle, requireClinicOnItsHost } from "@/server/brand-home";
 import { requireClinicActor } from "@/server/pms/actor";
+import { requireAppContext } from "@/server/auth/session";
 import { unansweredRepliesFor } from "@/server/pms/comms/views";
 import { resolveDiarySiteScope } from "@/server/pms/diary/caller";
 import { hasPackage } from "@/server/pms/entitlements";
 import { listSites } from "@/server/repos/pms/directory";
+import { patientExists } from "@/server/repos/pms/patients";
 import { BillingBannerBar } from "@/components/account/billing-banner";
 import { billingBannerFor } from "@/server/billing/banner";
 import { canManageBilling } from "@/server/billing/views";
@@ -26,10 +30,16 @@ import { getDb } from "@/server/db";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = {
-  title: { default: CLINIC_SYSTEM_NAME, template: `%s · ${CLINIC_SYSTEM_NAME}` },
-  robots: { index: false, follow: false },
-};
+/** /app/clinic/patients/<segment> pages that are not a patient's record. */
+const PATIENT_LIST_SEGMENTS = new Set(["new", "export", "note-templates", "unsigned-notes"]);
+
+/** Tab titles "… · ClinDesk"; a clinic without the clinic package gets the 404 page, titled as one (01/11/2026, R3). */
+export async function generateMetadata(): Promise<Metadata> {
+  const robots = { index: false, follow: false };
+  const packages = await activeClinicPackages();
+  if (packages && !packages.clinic) return { title: { default: notFoundTitle(), template: notFoundTitle() }, robots };
+  return { title: { default: CLINIC_SYSTEM_NAME, template: `%s · ${CLINIC_SYSTEM_NAME}` }, robots };
+}
 
 /**
  * /app/clinic – the clinic system's shell (design system v1, docs/clinic-system/design/). Checked on the server on
@@ -44,6 +54,9 @@ export const metadata: Metadata = {
  * (comms, M6 – messages.send, in the member's site scope).
  */
 export default async function ClinicSystemLayout({ children }: { children: React.ReactNode }) {
+  // 01/11/2026: a clinic is used on its own brand's host (src/server/auth/brand-handoff.ts) – checked before the
+  // package, so a ClinForms clinic on the clinic brand's host is sent home rather than shown a 404.
+  await requireClinicOnItsHost((await requireAppContext()).membership.tenantId);
   const actor = await requireClinicActor();
   // A page the member may not open answers a real 404 on a full page load – checked here, above the sections'
   // loading skeletons, which would otherwise stream status 200 first (src/modules/pms/core/page-permissions.ts).
@@ -54,15 +67,25 @@ export default async function ClinicSystemLayout({ children }: { children: React
   if (report && report !== "export" && (!isReportId(report) || reportAccess(report, (p) => actor.can(p)) === null)) notFound();
   const brand = currentBrand();
   const ctx = actor.repo();
-  const [reports, sites, scope, replies, billing] = await Promise.all([
-    brand.id === "clinforms" ? hasPackage(actor.tenantId, "reports") : Promise.resolve(false),
+  // 01/11/2026: an unknown patient answers a real 404 too (the record's loading skeleton would stream 200 first).
+  const patientId = path?.split(/[?#]/)[0].match(/^\/app\/clinic\/patients\/([^/]+)(?:\/|$)/)?.[1];
+  if (patientId && !PATIENT_LIST_SEGMENTS.has(patientId) && !(await Promise.resolve()
+      .then(() => patientExists(ctx, actor.tenantId, decodeURIComponent(patientId)))
+      .catch(() => true))) notFound();
+  // 01/11/2026: the Studio is offered on either host when the clinic has Reports (the clinic brand calls it the
+  // "Reports" add-on – never the ClinForms name on its host).
+  const [reports, sites, scope, replies, billing, memberships] = await Promise.all([
+    hasPackage(actor.tenantId, "reports"),
     listSites(ctx, actor.tenantId),
     resolveDiarySiteScope(actor),
     unansweredRepliesFor(actor),
     billingBannerFor(getDb(), actor.tenantId, actor.role === "owner" || actor.role === "admin"),
+    listMemberships(getDb(), actor.userId).catch(() => []),
   ]);
   // Owners and admins: the way back to the clinic account (Plan and billing, members, security …) – the billing rule.
   const account = accountAdminLinks(canManageBilling(actor.role));
+  // A member of more than one clinic: the way to the clinic chooser (01/11/2026).
+  const menu = memberships.length > 1 ? [...account.menu, { id: "account.switch", href: "/app/select-clinic", label: "Switch clinic", icon: "overview" as const, exact: true }] : account.menu;
   const mySites = scope ? sites.filter((s) => scope.has(s.id)) : sites;
   const siteValue = resolveSiteChoice(cookies().get(SITE_COOKIE)?.value, mySites.map((s) => s.id), ALL_SITES);
   return (
@@ -75,9 +98,9 @@ export default async function ClinicSystemLayout({ children }: { children: React
       nav={withSetupAccountLinks(shellNav(PMS_NAV, actor.can, { "comms.messages": { count: replies, label: "replies to answer" } }, reportsSection(actor.can)), account.setup)}
       sites={{ options: mySites.map((s, i) => ({ id: s.id, name: s.name, note: i === 0 ? "Default" : undefined })), value: siteValue, total: sites.length }}
       searchHref={actor.can("patients.view") ? `${CLINIC_BASE_PATH}/patients` : null}
-      clinForms={reports ? { href: "/app/studio", label: "ClinForms" } : null}
+      clinForms={reports ? { href: "/app/studio", label: brand.id === "clinic" ? REPORTS_ADDON_NAME : CLINFORMS_NAME } : null}
       accountHref="/app/clinic/account"
-      adminLinks={account.menu}
+      adminLinks={menu}
     >
       <BillingBannerBar banner={billing} className="mb-4 rounded-md border" />
       {children}

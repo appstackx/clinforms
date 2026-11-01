@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { brandIcons } from "@/lib/brand";
+import { brandIcons, brandMetadata } from "@/lib/brand";
 import { currentBrand } from "@/server/brand";
 
 /**
@@ -13,6 +13,7 @@ export function generateMetadata(): Metadata {
   const icons = brandIcons(brand);
   return {
     title: { default: name, template: `%s · ${name}` },
+    ...brandMetadata(brand),
     robots: { index: false, follow: false },
     ...(icons ? { icons } : {}),
   };

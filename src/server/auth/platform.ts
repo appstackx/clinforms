@@ -32,6 +32,7 @@ import { countPmsRows, deletePmsQueries, exportPmsData } from "../pms/offboard";
 import { PLATFORM_USER_EMAIL, PLATFORM_USER_ID, RESET_TOKEN_TTL_SECONDS, invitationRef } from "./create-auth";
 import { invitationExpiry } from "./invitation-expiry";
 import { inviteLink } from "./invite-token";
+import { SIGNUP_BRAND_KEY } from "./brand-links";
 import { RETENTION_MAX_DAYS, RETENTION_MIN_DAYS } from "../../lib/account-copy";
 import { assertTenantSlug } from "./tenant";
 
@@ -125,8 +126,30 @@ export async function createClinic(db: Kysely<Database>, input: CreateClinicInpu
   const invitationId = authId();
   const invitationExpiresAt = invitationExpiry(now).toISOString();
   const link = inviteLink(input.appOrigin, invitationId, input.linkSecret); // before any write: a bad secret changes nothing
+  const clinicBrand = input.brand === "clinic";
   await runBatch(db, [
-    db.insertInto("organization").values({ id: organizationId, name, slug, logo: null, createdAt: at, metadata: null }),
+    // 01/11/2026 (Khuram's R1): a clinic created for the clinic brand records it (clinicLinkBrand – it stays ClinDesk
+    // before its plan is paid) and starts WITHOUT Reports (the add-on is bought on Plan and billing), so it never sees
+    // ClinForms' Studio by default. A ClinForms clinic keeps the default (Reports on).
+    db.insertInto("organization").values({ id: organizationId, name, slug, logo: null, createdAt: at, metadata: clinicBrand ? JSON.stringify({ [SIGNUP_BRAND_KEY]: "clinic" }) : null }),
+    ...(clinicBrand
+      ? [
+          db.insertInto("clinic_entitlements").values({
+            tenant_id: slug,
+            package: "reports",
+            status: "paused",
+            plan_code: null,
+            price_source: null,
+            limits_json: null,
+            starts_at: at,
+            ends_at: null,
+            note: "Created for the clinic system: Reports add-on not bought",
+            updated_by: PLATFORM_USER_ID,
+            created_at: at,
+            updated_at: at,
+          }),
+        ]
+      : []),
     db.insertInto("clinic_profile").values({
       tenant_id: slug,
       organization_id: organizationId,
