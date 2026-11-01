@@ -52,6 +52,14 @@ describe("V-01: a ClinForms clinic choosing a clinic-system plan keeps its repor
   });
 });
 
+describe("V-02: the payment done page after buying the clinic system on ClinForms' host", () => {
+  it("names neither brand in the tab title on ClinForms' hosts; the clinic system's sign-in is the main action", () => {
+    const src = fs.readFileSync(path.resolve("src/app/app/(clinic)/settings/billing/done/page.tsx"), "utf8");
+    assert.match(src, /currentBrand\(\)\.id === "clinic" \? \{ title: DONE_TITLE \} : \{ title: \{ absolute: DONE_TITLE \} \}/);
+    assert.match(src, /elsewhere \? `Sign in to \$\{CLINIC_SYSTEM_NAME\}`/);
+  });
+});
+
 describe("R3: brand metadata", () => {
   it("each brand's pages carry its own application name, share-card name and base URL", () => {
     for (const brand of Object.values(BRANDS)) {
