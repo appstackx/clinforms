@@ -7,8 +7,8 @@
  * (src/server/site/demo-request.ts); the browser's own required/type checks are only a first hint.
  *
  * Errors: a summary at the top (focused, links to each field) and a message under each field (aria-describedby,
- * aria-invalid). Fields keep what was typed. Added to the design: "Number of practitioners" (required; its options
- * are the plan bands, src/lib/clindesk/demo-options.ts) and the hidden honeypot field.
+ * aria-invalid). Fields keep what was typed. Added to the design: "Number of practitioners" (required, first of the
+ * pair – plans are priced by it; its options are the plan bands, src/lib/clindesk/demo-options.ts) and the hidden honeypot field.
  *
  * Advertising measurement: on submit, and only with advertising consent and an empty honeypot, the form leaves a
  * short-lived note in this tab (google-ads.ts noteDemoSent); the thank-you page – reached only through the server's
@@ -27,8 +27,8 @@ const FIELD_IDS: Record<string, string> = {
   clinic: "f-clinic",
   email: "f-email",
   phone: "f-phone",
-  sites: "f-sites",
   practitioners: "f-practitioners",
+  sites: "f-sites",
   current_system: "f-system",
   see: "f-see-diary",
 };
@@ -142,22 +142,6 @@ export function DemoForm() {
             </div>
           </div>
           <div className="d-row">
-            <div className="d-field d-field--sites">
-              <label htmlFor="f-sites">
-                Number of sites <span className="req">(required)</span>
-              </label>
-              <span className="d-select">
-                <select id="f-sites" name="sites" required defaultValue={v.sites ?? ""} {...describe("f-sites", e.sites)}>
-                  <option value="">Choose</option>
-                  {DEMO_SITE_BANDS.map((band) => (
-                    <option key={band} value={band}>
-                      {band}
-                    </option>
-                  ))}
-                </select>
-              </span>
-              <FieldError id="f-sites" message={e.sites} />
-            </div>
             <div className="d-field">
               <label htmlFor="f-practitioners">
                 Number of practitioners <span className="req">(required)</span>
@@ -173,6 +157,22 @@ export function DemoForm() {
                 </select>
               </span>
               <FieldError id="f-practitioners" message={e.practitioners} />
+            </div>
+            <div className="d-field d-field--sites">
+              <label htmlFor="f-sites">
+                Number of sites <span className="req">(required)</span>
+              </label>
+              <span className="d-select">
+                <select id="f-sites" name="sites" required defaultValue={v.sites ?? ""} {...describe("f-sites", e.sites)}>
+                  <option value="">Choose</option>
+                  {DEMO_SITE_BANDS.map((band) => (
+                    <option key={band} value={band}>
+                      {band}
+                    </option>
+                  ))}
+                </select>
+              </span>
+              <FieldError id="f-sites" message={e.sites} />
             </div>
           </div>
           <div className="d-field">

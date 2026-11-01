@@ -10,7 +10,7 @@
 export const SITE_URL = "https://clinforms.co.uk" as const;
 
 export interface CompanyDetails {
-  /** Legal entity that provides ClinForms. */
+  /** Legal entity that provides ClinForms – the exact registered name (Companies House: APPSTACK X LTD). */
   legalName: string;
   /** Trading brand. */
   brand: string;
@@ -22,26 +22,26 @@ export interface CompanyDetails {
   registeredNumber?: string;
   /** Where the company is registered, e.g. "England and Wales" – set once confirmed. */
   registeredIn?: string;
-  /** Registered office address, one line – set once confirmed. */
+  /** Registered office address, one line – shown only as the footer's last line (registeredOfficeLine). */
   registeredAddress?: string;
   /** ICO data protection fee registration number – set once confirmed. */
   icoRegistration?: string;
 }
 
 export const COMPANY: CompanyDetails = {
-  legalName: "AppstackX Ltd",
+  legalName: "Appstack X Ltd",
   brand: "AppStackX",
   website: "https://appstackx.co.uk",
   contactEmail: "hello@clinforms.co.uk",
   // Unset values stay hidden (the lines that need them are not rendered).
   registeredNumber: "16287309",
   registeredIn: "England and Wales",
-  // Not shown on the website (Khuram 01/11/2026); leave unset until he decides to publish one.
-  registeredAddress: undefined,
-  icoRegistration: undefined,
+  // Footer only, last line, small (Khuram 01/11/2026) – registeredOfficeLine(). A service address can replace it.
+  registeredAddress: "18 Westergate Avenue, Milton Keynes, MK10 7LQ",
+  icoRegistration: "ZC135044",
 };
 
-/** "Registered in England and Wales, company number 12345678. Registered office: …" – or null. */
+/** "Registered in England and Wales, company number 12345678." – or null. Never the address (footer only). */
 export function companyRegistrationLine(company: CompanyDetails = COMPANY): string | null {
   const parts: string[] = [];
   if (company.registeredNumber) {
@@ -51,21 +51,25 @@ export function companyRegistrationLine(company: CompanyDetails = COMPANY): stri
         : `Company number ${company.registeredNumber}.`,
     );
   }
-  if (company.registeredAddress) parts.push(`Registered office: ${company.registeredAddress}.`);
   return parts.length ? parts.join(" ") : null;
 }
 
-/** Date shown as "Last updated" on the legal pages (ISO). Change it whenever their text changes. */
-export const LEGAL_LAST_UPDATED = "2026-10-09";
+/** "Registered office: …" – the footer's last line (Khuram 01/11/2026: footer only, not the legal pages) – or null. */
+export function registeredOfficeLine(company: CompanyDetails = COMPANY): string | null {
+  return company.registeredAddress ? `Registered office: ${company.registeredAddress}` : null;
+}
+
+/** Date shown as "Last updated" on the legal pages (ISO). Change it whenever their text changes (01/11/2026: company name, number, ICO). */
+export const LEGAL_LAST_UPDATED = "2026-11-01";
 
 /**
  * The privacy policy's own "Last updated" (ISO): it changed on its own for the demo video (section 3, 10/10) and for
- * advertising measurement (31/10).
+ * advertising measurement (31/10); company details 01/11.
  */
-export const PRIVACY_LAST_UPDATED = "2026-10-31";
+export const PRIVACY_LAST_UPDATED = "2026-11-01";
 
-/** The cookie policy's own "Last updated" (ISO): advertising cookies added on 31/10/2026. */
-export const COOKIES_LAST_UPDATED = "2026-10-31";
+/** The cookie policy's own "Last updated" (ISO): advertising cookies added on 31/10/2026; company name 01/11/2026. */
+export const COOKIES_LAST_UPDATED = "2026-11-01";
 
 /** "9 October 2026" (UK long date) for an ISO date. */
 export function formatLongDate(iso: string): string {

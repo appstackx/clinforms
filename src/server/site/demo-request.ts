@@ -59,9 +59,9 @@ export const DemoRequestSchema = z.object({
     .regex(/^[0-9+()\-.\s]*$/, "Phone may contain only digits, spaces and + ( ) - .")
     .optional()
     .default(""),
-  sites: z.enum(DEMO_SITE_BANDS, { error: "Choose the number of sites." }),
   /** One of the pricing bands (demo-options.ts, from the billing plan table) – the band's text is stored. */
   practitioners: z.enum(DEMO_PRACTITIONER_BANDS, { error: "Choose the number of practitioners." }),
+  sites: z.enum(DEMO_SITE_BANDS, { error: "Choose the number of sites." }),
   currentSystem: z
     .string()
     .trim()
@@ -87,8 +87,8 @@ export const DEMO_FIELD_NAMES = {
   clinic: "clinic",
   email: "email",
   phone: "phone",
-  sites: "sites",
   practitioners: "practitioners",
+  sites: "sites",
   currentSystem: "current_system",
   interests: "see",
   website: "website",

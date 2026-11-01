@@ -4,7 +4,7 @@
 | | |
 |---|---|
 | Brand | **AppStackX** (CareConnect banner, ClinForms vendor, email sign-offs) |
-| Legal name | "**AppstackX Ltd**" (Khuram's email signature). Company number, registered address and VAT status **not stated (unverified)** |
+| Legal name | "**Appstack X Ltd**" – exact Companies House name APPSTACK X LTD, number **16287309**, England and Wales (Khuram 01/11/2026; his email signature says "AppstackX Ltd"). Registered office 18 Westergate Avenue, Milton Keynes, MK10 7LQ (shown in both site footers). ICO **ZC135044**. Not VAT registered |
 | People | Only **Khuram Masood** appears (founder/owner/sales/product – title unverified) |
 | Prospect email | `khuram@appstackx.co.uk` (Google Workspace Gmail) |
 | Website | `appstackx.co.uk` (agency site; ClinForms page metadata author link) |

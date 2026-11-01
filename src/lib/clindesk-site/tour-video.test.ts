@@ -40,7 +40,7 @@ const prose = (source: string) => stripComments(source).replace(/\s+/g, " ");
 
 const PLAYER = stripComments(read("src/app/clindesk-site/tour/tour-player.tsx"));
 const PAGE = stripComments(read("src/app/clindesk-site/tour/page.tsx"));
-const PUBLISHER = { name: "AppstackX Ltd", url: "https://appstackx.co.uk" };
+const PUBLISHER = { name: "Appstack X Ltd", url: "https://appstackx.co.uk" };
 
 /** The approved cut's chapters.txt (marketing/clindesk/showcase-video-v1), as Khuram signed it off. */
 const CHAPTERS_TXT = [

@@ -3,7 +3,11 @@
   "values": {
     "company.number": {
       "value": "16287309",
-      "description": "Companies House number of AppstackX Ltd (registered in England and Wales; Khuram 01/11/2026). Footer of every page. Also the privacy policy and the terms (\"company number …\")."
+      "description": "Companies House number of Appstack X Ltd (registered in England and Wales; Khuram 01/11/2026). Footer of every page. Also the privacy policy and the terms (\"company number …\")."
+    },
+    "company.registeredOffice": {
+      "value": "18 Westergate Avenue, Milton Keynes, MK10 7LQ",
+      "description": "Registered office address on one line (Khuram 01/11/2026). Footer only, as its last line in small text – not the legal pages. Must match COMPANY.registeredAddress in src/lib/site.ts (ClinForms' footer; a test checks). A registered-office service address can replace it later."
     },
     "contact.responseTime": {
       "value": "one working day",
@@ -58,7 +62,7 @@
       "description": "How to reach support, after \"by\", e.g. \"email and phone\". Pricing page FAQ. Also the terms (\"Support is by …\")."
     },
     "hosting.summary": {
-      "value": "[UK data hosting – region to confirm]",
+      "value": "UK (London)",
       "description": "Where patient data is hosted, in a few words, e.g. \"UK (London)\". Home page security band and the Security page top."
     },
     "features.reminderChannels": {
@@ -106,59 +110,59 @@
       "description": "How training is given, after \"Format:\", e.g. \"live online\". Switching page, go-live day."
     },
     "security.region": {
-      "value": "[UK region]",
+      "value": "the UK (London)",
       "description": "The hosting region, e.g. \"the UK (London)\" – used for the data and the backups (\"stored in …\"). Security page. Also the privacy policy (sub-processors and \"clinic data is stored in …\")."
     },
     "security.hostingDetails": {
-      "value": "[Hosting details]",
+      "value": "Hosted in UK data centres in London.",
       "description": "One line on the hosting provider and set-up, e.g. \"Hosted on … in London\". Security page, Hosting."
     },
     "security.icoRegistration": {
-      "value": "[UK GDPR / ICO registration – to confirm]",
-      "description": "ICO registration line, e.g. \"Registered with the ICO, number ZA123456\". Security page top. Also the privacy policy, after \"ICO registration:\"."
+      "value": "Registered with the ICO, number ZC135044",
+      "description": "ICO registration line (Khuram 01/11/2026), e.g. \"Registered with the ICO, number ZA123456\" – a full sentence without the full stop. Security page top. Also the privacy policy, section 1."
     },
     "security.certifications": {
-      "value": "[Certifications – to confirm]",
+      "value": "No certifications yet – Cyber Essentials planned",
       "description": "Certifications held, e.g. \"Cyber Essentials\" – or say none yet. Never claim one you do not hold. Security page top."
     },
     "security.encryptionInTransit": {
-      "value": "[standard]",
+      "value": "TLS 1.2 or later",
       "description": "Encryption in transit, after \"In transit:\", e.g. \"TLS 1.2 or later\". Security page."
     },
     "security.encryptionAtRest": {
-      "value": "[standard]",
+      "value": "AES-256, with patient files and notes also encrypted per clinic",
       "description": "Encryption at rest, after \"At rest:\", e.g. \"AES-256\". Security page."
     },
     "security.backupFrequency": {
-      "value": "[Backup frequency]",
+      "value": "Daily",
       "description": "How often backups are made, e.g. \"Daily\" (starts the sentence). Security page, Backups."
     },
     "security.backupRetention": {
-      "value": "[period]",
+      "value": "7 days",
       "description": "How long backups are kept, after \"kept for\", e.g. \"7 days\". Security page, Backups. Also the privacy policy (\"Backups are kept for …\")."
     },
     "security.retentionGuidance": {
-      "value": "[professional and legal guidance]",
+      "value": "HCPC and CSP record-keeping guidance (adult records at least 8 years after the last treatment)",
       "description": "Which guidance record retention follows, e.g. \"HCPC and Records Management Code guidance\". Security page, Retention. Also the privacy policy, Retention."
     },
     "security.deletionProcess": {
-      "value": "[Deletion process]",
+      "value": "When a clinic leaves, it receives a full export of its data, and the data is then deleted.",
       "description": "One sentence on how records are deleted at the end of the retention period or when a clinic leaves. Security page, Retention."
     },
     "security.auditRetention": {
-      "value": "[audit retention period]",
+      "value": "8 years",
       "description": "How long the audit trail is kept, after \"Kept for\", e.g. \"8 years\". Security page, Audit trail. Also the privacy policy (\"kept for …\")."
     },
     "security.overviewDocument": {
-      "value": "[Security overview]",
+      "value": "Security overview (PDF)",
       "description": "Title of the security overview document you send on request, e.g. \"Security overview (PDF)\". Security page, Documents."
     },
     "security.subProcessorsDocument": {
-      "value": "[List of sub-processors]",
+      "value": "Sub-processors list (PDF)",
       "description": "Title of the sub-processor list you send on request, e.g. \"Sub-processors (PDF)\". Security page, Documents. Also the privacy policy, sub-processors."
     },
     "security.issueResponseTime": {
-      "value": "[timeframe]",
+      "value": "one working day",
       "description": "How fast you respond to a reported security issue, after \"we'll respond within\", e.g. \"one working day\". Security page."
     },
     "demo.callLength": {

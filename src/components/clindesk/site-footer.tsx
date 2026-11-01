@@ -7,7 +7,8 @@ import { Logo } from "./logo";
 
 /**
  * Footer of every page: brand, product / company / legal links (with "Cookie settings", which reopens the cookie
- * settings – cookie-consent.tsx), company line (fill-ins) and the sample-data note.
+ * settings – cookie-consent.tsx), company line (fill-ins), the sample-data note and, last and small, the registered
+ * office (Khuram 01/11/2026: footer only, not the legal pages).
  */
 export function SiteFooter() {
   return (
@@ -102,6 +103,9 @@ export function SiteFooter() {
           <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>
         </p>
         <p className="small f-fine">Names, clinics, insurers and figures shown on this site are fictional sample data.</p>
+        <p className="f-office">
+          Registered office: <Fill k="company.registeredOffice" />
+        </p>
       </div>
       <div className="f-giant" aria-hidden="true">
         {CLINIC_SYSTEM_NAME}

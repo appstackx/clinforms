@@ -129,8 +129,8 @@ async function stopServer() {
 /** The `log` provider's printed messages: [{to, replyTo, subject, text, link}]. */
 function outbox() {
   const out = [];
-  // Every message's text ends with the "ClinForms · AppstackX Ltd" line (src/server/email/templates.ts).
-  const re = /\[email:log\] to=(\S+)(?: reply-to=(\S+))? subject="([^"]*)"\n([\s\S]*?ClinForms · AppstackX Ltd)\n/g;
+  // Every message's text ends with the "ClinForms · Appstack X Ltd" line (src/server/email/templates.ts).
+  const re = /\[email:log\] to=(\S+)(?: reply-to=(\S+))? subject="([^"]*)"\n([\s\S]*?ClinForms · Appstack X Ltd)\n/g;
   for (const m of serverLog.matchAll(re)) {
     const link = (m[4].match(/https?:\/\/\S+\/(?:accept-invite|reset-password)\?token=\S+/) || [])[0] || null;
     out.push({ to: m[1], replyTo: m[2] || null, subject: m[3], text: m[4], link });
@@ -434,7 +434,7 @@ const visibleText = async (page) => (await page.locator("body").innerText()).rep
     });
 
     /* Throughout: links appear in the server output only inside the log provider's printed messages */
-    const outside = serverLog.replace(/\[email:log\][\s\S]*?ClinForms · AppstackX Ltd\n/g, "");
+    const outside = serverLog.replace(/\[email:log\][\s\S]*?ClinForms · Appstack X Ltd\n/g, "");
     check("Z1", "no invitation or reset link in the server output outside the development email provider's messages", () => {
       assert.doesNotMatch(outside, /accept-invite\?token=|reset-password\?token=/);
     });

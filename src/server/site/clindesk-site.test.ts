@@ -62,14 +62,14 @@ describe("clinforms.co.uk is unchanged", () => {
   });
   it("sitemap.xml: the same seven pages, dates and priorities", () => {
     assert.deepEqual(sitemap(), [
-      { url: "https://clinforms.co.uk", lastModified: "2026-10-09", changeFrequency: "monthly", priority: 1 },
+      { url: "https://clinforms.co.uk", lastModified: "2026-11-01", changeFrequency: "monthly", priority: 1 },
       { url: "https://clinforms.co.uk/demo", lastModified: "2026-10-10", changeFrequency: "monthly", priority: 0.9 },
-      { url: "https://clinforms.co.uk/request-access", lastModified: "2026-10-09", changeFrequency: "yearly", priority: 0.8 },
-      { url: "https://clinforms.co.uk/security", lastModified: "2026-10-09", changeFrequency: "monthly", priority: 0.7 },
-      // Privacy and cookie policies: advertising measurement added on 31/10/2026 (src/components/ads).
-      { url: "https://clinforms.co.uk/privacy", lastModified: "2026-10-31", changeFrequency: "yearly", priority: 0.4 },
-      { url: "https://clinforms.co.uk/cookies", lastModified: "2026-10-31", changeFrequency: "yearly", priority: 0.3 },
-      { url: "https://clinforms.co.uk/terms", lastModified: "2026-10-09", changeFrequency: "yearly", priority: 0.3 },
+      { url: "https://clinforms.co.uk/request-access", lastModified: "2026-11-01", changeFrequency: "yearly", priority: 0.8 },
+      { url: "https://clinforms.co.uk/security", lastModified: "2026-11-01", changeFrequency: "monthly", priority: 0.7 },
+      // 01/11/2026: company name, number and ICO registration on every page (footer) and the legal pages.
+      { url: "https://clinforms.co.uk/privacy", lastModified: "2026-11-01", changeFrequency: "yearly", priority: 0.4 },
+      { url: "https://clinforms.co.uk/cookies", lastModified: "2026-11-01", changeFrequency: "yearly", priority: 0.3 },
+      { url: "https://clinforms.co.uk/terms", lastModified: "2026-11-01", changeFrequency: "yearly", priority: 0.3 },
     ]);
   });
   it("its hosts keep the ClinForms brand, site and analytics; its public pages list is unchanged", () => {
@@ -197,7 +197,7 @@ describe("clindesk.co.uk legal pages", () => {
   // The accessibility page imports its stylesheet (Next bundles it); under node:test a .css file is nothing.
   (require as unknown as { extensions: Record<string, () => void> }).extensions[".css"] = () => undefined;
 
-  async function mainOf(page: "privacy" | "terms" | "cookies" | "accessibility"): Promise<{ html: string; text: string }> {
+  async function mainOf(page: "privacy" | "terms" | "cookies" | "accessibility" | "security"): Promise<{ html: string; text: string }> {
     const Page = (await import(`@/app/clindesk-site/${page}/page`)).default as () => React.ReactElement;
     const html = renderToStaticMarkup(createElement(Page));
     const main = html.slice(html.indexOf('<main id="main">'), html.indexOf("</main>"));
@@ -207,34 +207,62 @@ describe("clindesk.co.uk legal pages", () => {
   }
 
   for (const page of ["privacy", "terms", "cookies", "accessibility"] as const) {
-    it(`/${page}: names ClinDesk and AppstackX Ltd; ClinForms only as the Reports add-on's "powered by"; neutral wording`, async () => {
+    it(`/${page}: names ClinDesk and Appstack X Ltd; ClinForms only as the Reports add-on's "powered by"; neutral wording`, async () => {
       const { text } = await mainOf(page);
       assert.match(text, /ClinDesk/);
-      assert.match(text, /AppstackX Ltd/);
+      assert.match(text, /Appstack X Ltd/);
       const rest = text.replace(/Reports add-on[ ,(]+powered by ClinForms/g, "");
       assert.ok(!/ClinForms/.test(rest), `${page}: "ClinForms" outside the Reports add-on: …${rest.slice(Math.max(0, rest.indexOf("ClinForms") - 80), rest.indexOf("ClinForms") + 40)}…`);
       for (const re of BANNED_TERM_PATTERNS) assert.ok(!re.test(text), `${page}: ${re}`);
       for (const vendor of [/vercel/i, /cloudflare/i, /turnstile/i, /mailersend/i, /mailpit/i, /supabase/i, /stripe/i, /posthog/i, /anthropic/i, /healthcode/i]) {
         assert.ok(!vendor.test(text), `${page}: names a vendor (${vendor})`);
       }
-      if (page !== "accessibility") assert.match(text, /Last updated: 31 October 2026/);
+      if (page !== "accessibility") assert.match(text, /Last updated: 1 November 2026/);
     });
   }
 
   it("/privacy and /terms: company number 16287309, registered in England and Wales; no registered office shown (Khuram 01/11/2026)", async () => {
     for (const page of ["privacy", "terms"] as const) {
       const { text, html } = await mainOf(page);
-      assert.match(text, /AppstackX Ltd ?(\(.we., .us.\) ?)?, a company registered in England and Wales, company number 16287309 ?\./, page);
+      assert.match(text, /Appstack X Ltd ?(\(.we., .us.\) ?)?, a company registered in England and Wales, company number 16287309 ?\./, page);
       assert.ok(!/registered office/i.test(text), `${page}: no registered office`);
       assert.ok(!html.includes('data-to-confirm="company.number"'), `${page}: company number filled`);
     }
   });
 
-  it("footer: company number 16287309, no registered office", async () => {
+  it("footers of both sites: Appstack X Ltd, company number 16287309, the registered office last and small", async () => {
     const { SiteFooter } = await import("@/components/clindesk/site-footer");
-    const text = renderToStaticMarkup(createElement(SiteFooter)).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
-    assert.match(text, /Company no\. 16287309/);
-    assert.ok(!/registered office/i.test(text));
+    const html = renderToStaticMarkup(createElement(SiteFooter));
+    const text = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    assert.match(text, /© 2026 Appstack X Ltd · Made in the UK · Company no\. 16287309 ·/);
+    assert.match(text, /fictional sample data\. Registered office: 18 Westergate Avenue, Milton Keynes, MK10 7LQ ClinDesk$/, "last line (before the decorative giant name)");
+    assert.match(html, /<p class="f-office">Registered office: /);
+    const css = fs.readFileSync(path.join(ROOT, "src/components/clindesk/styles/site.css"), "utf8");
+    assert.match(css, /\.cd-site \.f-office \{[^}]*font-size: 12px;[^}]*color: var\(--muted-on-dark\);/);
+    const { SiteFooter: ClinFormsFooter } = await import("@/components/marketing/site-footer");
+    const cf = renderToStaticMarkup(createElement(ClinFormsFooter)).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    assert.match(cf, /ClinForms is a product of Appstack X Ltd\. © \d{4} Appstack X Ltd\. Registered in England and Wales, company number 16287309\. Registered office: 18 Westergate Avenue, Milton Keynes, MK10 7LQ$/);
+  });
+
+  it("/security: the filled hosting, encryption, backup, retention and document lines read as sentences; no certification claimed", async () => {
+    const { text, html } = await mainOf("security");
+    for (const k of ["hosting.summary", "security.icoRegistration", "security.certifications", "security.region", "security.hostingDetails", "security.encryptionInTransit", "security.encryptionAtRest", "security.backupFrequency", "security.backupRetention", "security.retentionGuidance", "security.deletionProcess", "security.auditRetention", "security.overviewDocument", "security.subProcessorsDocument", "security.issueResponseTime"]) {
+      assert.ok(!html.includes(`data-to-confirm="${k}"`), k);
+    }
+    assert.ok(!text.includes(TO_CONFIRM));
+    for (const re of [
+      /UK \(London\) Registered with the ICO, number ZC135044 No certifications yet – Cyber Essentials planned/,
+      /Your data is stored in the UK \(London\)\. Hosted in UK data centres in London\./,
+      /In transit: TLS 1\.2 or later\. At rest: AES-256, with patient files and notes also encrypted per clinic\./,
+      /Daily, kept for 7 days, stored in the UK \(London\)\./,
+      /in line with HCPC and CSP record-keeping guidance \(adult records at least 8 years after the last treatment\)\. When a clinic leaves, it receives a full export of its data, and the data is then deleted\./,
+      /Kept for 8 years\./,
+      /Security overview \(PDF\)/,
+      /Sub-processors list \(PDF\)/,
+      /we'll respond within one working day\./,
+    ]) assert.match(text, re, String(re));
+    assert.ok(!/certified|ISO 27001|Cyber Essentials (?!planned)/i.test(text), "no certification claimed");
+    for (const vendor of [/vercel/i, /cloudflare/i, /supabase/i, /amazon|aws/i, /postgres/i]) assert.ok(!vendor.test(text), String(vendor));
   });
 
   it("/privacy: controller and processor roles, the data categories and the sub-processor list taken from the code", async () => {
@@ -271,9 +299,17 @@ describe("clindesk.co.uk legal pages", () => {
     assert.match(text, /withdraw consent at any time, where we rely on consent \(for advertising cookies, use .Cookie settings/);
     assert.match(text, /This website uses no analytics/);
     assert.ok(!/we do not use it for advertising/.test(text), "no longer true");
-    for (const k of ["security.icoRegistration", "security.region", "security.subProcessorsDocument", "legal.accountRetention", "legal.demoRequestRetention", "legal.providerLocations"]) {
+    for (const k of ["legal.accountRetention", "legal.demoRequestRetention", "legal.providerLocations"]) {
       assert.ok(html.includes(`data-to-confirm="${k}"`), k);
     }
+    // Filled 01/11/2026 (Khuram): ICO number, region, sub-processor list title, retention.
+    for (const k of ["security.icoRegistration", "security.region", "security.subProcessorsDocument", "security.backupRetention", "security.auditRetention", "security.retentionGuidance"]) {
+      assert.ok(!html.includes(`data-to-confirm="${k}"`), k);
+    }
+    assert.match(text, /Registered with the ICO, number ZC135044\./);
+    assert.match(text, /clinic data is stored in the UK \(London\)\./);
+    assert.match(text, /available on request as our Sub-processors list \(PDF\) from /);
+    assert.match(text, /in line with HCPC and CSP record-keeping guidance \(adult records at least 8 years after the last treatment\)\. Clinical records are never deleted automatically\. Backups are kept for 7 days\./);
     assert.ok(text.includes(TO_CONFIRM));
   });
 

@@ -11,6 +11,12 @@ Rule: Khuram wants **a short plan first, build after his OK** for anything big �
 **Updated Sun 2026-10-25 ~14:50 UTC:** TOP-0 (usage/packages live; Dell's email waits for the trial bug fixes).
 Update this file at the end of every session (status, blockers, what changed).
 
+## TOP-first-client – Sun 2026-11-01: checklist before the first paying clinic
+- `docs/clinic-system/BEFORE-FIRST-CLIENT.md` – Cyber Essentials, Vercel Pro, Supabase PITR + compute, DPA + DPIA,
+  lawyer review, fair-use storage in the terms, Stripe live smoke, roll test keys, The SMS Works + sender ID
+  "ClinDesk", attachments to R2, onboarding/support scope. Done 01/11: exact name "Appstack X Ltd", company number
+  16287309, registered office in both footers, ICO ZC135044 (branch `fix/company-number-demo-bands`).
+
 ## TOP-billing – Sat 2026-10-31: subscription billing + SMS-credit fixes BUILT (branch `feat/clindesk-billing`, not merged)
 - Runbooks: `docs/clinic-system/BILLING.md` (go-live order §7), `docs/clinic-system/SMS-CREDITS.md` (§7 The SMS Works set-up, §8 review fixes).
 - Khuram: review + merge decision; VAT decision (nothing adds VAT today); live catalogue with the same lookup keys; live webhook (10 events) at `/api/billing/stripe-webhook`; migrations 0009/0144/0145 before deploy; `npm run admin:billing-go-live` then `CLINDESK_BILLING_LIVE=1`; The SMS Works sign-up when the first real clinic onboards.

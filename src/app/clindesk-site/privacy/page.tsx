@@ -48,7 +48,7 @@ export default function ClindeskPrivacyPage() {
           <a href={`mailto:${email}`}>{email}</a>.
         </p>
         <p>
-          ICO registration: <Fill k="security.icoRegistration" />.
+          <Fill k="security.icoRegistration" />.
         </p>
 
         <h2 id="our-roles">2. Our two roles</h2>
@@ -269,9 +269,8 @@ export default function ClindeskPrivacyPage() {
           </li>
         </ul>
         <p>
-          The full list of sub-processors (<Fill k="security.subProcessorsDocument" />
-          ), with their locations and the safeguards that apply, is part of our DPA and is available on request at{" "}
-          <a href={`mailto:${email}`}>{email}</a>. We tell clinics before we add or replace a sub-processor that handles
+          The full list of sub-processors, with their locations and the safeguards that apply, is part of our DPA and is
+          available on request as our <Fill k="security.subProcessorsDocument" /> from <a href={`mailto:${email}`}>{email}</a>. We tell clinics before we add or replace a sub-processor that handles
           patient information, so they can object.
         </p>
         <p id="advertising">

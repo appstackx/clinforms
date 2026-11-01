@@ -238,6 +238,8 @@ html:has(.cd-site) { scroll-padding-top: 96px; }
 .cd-site .f-legal { margin-top: 16px; padding-top: 6px; border-top: 1px solid rgba(187,208,201,.25); color: var(--muted-on-dark); }
 .cd-site .f-legal a { display: inline-flex; align-items: center; min-height: 44px; color: var(--muted-on-dark); text-decoration-color: var(--sun); }
 .cd-site .f-fine { margin-top: 0; color: var(--muted-on-dark); }
+/* Registered office: last line, small but legible (muted-on-dark on pine ≈ 7.7:1). */
+.cd-site .f-office { margin-top: 4px; font-size: 12px; line-height: 1.5; color: var(--muted-on-dark); }
 .cd-site .f-giant { position: relative; margin: 6px 0 0; padding-bottom: 16px; padding-left: var(--margin); max-width: 1440px; margin-inline: auto; font-family: var(--font-display); font-variation-settings: var(--display-vars); font-weight: 800; font-size: 152px; line-height: .8; letter-spacing: -.03em; color: var(--muted-on-dark); opacity: .2; white-space: nowrap; pointer-events: none; }
 /* ---------- product layer ---------- */
 .cd-site .product { font-family: var(--font-inter), ui-sans-serif, Arial, sans-serif; color: #1A2723; font-size: 14px; line-height: 1.35; font-weight: 400; letter-spacing: 0; text-align: left; }
