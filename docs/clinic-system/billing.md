@@ -22,6 +22,10 @@ deployed. Text credits: [`SMS-CREDITS.md`](SMS-CREDITS.md) (same payment account
   | ClinForms Starter / Practice / Group / Group Plus (25/100/250/500) | – | £99 / £199 / £349 / £549 | – | `clinforms_<tier>_monthly` |
   | Extra report above the allowance | – | £1.50 each | – | `extra_report` (one-off) |
 
+  **Public website (01/11/2026):** clindesk.co.uk/pricing (and the "From £39 a month" / Reports add-on lines on other
+  pages) reads these amounts from the same table via `src/lib/clindesk/pricing.ts` – change a price here and at the
+  payment account, never on a page. Every plan button there books a demo; no checkout link on the public site.
+
   **Decision (Khuram 01/11/2026):** the hosted payment page refuses mixed billing intervals in one subscription
   ("Checkout does not support multiple prices with different billing intervals", also with flexible billing mode), so
   the Reports add-on has **yearly prices too** (10 × monthly, `clindesk_reports_<n>_yearly`, created in TEST mode

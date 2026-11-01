@@ -1,14 +1,15 @@
 import type { ReactNode } from "react";
 import { CLINIC_SYSTEM_NAME } from "@/lib/brand";
+import { FROM_PRICE } from "@/lib/clindesk/pricing";
 import { CONTACT_EMAIL } from "@/lib/clindesk/site";
 import { AppointmentCard, type AppointmentRows } from "./appointment-card";
-import { Fill } from "./fill";
 
-/** The default price line under the closing call to action ("From … · Reports is an add-on · See pricing"). */
+/** The default price line under the closing call to action ("From £39 a month · Reports is an add-on · See pricing" –
+ * the amount from the billing plan table, src/lib/clindesk/pricing.ts). */
 export function FromPriceLine() {
   return (
     <p className="cta-price">
-      From <Fill k="pricing.fromPrice" /> · Reports is an add-on ·{" "}
+      From {FROM_PRICE} · Reports is an add-on ·{" "}
       <a className="link" href="/pricing">
         See pricing <span className="arr" aria-hidden="true">→</span>
       </a>
@@ -19,7 +20,7 @@ export function FromPriceLine() {
 /**
  * The closing call to action on the coral band: a title, one line (long and phone versions), the "Questions first?"
  * line, page-specific extra lines (default: the from-price line) and the appointment card with its button.
- * A free trial link goes in `extra` only once a free trial is confirmed (design: TrialLink slot).
+ * The free trial is offered after a demo (Khuram 01/11/2026), so there is no trial link – the button books the demo.
  */
 export function CtaBand({
   title,

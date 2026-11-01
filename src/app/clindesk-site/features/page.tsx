@@ -6,6 +6,7 @@ import { Fill } from "@/components/clindesk/fill";
 import { Drawing } from "@/components/clindesk/drawing";
 import { SitePage } from "@/components/clindesk/site-page";
 import "@/components/clindesk/styles/features.css";
+import { REPORTS_FROM } from "@/lib/clindesk/pricing";
 
 /**
  * ClinDesk website – /features (Features – ClinDesk).
@@ -763,7 +764,7 @@ function ReportsAddOn() {
           </ul>
           <div className="fxq-cta">
             <a className="btn btn-pine" href="/reports">Explore Reports <span className="arr" aria-hidden="true">→</span></a>
-            <p className="small">Add-on · <Fill k="reports.price" /></p>
+            <p className="small">Add-on · {REPORTS_FROM}</p>
           </div>
         </div>
         <div className="fx-scene">
