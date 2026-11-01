@@ -2,13 +2,28 @@
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { PRODUCT_NAME } from "@/lib/account-copy";
+import type { BrandId } from "@/lib/brand";
 import { LogoMark } from "@/components/marketing/logo";
+import { ClinicSystemMark } from "@/components/clindesk/logo";
 
-/** The mark and the product name (default ClinForms; the brand of the request where a page knows it – src/lib/brand.ts). */
-export function BrandMark({ className, compact = false, name = PRODUCT_NAME }: { className?: string; compact?: boolean; name?: string }) {
+/**
+ * The mark and the product name (default ClinForms; the brand of the request where a page knows it – src/lib/brand.ts).
+ * `brand`: whose mark – ClinForms' document mark, or on the clinic brand's hosts the clinic system's crossed tapes.
+ */
+export function BrandMark({
+  className,
+  compact = false,
+  name = PRODUCT_NAME,
+  brand = "clinforms",
+}: {
+  className?: string;
+  compact?: boolean;
+  name?: string;
+  brand?: BrandId;
+}) {
   return (
-    <span className={cn("inline-flex shrink-0 items-center gap-2 font-semibold text-slate-900", className)}>
-      <LogoMark className="h-7 w-7" />
+    <span className={cn("inline-flex shrink-0 items-center gap-2 font-semibold text-slate-900", className)} data-brand={brand}>
+      {brand === "clinic" ? <ClinicSystemMark className="h-7 w-7" /> : <LogoMark className="h-7 w-7" />}
       {compact ? <span className="sr-only sm:not-sr-only">{name}</span> : name}
     </span>
   );
@@ -32,18 +47,23 @@ export function LegalLinks() {
   );
 }
 
-/** `productName`: the brand of the request's host (src/server/brand.ts currentBrand) – default ClinForms. */
+/**
+ * `brand`: the brand of the request's host (src/server/brand.ts currentBrand) – its name and mark; default ClinForms.
+ * (`productName` alone still names the product, with ClinForms' mark.)
+ */
 export function AuthShell({
   title,
   subtitle,
   children,
   footer,
-  productName = PRODUCT_NAME,
+  brand,
+  productName = brand?.productName ?? PRODUCT_NAME,
 }: {
   title: string;
   subtitle?: React.ReactNode;
   children: React.ReactNode;
   footer?: React.ReactNode;
+  brand?: { id: BrandId; productName: string };
   productName?: string;
 }) {
   return (
@@ -51,7 +71,7 @@ export function AuthShell({
       <div className="w-full max-w-md">
         <div className="mb-6 flex justify-center">
           <Link href="/" className="rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-700" aria-label={`${productName} home`}>
-            <BrandMark name={productName} />
+            <BrandMark name={productName} brand={brand?.id} />
           </Link>
         </div>
         <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">

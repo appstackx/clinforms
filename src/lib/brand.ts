@@ -45,6 +45,18 @@ export interface Brand {
   ads: boolean;
   /** Where a signed-in member lands. */
   appHome: string;
+  /**
+   * The contact address the app, the sign-in pages and this brand's emails show ("Questions about your package: …",
+   * trial banners, reset pages). ClinForms' equals COMPANY.contactEmail (src/lib/site.ts, checked by brand.test.ts).
+   */
+  contactEmail: string;
+  /**
+   * The tab icon (and home-screen icon) on this brand's hosts: null = the app's own icon (src/app/icon.svg, set by the
+   * root layout); otherwise the icons every app, sign-in and error page on the brand's hosts names (brandIcons). The
+   * middleware also serves `icon` for /icon.svg and `apple` for /apple-touch-icon.png on the brand's hosts, so a page
+   * that names no icon of its own (the 404 page) shows the brand's too.
+   */
+  icons: { icon: string; apple: string } | null;
 }
 
 export const BRANDS: Readonly<Record<BrandId, Brand>> = {
@@ -58,6 +70,8 @@ export const BRANDS: Readonly<Record<BrandId, Brand>> = {
     analytics: true,
     ads: true,
     appHome: "/app",
+    contactEmail: "hello@clinforms.co.uk",
+    icons: null,
   },
   clinic: {
     id: "clinic",
@@ -69,6 +83,8 @@ export const BRANDS: Readonly<Record<BrandId, Brand>> = {
     analytics: false,
     ads: true,
     appHome: "/app/clinic",
+    contactEmail: "hello@clindesk.co.uk",
+    icons: { icon: "/clindesk/favicon.svg", apple: "/clindesk/apple-touch-icon.png" },
   },
 };
 
@@ -90,6 +106,23 @@ export function brandForHost(host: string | null | undefined): Brand {
     if (brand.hosts.includes(name) || brand.devHosts.includes(name)) return brand;
   }
   return BRANDS.clinforms;
+}
+
+/** The contact address for a brand (default ClinForms'). */
+export function brandContactEmail(brand: Pick<Brand, "contactEmail"> | BrandId | null | undefined): string {
+  if (!brand) return BRANDS.clinforms.contactEmail;
+  return typeof brand === "string" ? BRANDS[brand].contactEmail : brand.contactEmail;
+}
+
+/**
+ * Next's `icons` metadata for a brand's pages: undefined for a brand without its own icons (the page keeps the root
+ * layout's src/app/icon.svg, exactly as before), else the brand's SVG tab icon and 180×180 home-screen icon.
+ */
+export function brandIcons(brand: Pick<Brand, "icons">):
+  | { icon: { url: string; type: string }[]; apple: { url: string; sizes: string }[] }
+  | undefined {
+  if (!brand.icons) return undefined;
+  return { icon: [{ url: brand.icons.icon, type: "image/svg+xml" }], apple: [{ url: brand.icons.apple, sizes: "180x180" }] };
 }
 
 /** The host every request on a brand's alias hosts is sent to (www.clindesk.co.uk → clindesk.co.uk). */

@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { PageHeader, Panel } from "@/components/account/shell";
-import { COMPANY } from "@/lib/site";
 import { PLAN_COPY, SETUP_FEE_LABELS, formatPence, formatPenceExact, ofAllowanceText, reportsText, ukDateLabel } from "@/lib/packages";
 import { requireAppContext } from "@/server/auth/session";
+import { currentBrand } from "@/server/brand";
 import { getDb } from "@/server/db";
 import { clinicPlanUsage, type ClinicPlanUsageManagerView } from "@/server/usage/view";
 
@@ -113,7 +113,7 @@ function ManagerView({ view }: { view: ClinicPlanUsageManagerView }) {
             <p className="mt-2 text-sm text-slate-600">{PLAN_COPY.noPackage}</p>
           )}
           <p className="mt-3 text-xs text-slate-500">
-            {PLAN_COPY.exVat} Questions about your package: {COMPANY.contactEmail}.
+            {PLAN_COPY.exVat} Questions about your package: {currentBrand().contactEmail}.
           </p>
         </Panel>
 

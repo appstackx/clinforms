@@ -119,6 +119,15 @@ export async function loadClinicProfile(db: Kysely<Database>, tenantId: string, 
 }
 
 /**
+ * The profile with the contact address of the host's brand (src/lib/brand.ts contactEmail) in place of ClinForms'
+ * default – the refusal a member reads on the clinic brand's host names that brand's inbox. Only where the profile
+ * carries a contact at all (a clinic with a plan); null stays null.
+ */
+export function withContactEmail(profile: ClinicProfile | null, contactEmail: string): ClinicProfile | null {
+  return profile?.contactEmail ? { ...profile, contactEmail } : profile;
+}
+
+/**
  * clinic_plan → the module's view of it (10/2026): the trial's state (pending / running / ended – an ended trial
  * makes the Report API refuse anything new with 403 TRIAL_ENDED, auth/clinic-access.ts), the clinic's own drafting
  * limits (ai/live-gate.ts), the contact address for the refusal and – migration 0008 – whether it is a DEMO clinic

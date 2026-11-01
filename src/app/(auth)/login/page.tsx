@@ -16,7 +16,7 @@ export default async function LoginPage({ searchParams }: { searchParams: { next
   const session = await getServerSession({ fresh: true });
   if (session && hasTwoFactor(session)) redirect(next);
   return (
-    <AuthShell productName={currentBrand().productName}
+    <AuthShell brand={currentBrand()}
       title="Sign in"
       subtitle="Sign in to your clinic's account."
       footer={

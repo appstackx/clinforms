@@ -3,6 +3,7 @@ import { cookies, headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { reportsSection } from "@/components/pms/reporting/reports-nav";
 import { ClinicShell } from "@/components/pms/shell/clinic-shell";
+import { ClinicSystemMark } from "@/components/clindesk/logo";
 import { clinicRoleLabel, shellNav, sitesSummary } from "@/components/pms/shell/nav-model";
 import { resolveSiteChoice, SITE_COOKIE } from "@/components/pms/shell/site-cookie";
 import { ALL_SITES } from "@/components/pms/ui/site-switcher";
@@ -64,6 +65,7 @@ export default async function ClinicSystemLayout({ children }: { children: React
   return (
     <ClinicShell
       productName={brand.id === "clinforms" ? CLINIC_SYSTEM_NAME : brand.productName}
+      mark={brand.id === "clinic" ? <ClinicSystemMark className="h-7 w-7" /> : undefined}
       homeHref={CLINIC_BASE_PATH}
       clinicName={actor.clinicName}
       user={{ name: actor.name, email: actor.email, roleLabel: clinicRoleLabel(actor.role, roleLabel(actor.role)), sitesSummary: sitesSummary(mySites.length, sites.length) }}

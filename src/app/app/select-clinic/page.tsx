@@ -27,7 +27,7 @@ export default async function SelectClinicPage() {
     .where("invitation.expiresAt", ">", new Date().toISOString())
     .execute();
   return (
-    <AuthShell productName={currentBrand().productName}
+    <AuthShell brand={currentBrand()}
       title={memberships.length ? "Choose a clinic" : "No clinic yet"}
       footer={
         <SignOutForm>

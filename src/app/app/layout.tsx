@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { brandIcons } from "@/lib/brand";
 import { currentBrand } from "@/server/brand";
 
 /**
@@ -7,10 +8,14 @@ import { currentBrand } from "@/server/brand";
  * without a session cookie.
  */
 export function generateMetadata(): Metadata {
-  // The brand of the host (src/lib/brand.ts): "· ClinForms" on ClinForms' hosts, the clinic brand's name on its own.
+  // The brand of the host (src/lib/brand.ts): "· ClinForms" on ClinForms' hosts, the clinic brand's name on its own –
+  // and its tab icon on every signed-in page (ClinForms' hosts: no entry, the root's src/app/icon.svg as before).
+  const brand = currentBrand();
+  const icons = brandIcons(brand);
   return {
-    title: { default: "Clinic", template: `%s · ${currentBrand().productName}` },
+    title: { default: "Clinic", template: `%s · ${brand.productName}` },
     robots: { index: false, follow: false },
+    ...(icons ? { icons } : {}),
   };
 }
 

@@ -36,7 +36,7 @@ import { appendAudit } from "../repos/audit";
 import { deleteMemberProfile } from "../repos/member-profile";
 import { BRANDS, type BrandId } from "../../lib/brand";
 import { betterAuthBaseURL, isPlatformAdmin, linkTarget, requestBrand, trustedOriginsOf, usesSecureCookies, type BaseUrlSetting } from "./config";
-import { clinicLinkBrand, linkBrandHint, userLinkBrand } from "./brand-links";
+import { clinicLinkBrand, linkBrandHint, resetLinkBrand } from "./brand-links";
 import { INVITATION_DAYS, invitationExpiry } from "./invitation-expiry";
 import { inviteLink } from "./invite-token";
 import { AuthDateParsePlugin } from "./pg-dates";
@@ -230,8 +230,10 @@ export function createAuth(input: CreateAuthInput) {
       resetPasswordTokenExpiresIn: RESET_TOKEN_TTL_SECONDS,
       revokeSessionsOnPasswordReset: true,
       async sendResetPassword({ user, token }, request) {
-        // The brand host of the person's clinic(s) – brand-links.ts – never a host from the request that is not ours.
-        const { origin, brand } = linkTarget(input.baseUrl, linkBrandHint() ?? (await userLinkBrand(db, user.id, await hostBrand(request))));
+        // 01/11/2026: the host the person asked on wins when it is one of the app's own origins (a reset asked for on
+        // the clinic brand's host comes back there and speaks for it); otherwise the brand of their clinic(s) –
+        // brand-links.ts resetLinkBrand. Never a host from the request that is not ours.
+        const { origin, brand } = linkTarget(input.baseUrl, await resetLinkBrand(db, user.id, await hostBrand(request), linkBrandHint()));
         const link = `${origin}/reset-password?token=${encodeURIComponent(token)}`;
         const expiresAt = new Date(Date.now() + RESET_TOKEN_TTL_SECONDS * 1000).toISOString();
         await deliverEmail(passwordResetEmail({ to: { email: user.email, name: user.name }, link, expiresAt, brand }));

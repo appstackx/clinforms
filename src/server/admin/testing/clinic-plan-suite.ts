@@ -14,7 +14,8 @@ import type { Database } from "../../db/schema";
 import { testCipher } from "../../db/testing/databases";
 import { assertTenantMayCreate } from "../../../modules/medreport/auth/clinic-access";
 import { PLATFORM_USER_ID } from "../../auth/create-auth";
-import { clinicPlanForModule, loadClinicProfile } from "../../auth/medreport-actor";
+import { clinicPlanForModule, loadClinicProfile, withContactEmail } from "../../auth/medreport-actor";
+import { BRANDS } from "../../../lib/brand";
 import { offboardClinic } from "../../auth/platform";
 import { appendAudit, listAudit } from "../../repos/audit";
 import {
@@ -226,6 +227,11 @@ export function defineClinicPlanSuite(label: string, factory: () => Promise<Clin
       assert.equal(owned?.trial, undefined, "converted: no trial");
       assert.deepEqual(owned?.draftingLimits, { perMinute: 30, perDay: 1500 });
       assert.deepEqual(clinicPlanForModule(null), {});
+      // 01/11/2026: the Report API's refusal names the host brand's contact (src/app/api/_medreport-glue.ts).
+      assert.equal(ended?.contactEmail, "hello@clinforms.co.uk");
+      assert.equal(withContactEmail(ended, BRANDS.clinic.contactEmail)?.contactEmail, "hello@clindesk.co.uk");
+      assert.equal(withContactEmail(null, BRANDS.clinic.contactEmail), null);
+      assert.equal(withContactEmail({ ...ended!, contactEmail: undefined }, BRANDS.clinic.contactEmail)?.contactEmail, undefined);
 
       const overview = await listClinicsOverview(t.db, now());
       const fresh = overview.find((c) => c.tenantId === NEW);

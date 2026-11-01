@@ -4,13 +4,13 @@
  * Routing: src/middleware.ts serves these paths from src/app/clindesk-site on the clinic brand's hosts only.
  */
 import type { Metadata } from "next";
-import { BRANDS, CLINIC_SYSTEM_NAME } from "@/lib/brand";
+import { BRANDS, CLINIC_SYSTEM_NAME, brandIcons } from "@/lib/brand";
 import { COMPANY } from "@/lib/site";
 
 export const CLINDESK_SITE_URL = BRANDS.clinic.siteUrl;
 
 /** ClinDesk's own contact for sales, support, privacy and security questions (one shared inbox with ClinForms). */
-export const CONTACT_EMAIL = "hello@clindesk.co.uk";
+export const CONTACT_EMAIL = BRANDS.clinic.contactEmail;
 
 /** "Last updated" of the accessibility statement (ISO). Change it whenever its text changes. */
 export const ACCESSIBILITY_LAST_UPDATED = "2026-10-30";
@@ -66,7 +66,7 @@ export function clindeskMetadata({ path, title, description, index = true }: { p
     authors: [{ name: COMPANY.legalName, url: COMPANY.website }],
     alternates: { canonical: path },
     robots: index ? { index: true, follow: true } : { index: false, follow: true },
-    icons: { icon: [{ url: "/clindesk/favicon.svg", type: "image/svg+xml" }], apple: [{ url: "/clindesk/apple-touch-icon.png", sizes: "180x180" }] },
+    icons: brandIcons(BRANDS.clinic),
     openGraph: {
       title,
       description,

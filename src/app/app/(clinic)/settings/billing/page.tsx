@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Notice, PageHeader, Panel } from "@/components/account/shell";
 import { CLINFORMS_NAME, CLINIC_SYSTEM_NAME } from "@/lib/brand";
-import { COMPANY } from "@/lib/site";
 import { requireAppContext } from "@/server/auth/session";
 import { currentBrand } from "@/server/brand";
 import { billingViewFor, canManageBilling } from "@/server/billing/views";
@@ -115,7 +114,7 @@ export default async function PlanBillingPage({ searchParams }: { searchParams: 
             <li>Pay by card (including phone wallets) or Direct Debit</li>
           </ul>
           <p className="mt-3 text-xs text-slate-500">
-            Questions about billing: {COMPANY.contactEmail}. See also <Link href="/app/settings/plan" className="underline">Plan &amp; usage</Link>.
+            Questions about billing: {currentBrand().contactEmail}. See also <Link href="/app/settings/plan" className="underline">Plan &amp; usage</Link>.
           </p>
         </Panel>
       </div>

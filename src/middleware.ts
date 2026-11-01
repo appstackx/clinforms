@@ -16,7 +16,7 @@
  * hosts (ClinDesk's "Referrer reports" page).
  */
 import { NextResponse, type NextRequest } from "next/server";
-import { brandForHost } from "@/lib/brand";
+import { brandForHost, type Brand } from "@/lib/brand";
 import { hasSessionCookie } from "@/lib/session-cookie";
 
 /** ClinForms' public website pages (src/app/(marketing)). */
@@ -44,6 +44,21 @@ export const CLINDESK_SITE_PATHS = [
 /** ClinForms pages without a ClinDesk twin: sent to the ClinDesk page that does the same job. */
 export const CLINDESK_REDIRECTS: Readonly<Record<string, string>> = { "/request-access": "/demo" };
 
+/**
+ * The app's own icon paths a browser asks for on its own (the root layout's /icon.svg, iOS's /apple-touch-icon.png):
+ * on a brand host with icons of its own (src/lib/brand.ts icons) they answer with that brand's, so even a page that
+ * names no icon (the 404 page, an error page) shows the right tab icon there. Never on ClinForms' hosts.
+ */
+export const BRAND_ICON_PATHS = ["/icon.svg", "/apple-touch-icon.png"] as const;
+
+/** The brand's file for one of BRAND_ICON_PATHS, or null (the brand keeps the app's own). */
+export function brandIconFile(brand: Brand, pathname: string): string | null {
+  if (!brand.icons) return null;
+  if (pathname === "/icon.svg") return brand.icons.icon;
+  if (pathname === "/apple-touch-icon.png") return brand.icons.apple;
+  return null;
+}
+
 /** The internal route folder of ClinDesk's website (never served under this name). */
 export const CLINDESK_INTERNAL_PREFIX = "/clindesk-site";
 
@@ -66,6 +81,13 @@ export function middleware(req: NextRequest): NextResponse {
     return res;
   }
   const brand = brandForHost(req.headers.get("host") ?? req.nextUrl.host);
+  const icon = brandIconFile(brand, pathname);
+  if (icon) {
+    const url = req.nextUrl.clone();
+    url.pathname = icon;
+    url.search = "";
+    return NextResponse.rewrite(url);
+  }
   if (brand.publicSite === "clindesk") {
     if ((CLINDESK_SITE_PATHS as readonly string[]).includes(pathname)) {
       const url = req.nextUrl.clone();
@@ -133,5 +155,8 @@ export const config = {
     { source: "/robots.txt", has: [{ type: "host", value: "clindesk\\.co\\.uk|www\\.clindesk\\.co\\.uk|clinic\\.localhost" }] },
     { source: "/sitemap.xml", has: [{ type: "host", value: "clindesk\\.co\\.uk|www\\.clindesk\\.co\\.uk|clinic\\.localhost" }] },
     { source: "/request-access", has: [{ type: "host", value: "clindesk\\.co\\.uk|www\\.clindesk\\.co\\.uk|clinic\\.localhost" }] },
+    // BRAND_ICON_PATHS: the clinic brand's tab and home-screen icon on its hosts (ClinForms' hosts: never matched).
+    { source: "/icon.svg", has: [{ type: "host", value: "clindesk\\.co\\.uk|www\\.clindesk\\.co\\.uk|clinic\\.localhost" }] },
+    { source: "/apple-touch-icon.png", has: [{ type: "host", value: "clindesk\\.co\\.uk|www\\.clindesk\\.co\\.uk|clinic\\.localhost" }] },
   ],
 };

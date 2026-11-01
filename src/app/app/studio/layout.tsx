@@ -12,6 +12,7 @@ import { currentPath, requestHeaders } from "@/server/auth/session";
 import { resolveStudioAccess } from "@/server/auth/studio-access";
 import { getDb } from "@/server/db";
 import { clinicPackages } from "@/server/pms/entitlements";
+import { currentBrand } from "@/server/brand";
 import { TenantHost } from "./tenant-host";
 
 export const dynamic = "force-dynamic";
@@ -40,14 +41,17 @@ export default async function TenantStudioLayout({ children }: { children: React
   const [packages, billing] = await Promise.all([clinicPackages(context.tenantId), billingBannerFor(getDb(), context.tenantId, context.member.role === "owner" || context.member.role === "admin")]);
   if (!packages.reports) notFound();
   const clinicSystem = packages.clinic;
+  // The host brand's contact (src/lib/brand.ts): the trial banner and the Studio's "contact us" lines.
+  const contactEmail = currentBrand().contactEmail;
   return (
     <>
       {clinicSystem ? <ProductSwitchBar clinicSystemName={CLINIC_SYSTEM_NAME} clinicHref="/app/clinic" /> : null}
       {/* A demo clinic (made-up data only; clinic_plan.demo_clinic read on the server): the banner, and the header pill. */}
       <DemoClinicBanner on={context.demoClinic} />
-      <TrialBannerBar access={context.trial} />
+      <TrialBannerBar access={context.trial} contactEmail={contactEmail} />
       <BillingBannerBar banner={billing} />
       <TenantHost
+        supportEmail={contactEmail}
         clinic={{
           tenantId: context.tenantId,
           name: context.clinicName,

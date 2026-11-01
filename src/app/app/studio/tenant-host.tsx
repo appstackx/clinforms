@@ -24,7 +24,11 @@ import { signOutAndReload } from "../session-forms";
 export const TENANT_STUDIO_BASE_PATH = "/app/studio";
 
 /** The hooks a clinic's Studio runs with (exported for the render tests). */
-export function tenantHooks(clinic: StudioClinic, member: StudioMember, options: { onSignOut?: () => Promise<void> | void } = {}): HostHooks {
+export function tenantHooks(
+  clinic: StudioClinic,
+  member: StudioMember,
+  options: { onSignOut?: () => Promise<void> | void; supportEmail?: string } = {},
+): HostHooks {
   return {
     basePath: TENANT_STUDIO_BASE_PATH,
     mode: "tenant",
@@ -34,13 +38,14 @@ export function tenantHooks(clinic: StudioClinic, member: StudioMember, options:
     accountHref: "/app",
     clinicRecordUrl: ({ connectorId, patientId, episodeId }) =>
       connectorId === "native" && episodeId ? `/app/clinic/patients/${encodeURIComponent(patientId)}/cases/${encodeURIComponent(episodeId)}` : null,
-    supportEmail: COMPANY.contactEmail,
+    // The host brand's contact (set by the layout from src/lib/brand.ts); default ClinForms'.
+    supportEmail: options.supportEmail ?? COMPANY.contactEmail,
     track: (event, props) => track(event, { ...props, area: "app" }),
     ...(options.onSignOut ? { onSignOut: options.onSignOut } : {}),
   };
 }
 
-export function TenantHost({ clinic, member, children }: { clinic: StudioClinic; member: StudioMember; children: ReactNode }) {
+export function TenantHost({ clinic, member, supportEmail, children }: { clinic: StudioClinic; member: StudioMember; supportEmail?: string; children: ReactNode }) {
   const { tenantId, name, draftingEnabled, clinicians, signers, demoClinic } = clinic;
   const { name: memberName, userId, role, email, roleLabel, hcpc, jobTitle, canSign } = member;
   const hooks = useMemo(
@@ -48,9 +53,9 @@ export function TenantHost({ clinic, member, children }: { clinic: StudioClinic;
       tenantHooks(
         { tenantId, name, draftingEnabled, ...(clinicians ? { clinicians } : {}), ...(signers ? { signers } : {}), ...(demoClinic ? { demoClinic: true } : {}) },
         { name: memberName, userId, role, email, roleLabel, hcpc, jobTitle, canSign },
-        { onSignOut: () => signOutAndReload() },
+        { onSignOut: () => signOutAndReload(), ...(supportEmail ? { supportEmail } : {}) },
       ),
-    [tenantId, name, draftingEnabled, clinicians, signers, demoClinic, memberName, userId, role, email, roleLabel, hcpc, jobTitle, canSign],
+    [tenantId, name, draftingEnabled, clinicians, signers, demoClinic, memberName, userId, role, email, roleLabel, hcpc, jobTitle, canSign, supportEmail],
   );
   return <HostHooksProvider hooks={hooks}>{children}</HostHooksProvider>;
 }
