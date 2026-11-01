@@ -1,6 +1,6 @@
 /**
  * Subscription notices by email to the clinic's owner and admins (the account email service, the clinic's brand):
- * a failed payment (with the grace date), read-only, payment received, cancelled. No payment details. Server only.
+ * a failed payment (with the grace date), on hold (settings and new reports paused), payment received, cancelled. No payment details. Server only.
  */
 import "server-only";
 import type { Kysely } from "kysely";

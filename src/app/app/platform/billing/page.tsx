@@ -15,7 +15,7 @@ import { OverrideForm, ResyncForm } from "./forms";
 
 /**
  * /app/platform/billing – ClinForms staff only (everyone else gets the ordinary 404). Every open clinic's
- * subscription: plan, state, next payment, grace / read-only, practitioners against the band, test or live, and the
+ * subscription: plan, state, next payment, grace / on hold, practitioners against the band, test or live, and the
  * manual override (platform overrides win – src/server/admin/billing.ts). "Re-read" applies the payment service's
  * current copy, as a webhook event would.
  */
@@ -63,7 +63,7 @@ export default async function PlatformBillingPage() {
       <main className="mx-auto max-w-[100rem] px-4 py-8">
         <PageHeader
           title="Subscriptions"
-          description="Each clinic's plan at the payment account (ClinDesk band and Reports add-on, or ClinForms on its own). A clinic you manage by hand (override) keeps the packages you set; its subscription is only recorded. Prices ex VAT."
+          description="Each clinic's plan at the payment account (ClinDesk band and Reports add-on, or ClinForms on its own). A clinic you manage by hand (override) keeps the packages you set; its subscription is only recorded. No VAT is charged (not VAT registered)."
         />
         {!list.available ? (
           <div className="mb-6">
@@ -102,7 +102,7 @@ export default async function PlatformBillingPage() {
                       </td>
                       <td className={TD}>
                         {s ? STATE_LABELS[s.state] : "No plan"}
-                        {s?.state === "past_due" ? <span className="block text-xs text-amber-800">{held ? "READ-ONLY" : `grace until ${ukDate(s.graceUntil)}`}</span> : null}
+                        {s?.state === "past_due" ? <span className="block text-xs text-amber-800">{held ? "ON HOLD" : `grace until ${ukDate(s.graceUntil)}`}</span> : null}
                         {s ? <span className="block text-xs text-slate-500">{s.status}</span> : null}
                       </td>
                       <td className={TD}>{s ? (s.cancelAtPeriodEnd ? `ends ${ukDate(s.currentPeriodEnd)}` : ukDate(s.currentPeriodEnd) || "–") : "–"}</td>

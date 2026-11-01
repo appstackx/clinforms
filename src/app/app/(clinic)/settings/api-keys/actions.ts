@@ -1,4 +1,5 @@
 "use server";
+import { holdRefusal } from "@/server/billing/access";
 /** Settings → API keys (owners and administrators): create (shown once) and revoke. */
 import { revalidatePath } from "next/cache";
 import { ACCOUNT_ERRORS } from "@/lib/account-copy";
@@ -12,6 +13,9 @@ export type CreateKeyResult = ActionResult<{ key: string; name: string }>;
 export async function createApiKey(_prev: CreateKeyResult | null, form: FormData): Promise<CreateKeyResult> {
   const ctx = await actionContext({ manage: true });
   if ("error" in ctx) return { ok: false, error: ACCOUNT_ERRORS.forbidden };
+  // Paused while a plan payment is overdue past its grace period (never clinical work – src/server/billing/access.ts).
+  const held = await holdRefusal(getDb(), ctx.membership.tenantId);
+  if (held) return { ok: false, error: held };
   const name = String(form.get("name") ?? "").trim();
   try {
     const created = await createPartnerKey({ db: getDb() }, ctx.membership.tenantId, { name, createdBy: ctx.session.user.id });

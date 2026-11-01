@@ -58,8 +58,8 @@ Not in this file, on purpose:
 
 | Key | Placeholder (current value) | What it is and where it shows |
 |---|---|---|
-| `pricing.fromPrice` | [£X a month, ex VAT – price and unit to confirm] | Lowest price line in the closing call to action ("From … · Reports is an add-on"), e.g. "£35 per practitioner a month, ex VAT". Home, Features, Reports and Switching pages. |
-| `pricing.vat` | [exclude / include] | Whether prices include VAT: "exclude" or "include" (reads "Prices … VAT"). Pricing page, top and the VAT question. Also the terms ("fees … VAT"). |
+| `pricing.fromPrice` | [£X a month – price and unit to confirm] | Lowest price line in the closing call to action ("From … · Reports is an add-on"), e.g. "£39 a month" (no VAT is charged). Home, Features, Reports and Switching pages. |
+| `pricing.vat` | No VAT is charged | The VAT sentence (01/11/2026: AppstackX is not VAT registered). Pricing page, top and the VAT question; the terms (fees). Change it if AppstackX registers for VAT (BILLING.md §8). |
 | `pricing.trialSummary` | [length and terms] | Free trial in a few words after "Free trial:", e.g. "14 days, no card" – or "none". Pricing page, top. |
 | `pricing.essentialsPrice` | [£X] | Price of the Essentials plan per practitioner a month, e.g. "£35". Pricing page, Essentials card. |
 | `pricing.completePrice` | [£X] | Price of the Complete plan per practitioner a month, e.g. "£49". Pricing page, Complete card. |

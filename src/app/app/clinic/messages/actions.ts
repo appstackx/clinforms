@@ -5,6 +5,8 @@
  * member's sites again, validate the input and write the change with its audit row. Answers: { ok: true, … } or
  * { ok: false, error } in plain words – never an internal error. Nothing leaves the system (outbox / test only).
  */
+import { holdRefusal } from "@/server/billing/access";
+import { getDb } from "@/server/db";
 import { revalidatePath } from "next/cache";
 import type { ReplyThreadView, SendFormView } from "@/modules/pms/comms/view";
 import { CLINIC_BASE_PATH } from "@/modules/pms/core/modules";
@@ -57,6 +59,11 @@ export async function loadSendFormAction(patientId: string | null): Promise<Comm
 export async function sendMessageAction(input: { patientId: string; channel: "sms" | "email"; purpose?: "service" | "marketing"; templateId?: string | null; subject?: string | null; body: string }): Promise<CommsActionResult<{ sent: SentAnswer }>> {
   const actor = await clinicActionActor({ permission: "messages.send" });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
+  // Marketing waits while a plan payment is overdue; messages about care never do (src/server/billing/access.ts).
+  if (input?.purpose === "marketing") {
+    const held = await holdRefusal(getDb(), actor.tenantId);
+    if (held) return { ok: false, error: held };
+  }
   const r = await sendMessageFor(actor, input);
   if (!r.ok) return { ok: false, error: r.error, fieldErrors: r.fieldErrors };
   refresh(input.patientId);

@@ -1,14 +1,16 @@
 /**
  * Subscription plans of ClinDesk and ClinForms (31/10/2026) – browser-safe and pure. One payment account for both
  * products (CLAUDE.md, the deliberate exception): ClinForms is sold as a Reports add-on on the ClinDesk subscription,
- * or on its own. Prices ex VAT, GBP; the payment account's prices are found by their LOOKUP KEYS and must match these
+ * or on its own. Prices in GBP – no VAT is charged (AppstackX is not VAT registered, 01/11/2026); the payment account's prices are found by their LOOKUP KEYS and must match these
  * amounts (checked before every checkout – src/server/billing/payments.ts).
  *
  *   ClinDesk, by practitioner band (monthly; yearly = 10 × the monthly price, "two months free"):
  *     Solo 1 £39 · Small 2–5 £89 · Practice 6–10 £169 · Group 11–25 £299 · Multi-site 26–60 £499
  *       lookup keys clindesk_<band>_monthly / clindesk_<band>_yearly
- *   Reports add-on (monthly only – the payment page cannot mix billing intervals in one subscription):
- *     25 £79 · 100 £159 · 250 £279 · 500 £439 reports a month          clindesk_reports_<n>_monthly
+ *   Reports add-on, billed with the plan's own interval (the payment page cannot mix intervals in one subscription;
+ *   Khuram 01/11/2026: yearly add-on prices = 10 × monthly):
+ *     25 £79 · 100 £159 · 250 £279 · 500 £439 a month       clindesk_reports_<n>_monthly
+ *     25 £790 · 100 £1,590 · 250 £2,790 · 500 £4,390 a year  clindesk_reports_<n>_yearly   (the allowance stays a MONTH's)
  *   ClinForms on its own (monthly):
  *     Starter 25 £99 · Practice 100 £199 · Group 250 £349 · Group Plus 500 £549   clinforms_<tier>_monthly
  *   Extra report above the allowance £1.50 (extra_report, one-off – added to the next invoice).
@@ -60,6 +62,10 @@ export const clinDeskBand = (key: unknown): ClinDeskBand | null => CLINDESK_BAND
 export const reportsAddon = (key: unknown) => REPORTS_ADDONS.find((a) => a.key === key) ?? null;
 export const clinFormsTier = (key: unknown) => CLINFORMS_TIERS.find((t) => t.key === key) ?? null;
 
+export function addonPence(addon: { monthlyPence: number }, interval: BillingInterval): number {
+  return interval === "year" ? addon.monthlyPence * YEARLY_MONTHS : addon.monthlyPence;
+}
+
 export function bandPence(band: ClinDeskBand, interval: BillingInterval): number {
   return interval === "year" ? band.monthlyPence * YEARLY_MONTHS : band.monthlyPence;
 }
@@ -79,7 +85,6 @@ export function choiceProblem(choice: PlanChoice): string | null {
     if (!clinDeskBand(choice.band)) return "Choose a plan.";
     if (choice.interval !== "month" && choice.interval !== "year") return "Choose monthly or yearly billing.";
     if (choice.reports !== null && !reportsAddon(choice.reports)) return "Choose a Reports add-on, or none.";
-    if (choice.reports !== null && choice.interval === "year") return "The Reports add-on is billed monthly. Choose monthly billing to add it.";
     return null;
   }
   return clinFormsTier(choice.tier) ? null : "Choose a plan.";
@@ -98,7 +103,8 @@ export function choiceItems(choice: PlanChoice): PlanItem[] {
     { lookupKey: `clindesk_${band.key}_${choice.interval === "year" ? "yearly" : "monthly"}`, pence: bandPence(band, choice.interval), interval: choice.interval, kind: "clindesk_plan", reportsIncluded: null },
   ];
   const addon = choice.reports ? reportsAddon(choice.reports) : null;
-  if (addon) items.push({ lookupKey: `clindesk_reports_${addon.key}_monthly`, pence: addon.monthlyPence, interval: "month", kind: "reports_addon", reportsIncluded: addon.reports });
+  // The add-on follows the plan's interval (one subscription cannot mix them).
+  if (addon) items.push({ lookupKey: `clindesk_reports_${addon.key}_${choice.interval === "year" ? "yearly" : "monthly"}`, pence: addonPence(addon, choice.interval), interval: choice.interval, kind: "reports_addon", reportsIncluded: addon.reports });
   return items;
 }
 
@@ -112,10 +118,11 @@ export function catalogueItem(lookupKey: string | null | undefined): PlanItem | 
     const interval: BillingInterval = m[2] === "yearly" ? "year" : "month";
     return { lookupKey: k, pence: bandPence(band, interval), interval, kind: "clindesk_plan", reportsIncluded: null };
   }
-  m = /^clindesk_reports_(\d+)_monthly$/.exec(k);
+  m = /^clindesk_reports_(\d+)_(monthly|yearly)$/.exec(k);
   if (m) {
     const a = reportsAddon(m[1]);
-    return a ? { lookupKey: k, pence: a.monthlyPence, interval: "month", kind: "reports_addon", reportsIncluded: a.reports } : null;
+    const interval: BillingInterval = m[2] === "yearly" ? "year" : "month";
+    return a ? { lookupKey: k, pence: addonPence(a, interval), interval, kind: "reports_addon", reportsIncluded: a.reports } : null;
   }
   m = /^clinforms_([a-z_]+)_monthly$/.exec(k);
   if (m) {
@@ -138,7 +145,8 @@ export function planOfItems(lookupKeys: readonly string[]): { ok: true; choice: 
   }
   if (plans.length === 1 && standalone.length === 0 && addons.length <= 1) {
     const m = /^clindesk_([a-z]+)_(monthly|yearly)$/.exec(plans[0].lookupKey)!;
-    const reports = addons[0] ? (/^clindesk_reports_(\d+)_monthly$/.exec(addons[0].lookupKey)![1] as ReportsAddonKey) : null;
+    if (addons[0] && addons[0].interval !== plans[0].interval) return { ok: false, why: "mixed_intervals" };
+    const reports = addons[0] ? (/^clindesk_reports_(\d+)_(?:monthly|yearly)$/.exec(addons[0].lookupKey)![1] as ReportsAddonKey) : null;
     return { ok: true, choice: { product: "clindesk", band: m[1] as ClinDeskBandKey, interval: m[2] === "yearly" ? "year" : "month", reports }, items: [plans[0], ...addons] };
   }
   return { ok: false, why: "not_one_plan" };
@@ -189,7 +197,7 @@ export function seatWarning(choice: PlanChoice | null, activePractitioners: numb
  *   pending_payment chosen, the first payment not cleared yet (a Direct Debit takes a few working days) – nothing
  *                   switched on by it yet
  *   active          paid (or a trial at the payment service)
- *   past_due        a payment failed: everything works during the grace period (7 days), then read-only
+ *   past_due        a payment failed: everything works during the grace period (7 days), then on hold (admin settings, invites, imports, marketing and new reports paused – never clinical work)
  *   canceled        ended (access ends at the end of the paid period)
  *   expired         the first payment never went through
  */
@@ -236,7 +244,7 @@ export function ukDate(iso: string | null | undefined): string {
   return new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", day: "2-digit", month: "2-digit", year: "numeric" }).format(d);
 }
 
-/** "£169", "£1,690", "£1.50" (ex VAT is said next to it). */
+/** "£169", "£1,690", "£1.50". */
 export function pounds(pence: number): string {
   const whole = pence % 100 === 0;
   return `£${(pence / 100).toLocaleString("en-GB", { minimumFractionDigits: whole ? 0 : 2, maximumFractionDigits: 2 })}`;

@@ -257,7 +257,7 @@ export interface BillingNoticeEmailInput {
   billingUrl: string;
 }
 
-/** To a clinic's owner and admins: the subscription's payment failed, the account is read-only, or it ends. */
+/** To a clinic's owner and admins: the payment failed, the account is on hold (settings and new reports paused), or the plan ends. */
 export function billingNoticeEmail(input: BillingNoticeEmailInput): EmailMessage {
   const name = productNameOf(input.brand);
   const n = input.notice;
@@ -265,7 +265,7 @@ export function billingNoticeEmail(input: BillingNoticeEmailInput): EmailMessage
     n.kind === "payment_failed"
       ? `Payment for your plan did not go through – ${input.clinicName}`
       : n.kind === "read_only"
-        ? `Your account is now read-only – ${input.clinicName}`
+        ? `Some features are paused – ${input.clinicName}`
         : n.kind === "payment_received"
           ? `Payment received – ${input.clinicName}`
           : `Your plan has been cancelled – ${input.clinicName}`;
@@ -273,12 +273,12 @@ export function billingNoticeEmail(input: BillingNoticeEmailInput): EmailMessage
     n.kind === "payment_failed"
       ? [
           `The latest payment for ${input.clinicName}'s ${name} plan did not go through.`,
-          `Everything keeps working until ${n.graceUntil}. Please update the payment details before then, or the account becomes read-only: your records stay safe and can still be opened, but nothing new can be added until the payment is made.`,
+          `Please update the payment details by ${n.graceUntil}. After that date, settings changes, new staff invitations, imports, marketing messages and new reports are paused until the payment is made. Clinical work – notes, the diary, patient records, letters and messages to patients – always carries on.`,
         ]
       : n.kind === "read_only"
         ? [
-            `The payment for ${input.clinicName}'s ${name} plan is still outstanding, so the account is now read-only.`,
-            "Your records are safe and can still be opened and downloaded. Update the payment details to carry on as normal.",
+            `The payment for ${input.clinicName}'s ${name} plan is still outstanding, so settings changes, new staff invitations, imports, marketing messages and new reports are now paused.`,
+            "Clinical work – notes, the diary, patient records, letters and messages to patients – carries on as normal. Update the payment details to switch everything back on.",
           ]
         : n.kind === "payment_received"
           ? [`Thank you – the payment for ${input.clinicName}'s ${name} plan has been received and everything is working as normal.`]

@@ -88,19 +88,18 @@ export function ChoosePlanForm({ view }: { view: BillingView }) {
         <select
           id="plan-reports"
           name="reports"
-          disabled={interval === "year"}
           defaultValue={current?.product === "clindesk" && current.reports ? current.reports : "none"}
-          className="h-10 w-full max-w-md rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 disabled:bg-slate-100"
+          className="h-10 w-full max-w-md rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900"
         >
           <option value="none">No Reports add-on</option>
           {view.addons.map((a) => (
             <option key={a.key} value={a.key}>
-              Up to {a.reports} reports a month · {a.monthly} a month
+              Up to {a.reports} reports a month · {interval === "year" ? `${a.yearly} a year` : `${a.monthly} a month`}
             </option>
           ))}
         </select>
         <p className="mt-1 text-xs text-slate-600">
-          {interval === "year" ? "The Reports add-on is billed monthly. Choose monthly billing to add it." : `Extra reports above the allowance are ${view.extraReport} each, added to the next invoice.`}
+          {`The add-on is billed ${interval === "year" ? "yearly" : "monthly"} with your plan; the allowance is per month. Extra reports above it are ${view.extraReport} each, billed after each month.`}
         </p>
       </div>
       <SubmitButton pendingText="Please wait…">{button}</SubmitButton>

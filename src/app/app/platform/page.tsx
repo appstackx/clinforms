@@ -118,7 +118,7 @@ export default async function PlatformPage() {
 
         <Panel
           title="Packages"
-          description="A clinic's package: price, reports included a month and the price of each extra report (all ex VAT). The clinic sees it on its Plan & usage page. A report counts when its answers are first drafted, or when it is approved if nothing needed drafting. Every change is recorded here and in the clinic's own activity."
+          description="A clinic's package: price, reports included a month and the price of each extra report (no VAT is charged). The clinic sees it on its Plan & usage page. A report counts when its answers are first drafted, or when it is approved if nothing needed drafting. Every change is recorded here and in the clinic's own activity."
           className="mb-6"
         >
           <PackageForm clinics={openClinics} today={ukDateOf(new Date())} />

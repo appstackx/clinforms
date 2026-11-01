@@ -12,7 +12,7 @@
  *   pending_payment                 nothing is switched on (a Direct Debit pays days later – Bacs is activated only
  *                                   by its cleared payment: checkout.session.async_payment_succeeded / invoice.paid)
  *   past_due                        everything keeps working for GRACE_DAYS (the owner is emailed), then the account
- *                                   is read-only (./access.ts) until the payment is made
+ *                                   is on hold (./access.ts: admin settings, invites, imports, marketing and new reports paused – never clinical work) until paid
  *   cancel at period end            the packages get the period's end as their end (they switch off by themselves)
  *   canceled                        the packages the subscription switched on are cancelled (no data deleted)
  *

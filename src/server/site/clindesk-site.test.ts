@@ -256,7 +256,8 @@ describe("clindesk.co.uk legal pages", () => {
     assert.match(text, /the Reports add-on \(powered by ClinForms\) if the order includes it/);
     assert.match(text, /governed by the law of England and Wales/);
     assert.ok(!/public demo/.test(text), "ClinDesk has no public demo");
-    for (const k of ["legal.termsEffectiveFrom", "legal.medicalDeviceStatus", "legal.liabilityCap", "legal.paymentProviderTerms", "pricing.dataExport", "pricing.vat", "support.channels", "support.hours"]) {
+    assert.match(text, /No VAT is charged\./, "not VAT registered (01/11/2026)");
+    for (const k of ["legal.termsEffectiveFrom", "legal.medicalDeviceStatus", "legal.liabilityCap", "legal.paymentProviderTerms", "pricing.dataExport", "support.channels", "support.hours"]) {
       assert.ok(html.includes(`data-to-confirm="${k}"`), k);
     }
   });

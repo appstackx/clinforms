@@ -157,6 +157,8 @@ export interface SubscriptionPayments {
   getInvoice(id: string): Promise<InvoiceInfo>;
   /** Extra reports as one invoice item (on `invoiceId` while it is a draft, else the next invoice). */
   addExtraReports(input: { customerRef: string; subscriptionId: string; invoiceId: string | null; quantity: number; period: string; tenantId: string; idempotencyKey: string }): Promise<{ itemId: string; invoiceId: string | null }>;
+  /** A yearly plan's extra reports: an invoice now for the subscription's pending items (charged automatically). */
+  invoicePendingItems(input: { customerRef: string; subscriptionId: string; idempotencyKey: string }): Promise<string>;
 }
 
 const SUB_ID = /^sub_[A-Za-z0-9_]{6,200}$/;
@@ -317,6 +319,16 @@ export function createSubscriptionPayments(config: CardPaymentsConfig, fetchImpl
       const item = await ok("POST", "/invoiceitems", body, input.idempotencyKey);
       if (typeof item.id !== "string") throw new CardPaymentsError("The invoice item was not made.", "no_item");
       return { itemId: item.id, invoiceId: idOf(item.invoice) };
+    },
+    async invoicePendingItems(input) {
+      const inv = await ok(
+        "POST",
+        "/invoices",
+        { customer: input.customerRef, subscription: input.subscriptionId, pending_invoice_items_behavior: "include", auto_advance: true, collection_method: "charge_automatically", description: "Extra reports" },
+        input.idempotencyKey,
+      );
+      if (typeof inv.id !== "string") throw new CardPaymentsError("The invoice was not made.", "no_invoice");
+      return inv.id;
     },
   };
 }

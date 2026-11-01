@@ -5,8 +5,8 @@
  *
  *   S  the owner joins on clinic.localhost (the ClinDesk host)
  *   P  Plan and billing: no plan yet, ClinDesk bands with prices, the Reports add-on, monthly/yearly; axe; 375 px; the
- *      payment service is never named on screen; a yearly plan cannot take the add-on
- *   C  card: Practice monthly + Reports 100 → TEST checkout with 4242 → the done page "your plan is active"; the
+ *      payment service is never named on screen; no VAT wording; the add-on follows the plan's interval (yearly £1,590)
+ *   C  card: Practice YEARLY + Reports 100 yearly → TEST checkout with 4242 → the done page "your plan is active"; the
  *      subscription, the clinic system and Reports on, the allowance 100; the forwarded webhooks arrive (200) and
  *      change nothing more
  *   M  "Manage billing" opens the hosted billing page; plan change to Small without the add-on → Reports paused
@@ -307,9 +307,12 @@ async function submit(page) {
       for (const s of ["Solo · £39 a month", "Small · £89 a month", "Practice · £169 a month", "Group · £299 a month", "Multi-site · £499 a month", "6–10 practitioners"]) assert(form.includes(s), `plan form: ${s}`);
       const body = await owner.locator("main").innerText();
       assert(!/stripe/i.test(body), "the payment service is never named on screen");
+      assert(!/ex VAT|plus VAT|exclude VAT/i.test(body), "no VAT is charged – no ex-VAT wording");
+      assert.match(body, /No VAT is charged/);
       await owner.locator("input[name=interval][value=year]").check();
       assert.match(await owner.locator("[data-testid=plan-form]").innerText(), /Practice · £1,690 a year/);
-      assert.equal(await owner.locator("#plan-reports").isDisabled(), true, "yearly: no add-on");
+      assert.equal(await owner.locator("#plan-reports").isDisabled(), false, "yearly plans take the add-on too");
+      assert.match(await owner.locator("#plan-reports").innerText(), /Up to 100 reports a month · £1,590 a year/);
       await owner.locator("input[name=interval][value=month]").check();
       await owner.screenshot({ path: path.join(OUT, "1440-plan-billing.png"), fullPage: true });
       return axe(owner, "plan and billing");
@@ -326,8 +329,9 @@ async function submit(page) {
       await small.close();
     });
 
-    await check("C1", "card: Practice monthly + Reports 100 → TEST checkout 4242 → 'your plan is active'", async () => {
+    await check("C1", "card: Practice yearly + Reports 100 yearly → TEST checkout 4242 → 'your plan is active'", async () => {
       await owner.goto(billing);
+      await owner.locator("input[name=interval][value=year]").check();
       await owner.locator("input[name=band][value=practice]").check();
       await owner.selectOption("#plan-reports", "100");
       await owner.click("button:has-text('Continue to payment')");
@@ -347,7 +351,7 @@ async function submit(page) {
       await owner.screenshot({ path: path.join(OUT, "1440-billing-done.png"), fullPage: true });
       const s = sub();
       made.subscriptions.push(s.subscription_ref);
-      assert.deepEqual([s.state, s.product, s.plan_key, s.reports_key, Number(s.reports_included), s.mode], ["active", "clindesk", "practice", "100", 100, "test"]);
+      assert.deepEqual([s.state, s.product, s.plan_key, s.billing_interval, s.reports_key, Number(s.reports_included), Number(s.amount_pence), s.mode], ["active", "clindesk", "practice", "year", "100", 100, 328000, "test"]);
       assert.deepEqual([ent("clinic").status, ent("clinic").plan_code, ent("reports").status], ["active", "clindesk-practice", "active"]);
       assert.deepEqual([pkg().package, Number(pkg().reports_included)], ["practice", 100]);
       return `subscription ${s.subscription_ref.slice(0, 12)}…`;
@@ -368,6 +372,7 @@ async function submit(page) {
     await check("C3", "the page shows the plan, status and next payment (DD/MM/YYYY); the nav has Plan and billing", async () => {
       await owner.goto(billing);
       assert.match(await owner.locator("[data-testid=billing-plan]").innerText(), /ClinDesk Practice with Reports \(100 a month\)/);
+      assert.match(await owner.locator("main").innerText(), /£3,280 a year/);
       assert.equal((await owner.locator("[data-testid=billing-status]").innerText()).trim(), "Active");
       assert.match(await owner.locator("[data-testid=billing-next]").innerText(), /^\d{2}\/\d{2}\/\d{4}$/);
       await owner.locator("nav >> text=Plan and billing").first().waitFor();
@@ -381,8 +386,9 @@ async function submit(page) {
       await owner.goto(billing);
     });
 
-    await check("M2", "change the plan to Small without the add-on → Reports paused, plan code small", async () => {
+    await check("M2", "change the plan to Small monthly without the add-on → Reports paused, plan code small", async () => {
       await owner.goto(billing);
+      await owner.locator("input[name=interval][value=month]").check();
       await owner.locator("input[name=band][value=small]").check();
       await owner.selectOption("#plan-reports", "none");
       await owner.click("button:has-text('Change plan')");

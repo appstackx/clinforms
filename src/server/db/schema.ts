@@ -176,7 +176,7 @@ export interface ClinicPlanTable {
 /**
  * `clinic_package` (migration 0007) – the clinic's package (price, allowance, extra-report price), written by
  * ClinForms staff only (platform page, admin:set-package). One row per clinic; no row = no package yet.
- * Money in pence (ex VAT); dates are UK calendar dates "YYYY-MM-DD".
+ * Money in pence (no VAT is charged); dates are UK calendar dates "YYYY-MM-DD".
  */
 export interface ClinicPackageTable {
   tenant_id: string;

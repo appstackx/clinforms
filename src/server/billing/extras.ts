@@ -3,9 +3,11 @@
  * numbers the clinic's "Plan & usage" page shows (clinic_usage: reports counted against the month's allowance), added
  * as ONE invoice item (extra_report × the number of extra reports, £1.50 each) to the subscription's next invoice.
  *
- * When: on the payment service's `invoice.created` for a renewal (billing_reason subscription_cycle) – the invoice
- * is still a draft for about an hour, so the item goes onto it; if it is no longer a draft the item waits for the
- * next invoice. Every completed month since the plan started that has not been billed is billed then (a missed
+ * When: on the payment service's `invoice.created` for a monthly renewal (billing_reason subscription_cycle) – the
+ * invoice is still a draft for about an hour, so the item goes onto it; if it is no longer a draft the item waits for
+ * the next invoice. And every day from the cron (billExtrasFromCron): a month a webhook missed is added as a pending
+ * item (the next renewal takes it); a YEARLY plan (01/11/2026: the Reports add-on can be yearly) gets its extras on an
+ * invoice of their own straight away, charged automatically – a year is too long to wait. Every completed month since the plan started that has not been billed is billed then (a missed
  * renewal catches up the next month). Once each: a row per clinic and month (clinic_billing_extras, primary key)
  * written BEFORE the item, the item made with the idempotency key extra-<clinic>-<month>, then the row marked billed
  * with the item's id (unique). A month without extras is recorded as "skipped" so it is never looked at again.
@@ -21,6 +23,7 @@ import { appendAudit } from "../repos/audit";
 import { getBillingExtra, markBillingExtraBilled, recordBillingExtra, type ClinicSubscription } from "../repos/clinic-subscription";
 import { getUsageMonths } from "../repos/usage";
 import { ukPeriodOf } from "../repos/usage-period";
+import { readClinicSubscriptions } from "../repos/clinic-subscription";
 import type { InvoiceInfo, SubscriptionPayments } from "./payments";
 
 /** The UK months from `from` (YYYY-MM) up to, not including, `to` – at most 12. */
@@ -100,6 +103,35 @@ export async function billExtraReports(
       detail: { period, extraReports: row.extraReports, unitPence: row.unitPence, item: item.itemId, invoice: item.invoiceId },
     });
     out.billed.push({ period, extra: row.extraReports, itemId: item.itemId });
+  }
+  return out;
+}
+
+/**
+ * The daily catch-up (the retention cron calls it): every running subscription with reports, not managed by hand, in
+ * the payment key's mode. Monthly plans: pending items for months a webhook missed. Yearly plans: their extras
+ * invoiced at once. Never throws (each clinic on its own; errors counted).
+ */
+export async function billExtrasFromCron(
+  deps: { db: Kysely<Database>; now?: () => Date },
+  payments: Pick<SubscriptionPayments, "addExtraReports" | "invoicePendingItems" | "mode">,
+): Promise<{ clinics: number; billed: number; invoices: number; errors: number }> {
+  const out = { clinics: 0, billed: 0, invoices: 0, errors: 0 };
+  const { rows } = await readClinicSubscriptions({ db: deps.db });
+  for (const sub of rows) {
+    if (sub.override || sub.reportsIncluded === null || sub.mode !== payments.mode) continue;
+    if (sub.state !== "active" && sub.state !== "past_due") continue;
+    out.clinics++;
+    try {
+      const r = await billExtraReports(deps, payments, sub, null);
+      out.billed += r.billed.length;
+      if (r.billed.length && sub.interval === "year") {
+        await payments.invoicePendingItems({ customerRef: sub.customerRef, subscriptionId: sub.subscriptionRef, idempotencyKey: `extra-invoice-${sub.tenantId}-${r.billed.map((b) => b.period).join("_")}` });
+        out.invoices++;
+      }
+    } catch {
+      out.errors++;
+    }
   }
   return out;
 }

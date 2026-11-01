@@ -15,9 +15,9 @@ export const metadata: Metadata = { title: "Plan and billing" };
 
 /**
  * Settings → Plan and billing (31/10/2026), both brands. Owners and admins: the clinic's plan, its state and next
- * payment, notices (payment overdue, read-only, ending), the practitioner check, choosing or changing the plan
+ * payment, notices (payment overdue, on hold, ending), the practitioner check, choosing or changing the plan
  * (ClinDesk band monthly or yearly + optional Reports add-on, or ClinForms on its own) and "Manage billing". Everyone
- * else sees who to ask. Prices ex VAT; no vendor names. Logic: src/server/billing/views.ts.
+ * else sees who to ask. No VAT is charged (AppstackX is not VAT registered); no vendor names. Logic: src/server/billing/views.ts.
  */
 export default async function PlanBillingPage({ searchParams }: { searchParams: Record<string, string | string[] | undefined> }) {
   const { session, membership } = await requireAppContext();
@@ -40,15 +40,17 @@ export default async function PlanBillingPage({ searchParams }: { searchParams: 
   const hasPlan = c.state !== "none";
   return (
     <>
-      <PageHeader title="Plan and billing" description="Your clinic's plan, payments and invoices. Prices exclude VAT." />
+      <PageHeader title="Plan and billing" description="Your clinic's plan, payments and invoices. No VAT is charged." />
 
       {c.readOnly ? (
         <div className="mb-4" data-testid="billing-read-only">
-          <Notice tone="error">Your account is read-only because a payment is overdue. Your records can still be opened. Update your payment details under Manage billing to carry on.</Notice>
+          <Notice tone="error">
+            A payment for your plan is overdue. Clinical work – notes, the diary, patient records, letters and messages to patients – carries on as normal. Settings changes, new staff invitations, imports, marketing messages and new reports are paused until it is paid. Update your payment details under Manage billing.
+          </Notice>
         </div>
       ) : c.state === "past_due" ? (
         <div className="mb-4" data-testid="billing-past-due">
-          <Notice tone="warning">The latest payment did not go through. Everything keeps working until {c.graceUntil}. Update your payment details under Manage billing before then.</Notice>
+          <Notice tone="warning">The latest payment did not go through. Please update your payment details under Manage billing by {c.graceUntil}. After that, settings changes and new reports are paused until it is paid – clinical work always carries on.</Notice>
         </div>
       ) : null}
       {c.state === "pending_payment" ? (
@@ -80,7 +82,7 @@ export default async function PlanBillingPage({ searchParams }: { searchParams: 
               <div className="flex gap-2">
                 <dt className="text-slate-500">Price:</dt>
                 <dd>
-                  {c.amount} {c.interval === "year" ? "a year" : "a month"} ex VAT
+                  {c.amount} {c.interval === "year" ? "a year" : "a month"}
                 </dd>
               </div>
             ) : null}

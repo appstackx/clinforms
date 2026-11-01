@@ -14,12 +14,12 @@
       "description": "How fast you reply to an email or a demo request, e.g. \"one working day\". Book a demo page and its thank-you page (\"we'll reply within …\")."
     },
     "pricing.fromPrice": {
-      "value": "[£X a month, ex VAT – price and unit to confirm]",
-      "description": "Lowest price line in the closing call to action (\"From … · Reports is an add-on\"), e.g. \"£35 per practitioner a month, ex VAT\". Home, Features, Reports and Switching pages."
+      "value": "[£X a month – price and unit to confirm]",
+      "description": "Lowest price line in the closing call to action (\"From … · Reports is an add-on\"), e.g. \"£39 a month\" (no VAT is charged – AppstackX is not VAT registered, 01/11/2026). Home, Features, Reports and Switching pages."
     },
     "pricing.vat": {
-      "value": "[exclude / include]",
-      "description": "Whether prices include VAT: \"exclude\" or \"include\" (reads \"Prices … VAT\"). Pricing page, top and the VAT question. Also the terms (\"fees … VAT\")."
+      "value": "No VAT is charged",
+      "description": "The VAT sentence (Khuram 01/11/2026: AppstackX is not VAT registered, so no VAT is charged). Pricing page, top and the VAT question; the terms (fees). If AppstackX registers for VAT, change it to e.g. \"Prices are shown without VAT; VAT is added at the current rate\" (docs/clinic-system/BILLING.md §8)."
     },
     "pricing.trialSummary": {
       "value": "[length and terms]",

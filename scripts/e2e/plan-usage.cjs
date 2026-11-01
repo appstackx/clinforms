@@ -445,7 +445,7 @@ async function api(page, method, url, body) {
     const db = new DatabaseSync(DB_FILE, { readOnly: true });
     check("1a", "admin:set-package without --confirm is a preview: nothing saved", () => {
       assert.match(preview, /PREVIEW – nothing saved/);
-      assert.match(preview, /price: +£300 a month \(ex VAT\)/);
+      assert.match(preview, /price: +£300 a month$/m);
       assert.equal(db.prepare("SELECT count(*) AS n FROM clinic_package WHERE tenant_id = ?").get(CLINIC.slug).n, 0);
     });
 

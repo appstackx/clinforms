@@ -1,4 +1,5 @@
 "use server";
+import { holdRefusal } from "@/server/billing/access";
 /**
  * Settings → Members (owners and administrators): invite, cancel invitations, change roles, remove members,
  * signing details (job title, HCPC number, may sign) and password reset links. Better Auth enforces the
@@ -55,6 +56,9 @@ export type InviteResult = ActionResult<{ email: string; role: string; link: str
 export async function inviteMember(_prev: InviteResult | null, form: FormData): Promise<InviteResult> {
   const ctx = await manager();
   if ("ok" in ctx) return ctx;
+  // Paused while a plan payment is overdue past its grace period (never clinical work – src/server/billing/access.ts).
+  const held = await holdRefusal(getDb(), ctx.membership.tenantId);
+  if (held) return { ok: false, error: held };
   let email: string;
   try {
     email = normaliseEmail(String(form.get("email") ?? ""));
@@ -115,6 +119,9 @@ export async function cancelInvitation(form: FormData): Promise<void> {
 export async function changeRole(_prev: ActionResult | null, form: FormData): Promise<ActionResult> {
   const ctx = await manager();
   if ("ok" in ctx) return ctx;
+  // Paused while a plan payment is overdue past its grace period (never clinical work – src/server/billing/access.ts).
+  const held = await holdRefusal(getDb(), ctx.membership.tenantId);
+  if (held) return { ok: false, error: held };
   const target = await memberOfClinic(ctx, String(form.get("memberId") ?? ""));
   const role = parseMemberRole(form.get("role"));
   if (!target || !role) return { ok: false, error: ACCOUNT_ERRORS.generic };

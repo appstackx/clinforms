@@ -131,7 +131,7 @@ export interface BillingView {
   canChoose: boolean;
   chooseBlocked: string | null;
   clindesk: { key: ClinDeskBandKey; label: string; range: string; monthly: string; yearly: string }[];
-  addons: { key: ReportsAddonKey; reports: number; monthly: string }[];
+  addons: { key: ReportsAddonKey; reports: number; monthly: string; yearly: string }[];
   clinforms: { key: ClinFormsTierKey; label: string; reports: number; monthly: string }[];
   extraReport: string;
 }
@@ -177,7 +177,7 @@ export async function billingViewFor(db: Kysely<Database>, actor: BillingActor, 
     canChoose: canManageBilling(actor.role) && config.ok && !chooseBlocked,
     chooseBlocked,
     clindesk: CLINDESK_BANDS.map((b) => ({ key: b.key, label: b.label, range: bandRange(b), monthly: pounds(b.monthlyPence), yearly: pounds(b.monthlyPence * YEARLY_MONTHS) })),
-    addons: REPORTS_ADDONS.map((a) => ({ key: a.key, reports: a.reports, monthly: pounds(a.monthlyPence) })),
+    addons: REPORTS_ADDONS.map((a) => ({ key: a.key, reports: a.reports, monthly: pounds(a.monthlyPence), yearly: pounds(a.monthlyPence * YEARLY_MONTHS) })),
     clinforms: CLINFORMS_TIERS.map((t) => ({ key: t.key, label: t.label, reports: t.reports, monthly: pounds(t.monthlyPence) })),
     extraReport: pounds(150),
   };

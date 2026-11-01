@@ -2,7 +2,7 @@
  * Packages and how usage counts (25/10/2026) – browser-safe and pure, shared by the platform page (presets in the
  * "Packages" form), the clinic's "Plan & usage" page, the platform usage page and the admin script.
  *
- * The price list (memory/context/pricing.md §0 and the 23/10 packages), all ex VAT:
+ * The price list (memory/context/pricing.md §0 and the 23/10 packages) – no VAT is charged (AppstackX is not VAT registered, 01/11/2026):
  *   Starter £99 a month, 25 reports · Practice £199, 100 · Group £349, 250 · Group Plus £549, 500
  *   extra reports £1.50 each (Group £1.25) · Custom = per deal (e.g. £300 for 500) · set-up £250 (one-off)
  *   founding prices are fixed for 12 months.
@@ -136,7 +136,7 @@ export const PLAN_COPY = {
   rule: "A report counts the first time drafting runs for it, whether or not it is approved, or when it is approved if nothing needed drafting.",
   again: "Drafting a report again or approving it again does not count again, and nor does an amended version of an approved report.",
   chargingLater: "Charging for extra reports starts once billing is set up.",
-  exVat: "Prices exclude VAT.",
+  exVat: "No VAT is charged.",
   noPackage: "Your clinic's package has not been set up yet. ClinForms will confirm it with you – until then, nothing is charged.",
   shortLine: (count: number, included: number | null) =>
     included === null ? `This month: ${reportsText(count)}.` : `This month: ${ofAllowanceText(count, included)}.`,

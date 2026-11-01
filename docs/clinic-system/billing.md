@@ -1,6 +1,6 @@
 # Subscription billing – ClinDesk and ClinForms (runbook)
 
-**Internal.** 31/10/2026, branch `feat/clindesk-billing` (on `feat/clindesk-sms-credits` + `main`). Not merged, not
+**Internal.** 31/10/2026 (updated 01/11/2026: hold never blocks clinical work, yearly Reports add-on, no VAT), branch `feat/clindesk-billing` (on `feat/clindesk-sms-credits` + `main`). Not merged, not
 deployed. Text credits: [`SMS-CREDITS.md`](SMS-CREDITS.md) (same payment account, same key, same webhook).
 
 ## 1. What it does
@@ -8,7 +8,7 @@ deployed. Text credits: [`SMS-CREDITS.md`](SMS-CREDITS.md) (same payment account
 - **One payment account for both products** (`acct_1UWi2yLYNzei2exh`, public name ClinDesk, descriptor `CLINDESK` –
   CLAUDE.md's deliberate exception). **One customer per clinic** (shared with text credits:
   `pms_sms_credit_accounts.customer_ref` + its mode) and **one subscription per clinic** with one or two items.
-- **Plans** (prices ex VAT, GBP, found by lookup key and checked against `src/lib/billing/plans.ts` before every
+- **Plans** (GBP; **no VAT is charged** – AppstackX is not VAT registered, Khuram 01/11/2026; prices found by lookup key and checked against `src/lib/billing/plans.ts` before every
   checkout – amount, interval, `reports_included` metadata):
 
   | Plan | Practitioners | Monthly | Yearly (10×) | Lookup keys |
@@ -18,17 +18,19 @@ deployed. Text credits: [`SMS-CREDITS.md`](SMS-CREDITS.md) (same payment account
   | ClinDesk Practice | 6–10 | £169 | £1,690 | `clindesk_practice_*` |
   | ClinDesk Group | 11–25 | £299 | £2,990 | `clindesk_group_*` |
   | ClinDesk Multi-site | 26–60 | £499 | £4,990 | `clindesk_multisite_*` |
-  | Reports add-on 25 / 100 / 250 / 500 a month | – | £79 / £159 / £279 / £439 | **monthly only** | `clindesk_reports_<n>_monthly` |
+  | Reports add-on 25 / 100 / 250 / 500 a month | – | £79 / £159 / £279 / £439 | £790 / £1,590 / £2,790 / £4,390 | `clindesk_reports_<n>_monthly` / `_yearly` |
   | ClinForms Starter / Practice / Group / Group Plus (25/100/250/500) | – | £99 / £199 / £349 / £549 | – | `clinforms_<tier>_monthly` |
   | Extra report above the allowance | – | £1.50 each | – | `extra_report` (one-off) |
 
-  **Decision:** the hosted payment page refuses mixed billing intervals in one subscription (checked against the
-  account: "Checkout does not support multiple prices with different billing intervals", also with flexible billing
-  mode). So a **yearly ClinDesk plan cannot take the Reports add-on** – the screen disables it and says "The Reports
-  add-on is billed monthly. Choose monthly billing to add it." (`choiceProblem`). `clinforms_setup` (£250) is not sold
+  **Decision (Khuram 01/11/2026):** the hosted payment page refuses mixed billing intervals in one subscription
+  ("Checkout does not support multiple prices with different billing intervals", also with flexible billing mode), so
+  the Reports add-on has **yearly prices too** (10 × monthly, `clindesk_reports_<n>_yearly`, created in TEST mode
+  01/11/2026 with `reports_included` metadata) and the add-on always takes the plan's interval. The allowance stays a
+  **month's** (25/100/250/500 reports a month) on either interval; a subscription whose items mix intervals is refused
+  (`mixed_intervals`). `clinforms_setup` (£250) is not sold
   online – add it by hand as an invoice item when agreed.
 - **Plan and billing** (`/app/settings/billing`, owners and admins, both brands; nav "Plan and billing"): current plan,
-  status, price, next payment (DD/MM/YYYY), notices; choose a plan (ClinDesk band monthly/yearly + optional Reports
+  status, price ("£X a month" / "£X a year" – "No VAT is charged"), next payment (DD/MM/YYYY), notices; choose a plan (ClinDesk band monthly/yearly + optional Reports
   add-on, or ClinForms on its own – the default follows the clinic's packages / host, `?product=` switches); the hosted
   payment page in **subscription mode** (card incl. wallets, Bacs Direct Debit, Revolut Pay – the account's settings);
   success page `/done` (re-reads and applies at once, idempotent with the webhook), `/cancelled`; **Manage billing** =
@@ -42,7 +44,7 @@ deployed. Text credits: [`SMS-CREDITS.md`](SMS-CREDITS.md) (same payment account
   |---|---|
   | **active** (first invoice paid) | ClinDesk band → `clinic` active (`plan_code` `clindesk-<band>`, `limits.practitioners_max`); Reports add-on / ClinForms tier → `reports` active + `clinic_package` (allowance from the price's `reports_included`, extra £1.50); ClinDesk without the add-on → `reports` **paused**; ClinForms on its own leaves `clinic` alone (cancelled if this subscription had switched it on); a running 3-day trial is converted (`paid`) |
   | **pending_payment** (Bacs not cleared, incomplete) | **nothing switched on** – Bacs activates only on its cleared payment (`checkout.session.async_payment_succeeded` / `invoice.paid` / the subscription update that follows) |
-  | **past_due / unpaid** | everything works for **7 days** (owner + admins emailed once, banner), then **read-only** (§4) until paid; paid → "payment received" email |
+  | **past_due / unpaid** | everything works for **7 days** (owner + admins emailed once, banner), then **on hold** (§4: admin settings, invites, imports, marketing and new reports paused – **never clinical work**) until paid; paid → "payment received" email |
   | cancel at period end | the packages get the period end as `ends_at` (they switch off by themselves); "cancelled" email |
   | **canceled** | packages the subscription switched on → `cancelled` (no data deleted) |
 
@@ -53,10 +55,13 @@ deployed. Text credits: [`SMS-CREDITS.md`](SMS-CREDITS.md) (same payment account
   band on Plan and billing and a banner for owners/admins (ClinDesk shell, clinic area, Studio). **Never blocks.**
 - **Extra reports** (`src/server/billing/extras.ts`) – decision: per completed **UK calendar month**, exactly what
   "Plan & usage" shows (`clinic_usage.billable_reports` − `plan_reports_included`), as **one invoice item**
-  (`extra_report` × count) on the subscription's renewal invoice: on `invoice.created` (billing_reason
-  `subscription_cycle`, still a draft for ~1 hour) every completed month since activation that has no
-  `clinic_billing_extras` row is billed (row first, idempotency key `extra-<clinic>-<YYYY-MM>`, then marked billed with
-  the item id – unique). A missed renewal catches up next month; months without extras are recorded `skipped`.
+  (`extra_report` × count), once per month (row first, idempotency key `extra-<clinic>-<YYYY-MM>`, then marked billed
+  with the item id – unique; months without extras recorded `skipped`):
+  - **monthly plans**: on `invoice.created` for the renewal (billing_reason `subscription_cycle`, still a draft for
+    ~1 hour) the item goes onto that invoice;
+  - **yearly plans** (and any month a webhook missed): the daily cron (`/api/cron/retention`, after retention –
+    `billExtrasFromCron`) adds the item and, for a yearly plan, raises an invoice for it at once (charged
+    automatically – a year is too long to wait); a monthly plan's pending item rides on its next renewal.
 - **Platform page** `/app/platform/billing` (link "Subscriptions" on /app/platform): every clinic's plan, status, next
   payment / end, grace or READ-ONLY, practitioners vs band, test/live, override; buttons **Re-read** (apply the
   service's current copy) and **Manage by hand (override)** / **Follow the subscription again**.
@@ -90,15 +95,25 @@ version `2026-10-28.endive`): `checkout.session.completed`, `checkout.session.as
 `checkout.session.async_payment_failed`, `customer.subscription.created`, `customer.subscription.updated`,
 `customer.subscription.deleted`, `invoice.created`, `invoice.paid`, `invoice.payment_failed`, `payment_intent.succeeded`.
 
-## 4. Read-only (payment overdue past the grace period)
+## 4. On hold (payment overdue past the grace period) – never blocks clinical work
 
 `src/server/billing/access.ts` (`holdOf`): state past_due, `grace_until` (past_due_since + 7 days) passed, no override,
-not a test-mode row once live billing is on. Then: every clinic-system server action whose permission is not a
-`.view` permission answers "Your account is read-only because a payment for your plan is overdue…"
-(`clinicActionActor` → `read_only`); ClinForms' Report API refuses anything new with **403 `PAYMENT_OVERDUE`** (same
-places as an ended trial; existing reports open and download). Plan and billing always works. Fail open: an unreadable
-table never blocks clinical work. **Note for Khuram:** read-only also stops clinical notes being written – to give a
-clinic more time, switch the override on (it lifts the hold).
+not a test-mode row once live billing is on. **Khuram 01/11/2026: a hold never blocks clinical work** – clinical notes
+(write, sign, amend), appointments and the diary, patient records, patient billing, letters, the patient portal and
+messages to patients all keep working. **Paused** until the payment is made:
+
+| Paused | How |
+|---|---|
+| Admin settings other than billing: clinic-system set-up (`settings.setup`), message templates (`messages.templates`), member access (`settings.members`, role changes), Settings → Clinic, new API keys | `clinicActionActor` (`HOLD_PAUSED_PERMISSIONS` → "payment_overdue"); `holdRefusal` in the settings actions |
+| New staff invitations | `holdRefusal` in `inviteMember` |
+| Data imports (`settings.import`) | `clinicActionActor` |
+| Marketing messages (purpose "marketing") | `holdRefusal` in `sendMessageAction` |
+| Report drafting / ClinForms generation | the Report API's **403 `PAYMENT_OVERDUE`** (new report, drafting, uploads, form readings, launch – existing reports open, edit, approve and download) |
+
+Always available: Plan and billing (pay, Manage billing), removing a member, revoking an API key, members' signing
+details. Message (`HOLD_MESSAGE`, banner, email): "Clinical work – notes, the diary, patient records, letters and
+messages to patients – carries on as normal." Fail open: an unreadable table never pauses anything. To give a clinic
+more time, switch the override on (it lifts the hold).
 
 ## 5. Tables (migration 0009)
 
@@ -126,10 +141,14 @@ Local: test key `STRIPE_CLINDESK_TEST_SECRET_KEY` in `~/.config/appstackx/clinfo
 
 1. **Dashboard (live mode, ClinDesk account)**: activate the account; check public details (ClinDesk, descriptor
    CLINDESK, support `hello@clindesk.co.uk`) are not another product's (CLAUDE.md); recreate the catalogue **in live
-   mode with the same lookup keys, amounts, intervals and metadata** (`reports_included` on the reports and ClinForms
-   prices; `sms_credits` on the packs; `extra_report` one-off £1.50; tax behaviour exclusive) – the code refuses any
-   mismatch. Payment methods: card (+ wallets), Bacs Direct Debit (needs the Bacs mandate set-up in live), Revolut Pay.
-   **VAT:** decide (Stripe Tax or tax rates) – nothing adds VAT today (prices are ex VAT).
+   mode with the same lookup keys, amounts, intervals and metadata** – the code refuses any mismatch:
+   - `clindesk_{solo,small,practice,group,multisite}_{monthly,yearly}` (yearly = 10×);
+   - `clindesk_reports_{25,100,250,500}_monthly` (£79/£159/£279/£439) **and `_yearly`** (£790/£1,590/£2,790/£4,390,
+     recurring yearly), all with metadata `reports_included` = 25/100/250/500 (a month's allowance);
+   - `clinforms_{starter,practice,group,group_plus}_monthly` with `reports_included`;
+   - `extra_report` one-off £1.50; `clinforms_setup` £250; `sms_500/1000/5000` (£40/£75/£325, `sms_credits`);
+   - tax behaviour exclusive on every price; **do not enable Stripe Tax** (no VAT is charged – §8).
+   Payment methods: card (+ wallets), Bacs Direct Debit (needs the Bacs mandate set-up in live), Revolut Pay.
 2. **Webhook endpoint (live)**: `https://clindesk.co.uk/api/billing/stripe-webhook`, the 10 events of §3, API version
    `2026-10-28.endive` → copy the signing secret. (Delete the old `/api/clinic-messages/credit-payments` endpoint once
    the new one shows deliveries.)
@@ -147,17 +166,33 @@ Local: test key `STRIPE_CLINDESK_TEST_SECRET_KEY` in `~/.config/appstackx/clinfo
    billing opens; cancel at period end in the billing page → "Ends on"; refund in the Dashboard; set the internal
    clinic back by hand (override on).
 
-## 8. Known limits
+## 8. VAT (not registered today)
+
+AppstackX is **not VAT registered** (Khuram 01/11/2026): no VAT is charged, screens and emails say "£X a month" and
+"No VAT is charged" where a note is needed, and Stripe Tax stays **off**. Every price is created with tax behaviour
+**exclusive**, so switching to VAT later needs **no new prices and no code change to the price ids**:
+1. Register for VAT once taxable turnover passes the HMRC registration threshold (£90,000 over a rolling 12 months
+   from 1 April 2024 – check the current figure on gov.uk), or voluntarily earlier.
+2. Dashboard → Tax: add the VAT registration number, switch on Stripe Tax (or a 20 % UK VAT tax rate), set the
+   default product tax code; then enable automatic tax on Checkout and subscriptions (one parameter each in
+   `src/server/billing/payments.ts`: `automatic_tax[enabled]=true`; existing subscriptions: update them once) – the
+   exclusive prices then show "+ VAT" on invoices at the same pence.
+3. Change the copy: `src/app/app/(clinic)/settings/billing/page.tsx` ("No VAT is charged" → "plus VAT"),
+   `src/lib/packages.ts` `PLAN_COPY.exVat`, the platform page labels, the billing emails, the legal pages; add the VAT
+   number to invoices (Dashboard → Settings → Invoices).
+
+## 9. Known limits
 
 - Plan changes are prorated onto the next invoice (not charged at once); a downgrade credits the difference.
 - The last part-month's extra reports after a subscription ends are not billed (no further invoice) – add by hand.
-- No dunning beyond the payment service's own retries; the read-only email goes when the next sync after the grace
+- A yearly plan changed to monthly (or back) is re-invoiced at once by the payment service (the billing cycle resets).
+- No dunning beyond the payment service's own retries; the "on hold" email goes when the next sync after the grace
   period runs (a retry's `invoice.payment_failed`, the success page or "Re-read").
 - One subscription per clinic: a second running subscription for the same customer (made outside the app) is ignored
   once it is older than the recorded one.
 - `clinforms_setup` is not sold online.
 
-## 9. Code map and tests
+## 10. Code map and tests
 
 | What | Where |
 |---|---|

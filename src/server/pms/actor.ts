@@ -24,7 +24,7 @@ import type { RepoContext } from "../repos/context";
 import { findPractitionerByUser } from "../repos/pms/directory";
 import { resolveMemberAccess } from "./access";
 import { hasPackage, requireEntitlement } from "./entitlements";
-import { READ_ONLY_MESSAGE, accountHold } from "../billing/access";
+import { HOLD_MESSAGE, accountHold, pausedByHold } from "../billing/access";
 import { pmsNow } from "../../modules/pms/core/clock";
 
 export interface ClinicActor {
@@ -83,7 +83,7 @@ export async function requireClinicActor(options: { permission?: PmsPermission }
   return actor;
 }
 
-export type ClinicActorError = "signed_out" | "forbidden" | "no_clinic" | "not_entitled" | "read_only";
+export type ClinicActorError = "signed_out" | "forbidden" | "no_clinic" | "not_entitled" | "payment_overdue";
 
 /** For server actions and route handlers: the actor, or an error code (nothing done). */
 export async function clinicActionActor(options: { permission?: PmsPermission } = {}): Promise<ClinicActor | { error: ClinicActorError }> {
@@ -93,9 +93,9 @@ export async function clinicActionActor(options: { permission?: PmsPermission } 
   const actor = await toActor(ctx);
   const permission = options.permission ?? "clinic.view";
   if (!actor.can(permission)) return { error: "forbidden" };
-  // 31/10/2026: a plan payment overdue past its grace period makes the account read-only – every action that
-  // changes something is refused; reading (".view" permissions) still works (src/server/billing/access.ts).
-  if (!permission.endsWith(".view") && (await accountHold(getDb(), actor.tenantId)).held) return { error: "read_only" };
+  // A plan payment overdue past its grace period pauses admin set-up, imports and template changes only – never
+  // clinical work (Khuram 01/11/2026, src/server/billing/access.ts).
+  if (pausedByHold(permission) && (await accountHold(getDb(), actor.tenantId)).held) return { error: "payment_overdue" };
   return actor;
 }
 
@@ -108,8 +108,8 @@ export function actorErrorMessage(error: ClinicActorError): string {
       return "Choose a clinic first.";
     case "not_entitled":
       return "This clinic does not use this part of the system.";
-    case "read_only":
-      return READ_ONLY_MESSAGE;
+    case "payment_overdue":
+      return HOLD_MESSAGE;
     default:
       return "You do not have permission to do that.";
   }

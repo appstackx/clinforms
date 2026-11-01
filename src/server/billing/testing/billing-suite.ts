@@ -23,7 +23,9 @@ import type { InvoiceInfo, SubscriptionCheckoutInfo, SubscriptionInfo, Subscript
 import { applySubscription, syncSubscription, type BillingNoticeKind, type SyncDeps } from "../sync";
 import { billingViewFor, changePlan, completeCheckoutFor, startPlanCheckout } from "../views";
 import { handleBillingWebhook } from "../webhook";
-import { catalogueItem, choiceItems } from "../../../lib/billing/plans";
+import { catalogueItem, choiceItems, planOfItems } from "../../../lib/billing/plans";
+import { HOLD_MESSAGE, holdRefusal, pausedByHold } from "../access";
+import { billExtrasFromCron } from "../extras";
 
 const DAY = 86_400_000;
 const HOOK = "whsec_test_for_billing_tests_0123456789";
@@ -75,6 +77,11 @@ export class FakeSubscriptions implements SubscriptionPayments {
     const i = this.invoices.get(id);
     if (!i) throw new Error("no invoice");
     return i;
+  }
+  invoiced: { subscriptionId: string; key: string }[] = [];
+  async invoicePendingItems(input: { customerRef: string; subscriptionId: string; idempotencyKey: string }) {
+    if (!this.invoiced.some((i) => i.key === input.idempotencyKey)) this.invoiced.push({ subscriptionId: input.subscriptionId, key: input.idempotencyKey });
+    return `in_extra_${this.invoiced.length}`;
   }
   async addExtraReports(input: { customerRef: string; invoiceId: string | null; quantity: number; period: string; idempotencyKey: string }) {
     const prior = this.items.find((x) => x.key === input.idempotencyKey);
@@ -153,8 +160,17 @@ export function defineBillingSuite(label: string, factory: () => Promise<Billing
       await t?.close();
     });
 
-    it("plans: yearly with the Reports add-on is refused; items read back into the plan", () => {
-      assert.throws(() => choiceItems({ product: "clindesk", band: "practice", interval: "year", reports: "100" }), /billed monthly/);
+    it("plans: the Reports add-on follows the plan's interval (yearly = 10 × monthly); items read back into the plan", () => {
+      assert.deepEqual(
+        choiceItems({ product: "clindesk", band: "practice", interval: "year", reports: "100" }).map((i) => [i.lookupKey, i.pence, i.interval, i.reportsIncluded]),
+        [
+          ["clindesk_practice_yearly", 169000, "year", null],
+          ["clindesk_reports_100_yearly", 159000, "year", 100],
+        ],
+      );
+      const yearly = planOfItems(["clindesk_group_yearly", "clindesk_reports_500_yearly"]);
+      assert.deepEqual(yearly.ok && yearly.choice, { product: "clindesk", band: "group", interval: "year", reports: "500" });
+      assert.deepEqual(planOfItems(["clindesk_group_yearly", "clindesk_reports_500_monthly"]), { ok: false, why: "mixed_intervals" });
       assert.deepEqual(
         choiceItems({ product: "clindesk", band: "practice", interval: "month", reports: "100" }).map((i) => [i.lookupKey, i.pence]),
         [
@@ -216,7 +232,12 @@ export function defineBillingSuite(label: string, factory: () => Promise<Billing
       clock += 8 * DAY;
       assert.equal((await accountHold(t.db, A, now())).held, true);
       const profile = await loadClinicProfile(t.db, A, now());
-      assert.equal(profile?.paymentOverdue, true, "ClinForms refuses anything new (PAYMENT_OVERDUE)");
+      assert.equal(profile?.paymentOverdue, true, "ClinForms report drafting is paused (PAYMENT_OVERDUE)");
+      // Never clinical work (Khuram 01/11/2026): only admin set-up, member access, imports and templates are paused.
+      for (const p of ["clinical.write", "clinical.amend", "patients.edit", "diary.book", "diary.rota", "messages.send", "messages.letters", "billing.pay", "billing.edit"]) assert.equal(pausedByHold(p), false, p);
+      for (const p of ["settings.setup", "settings.import", "settings.members", "messages.templates"]) assert.equal(pausedByHold(p), true, p);
+      assert.equal(await holdRefusal(t.db, A, now()), HOLD_MESSAGE);
+      assert.match(HOLD_MESSAGE, /Clinical work[\s\S]*carries on as normal/);
       await syncSubscription(deps(), fake, sub.id);
       assert.deepEqual(notices.map((n) => n.kind), ["payment_failed", "read_only"]);
       fake.subs.set(sub.id, { ...sub, status: "active" });
@@ -293,6 +314,28 @@ export function defineBillingSuite(label: string, factory: () => Promise<Billing
       assert.equal((await billExtraReports({ db: t.db, now }, fake, sub, { ...invoice, billingReason: "subscription_update" })).billed.length, 0, "only renewals");
     });
 
+    it("yearly plans: the daily run invoices extra reports at once (monthly plans wait for the renewal); once per month", async () => {
+      const E = "billing-clinic-e";
+      await clinic(t.db, E, new Date(clock).toISOString());
+      await setCreditCustomer({ db: t.db, now }, E, "cus_test_billing_clinic_e", { userId: null, sessionId: null }, "test");
+      const activated = Date.parse("2027-01-03T10:00:00.000Z");
+      clock = activated;
+      const sub = subscription({ id: "sub_test_e1", tenantId: E, customer: "cus_test_billing_clinic_e", keys: ["clindesk_solo_yearly", "clindesk_reports_25_yearly"], currentPeriodEnd: "2028-01-03T10:00:00.000Z" });
+      fake.subs.set(sub.id, sub);
+      await syncSubscription(deps(), fake, sub.id);
+      const at = new Date(clock).toISOString();
+      await t.db.insertInto("clinic_usage").values({ tenant_id: E, period: "2027-01", package: "starter", plan_price_pence: 79000, plan_reports_included: 25, plan_extra_report_pence: 150, billable_reports: 29, created_at: at, updated_at: at }).execute();
+      clock = Date.parse("2027-02-01T04:00:00.000Z");
+      const items = fake.items.length;
+      const r = await billExtrasFromCron({ db: t.db, now }, fake);
+      assert.ok(r.billed >= 1 && r.invoices >= 1);
+      assert.deepEqual(fake.items.slice(items).filter((i) => i.customerRef === "cus_test_billing_clinic_e").map((i) => [i.period, i.quantity, i.invoiceId]), [["2027-01", 4, null]]);
+      assert.ok(fake.invoiced.some((i) => i.subscriptionId === "sub_test_e1"));
+      const again = await billExtrasFromCron({ db: t.db, now }, fake);
+      assert.equal(fake.items.filter((i) => i.customerRef === "cus_test_billing_clinic_e").length, 1, "once per month");
+      assert.equal(again.errors, 0);
+    });
+
     it("the page: owners choose a plan; the payment page opens once; a running plan is changed, not bought again", async () => {
       const db = t.db;
       const clients = { credits: { createCustomer: async () => "cus_never", mode: "test" as const, live: false } as Pick<CardPayments, "createCustomer" | "mode" | "live">, subs: fake };
@@ -301,8 +344,8 @@ export function defineBillingSuite(label: string, factory: () => Promise<Billing
       await setCreditCustomer({ db, now }, D, "cus_test_billing_clinic_d", { userId: null, sessionId: null }, "test");
       const staff = { ...OWNER(D), role: "staff" };
       assert.equal((await startPlanCheckout(db, staff, { choice: { product: "clinforms", tier: "starter" }, origin: "https://app.example.com", idempotencyKey: "k1" }, clients)).ok, false);
-      const yearlyAddon = await startPlanCheckout(db, OWNER(D), { choice: { product: "clindesk", band: "solo", interval: "year", reports: "25" }, origin: "https://app.example.com", idempotencyKey: "k2" }, clients);
-      assert.match(!yearlyAddon.ok ? yearlyAddon.error : "", /billed monthly/);
+      const badChoice = await startPlanCheckout(db, OWNER(D), { choice: { product: "clindesk", band: "huge" as never, interval: "month", reports: null }, origin: "https://app.example.com", idempotencyKey: "k2" }, clients);
+      assert.match(!badChoice.ok ? badChoice.error : "", /Choose a plan/);
       const ok = await startPlanCheckout(db, OWNER(D), { choice: { product: "clindesk", band: "solo", interval: "month", reports: "25" }, origin: "https://app.example.com", idempotencyKey: "k3" }, clients);
       assert.equal(ok.ok, true);
       assert.deepEqual(fake.created.at(-1), { tenantId: D, items: ["price_clindesk_solo_monthly", "price_clindesk_reports_25_monthly"] });
