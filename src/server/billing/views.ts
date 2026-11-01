@@ -131,8 +131,8 @@ export interface BillingView {
   changesRunning: boolean;
   canChoose: boolean;
   chooseBlocked: string | null;
-  clindesk: { key: ClinDeskBandKey; label: string; range: string; monthly: string; yearly: string }[];
-  addons: { key: ReportsAddonKey; reports: number; monthly: string; yearly: string }[];
+  clindesk: { key: ClinDeskBandKey; label: string; range: string; monthly: string; yearly: string; monthlyPence: number }[];
+  addons: { key: ReportsAddonKey; reports: number; monthly: string; yearly: string; monthlyPence: number }[];
   clinforms: { key: ClinFormsTierKey; label: string; reports: number; monthly: string }[];
   extraReport: string;
   /** A running ClinForms plan: the Reports add-on with the same allowance (the default when it moves to ClinDesk). */
@@ -196,8 +196,8 @@ export async function billingViewFor(db: Kysely<Database>, actor: BillingActor, 
     changesRunning: running && sub?.state !== "pending_payment",
     canChoose: canManageBilling(actor.role) && config.ok && !chooseBlocked,
     chooseBlocked,
-    clindesk: CLINDESK_BANDS.map((b) => ({ key: b.key, label: b.label, range: bandRange(b), monthly: pounds(b.monthlyPence), yearly: pounds(b.monthlyPence * YEARLY_MONTHS) })),
-    addons: REPORTS_ADDONS.map((a) => ({ key: a.key, reports: a.reports, monthly: pounds(a.monthlyPence), yearly: pounds(a.monthlyPence * YEARLY_MONTHS) })),
+    clindesk: CLINDESK_BANDS.map((b) => ({ key: b.key, label: b.label, range: bandRange(b), monthly: pounds(b.monthlyPence), yearly: pounds(b.monthlyPence * YEARLY_MONTHS), monthlyPence: b.monthlyPence })),
+    addons: REPORTS_ADDONS.map((a) => ({ key: a.key, reports: a.reports, monthly: pounds(a.monthlyPence), yearly: pounds(a.monthlyPence * YEARLY_MONTHS), monthlyPence: a.monthlyPence })),
     clinforms: CLINFORMS_TIERS.map((t) => ({ key: t.key, label: t.label, reports: t.reports, monthly: pounds(t.monthlyPence) })),
     extraReport: pounds(150),
     matchingAddon: choice?.product === "clinforms" ? addonForTier(choice.tier) : null,

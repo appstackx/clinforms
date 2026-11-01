@@ -5,7 +5,8 @@ import { useFormState } from "react-dom";
 import { SubmitButton } from "@/components/account/form-controls";
 import { Notice, Panel } from "@/components/account/shell";
 import type { BillingView } from "@/server/billing/views";
-import { CLINFORMS_NAME } from "@/lib/brand";
+import { CLINFORMS_NAME, CLINIC_SYSTEM_NAME } from "@/lib/brand";
+import { YEARLY_MONTHS } from "@/lib/billing/plans";
 import { CLINDESK_OFFER, defaultReportsAddon } from "@/lib/clindesk-offer";
 import { choosePlanAction, manageBillingAction, type BillingActionResult } from "./actions";
 
@@ -39,7 +40,9 @@ export function ChoosePlanForm({ view, keepReports = false }: { view: BillingVie
   const [reports, setReports] = React.useState<string>(() =>
     defaultReportsAddon({ current, matchingAddon: view.matchingAddon, smallestAddon: view.addons[0]?.key ?? null, keepReports }),
   );
-  const dropsReports = reports === "none" && (keepReports || current?.product === "clinforms");
+  const hadReports = keepReports || current?.product === "clinforms";
+  const dropsReports = reports === "none" && hadReports;
+  const [band, setBand] = React.useState<string | null>(current?.product === "clindesk" ? current.band : null);
   const button = view.changesRunning ? "Change plan" : "Continue to payment";
   if (view.product === "clinforms") {
     return (
@@ -79,13 +82,15 @@ export function ChoosePlanForm({ view, keepReports = false }: { view: BillingVie
         </div>
       </fieldset>
       <fieldset className="grid gap-3 sm:grid-cols-2">
-        <legend className="mb-2 text-sm font-medium text-slate-800">Practitioners</legend>
+        <legend className="mb-2 text-sm font-medium text-slate-800">
+          1. {CLINIC_SYSTEM_NAME} plan – the clinic system, priced by practitioners
+        </legend>
         {view.clindesk.map((b) => (
           <label key={b.key} className={CARD}>
-            <input type="radio" name="band" value={b.key} required defaultChecked={current?.product === "clindesk" && current.band === b.key} className="mt-1" />
+            <input type="radio" name="band" value={b.key} required checked={band === b.key} onChange={() => setBand(b.key)} className="mt-1" />
             <span>
               <span className="block font-semibold text-slate-900">
-                {b.label} · {interval === "year" ? `${b.yearly} a year` : `${b.monthly} a month`}
+                {CLINIC_SYSTEM_NAME} {b.label} · {interval === "year" ? `${b.yearly} a year` : `${b.monthly} a month`}
               </span>
               <span className="block text-slate-600">{b.range}</span>
             </span>
@@ -94,7 +99,7 @@ export function ChoosePlanForm({ view, keepReports = false }: { view: BillingVie
       </fieldset>
       <div>
         <label htmlFor="plan-reports" className="mb-1 block text-sm font-medium text-slate-800">
-          Reports add-on (referrer forms completed for you)
+          2. Reports add-on – {hadReports ? `your ${CLINFORMS_NAME} referrer forms` : "referrer forms completed for you"}, priced by reports a month
         </label>
         <select
           id="plan-reports"
@@ -120,9 +125,39 @@ export function ChoosePlanForm({ view, keepReports = false }: { view: BillingVie
           {`The add-on is billed ${interval === "year" ? "yearly" : "monthly"} with your plan; the allowance is per month. Extra reports above it are ${view.extraReport} each, billed after each month.`}
         </p>
       </div>
+      <PlanTotal view={view} band={band} reports={reports} interval={interval} />
       <SubmitButton pendingText="Please wait…">{button}</SubmitButton>
       <Result state={state} />
     </form>
+  );
+}
+
+/** The running total under the clinic-system chooser, so the plan price is never read as the whole price. */
+function PlanTotal({ view, band, reports, interval }: { view: BillingView; band: string | null; reports: string; interval: "month" | "year" }) {
+  const b = view.clindesk.find((x) => x.key === band);
+  const a = view.addons.find((x) => x.key === reports);
+  if (!b) return <p className="text-sm text-slate-600" data-testid="plan-total">Choose a plan above to see your total.</p>;
+  const months = interval === "year" ? YEARLY_MONTHS : 1;
+  const fmt = (pence: number) => `£${(pence * months / 100).toFixed(pence * months % 100 === 0 ? 0 : 2)}`;
+  const per = interval === "year" ? "a year" : "a month";
+  const total = b.monthlyPence + (a?.monthlyPence ?? 0);
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm" data-testid="plan-total" aria-live="polite">
+      <div className="flex justify-between gap-4 text-slate-700">
+        <span>{CLINIC_SYSTEM_NAME} {b.label} ({b.range})</span>
+        <span>{fmt(b.monthlyPence)}</span>
+      </div>
+      <div className="flex justify-between gap-4 text-slate-700">
+        <span>{a ? `Reports add-on (up to ${a.reports} reports a month)` : "No Reports add-on"}</span>
+        <span>{a ? fmt(a.monthlyPence) : "£0"}</span>
+      </div>
+      <div className="mt-2 flex justify-between gap-4 border-t border-slate-200 pt-2 font-semibold text-slate-900">
+        <span>Total</span>
+        <span>
+          {fmt(total)} {per}
+        </span>
+      </div>
+    </div>
   );
 }
 

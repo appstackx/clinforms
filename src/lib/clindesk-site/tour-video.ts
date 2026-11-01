@@ -118,7 +118,7 @@ export const TOUR_CHAPTERS: readonly TourChapter[] = [
   {
     at: 67.167,
     clock: "11:40",
-    title: "ClinDesk Reports – powered by ClinForms (add-on)",
+    title: "ClinDesk Reports (add-on)",
     transcript: [
       "Twenty to twelve. Robert’s insurer wants a progress report, on their own form.",
       "From his case, Sophie chooses Complete referrer form, and picks the insurer’s form.",

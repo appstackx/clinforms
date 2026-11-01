@@ -18,7 +18,7 @@ import { REPORTS_FROM } from "@/lib/clindesk/pricing";
 export const metadata = clindeskMetadata({
   path: "/reports",
   title: `${CLINIC_SYSTEM_NAME} Reports – referrer reports in their own form, completed from your notes`,
-  description: `${CLINIC_SYSTEM_NAME} Reports, powered by ClinForms: each referrer’s own report form, filled from your signed notes, checked and signed by the treating physio.`,
+  description: `${CLINIC_SYSTEM_NAME} Reports: each referrer’s own report form, filled from your signed notes, checked and signed by the treating physio.`,
 });
 
 export default function ReportsPage() {
@@ -59,7 +59,7 @@ export default function ReportsPage() {
   );
 }
 
-/** The tour's Reports chapter ("11:40 · ClinDesk Reports – powered by ClinForms"): the hero links straight to it. */
+/** The tour's Reports chapter ("11:40 · ClinDesk Reports (add-on)"): the hero links straight to it. */
 const REPORTS_CHAPTER = TOUR_CHAPTERS.find((c) => c.clock === "11:40") ?? TOUR_CHAPTERS[0];
 
 /** 1 · Hero */
@@ -70,7 +70,6 @@ function Hero() {
         <div className="rp-hero-copy">
           <div className="lockup">
             <span className="display-m">{CLINIC_SYSTEM_NAME} Reports</span>
-            <span className="lockup-sub">powered by ClinForms</span>
             <span className="addon addon--tilt">Add-on</span>
           </div>
           <p className="pen marker" style={cssVars({"--tilt": "-2deg"})}>11:40 · Sophie, an insurer’s form</p>

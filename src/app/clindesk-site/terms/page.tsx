@@ -1,7 +1,7 @@
 import { Fill } from "@/components/clindesk/fill";
 import { LegalFrame } from "@/components/clindesk/legal-frame";
 import { LegalPage } from "@/components/marketing/legal-page";
-import { CLINFORMS_NAME, CLINIC_SYSTEM_NAME } from "@/lib/brand";
+import { CLINIC_SYSTEM_NAME } from "@/lib/brand";
 import { CLINDESK_LEGAL_LAST_UPDATED, CONTACT_EMAIL, clindeskMetadata } from "@/lib/clindesk/site";
 import { COMPANY } from "@/lib/site";
 
@@ -38,8 +38,7 @@ export default function ClindeskTermsPage() {
           in England and Wales, company number <Fill k="company.number" />. In these terms, the
           &ldquo;clinic&rdquo; is the organisation named in the order, &ldquo;users&rdquo; are the people the clinic
           invites, the &ldquo;service&rdquo; is {CLINIC_SYSTEM_NAME} – the clinic management system, with its diary,
-          patient records, billing, patient portal and messages – its support, and the Reports add-on (powered by{" "}
-          {CLINFORMS_NAME}) if the order includes it, and &ldquo;clinic data&rdquo; is all information the clinic, its
+          patient records, billing, patient portal and messages – its support, and the Reports add-on if the order includes it, and &ldquo;clinic data&rdquo; is all information the clinic, its
           users or its patients put into the service, including patient information.
         </p>
         <p>

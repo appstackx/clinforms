@@ -322,7 +322,6 @@ function Reports() {
         <div className="reports-head">
           <div className="lockup">
             <span className="display-m">{CLINIC_SYSTEM_NAME} Reports</span>
-            <span className="lockup-sub">powered by ClinForms</span>
             <span className="addon addon--tilt">Add-on</span>
           </div>
           <p className="pen marker" style={cssVars({"--tilt": "-1.5deg"})}>11:40 · Sophie, an insurer’s form</p>

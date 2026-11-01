@@ -752,7 +752,6 @@ function ReportsAddOn() {
         <div className="fx-text">
           <div className="lockup">
             <span className="display-m">{CLINIC_SYSTEM_NAME} Reports</span>
-            <span className="lockup-sub">powered by ClinForms</span>
             <span className="addon addon--tilt">Add-on</span>
           </div>
           <p className="pen marker" style={cssVars({"--tilt": "-1.5deg"})}>18:05 · Sophie, the last report</p>

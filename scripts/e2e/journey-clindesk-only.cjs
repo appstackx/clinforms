@@ -327,7 +327,7 @@ async function audit(page, label, ctx = {}) {
   if (u.host !== DESK_HOST) finding("R1", "serious", where, `left the ClinDesk host: on ${u.host}`, `stay on ${DESK_HOST}`);
   if (f.error) return rec;
   if (BAD.test(f.title)) finding("R1", sev, where, `document.title = "${f.title}"`, "title names ClinDesk, never ClinForms");
-  // Decision (01/11/2026): ClinDesk's PUBLIC website may say "powered by ClinForms" (and link to clinforms.co.uk) –
+  // Decision (01/11/2026): ClinDesk's PUBLIC website may link to clinforms.co.uk ("works on its own") – no "powered by" since 01/11 –
   // recorded as "deliberate", not a finding against the app.
   if (publicSite && (f.textHits.length || f.attrHits.length || f.linkHits.length)) {
     deliberate.push({ where, text: f.textHits, attrs: f.attrHits, links: f.linkHits });

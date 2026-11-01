@@ -116,7 +116,7 @@ function WhileYouWait() {
           <li>
             <a className="t-card" href="/reports">
               <span className="display-m">Referrer reports <span className="addon">Add-on</span></span>
-              <span className="t-card-line">Reports, powered by ClinForms</span>
+              <span className="t-card-line">Referrer forms completed from your notes</span>
               <span className="arr" aria-hidden="true">→</span>
             </a>
           </li>

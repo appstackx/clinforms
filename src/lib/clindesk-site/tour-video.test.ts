@@ -47,7 +47,7 @@ const CHAPTERS_TXT = [
   "0:00 Welcome",
   "0:17 08:00 · Front desk: diary and online booking",
   "0:46 09:15 · Notes, amendments and letters",
-  "1:07 11:40 · ClinDesk Reports – powered by ClinForms (add-on)",
+  "1:07 11:40 · ClinDesk Reports (add-on)",
   "1:47 13:05 · Group office: sites, numbers and roles",
   "2:08 16:30 · Billing, authorisations and card payment",
   "2:31 18:30 · Audit trail, switching and booking a demo",

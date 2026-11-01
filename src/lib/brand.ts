@@ -17,7 +17,7 @@ export const CLINIC_SYSTEM_NAME = "ClinDesk";
 
 /**
  * What the clinic brand calls ClinForms inside its own app (01/11/2026, Khuram's R1): the "Reports" add-on – the
- * ClinForms name appears only on ClinDesk's public website ("powered by ClinForms").
+ * ClinForms name appears on ClinDesk's public website only as the "works on its own" link (no "powered by", 01/11/2026).
  */
 export const REPORTS_ADDON_NAME = "Reports";
 
