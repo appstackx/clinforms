@@ -87,13 +87,19 @@ function clinicSender(env: Env): SenderIdentity | null {
   return email ? { email, name: BRANDS.clinic.productName } : null;
 }
 
+/** The sender name on the shared address: the message's brand (the clinic brand's emails never go as "ClinForms"). */
+export function fallbackSenderName(brand: EmailMessage["brand"]): string {
+  return brand === "clinic" ? BRANDS.clinic.productName : SENDER_NAME;
+}
+
 /**
  * Who a message comes from when there is no separate account (Mailpit): the clinic brand's own sender when the
  * message is the clinic brand's and MAILERSEND_FROM_EMAIL_CLINIC is set, else `fallbackFrom` as SENDER_NAME (the sender
  * before brands existed). A malformed MAILERSEND_FROM_EMAIL_CLINIC is a configuration error (the value is not echoed).
  */
 export function senderFor(message: Pick<EmailMessage, "brand">, fallbackFrom: string, env: Env = process.env): SenderIdentity {
-  return (message.brand === "clinic" ? clinicSender(env) : null) ?? { email: fallbackFrom, name: SENDER_NAME };
+  // 01/11/2026 (R1): without the clinic brand's own address its emails still carry its NAME (never "ClinForms").
+  return (message.brand === "clinic" ? clinicSender(env) : null) ?? { email: fallbackFrom, name: fallbackSenderName(message.brand) };
 }
 
 /**
@@ -212,7 +218,8 @@ export function mailerSendProvider(env: Env = process.env, client?: Pick<MailerS
         logAuthEvent("email.not_configured", { kind: message.kind });
         return { status: "failed", provider: "mailersend" };
       }
-      const { sender } = route;
+      // 01/11/2026 (R1): a clinic-brand email on ClinForms' account (the clinic account incomplete) keeps its brand's name.
+      const sender = route === clinforms && message.brand === "clinic" ? { ...route.sender, name: fallbackSenderName("clinic") } : route.sender;
       const params = new EmailParams()
         .setFrom(new Sender(sender.email, sender.name))
         .setTo([new Recipient(message.to.email, message.to.name ?? undefined)])
@@ -277,7 +284,7 @@ export function mailpitProviderFor(env: Env = process.env, fetchImpl?: typeof fe
       let replyTo = defaultReplyTo;
       try {
         const own = message.brand === "clinic" ? clinicSender(env) : null;
-        sender = own ?? { email: from, name: SENDER_NAME };
+        sender = own ?? { email: from, name: fallbackSenderName(message.brand) };
         if (own) replyTo = clinicReplyToAddress(defaultReplyTo, env);
       } catch (err) {
         if (!(err instanceof EmailConfigError)) throw err;
