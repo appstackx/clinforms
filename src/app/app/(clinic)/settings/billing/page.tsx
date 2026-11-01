@@ -145,7 +145,7 @@ export default async function PlanBillingPage({ searchParams }: { searchParams: 
                 )}
               </p>
             ) : (
-              <p className="mb-4 text-sm text-slate-700">The change applies straight away; any difference is added to your next invoice.</p>
+              <p className="mb-4 text-sm text-slate-700">Any difference is charged (or credited) today, and the change applies once the payment goes through.</p>
             )}
             <ChoosePlanForm view={view} />
           </>

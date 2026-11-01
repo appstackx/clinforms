@@ -250,8 +250,9 @@ export async function changePlan(db: Kysely<Database>, actor: BillingActor, inpu
     const updated = await clients.subs.changeSubscription({ subscriptionId: sub.subscriptionRef, removeItemIds: remove, addPriceIds: add, tenantId: actor.tenantId, idempotencyKey: input.idempotencyKey });
     await audit(db, actor, "clinic.subscription_change", { to: items.map((i) => i.lookupKey) });
     await applySubscription({ ...syncDeps, db }, clients.subs, updated, { expectTenantId: actor.tenantId });
-    return { ok: true, value: { message: `Your plan is now ${choiceLabel(choice)}. Any difference is added to your next invoice.` } };
-  } catch {
+    return { ok: true, value: { message: `Your plan is now ${choiceLabel(choice)}. Any difference has been charged or credited today.` } };
+  } catch (e) {
+    if (e instanceof CardPaymentsError && e.code === "payment_failed") return { ok: false, error: "The payment for this change did not go through, so your plan has not changed. Update your card under Manage billing and try again." };
     return { ok: false, error: "The plan could not be changed. Try again in a moment." };
   }
 }

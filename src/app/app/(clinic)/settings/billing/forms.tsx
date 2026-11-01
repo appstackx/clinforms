@@ -153,7 +153,7 @@ export function AddReportsPanel({ view, offer }: { view: BillingView; offer: boo
           ))}
         </fieldset>
         <p className="text-xs text-slate-600">
-          {`Billed ${yearly ? "yearly" : "monthly"} with your plan; the allowance is per month. It starts straight away and the part of this billing period that is left is added to your next invoice.`}
+          {`Billed ${yearly ? "yearly" : "monthly"} with your plan; the allowance is per month. It starts as soon as the payment for the rest of this billing period goes through – charged today.`}
         </p>
         <SubmitButton pendingText="Please wait…">Add the Reports add-on</SubmitButton>
         <Result state={state} />
