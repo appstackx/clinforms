@@ -43,12 +43,12 @@ export default function ClindeskPrivacyPage() {
       >
         <h2 id="who-we-are">1. Who we are</h2>
         <p>
-          {CLINIC_SYSTEM_NAME} is a product of {COMPANY.legalName}, company number <Fill k="company.number" />, registered
-          office <Fill k="company.registeredOffice" />. You can contact us about anything in this policy at{" "}
+          {CLINIC_SYSTEM_NAME} is a product of {COMPANY.legalName}, a company registered in England and Wales, company
+          number <Fill k="company.number" />. You can contact us about anything in this policy at{" "}
           <a href={`mailto:${email}`}>{email}</a>.
         </p>
         <p>
-          ICO registration: <Fill k="security.icoRegistration" />.
+          <Fill k="security.icoRegistration" />.
         </p>
 
         <h2 id="our-roles">2. Our two roles</h2>
@@ -269,9 +269,8 @@ export default function ClindeskPrivacyPage() {
           </li>
         </ul>
         <p>
-          The full list of sub-processors (<Fill k="security.subProcessorsDocument" />
-          ), with their locations and the safeguards that apply, is part of our DPA and is available on request at{" "}
-          <a href={`mailto:${email}`}>{email}</a>. We tell clinics before we add or replace a sub-processor that handles
+          The full list of sub-processors, with their locations and the safeguards that apply, is part of our DPA and is
+          available on request as our <Fill k="security.subProcessorsDocument" /> from <a href={`mailto:${email}`}>{email}</a>. We tell clinics before we add or replace a sub-processor that handles
           patient information, so they can object.
         </p>
         <p id="advertising">

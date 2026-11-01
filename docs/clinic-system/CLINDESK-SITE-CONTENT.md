@@ -50,8 +50,8 @@ Not in this file, on purpose:
 
 | Key | Placeholder (current value) | What it is and where it shows |
 |---|---|---|
-| `company.number` | [Company number] | Companies House number of AppstackX Ltd, e.g. 12345678. Footer of every page. Also the privacy policy and the terms ("company number …"). |
-| `company.registeredOffice` | [Registered address] | Registered office address on one line, e.g. "1 High Street, Town, AB1 2CD". Footer of every page. Also the privacy policy and the terms ("registered office …"). |
+| `company.number` | 16287309 | Companies House number of Appstack X Ltd (registered in England and Wales; Khuram 01/11/2026). Footer of every page. Also the privacy policy and the terms ("company number …"). |
+| `company.registeredOffice` | 18 Westergate Avenue, Milton Keynes, MK10 7LQ | Registered office on one line (Khuram 01/11/2026). Footer only, last line in small text – not the legal pages. Must match `COMPANY.registeredAddress` (src/lib/site.ts; a test checks). A service address can replace it later. |
 
 ### Contact
 
@@ -90,7 +90,7 @@ Not in this file, on purpose:
 
 | Key | Placeholder (current value) | What it is and where it shows |
 |---|---|---|
-| `hosting.summary` | [UK data hosting – region to confirm] | Where patient data is hosted, in a few words, e.g. "UK (London)". Home page security band and the Security page top. |
+| `hosting.summary` | UK (London) | Where patient data is hosted, in a few words, e.g. "UK (London)". Home page security band and the Security page top. |
 
 ### Features
 
@@ -117,20 +117,20 @@ Not in this file, on purpose:
 
 | Key | Placeholder (current value) | What it is and where it shows |
 |---|---|---|
-| `security.region` | [UK region] | The hosting region, e.g. "the UK (London)" – used for the data and the backups ("stored in …"). Security page. Also the privacy policy (sub-processors and "clinic data is stored in …"). |
-| `security.hostingDetails` | [Hosting details] | One line on the hosting provider and set-up, e.g. "Hosted on … in London". Security page, Hosting. |
-| `security.icoRegistration` | [UK GDPR / ICO registration – to confirm] | ICO registration line, e.g. "Registered with the ICO, number ZA123456". Security page top. Also the privacy policy, after "ICO registration:". |
-| `security.certifications` | [Certifications – to confirm] | Certifications held, e.g. "Cyber Essentials" – or say none yet. Never claim one you do not hold. Security page top. |
-| `security.encryptionInTransit` | [standard] | Encryption in transit, after "In transit:", e.g. "TLS 1.2 or later". Security page. |
-| `security.encryptionAtRest` | [standard] | Encryption at rest, after "At rest:", e.g. "AES-256". Security page. |
-| `security.backupFrequency` | [Backup frequency] | How often backups are made, e.g. "Daily" (starts the sentence). Security page, Backups. |
-| `security.backupRetention` | [period] | How long backups are kept, after "kept for", e.g. "7 days". Security page, Backups. Also the privacy policy ("Backups are kept for …"). |
-| `security.retentionGuidance` | [professional and legal guidance] | Which guidance record retention follows, e.g. "HCPC and Records Management Code guidance". Security page, Retention. Also the privacy policy, Retention. |
-| `security.deletionProcess` | [Deletion process] | One sentence on how records are deleted at the end of the retention period or when a clinic leaves. Security page, Retention. |
-| `security.auditRetention` | [audit retention period] | How long the audit trail is kept, after "Kept for", e.g. "8 years". Security page, Audit trail. Also the privacy policy ("kept for …"). |
-| `security.overviewDocument` | [Security overview] | Title of the security overview document you send on request, e.g. "Security overview (PDF)". Security page, Documents. |
-| `security.subProcessorsDocument` | [List of sub-processors] | Title of the sub-processor list you send on request, e.g. "Sub-processors (PDF)". Security page, Documents. Also the privacy policy, sub-processors. |
-| `security.issueResponseTime` | [timeframe] | How fast you respond to a reported security issue, after "we'll respond within", e.g. "one working day". Security page. |
+| `security.region` | the UK (London) | The hosting region, e.g. "the UK (London)" – used for the data and the backups ("stored in …"). Security page. Also the privacy policy (sub-processors and "clinic data is stored in …"). |
+| `security.hostingDetails` | Hosted in UK data centres in London. | One line on the hosting provider and set-up, e.g. "Hosted on … in London". Security page, Hosting. |
+| `security.icoRegistration` | Registered with the ICO, number ZC135044 | ICO registration line (Khuram 01/11/2026), e.g. "Registered with the ICO, number ZA123456" – a full sentence without the full stop. Security page top. Also the privacy policy, section 1. |
+| `security.certifications` | No certifications yet – Cyber Essentials planned | Certifications held, e.g. "Cyber Essentials" – or say none yet. Never claim one you do not hold. Security page top. |
+| `security.encryptionInTransit` | TLS 1.2 or later | Encryption in transit, after "In transit:", e.g. "TLS 1.2 or later". Security page. |
+| `security.encryptionAtRest` | AES-256, with patient files and notes also encrypted per clinic | Encryption at rest, after "At rest:", e.g. "AES-256". Security page. |
+| `security.backupFrequency` | Daily | How often backups are made, e.g. "Daily" (starts the sentence). Security page, Backups. |
+| `security.backupRetention` | 7 days | How long backups are kept, after "kept for", e.g. "7 days". Security page, Backups. Also the privacy policy ("Backups are kept for …"). |
+| `security.retentionGuidance` | HCPC and CSP record-keeping guidance (adult records at least 8 years after the last treatment) | Which guidance record retention follows, e.g. "HCPC and Records Management Code guidance". Security page, Retention. Also the privacy policy, Retention. |
+| `security.deletionProcess` | When a clinic leaves, it receives a full export of its data, and the data is then deleted. | One sentence on how records are deleted at the end of the retention period or when a clinic leaves. Security page, Retention. |
+| `security.auditRetention` | 8 years | How long the audit trail is kept, after "Kept for", e.g. "8 years". Security page, Audit trail. Also the privacy policy ("kept for …"). |
+| `security.overviewDocument` | Security overview (PDF) | Title of the security overview document you send on request, e.g. "Security overview (PDF)". Security page, Documents. |
+| `security.subProcessorsDocument` | Sub-processors list (PDF) | Title of the sub-processor list you send on request, e.g. "Sub-processors (PDF)". Security page, Documents. Also the privacy policy, sub-processors. |
+| `security.issueResponseTime` | one working day | How fast you respond to a reported security issue, after "we'll respond within", e.g. "one working day". Security page. |
 
 ### Book a demo
 

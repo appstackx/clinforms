@@ -143,6 +143,9 @@ Local: test key `STRIPE_CLINDESK_TEST_SECRET_KEY` in `~/.config/appstackx/clinfo
 
 ## 7. Go-live (exact order)
 
+Before the first paying clinic, also work through [`BEFORE-FIRST-CLIENT.md`](BEFORE-FIRST-CLIENT.md) (company
+details, Cyber Essentials, Vercel Pro, Supabase PITR, DPA/DPIA, lawyer review, The SMS Works, attachments to R2 …).
+
 1. **Dashboard (live mode, ClinDesk account)**: activate the account; check public details (ClinDesk, descriptor
    CLINDESK, support `hello@clindesk.co.uk`) are not another product's (CLAUDE.md); recreate the catalogue **in live
    mode with the same lookup keys, amounts, intervals and metadata** – the code refuses any mismatch:

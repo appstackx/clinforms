@@ -152,7 +152,8 @@ async function fillClindesk(page) {
   await page.getByLabel(/^Clinic or group name/).fill(FICTIONAL.clinic);
   await page.getByLabel(/^Work email/).fill(FICTIONAL.email);
   await page.getByLabel(/^Phone/).fill(FICTIONAL.phone);
-  await page.getByLabel(/^Number of sites/).selectOption({ index: 1 });
+  await page.getByLabel(/^Practitioners/).selectOption({ index: 1 });
+  await page.getByLabel(/^Sites/).selectOption({ index: 1 });
 }
 
 function noFormValues(google) {

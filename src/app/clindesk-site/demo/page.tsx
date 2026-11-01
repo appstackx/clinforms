@@ -62,7 +62,7 @@ function BookADemoIntroAndForm() {
               </div>
             </dl>
           </div>
-          <p className="pen-note d-pen">1 to 15 sites, one diary</p>
+          <p className="pen-note d-pen">1 site or 50, one diary</p>
         </div>
         <DemoForm />
         <svg className="wl d-wl draw" viewBox="0 0 1280 600" aria-hidden="true">

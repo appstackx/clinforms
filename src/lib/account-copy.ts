@@ -6,9 +6,11 @@
  */
 
 import { CLINFORMS_NAME } from "./brand";
+import { COMPANY } from "./site";
 
 export const PRODUCT_NAME = CLINFORMS_NAME;
-export const COMPANY_NAME = "AppstackX Ltd";
+/** The exact registered company name (src/lib/site.ts COMPANY.legalName). */
+export const COMPANY_NAME = COMPANY.legalName;
 
 export const ROLE_LABELS = {
   owner: "Owner",

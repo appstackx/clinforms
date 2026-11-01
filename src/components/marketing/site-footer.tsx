@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { PUBLIC_SITE_BRAND, type Brand } from "@/lib/brand";
-import { COMPANY, companyRegistrationLine } from "@/lib/site";
+import { COMPANY, companyRegistrationLine, registeredOfficeLine } from "@/lib/site";
 import { CookieSettingsButton } from "../consent/cookie-settings-button";
 import { LogoMark } from "./logo";
 
@@ -32,6 +32,7 @@ const COLUMNS = [
 /** Public site footer: links, legal, cookie settings, company line, contact. */
 export function SiteFooter({ brand = PUBLIC_SITE_BRAND }: { brand?: Brand }) {
   const registration = companyRegistrationLine();
+  const office = registeredOfficeLine();
   return (
     <footer className="border-t border-slate-200 bg-white">
       <div className="mx-auto grid max-w-6xl gap-10 px-4 py-12 sm:px-6 md:grid-cols-[1.4fr_1fr_1fr] lg:px-8">
@@ -77,6 +78,7 @@ export function SiteFooter({ brand = PUBLIC_SITE_BRAND }: { brand?: Brand }) {
             {brand.productName} is a product of {COMPANY.legalName}. © {new Date().getFullYear()} {COMPANY.legalName}.
           </p>
           {registration ? <p>{registration}</p> : null}
+          {office ? <p data-registered-office="">{office}</p> : null}
         </div>
       </div>
     </footer>

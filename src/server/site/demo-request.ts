@@ -8,7 +8,7 @@
  *
  *   Source: clindesk
  *   Sites: 2–5
- *   Practitioners: 8
+ *   Practitioners: 6–10
  *   Current system: (the visitor's text)
  *   Interests: The diary, Billing and insurers
  *
@@ -21,9 +21,9 @@ import { z } from "zod";
 import { createAccessRequest } from "../repos/access-requests";
 import type { RepoContext } from "../repos/context";
 import { accessRequestRateLimit, fieldErrorsOf, type NotificationPayload } from "./access-request";
-import { DEMO_INTERESTS, DEMO_SITE_BANDS, type DemoInterest } from "@/lib/clindesk/demo-options";
+import { DEMO_INTERESTS, DEMO_PRACTITIONER_BANDS, DEMO_SITE_BANDS, type DemoInterest } from "@/lib/clindesk/demo-options";
 
-export { DEMO_INTERESTS, DEMO_SITE_BANDS } from "@/lib/clindesk/demo-options";
+export { DEMO_INTERESTS, DEMO_PRACTITIONER_BANDS, DEMO_SITE_BANDS } from "@/lib/clindesk/demo-options";
 
 const INTEREST_IDS = Object.keys(DEMO_INTERESTS) as [DemoInterest, ...DemoInterest[]];
 
@@ -59,14 +59,9 @@ export const DemoRequestSchema = z.object({
     .regex(/^[0-9+()\-.\s]*$/, "Phone may contain only digits, spaces and + ( ) - .")
     .optional()
     .default(""),
+  /** One of the pricing bands (demo-options.ts, from the billing plan table) – the band's text is stored. */
+  practitioners: z.enum(DEMO_PRACTITIONER_BANDS, { error: "Choose the number of practitioners." }),
   sites: z.enum(DEMO_SITE_BANDS, { error: "Choose the number of sites." }),
-  practitioners: z
-    .string()
-    .trim()
-    .regex(/^\d{0,3}$/, "Number of practitioners must be a whole number from 1 to 999.")
-    .refine((v) => v === "" || (Number(v) >= 1 && Number(v) <= 999), "Number of practitioners must be a whole number from 1 to 999.")
-    .optional()
-    .default(""),
   currentSystem: z
     .string()
     .trim()
@@ -92,8 +87,8 @@ export const DEMO_FIELD_NAMES = {
   clinic: "clinic",
   email: "email",
   phone: "phone",
-  sites: "sites",
   practitioners: "practitioners",
+  sites: "sites",
   currentSystem: "current_system",
   interests: "see",
   website: "website",
@@ -121,7 +116,7 @@ export function demoRequestInput(form: FormData): Record<string, unknown> {
 /** The extra answers as "Label: value" rows (stored message head and notification email). */
 export function demoDetails(body: DemoRequestBody): Array<[string, string]> {
   const rows: Array<[string, string]> = [];
-  if (body.practitioners) rows.push(["Practitioners", body.practitioners]);
+  rows.push(["Practitioners", body.practitioners]);
   if (body.currentSystem) rows.push(["Current system", body.currentSystem]);
   if (body.interests.length) rows.push(["Interests", body.interests.map((id) => DEMO_INTERESTS[id]).join(", ")]);
   return rows;

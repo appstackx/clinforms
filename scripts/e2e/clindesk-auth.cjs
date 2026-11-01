@@ -126,10 +126,10 @@ async function stopServer() {
   server = null;
 }
 
-/** The `log` provider's printed messages: [{to, subject, text, link}] (each text ends "<brand> · AppstackX Ltd"). */
+/** The `log` provider's printed messages: [{to, subject, text, link}] (each text ends "<brand> · Appstack X Ltd"). */
 function outbox() {
   const out = [];
-  const re = /\[email:log\] to=(\S+)(?: reply-to=(\S+))? subject="([^"]*)"\n([\s\S]*?(?:ClinForms|ClinDesk) · AppstackX Ltd)\n/g;
+  const re = /\[email:log\] to=(\S+)(?: reply-to=(\S+))? subject="([^"]*)"\n([\s\S]*?(?:ClinForms|ClinDesk) · Appstack X Ltd)\n/g;
   for (const m of serverLog.matchAll(re)) {
     const link = (m[4].match(/https?:\/\/\S+\/(?:accept-invite|reset-password)\?token=\S+/) || [])[0] || null;
     out.push({ to: m[1], subject: m[3], text: m[4], link });
@@ -568,7 +568,7 @@ const CLINIC_MARK = "#C4432B"; // public/clindesk/favicon.svg's coral tape
     });
 
     await check("X2", "no link in the server output outside the log provider's messages", () => {
-      const stripped = serverLog.replace(/\[email:log\][\s\S]*?(?:ClinForms|ClinDesk) · AppstackX Ltd\n/g, "");
+      const stripped = serverLog.replace(/\[email:log\][\s\S]*?(?:ClinForms|ClinDesk) · Appstack X Ltd\n/g, "");
       assert.doesNotMatch(stripped, /(accept-invite|reset-password)\?token=/);
     });
 

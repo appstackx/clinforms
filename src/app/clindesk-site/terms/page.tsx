@@ -34,8 +34,8 @@ export default function ClindeskTermsPage() {
       >
         <h2 id="about">1. About these terms</h2>
         <p>
-          {CLINIC_SYSTEM_NAME} is provided by {COMPANY.legalName} (&ldquo;we&rdquo;, &ldquo;us&rdquo;), company number{" "}
-          <Fill k="company.number" />, registered office <Fill k="company.registeredOffice" />. In these terms, the
+          {CLINIC_SYSTEM_NAME} is provided by {COMPANY.legalName} (&ldquo;we&rdquo;, &ldquo;us&rdquo;), a company registered
+          in England and Wales, company number <Fill k="company.number" />. In these terms, the
           &ldquo;clinic&rdquo; is the organisation named in the order, &ldquo;users&rdquo; are the people the clinic
           invites, the &ldquo;service&rdquo; is {CLINIC_SYSTEM_NAME} – the clinic management system, with its diary,
           patient records, billing, patient portal and messages – its support, and the Reports add-on (powered by{" "}
