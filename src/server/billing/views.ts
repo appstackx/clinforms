@@ -135,9 +135,28 @@ export interface BillingView {
   addons: { key: ReportsAddonKey; reports: number; monthly: string; yearly: string }[];
   clinforms: { key: ClinFormsTierKey; label: string; reports: number; monthly: string }[];
   extraReport: string;
+  /** A running ClinForms plan: the Reports add-on with the same allowance (the default when it moves to ClinDesk). */
+  matchingAddon: ReportsAddonKey | null;
 }
 
-export async function billingViewFor(db: Kysely<Database>, actor: BillingActor, input: { product: "clindesk" | "clinforms" }, env: Env = process.env, now: Date = new Date()): Promise<BillingView> {
+/**
+ * The product whose plans the page offers: a running plan's own product, except that a running ClinForms plan may be
+ * moved to ClinDesk (01/11/2026, Khuram's R2: `switchToClinDesk` = the page was opened with ?product=clindesk) – the
+ * running subscription is then changed in place (changePlan: the ClinForms item replaced by the band + Reports add-on).
+ */
+export function offeredProduct(running: PlanChoice | null, asked: "clindesk" | "clinforms", switchToClinDesk = false): "clindesk" | "clinforms" {
+  if (!running) return asked;
+  if (running.product === "clinforms" && switchToClinDesk) return "clindesk";
+  return running.product;
+}
+
+/** The Reports add-on that matches a ClinForms tier's allowance (the default when a ClinForms plan moves to ClinDesk). */
+export function addonForTier(tier: ClinFormsTierKey): ReportsAddonKey | null {
+  const t = clinFormsTier(tier);
+  return t ? (REPORTS_ADDONS.find((a) => a.reports === t.reports)?.key ?? null) : null;
+}
+
+export async function billingViewFor(db: Kysely<Database>, actor: BillingActor, input: { product: "clindesk" | "clinforms"; switchToClinDesk?: boolean }, env: Env = process.env, now: Date = new Date()): Promise<BillingView> {
   const sub = await readClinicSubscription({ db }, actor.tenantId);
   const config = cardPaymentsConfig(env);
   const choice = choiceOf(sub);
@@ -158,7 +177,7 @@ export async function billingViewFor(db: Kysely<Database>, actor: BillingActor, 
     paymentsReady: config.ok,
     paymentsUnavailable: config.ok ? null : PAYMENTS_OFF,
     // A running plan decides which plans are offered (a change); otherwise the page's choice (?product=).
-    product: running && choice ? choice.product : input.product,
+    product: offeredProduct(running ? choice : null, input.product, input.switchToClinDesk === true),
     current: {
       state,
       stateLabel: STATE_LABELS[state],
@@ -181,6 +200,7 @@ export async function billingViewFor(db: Kysely<Database>, actor: BillingActor, 
     addons: REPORTS_ADDONS.map((a) => ({ key: a.key, reports: a.reports, monthly: pounds(a.monthlyPence), yearly: pounds(a.monthlyPence * YEARLY_MONTHS) })),
     clinforms: CLINFORMS_TIERS.map((t) => ({ key: t.key, label: t.label, reports: t.reports, monthly: pounds(t.monthlyPence) })),
     extraReport: pounds(150),
+    matchingAddon: choice?.product === "clinforms" ? addonForTier(choice.tier) : null,
   };
 }
 

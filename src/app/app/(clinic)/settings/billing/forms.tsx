@@ -5,6 +5,7 @@ import { useFormState } from "react-dom";
 import { SubmitButton } from "@/components/account/form-controls";
 import { Notice, Panel } from "@/components/account/shell";
 import type { BillingView } from "@/server/billing/views";
+import { CLINFORMS_NAME } from "@/lib/brand";
 import { choosePlanAction, manageBillingAction, type BillingActionResult } from "./actions";
 
 const CARD = "flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 bg-white p-3 text-sm has-[:checked]:border-teal-600 has-[:checked]:ring-2 has-[:checked]:ring-teal-600/30";
@@ -33,7 +34,7 @@ export function ChoosePlanForm({ view }: { view: BillingView }) {
   const button = view.changesRunning ? "Change plan" : "Continue to payment";
   if (view.product === "clinforms") {
     return (
-      <form action={action} className="space-y-4" aria-label="Choose a ClinForms plan" data-testid="plan-form">
+      <form action={action} className="space-y-4" aria-label={`Choose a ${CLINFORMS_NAME} plan`} data-testid="plan-form">
         <input type="hidden" name="product" value="clinforms" />
         <fieldset className="grid gap-3 sm:grid-cols-2">
           <legend className="mb-2 text-sm font-medium text-slate-800">Reports a month</legend>
@@ -89,7 +90,7 @@ export function ChoosePlanForm({ view }: { view: BillingView }) {
         <select
           id="plan-reports"
           name="reports"
-          defaultValue={current?.product === "clindesk" && current.reports ? current.reports : "none"}
+          defaultValue={current?.product === "clindesk" ? (current.reports ?? "none") : current?.product === "clinforms" ? (view.matchingAddon ?? "none") : "none"}
           className="h-10 w-full max-w-md rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900"
         >
           <option value="none">No Reports add-on</option>

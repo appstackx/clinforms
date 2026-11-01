@@ -1,8 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { PageHeader, Panel } from "@/components/account/shell";
-import { DRAFTING_COPY, ROLE_DESCRIPTIONS, roleLabel } from "@/lib/account-copy";
+import { cookies } from "next/headers";
+import { ClinDeskOfferCard } from "@/components/account/clindesk-offer";
+import { DRAFTING_COPY, roleDescriptions, roleLabel } from "@/lib/account-copy";
 import { CLINIC_SYSTEM_NAME } from "@/lib/brand";
+import { CLINDESK_OFFER_COOKIE, showClinDeskOffer } from "@/lib/clindesk-offer";
+import { currentBrand } from "@/server/brand";
+import { clinicBrand } from "@/server/brand-home";
+import { hideClinDeskOfferAction } from "./offer-actions";
 import { clinicPackages } from "@/server/pms/entitlements";
 import { clinicTrialRunning } from "@/server/admin/clinic-plan";
 import { loadSetupChecklist } from "@/server/admin/setup-checklist";
@@ -19,13 +25,19 @@ export default async function ClinicOverviewPage() {
   const db = getDb();
   const [members, invitations] = await Promise.all([countMembers(db, membership.organizationId), listPendingInvitations(db, membership.organizationId)]);
   const manager = isManager(membership.role);
-  const [setup, trial, packages] = await Promise.all([
+  const [setup, trial, packages, ownBrand] = await Promise.all([
     loadSetupChecklist(db, membership, { members, openInvitations: invitations.length }),
     clinicTrialRunning(db, membership.tenantId),
     clinicPackages(membership.tenantId),
+    clinicBrand(membership.tenantId),
   ]);
+  // 01/11/2026 (Khuram's R1): the reports checklist, Plan & usage and API keys only for a clinic with Reports (or a
+  // ClinForms clinic); a ClinDesk clinic without the add-on gets its own set-up steps and no reports links.
+  const reportsArea = packages.reports || ownBrand === "clinforms";
+  // R2: the full clinic system offered to a ClinForms clinic's owners and admins (hidden on request, per browser).
+  const offer = showClinDeskOffer({ clinicSystem: packages.clinic, clinicBrand: ownBrand, role: membership.role }) && cookies().get(CLINDESK_OFFER_COOKIE)?.value !== "1";
   // Fix wave 2: a new clinic's first steps, for the owner and administrators (who can do them).
-  const steps: Array<{ done: boolean; optional?: boolean; href: string; label: string; text: string }> = [
+  const formSteps: Array<{ done: boolean; optional?: boolean; href: string; label: string; text: string }> = [
     { done: setup.clinicDetails, href: "/app/settings/clinic", label: "Clinic details", text: "Name, address and postcode – they appear on completed forms." },
     // Optional (owner decision: off for a new clinic, switched on once the data processing agreement is signed),
     // so it never counts as a step left.
@@ -40,15 +52,24 @@ export default async function ClinicOverviewPage() {
     { done: setup.signer, href: "/app/settings/members", label: "Signing details", text: "An HCPC number and “may sign” for each clinician who approves forms." },
     { done: setup.confirmedForm, href: "/app/studio/forms", label: "Your first referrer form", text: "Upload a referrer's blank form and confirm its mapping once." },
   ];
+  const clinicSteps: typeof formSteps = [
+    { done: setup.clinicDetails, href: "/app/settings/clinic", label: "Clinic details", text: "Name, address and postcode of your clinic." },
+    { done: packages.clinic, href: "/app/settings/billing", label: `Choose your ${CLINIC_SYSTEM_NAME} plan`, text: "By the number of practitioners, monthly or yearly." },
+    { done: setup.team, href: "/app/settings/members", label: "Invite your team", text: "Each member signs in with two-step verification." },
+  ];
+  // The forms checklist only where forms can be completed (a clinic with Reports).
+  const steps = packages.reports ? formSteps : ownBrand === "clinic" ? clinicSteps : formSteps;
   const required = steps.filter((s) => !s.optional);
   const stepsLeft = required.filter((s) => !s.done).length;
   const links = [
-    { href: "/app/settings/clinic", label: "Clinic details", text: manager ? "Name, address and how long reports are kept." : "Your clinic's details." },
+    { href: "/app/settings/clinic", label: "Clinic details", text: manager ? (packages.reports ? "Name, address and how long reports are kept." : "Name, address and contact details.") : "Your clinic's details." },
     { href: "/app/settings/members", label: "Members", text: manager ? "Invite people, set roles and signing details." : "Who is in your clinic." },
     { href: "/app/settings/security", label: "Security", text: "Backup codes and where you are signed in." },
-    { href: "/app/settings/plan", label: "Plan & usage", text: manager ? "Your package and the reports used this month." : "Reports your clinic has used this month." },
-    ...(manager ? [{ href: "/app/settings/billing", label: "Plan and billing", text: "Choose or change your plan, add the Reports add-on, payments and invoices." }] : []),
-    ...(manager ? [{ href: "/app/settings/api-keys", label: "API keys", text: "Keys for connecting your practice-management system." }] : []),
+    ...(reportsArea ? [{ href: "/app/settings/plan", label: "Plan & usage", text: manager ? "Your package and the reports used this month." : "Reports your clinic has used this month." }] : []),
+    ...(manager
+      ? [{ href: "/app/settings/billing", label: "Plan and billing", text: packages.clinic || ownBrand === "clinic" ? "Choose or change your plan, add the Reports add-on, payments and invoices." : "Choose or change your plan, payments and invoices." }]
+      : []),
+    ...(manager && reportsArea ? [{ href: "/app/settings/api-keys", label: "API keys", text: "Keys for connecting your practice-management system." }] : []),
     {
       href: "/app/settings/activity",
       label: "Activity",
@@ -74,11 +95,12 @@ export default async function ClinicOverviewPage() {
           </div>
         </Panel>
       ) : null}
+      {offer ? <ClinDeskOfferCard onHide={hideClinDeskOfferAction} className="mb-6" /> : null}
       <div className="grid gap-4 md:grid-cols-3">
         <Panel>
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Your role</p>
           <p className="mt-1 text-lg font-semibold">{roleLabel(membership.role)}</p>
-          <p className="mt-1 text-sm text-slate-600">{ROLE_DESCRIPTIONS[membership.role]}</p>
+          <p className="mt-1 text-sm text-slate-600">{roleDescriptions(packages.reports)[membership.role]}</p>
         </Panel>
         <Panel>
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Members</p>
@@ -97,7 +119,7 @@ export default async function ClinicOverviewPage() {
       {manager && stepsLeft > 0 ? (
         <Panel title="Set up your clinic" className="mt-6">
           <p className="text-sm text-slate-600">
-            {stepsLeft} of {required.length} steps left before your first form.
+            {packages.reports || ownBrand !== "clinic" ? `${stepsLeft} of ${required.length} steps left before your first form.` : `${stepsLeft} of ${required.length} steps left to set up your clinic.`}
           </p>
           <ol className="mt-3 space-y-2">
             {steps.map((step) => (
@@ -158,9 +180,12 @@ export default async function ClinicOverviewPage() {
             >
               Open the Studio
             </Link>
-            <Link href="/reports" className="text-sm font-medium text-teal-700 underline-offset-4 hover:underline">
-              Try the demo with fictional patients
-            </Link>
+            {/* The public demo lives on ClinForms' own site; on the clinic brand's host /reports is its marketing page. */}
+            {currentBrand().id === "clinforms" ? (
+              <Link href="/reports" className="text-sm font-medium text-teal-700 underline-offset-4 hover:underline">
+                Try the demo with fictional patients
+              </Link>
+            ) : null}
           </div>
         </Panel>
       ) : null}
