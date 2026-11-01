@@ -53,9 +53,10 @@ describe("V-01: a ClinForms clinic choosing a clinic-system plan keeps its repor
 });
 
 describe("V-02: the payment done page after buying the clinic system on ClinForms' host", () => {
-  it("names neither brand in the tab title on ClinForms' hosts; the clinic system's sign-in is the main action", () => {
+  it("the hand-off is titled for the clinic system; its sign-in is the main action", () => {
     const src = fs.readFileSync(path.resolve("src/app/app/(clinic)/settings/billing/done/page.tsx"), "utf8");
-    assert.match(src, /currentBrand\(\)\.id === "clinic" \? \{ title: DONE_TITLE \} : \{ title: \{ absolute: DONE_TITLE \} \}/);
+    assert.match(src, /elsewhere \? \{ title: \{ absolute: `\$\{DONE_TITLE\} · \$\{CLINIC_SYSTEM_NAME\}` \} \} : \{ title: DONE_TITLE \}/);
+    assert.match(src, /const doneViewFor = cache\(/, "the title and the page share one checkout sync");
     assert.match(src, /elsewhere \? `Sign in to \$\{CLINIC_SYSTEM_NAME\}`/);
   });
 });

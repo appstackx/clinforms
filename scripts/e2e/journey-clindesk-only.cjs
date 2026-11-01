@@ -662,10 +662,14 @@ const livePages = [];
       await owner.goto(`${DESK}/app`);
       await owner.screenshot({ path: path.join(SHOTS, "final-clindesk-overview.png"), fullPage: true });
       await owner.goto(`${DESK}/app/settings/activity`);
-      const res = await owner.context().request.get(`${DESK}/app/settings/activity/export`);
-      assert.equal(res.status(), 200, `export answered ${res.status()}`);
-      const disposition = res.headers()["content-disposition"] || "";
-      const csv = await res.text();
+      // Fetched from the page (the browser resolves clinic.localhost; Node's request context does not).
+      const res = await owner.evaluate(async () => {
+        const r = await fetch("/app/settings/activity/export");
+        return { status: r.status, disposition: r.headers.get("content-disposition") || "", text: await r.text() };
+      });
+      assert.equal(res.status, 200, `export answered ${res.status}`);
+      const disposition = res.disposition;
+      const csv = res.text;
       fs.writeFileSync(path.join(OUT, "activity.csv"), csv);
       const name = (disposition.match(/filename="([^"]+)"/) || [])[1] || "";
       assert.match(name, new RegExp(`^activity-${CLINIC.slug}-\\d{4}-\\d{2}-\\d{2}\\.csv$`), `file name "${name}"`);
