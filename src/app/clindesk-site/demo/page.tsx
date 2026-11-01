@@ -46,7 +46,7 @@ function BookADemoIntroAndForm() {
             <dl className="appt-rows">
               <div>
                 <dt className="label">With</dt>
-                <dd className="pen">the AppstackX team</dd>
+                <dd className="pen">the {CLINIC_SYSTEM_NAME} team</dd>
               </div>
               <div>
                 <dt className="label">Where</dt>

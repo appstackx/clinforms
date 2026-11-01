@@ -157,7 +157,7 @@ describe("helpers", () => {
     assert.deepEqual(mailerSendSettingsFromEnv({ MAILERSEND_API_KEY: "k", MAILERSEND_FROM_EMAIL: "noreply@example.com" }), {
       apiKey: "k",
       fromEmail: "noreply@example.com",
-      to: "khuram@appstackx.co.uk",
+      to: "hello@clinforms.co.uk",
     });
   });
 
@@ -207,18 +207,18 @@ describe("helpers", () => {
         fromEmail: "hello@clinforms.example",
         to: "team@clinforms.example",
       });
-      assert.deepEqual(mailerSendSettingsFromEnv(BASE, "clindesk"), { apiKey: "cf-key", fromEmail: "hello@clinforms.example", to: "khuram@appstackx.co.uk" });
-      assert.deepEqual(mailerSendSettingsFromEnv({ ...BASE, ...CLINIC_ACCOUNT }, "clindesk")?.to, "khuram@appstackx.co.uk");
+      assert.deepEqual(mailerSendSettingsFromEnv(BASE, "clindesk"), { apiKey: "cf-key", fromEmail: "hello@clinforms.example", to: "hello@clinforms.co.uk" });
+      assert.deepEqual(mailerSendSettingsFromEnv({ ...BASE, ...CLINIC_ACCOUNT }, "clindesk")?.to, "hello@clinforms.co.uk");
       assert.equal(mailerSendSettingsFromEnv({}, "clindesk"), null);
       assert.equal(mailerSendSettingsFromEnv({ CLINFORMS_ACCESS_REQUEST_TO_CLINIC: "hello@clindesk.example" }, "clindesk"), null);
     });
 
     test("ClinDesk: a half-configured or malformed clinic account falls back to ClinForms' account, logging no key or address", async () => {
       const half = await quiet(() => mailerSendSettingsFromEnv({ ...BASE, MAILERSEND_API_KEY_CLINIC: "cd-secret-key" }, "clindesk"));
-      assert.deepEqual(half.result, { apiKey: "cf-key", fromEmail: "hello@clinforms.example", to: "khuram@appstackx.co.uk" });
+      assert.deepEqual(half.result, { apiKey: "cf-key", fromEmail: "hello@clinforms.example", to: "hello@clinforms.co.uk" });
       assert.match(half.logged, /email.clinic_account_incomplete/);
       const bad = await quiet(() => mailerSendSettingsFromEnv({ ...BASE, MAILERSEND_API_KEY_CLINIC: "cd-secret-key", MAILERSEND_FROM_EMAIL_CLINIC: "not an address" }, "clindesk"));
-      assert.deepEqual(bad.result, { apiKey: "cf-key", fromEmail: "hello@clinforms.example", to: "khuram@appstackx.co.uk" });
+      assert.deepEqual(bad.result, { apiKey: "cf-key", fromEmail: "hello@clinforms.example", to: "hello@clinforms.co.uk" });
       assert.match(bad.logged, /email.not_configured/);
       for (const logged of [half.logged, bad.logged]) {
         assert.ok(!logged.includes("cd-secret-key") && !logged.includes("cf-key") && !logged.includes("not an address"), "no key or value logged");
@@ -238,7 +238,7 @@ describe("helpers", () => {
       assert.equal(calls[0].to?.[0].name, "ClinDesk team");
       assert.match(calls[0].subject ?? "", /^ClinDesk demo request: /);
       assert.deepEqual({ ...calls[1].from }, { email: "hello@clinforms.example", name: "ClinForms" });
-      assert.equal(calls[1].to?.[0].email, "khuram@appstackx.co.uk");
+      assert.equal(calls[1].to?.[0].email, "hello@clinforms.co.uk");
       assert.match(calls[1].subject ?? "", /^ClinForms access request: /);
     });
   });
@@ -311,6 +311,6 @@ describe("POST /api/access-requests", () => {
     const res = await POST(post(JSON.stringify(VALID)));
     assert.equal(res.status, 503);
     const body = (await res.json()) as { error: string };
-    assert.match(body.error, /khuram@appstackx\.co\.uk/);
+    assert.match(body.error, /hello@clinforms\.co\.uk/);
   });
 });

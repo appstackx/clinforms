@@ -32,7 +32,7 @@ export const COMPANY: CompanyDetails = {
   legalName: "AppstackX Ltd",
   brand: "AppStackX",
   website: "https://appstackx.co.uk",
-  contactEmail: "khuram@appstackx.co.uk",
+  contactEmail: "hello@clinforms.co.uk",
   // Unknown today: leave unset until confirmed (lines that need them are hidden).
   registeredNumber: undefined,
   registeredIn: undefined,
