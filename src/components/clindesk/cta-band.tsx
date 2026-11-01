@@ -4,7 +4,7 @@ import { FROM_PRICE } from "@/lib/clindesk/pricing";
 import { CONTACT_EMAIL } from "@/lib/clindesk/site";
 import { AppointmentCard, type AppointmentRows } from "./appointment-card";
 
-/** The default price line under the closing call to action ("From £39 a month · Reports is an add-on · See pricing" –
+/** The default price line under the closing call to action ("From £25 a month · Reports is an add-on · See pricing" –
  * the amount from the billing plan table, src/lib/clindesk/pricing.ts). */
 export function FromPriceLine() {
   return (

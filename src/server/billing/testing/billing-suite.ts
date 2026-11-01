@@ -164,7 +164,7 @@ export function defineBillingSuite(label: string, factory: () => Promise<Billing
       assert.deepEqual(
         choiceItems({ product: "clindesk", band: "practice", interval: "year", reports: "100" }).map((i) => [i.lookupKey, i.pence, i.interval, i.reportsIncluded]),
         [
-          ["clindesk_practice_yearly", 169000, "year", null],
+          ["clindesk_practice_yearly", 85000, "year", null],
           ["clindesk_reports_100_yearly", 159000, "year", 100],
         ],
       );
@@ -174,11 +174,11 @@ export function defineBillingSuite(label: string, factory: () => Promise<Billing
       assert.deepEqual(
         choiceItems({ product: "clindesk", band: "practice", interval: "month", reports: "100" }).map((i) => [i.lookupKey, i.pence]),
         [
-          ["clindesk_practice_monthly", 16900],
+          ["clindesk_practice_monthly", 8500],
           ["clindesk_reports_100_monthly", 15900],
         ],
       );
-      assert.equal(choiceItems({ product: "clindesk", band: "group", interval: "year", reports: null })[0].pence, 299000);
+      assert.equal(choiceItems({ product: "clindesk", band: "group", interval: "year", reports: null })[0].pence, 149000);
       assert.equal(choiceItems({ product: "clinforms", tier: "group_plus" })[0].reportsIncluded, 500);
     });
 

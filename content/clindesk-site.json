@@ -22,23 +22,23 @@
       "description": "The free trial in one sentence (Khuram 01/11/2026, option A: a free trial is offered after the demo). Pricing page, top and the \"Is there a free trial?\" answer."
     },
     "pricing.switchingFeeSummary": {
-      "value": "[Any switching fee]",
+      "value": "Switching help included",
       "description": "Short note on any switching fee in the \"With every plan\" list, e.g. \"Included\" or \"£X one-off per site\". Pricing page."
     },
     "pricing.contractLength": {
-      "value": "[Contract length, e.g. monthly rolling or 12 months]",
+      "value": "Monthly rolling – cancel anytime",
       "description": "Contract length (\"How long is the contract?\"), e.g. \"Monthly rolling\". Pricing page FAQ."
     },
     "pricing.noticePeriod": {
-      "value": "[Notice period]",
+      "value": "no notice period; your plan ends at the end of the period you've paid for",
       "description": "Notice period, written as a sentence fragment after the contract length, e.g. \"30 days' notice to leave\". Pricing page FAQ."
     },
     "pricing.dataExport": {
-      "value": "[How export works: formats, timescale and any cost]",
+      "value": "Export your data at any time, free of charge",
       "description": "How a clinic exports its data when it leaves: formats, timescale and any cost. Pricing page FAQ. Also the terms, after \"How the data is returned:\"."
     },
     "pricing.switchingFee": {
-      "value": "[Switching fee, if any]",
+      "value": "Yes – switching help is included once you subscribe, at no extra cost",
       "description": "Switching fee, if any (\"Will you help us switch?\" answer). Pricing page FAQ."
     },
     "reports.supportedForms": {
@@ -50,15 +50,15 @@
       "description": "How a new referrer's form is added and how long it takes, after \"Adding a new referrer's form:\". Reports page."
     },
     "support.summary": {
-      "value": "[Support hours and channels]",
+      "value": "Email support, Monday to Friday 09:00–17:00",
       "description": "Support in a few words, e.g. \"Mon–Fri 08:00–18:00, by email and phone\". Features and Pricing pages (\"Support\")."
     },
     "support.hours": {
-      "value": "[Support hours, e.g. Monday to Friday, 08:00–18:00]",
+      "value": "Monday to Friday, 09:00–17:00 (UK time)",
       "description": "Support hours (\"When can we get support?\"). Pricing page FAQ. Also the terms, in brackets after the support channels."
     },
     "support.channels": {
-      "value": "[email, phone or in-app]",
+      "value": "email",
       "description": "How to reach support, after \"by\", e.g. \"email and phone\". Pricing page FAQ. Also the terms (\"Support is by …\")."
     },
     "hosting.summary": {

@@ -69,13 +69,13 @@ describe("content/clindesk-site.json", () => {
     assert.equal(isPlaceholderValue("[£X]"), true);
     assert.equal(isPlaceholderValue("£49"), false);
     const c = parseClindeskContent(clone());
-    assert.deepEqual(contentText("pricing.switchingFeeSummary", { content: c, draft: true }), { key: "pricing.switchingFeeSummary", filled: false, text: "[Any switching fee]" });
-    assert.deepEqual(contentText("pricing.switchingFeeSummary", { content: c, draft: false }), { key: "pricing.switchingFeeSummary", filled: false, text: TO_CONFIRM });
+    assert.deepEqual(contentText("switching.typicalMove", { content: c, draft: true }), { key: "switching.typicalMove", filled: false, text: "[X–Y weeks, depending on sites and data]" });
+    assert.deepEqual(contentText("switching.typicalMove", { content: c, draft: false }), { key: "switching.typicalMove", filled: false, text: TO_CONFIRM });
     const filled = clone();
-    filled.values["pricing.switchingFeeSummary"].value = " Included ";
+    filled.values["switching.typicalMove"].value = " 4–6 weeks ";
     const f = parseClindeskContent(filled);
-    assert.deepEqual(contentText("pricing.switchingFeeSummary", { content: f, draft: false }), { key: "pricing.switchingFeeSummary", filled: true, text: "Included" });
-    assert.equal(unfilledKeys(f).includes("pricing.switchingFeeSummary"), false);
+    assert.deepEqual(contentText("switching.typicalMove", { content: f, draft: false }), { key: "switching.typicalMove", filled: true, text: "4–6 weeks" });
+    assert.equal(unfilledKeys(f).includes("switching.typicalMove"), false);
   });
   it("drafts: next dev, Vercel previews or CLINDESK_SITE_DRAFT=1; production builds are not", () => {
     assert.equal(isDraftBuild({ NODE_ENV: "development" }), true);

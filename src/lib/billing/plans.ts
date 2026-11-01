@@ -5,7 +5,7 @@
  * amounts (checked before every checkout – src/server/billing/payments.ts).
  *
  *   ClinDesk, by practitioner band (monthly; yearly = 10 × the monthly price, "two months free"):
- *     Solo 1 £39 · Small 2–5 £89 · Practice 6–10 £169 · Group 11–25 £299 · Multi-site 26–60 £499
+ *     Solo 1 £25 · Small 2–5 £50 · Practice 6–10 £85 · Group 11–25 £149 · Multi-site 26–200 £249 (Khuram 01/11/2026, below Cliniko at every size)
  *       lookup keys clindesk_<band>_monthly / clindesk_<band>_yearly
  *   Reports add-on, billed with the plan's own interval (the payment page cannot mix intervals in one subscription;
  *   Khuram 01/11/2026: yearly add-on prices = 10 × monthly):
@@ -24,11 +24,11 @@ import { CLINFORMS_NAME, CLINIC_SYSTEM_NAME } from "../brand";
 export type BillingInterval = "month" | "year";
 
 export const CLINDESK_BANDS = [
-  { key: "solo", label: "Solo", min: 1, max: 1, monthlyPence: 3_900 },
-  { key: "small", label: "Small", min: 2, max: 5, monthlyPence: 8_900 },
-  { key: "practice", label: "Practice", min: 6, max: 10, monthlyPence: 16_900 },
-  { key: "group", label: "Group", min: 11, max: 25, monthlyPence: 29_900 },
-  { key: "multisite", label: "Multi-site", min: 26, max: 60, monthlyPence: 49_900 },
+  { key: "solo", label: "Solo", min: 1, max: 1, monthlyPence: 2_500 },
+  { key: "small", label: "Small", min: 2, max: 5, monthlyPence: 5_000 },
+  { key: "practice", label: "Practice", min: 6, max: 10, monthlyPence: 8_500 },
+  { key: "group", label: "Group", min: 11, max: 25, monthlyPence: 14_900 },
+  { key: "multisite", label: "Multi-site", min: 26, max: 200, monthlyPence: 24_900 },
 ] as const;
 export type ClinDeskBandKey = (typeof CLINDESK_BANDS)[number]["key"];
 export type ClinDeskBand = (typeof CLINDESK_BANDS)[number];
