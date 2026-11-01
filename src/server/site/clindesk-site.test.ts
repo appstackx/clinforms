@@ -298,21 +298,18 @@ describe("clindesk.co.uk legal pages", () => {
     assert.match(text, /withdraw consent at any time, where we rely on consent \(for advertising cookies, use .Cookie settings/);
     assert.match(text, /This website uses no analytics/);
     assert.ok(!/we do not use it for advertising/.test(text), "no longer true");
-    for (const k of ["legal.accountRetention", "legal.demoRequestRetention", "legal.providerLocations"]) {
-      assert.ok(html.includes(`data-to-confirm="${k}"`), k);
-    }
     // Filled 01/11/2026 (Khuram): ICO number, region, sub-processor list title, retention.
-    for (const k of ["security.icoRegistration", "security.region", "security.subProcessorsDocument", "security.backupRetention", "security.auditRetention", "security.retentionGuidance"]) {
+    for (const k of ["legal.accountRetention", "legal.demoRequestRetention", "legal.providerLocations", "security.icoRegistration", "security.region", "security.subProcessorsDocument", "security.backupRetention", "security.auditRetention", "security.retentionGuidance"]) {
       assert.ok(!html.includes(`data-to-confirm="${k}"`), k);
     }
     assert.match(text, /Registered with the ICO, number ZC135044\./);
     assert.match(text, /clinic data is stored in the UK \(London\)\./);
     assert.match(text, /available on request as our Sub-processors list \(PDF\) from /);
     assert.match(text, /in line with HCPC and CSP record-keeping guidance \(adult records at least 8 years after the last treatment\)\. Clinical records are never deleted automatically\. Backups are kept for 7 days\./);
-    assert.ok(text.includes(TO_CONFIRM));
+    assert.ok(!text.includes(TO_CONFIRM), "every fill-in filled (01/11/2026)");
   });
 
-  it("/terms: the clinic system as the service, the Reports add-on optional, lawyer points as fill-ins", async () => {
+  it("/terms: the clinic system as the service, the Reports add-on optional, lawyer points filled", async () => {
     const { text, html } = await mainOf("terms");
     assert.match(text, /the clinic management system, with its diary, patient records, billing, patient portal and messages/);
     assert.match(text, /the Reports add-on if the order includes it/);
@@ -321,8 +318,10 @@ describe("clindesk.co.uk legal pages", () => {
     assert.match(text, /No VAT is charged\./, "not VAT registered (01/11/2026)");
     // Filled 01/11/2026 (Khuram): data export, support channels and hours now read from the content file.
     for (const k of ["legal.termsEffectiveFrom", "legal.medicalDeviceStatus", "legal.liabilityCap", "legal.paymentProviderTerms"]) {
-      assert.ok(html.includes(`data-to-confirm="${k}"`), k);
+      assert.ok(!html.includes(`data-to-confirm="${k}"`), k);
     }
+    assert.match(text, /These terms apply from 1 November 2026/);
+    assert.ok(!text.includes(TO_CONFIRM));
   });
 
   it("/cookies: exactly the cookies the code sets on ClinDesk – the consent cookie and advertising cookies, no analytics storage", async () => {
@@ -335,7 +334,7 @@ describe("clindesk.co.uk legal pages", () => {
     for (const name of [CONSENT_COOKIE, DEMO_SENT_KEY, ...GOOGLE_ADS_FIRST_PARTY_COOKIES]) assert.ok(html.includes(`<code>${name}</code>`), name);
     assert.match(text, /Advertising \(optional\)/);
     assert.match(text, /Nothing is loaded from Google until you accept/);
-    assert.ok(html.includes('data-to-confirm="legal.humanCheckStorage"'));
+    assert.ok(!html.includes('data-to-confirm="legal.humanCheckStorage"'));
   });
 });
 

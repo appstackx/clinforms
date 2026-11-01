@@ -68,7 +68,9 @@ describe("content/clindesk-site.json", () => {
   it("a value in [brackets] is unfilled: shown as written in drafts, as the neutral marker in production", () => {
     assert.equal(isPlaceholderValue("[£X]"), true);
     assert.equal(isPlaceholderValue("£49"), false);
-    const c = parseClindeskContent(clone());
+    const open = clone();
+    open.values["switching.typicalMove"].value = "[X–Y weeks, depending on sites and data]";
+    const c = parseClindeskContent(open);
     assert.deepEqual(contentText("switching.typicalMove", { content: c, draft: true }), { key: "switching.typicalMove", filled: false, text: "[X–Y weeks, depending on sites and data]" });
     assert.deepEqual(contentText("switching.typicalMove", { content: c, draft: false }), { key: "switching.typicalMove", filled: false, text: TO_CONFIRM });
     const filled = clone();
