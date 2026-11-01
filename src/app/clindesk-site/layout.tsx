@@ -1,17 +1,24 @@
 import type { Metadata } from "next";
 import { Arimo, Bricolage_Grotesque, Courier_Prime, Figtree, Shantell_Sans, Source_Serif_4 } from "next/font/google";
+import { GoogleAdsTag } from "@/components/ads/google-ads-tag";
+import { ClindeskCookieConsent } from "@/components/clindesk/cookie-consent";
 import { CLINIC_SYSTEM_NAME } from "@/lib/brand";
 import { CLINDESK_SITE_URL } from "@/lib/clindesk/site";
 import "@/components/clindesk/styles/site.css";
+import "@/components/clindesk/styles/consent.css";
 
 /*
  * ClinDesk's public website (clindesk.co.uk). Served ONLY on the clinic brand's hosts: src/middleware.ts rewrites
  * "/", "/features" … to this folder there and answers 404 for /clindesk-site/… on every host. Static pages; the
  * fill-ins come from content/clindesk-site.json (src/lib/clindesk/content.ts).
  *
- * Fonts (the design's Google Fonts) are self-hosted by next/font at build time – no request to a third party from the
- * browser, font-display: swap. The display, text and pen fonts are preloaded; the fonts of the product scenes and
+ * Fonts (the design's Google Fonts) are self-hosted by next/font at build time – no font request to a third party from
+ * the browser, font-display: swap. The display, text and pen fonts are preloaded; the fonts of the product scenes and
  * referrers' paper forms (Inter comes from the root layout) load when a page uses them.
+ *
+ * Cookie choices: ClinDesk's own banner (first in the tab order) and the advertising measurement tag, which loads
+ * nothing until the visitor accepts it (src/components/ads/google-ads.ts) – the only third-party request these pages
+ * can make, apart from the tour video when it is played.
  */
 const bricolage = Bricolage_Grotesque({ subsets: ["latin"], axes: ["opsz", "wdth"], display: "swap", variable: "--cd-font-bricolage" });
 const figtree = Figtree({ subsets: ["latin"], style: ["normal", "italic"], display: "swap", variable: "--cd-font-figtree" });
@@ -30,5 +37,11 @@ export const metadata: Metadata = {
 };
 
 export default function ClindeskSiteLayout({ children }: { children: React.ReactNode }) {
-  return <div className={FONT_VARIABLES}>{children}</div>;
+  return (
+    <div className={FONT_VARIABLES}>
+      <ClindeskCookieConsent />
+      {children}
+      <GoogleAdsTag />
+    </div>
+  );
 }

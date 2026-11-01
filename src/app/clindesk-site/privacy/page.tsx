@@ -14,7 +14,8 @@ import { COMPANY } from "@/lib/site";
  *   (no live provider in this build – outbox only); card payments: src/server/pms/billing/payments (test mode only,
  *   off by default); human check: src/server/pms/portal/human-check.ts (off until its keys are set);
  * - the Reports add-on's drafting service: ClinForms' own (src/modules/medreport);
- * - no analytics on this brand's hosts (src/lib/brand.ts analytics: false); the tour video at /tour plays from the
+ * - no product analytics on this brand's hosts (src/lib/brand.ts analytics: false); advertising measurement only with
+ *   consent, on the public website pages only (src/components/ads/google-ads.ts, since 31/10/2026); the tour video at /tour plays from the
  *   media host only when pressed (src/app/clindesk-site/tour/tour-player.tsx, src/lib/clindesk-site/tour-video.ts).
  * Open points are fill-ins (content/clindesk-site.json), shown as "[to confirm]" until Khuram fills them in.
  */
@@ -95,6 +96,20 @@ export default function ClindeskPrivacyPage() {
             ],
             [
               <>
+                <strong>Advertising measurement</strong> (only if you allow advertising cookies, and only on this
+                website&rsquo;s public pages): whether a visit followed a click on one of our Google adverts and whether
+                it led to a demo booking, with the identifiers in Google&rsquo;s advertising cookies, your IP address and
+                browser details – never what you type in our forms, and never patient information
+              </>,
+              "To see which of our adverts lead to demo bookings",
+              <>Consent – you can withdraw it at any time through &ldquo;Cookie settings&rdquo;</>,
+              <>
+                Google keeps this data under its own policy; the cookies on this website last up to 90 days (see the{" "}
+                <a href="/cookies#advertising">cookie policy</a>)
+              </>,
+            ],
+            [
+              <>
                 <strong>Demo requests:</strong> your name, clinic or group name, work email, phone number (optional),
                 number of sites and practitioners, your current system (optional) and what you would like to see
               </>,
@@ -130,8 +145,10 @@ export default function ClindeskPrivacyPage() {
           ]}
         />
         <p>
-          We do not sell personal data, we do not use it for advertising, and we do not make decisions about anyone based
-          solely on automated processing that have legal or similarly significant effects. This website uses no analytics.
+          We do not sell personal data, and we do not make decisions about anyone based solely on automated processing that
+          have legal or similarly significant effects. Nothing you type in our forms, no account data and no patient
+          information is ever used for advertising; the only advertising use of personal data is the measurement above,
+          and only if you allow it. This website uses no analytics.
         </p>
         <h3 id="tour-video">The tour video</h3>
         <p>
@@ -257,6 +274,16 @@ export default function ClindeskPrivacyPage() {
           <a href={`mailto:${email}`}>{email}</a>. We tell clinics before we add or replace a sub-processor that handles
           patient information, so they can object.
         </p>
+        <p id="advertising">
+          <strong>Advertising measurement</strong> – only for visitors who allow advertising cookies: Google (Google
+          Ireland Limited, and Google LLC in the United States) receives the measurement data in section 3 from this
+          website&rsquo;s public pages. Google acts as a separate controller for it and uses it under its own terms and
+          privacy policy – see{" "}
+          <a href="https://policies.google.com/technologies/partner-sites" rel="noopener noreferrer">
+            how Google uses information from sites that use its services
+          </a>
+          . It receives no clinic data, no account data and nothing you type in our forms.
+        </p>
 
         <h2 id="transfers">6. Where data is stored and international transfers</h2>
         <p>
@@ -274,6 +301,10 @@ export default function ClindeskPrivacyPage() {
           based in the United States, and its records of requests may be kept there; as with our other providers, that
           transfer is protected as described above.
         </p>
+        <p>
+          If you allow advertising cookies, Google may process the measurement data in the United States and other
+          countries, under the safeguards its privacy policy describes.
+        </p>
 
         <h2 id="rights">7. Your rights</h2>
         <p>Under the UK GDPR you have the right to:</p>
@@ -282,7 +313,8 @@ export default function ClindeskPrivacyPage() {
           <li>have inaccurate data corrected, and incomplete data completed;</li>
           <li>have your data erased, or its use restricted, in certain circumstances;</li>
           <li>object to our use of your data where we rely on legitimate interests;</li>
-          <li>receive data you gave us in a portable format, in certain circumstances.</li>
+          <li>receive data you gave us in a portable format, in certain circumstances;</li>
+          <li>withdraw consent at any time, where we rely on consent (for advertising cookies, use &ldquo;Cookie settings&rdquo; at the bottom of every page).</li>
         </ul>
         <p>
           To use any of these rights, email <a href={`mailto:${email}`}>{email}</a>. We will reply within one month, and
@@ -302,8 +334,9 @@ export default function ClindeskPrivacyPage() {
 
         <h2 id="cookies">9. Cookies</h2>
         <p>
-          We use only the cookies needed to sign in and to run the features you use – no analytics and no advertising. See
-          our <a href="/cookies">cookie policy</a>.
+          We use the cookies needed to sign in and to run the features you use, and Google&rsquo;s advertising cookies on
+          this website&rsquo;s public pages only if you allow them – no analytics. See our{" "}
+          <a href="/cookies">cookie policy</a>.
         </p>
 
         <h2 id="changes">10. Changes to this policy</h2>

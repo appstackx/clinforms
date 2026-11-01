@@ -9,8 +9,14 @@
  * Errors: a summary at the top (focused, links to each field) and a message under each field (aria-describedby,
  * aria-invalid). Fields keep what was typed. Added to the design: "Number of practitioners" (optional) and the
  * hidden honeypot field.
+ *
+ * Advertising measurement: on submit, and only with advertising consent and an empty honeypot, the form leaves a
+ * short-lived note in this tab (google-ads.ts noteDemoSent); the thank-you page – reached only through the server's
+ * redirect after it stored the request – sends the "Demo request" conversion once and removes the note. When the
+ * server answers with errors instead, the note is removed here. No form value is ever part of it.
  */
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type FormEvent } from "react";
+import { forgetDemoSent, noteDemoSent } from "@/components/ads/google-ads";
 import { useFormState, useFormStatus } from "react-dom";
 import { bookDemoAction } from "@/app/clindesk-site/demo/actions";
 import { INITIAL_DEMO_FORM_STATE, type DemoFormState } from "@/app/clindesk-site/demo/form-state";
@@ -59,8 +65,17 @@ export function DemoForm() {
   const seen = new Set((v.see ?? "").split(",").filter(Boolean));
 
   useEffect(() => {
-    if (state.status !== "idle") summaryRef.current?.focus();
+    if (state.status !== "idle") {
+      forgetDemoSent();
+      summaryRef.current?.focus();
+    }
   }, [state]);
+
+  const onSubmit = (event: FormEvent<HTMLFormElement>) => {
+    const honeypot = new FormData(event.currentTarget).get("website");
+    if (!honeypot) noteDemoSent();
+    else forgetDemoSent();
+  };
 
   const errorEntries = Object.entries(e).filter(([k]) => k !== "website");
 
@@ -70,7 +85,7 @@ export function DemoForm() {
         Tell us about your clinic
       </h2>
       <p className="small d-form-note">Fields marked (required) need an answer.</p>
-      <form className="d-form" action={action} aria-labelledby="form-title">
+      <form className="d-form" action={action} onSubmit={onSubmit} aria-labelledby="form-title">
         {state.status !== "idle" ? (
           <div className="d-error-summary" ref={summaryRef} tabIndex={-1} role="alert" aria-labelledby="form-errors-title">
             <p className="d-error-title" id="form-errors-title">

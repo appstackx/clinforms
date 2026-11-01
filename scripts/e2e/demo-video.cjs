@@ -557,7 +557,7 @@ const settle = async (page) => {
       await settle(page);
       assert.deepEqual(events, [], "nothing before consent");
 
-      await page.getByRole("button", { name: "Accept analytics" }).click();
+      await page.getByRole("button", { name: "Accept", exact: true }).click();
       const pageview = await poll(() => events.find((e) => e.event === "$pageview"), { timeout: 8000 });
       assert.ok(pageview, "a page view after consent");
       assert.equal(new URL(pageview.properties.$current_url).pathname, "/demo");
@@ -587,7 +587,7 @@ const settle = async (page) => {
         if (r.url().startsWith(`${BASE}/ingest/`) && r.method() === "POST") sent.push(Date.now());
       });
       await second.page.goto(`${BASE}/demo`);
-      await second.page.getByRole("button", { name: "Accept analytics" }).click();
+      await second.page.getByRole("button", { name: "Accept", exact: true }).click();
       // The page view leaves at once (no batching), well inside a batch's flush interval.
       await poll(() => sent.length > 0, { timeout: 2500 });
       await second.page.getByRole("button", { name: "Cookie settings" }).click();

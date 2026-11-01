@@ -32,7 +32,7 @@ export const COMPANY: CompanyDetails = {
   legalName: "AppstackX Ltd",
   brand: "AppStackX",
   website: "https://appstackx.co.uk",
-  contactEmail: "khuram@appstackx.co.uk",
+  contactEmail: "hello@clinforms.co.uk",
   // Unknown today: leave unset until confirmed (lines that need them are hidden).
   registeredNumber: undefined,
   registeredIn: undefined,
@@ -57,8 +57,14 @@ export function companyRegistrationLine(company: CompanyDetails = COMPANY): stri
 /** Date shown as "Last updated" on the legal pages (ISO). Change it whenever their text changes. */
 export const LEGAL_LAST_UPDATED = "2026-10-09";
 
-/** The privacy policy's own "Last updated" (ISO): it changed on its own for the demo video (section 3). */
-export const PRIVACY_LAST_UPDATED = "2026-10-10";
+/**
+ * The privacy policy's own "Last updated" (ISO): it changed on its own for the demo video (section 3, 10/10) and for
+ * advertising measurement (31/10).
+ */
+export const PRIVACY_LAST_UPDATED = "2026-10-31";
+
+/** The cookie policy's own "Last updated" (ISO): advertising cookies added on 31/10/2026. */
+export const COOKIES_LAST_UPDATED = "2026-10-31";
 
 /** "9 October 2026" (UK long date) for an ISO date. */
 export function formatLongDate(iso: string): string {

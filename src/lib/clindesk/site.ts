@@ -9,8 +9,8 @@ import { COMPANY } from "@/lib/site";
 
 export const CLINDESK_SITE_URL = BRANDS.clinic.siteUrl;
 
-/** Contact for sales, support, privacy and security questions (canonical company contact). */
-export const CONTACT_EMAIL = COMPANY.contactEmail;
+/** ClinDesk's own contact for sales, support, privacy and security questions (one shared inbox with ClinForms). */
+export const CONTACT_EMAIL = "hello@clindesk.co.uk";
 
 /** "Last updated" of the accessibility statement (ISO). Change it whenever its text changes. */
 export const ACCESSIBILITY_LAST_UPDATED = "2026-10-30";

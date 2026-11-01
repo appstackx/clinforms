@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { CONSENT_COOKIE } from "@/components/consent/consent";
 import { CookieSettingsButton } from "@/components/consent/cookie-settings-button";
+import { AdsCookiesSection } from "@/components/marketing/ads-cookies";
 import { LegalPage, LegalTable } from "@/components/marketing/legal-page";
-import { COMPANY, LEGAL_LAST_UPDATED } from "@/lib/site";
+import { COMPANY, COOKIES_LAST_UPDATED } from "@/lib/site";
 import { PRODUCT } from "@/modules/medreport/config.public";
 
 const DESCRIPTION = `The cookies and browser storage the ${PRODUCT.name} website, application and demo use, and how to change your choice.`;
@@ -21,21 +22,23 @@ export default function CookiesPage() {
   return (
     <LegalPage
       title="Cookie policy"
-      lastUpdated={LEGAL_LAST_UPDATED}
+      lastUpdated={COOKIES_LAST_UPDATED}
       intro={
         <p>
           Cookies and browser storage are small pieces of data a website keeps in your browser. {PRODUCT.name} uses only
-          what it needs to work, plus analytics if – and only if – you allow it. We do not use advertising cookies or
-          third-party cookies.
+          what it needs to work, plus – if, and only if, you allow them – analytics and Google&rsquo;s advertising
+          cookies on this website&rsquo;s public pages. The application, the demo and the sign-in pages never use
+          advertising cookies.
         </p>
       }
     >
       <h2 id="your-choice">Your choice</h2>
       <p>
-        When analytics is in use, the banner on your first visit lets you accept or reject it. You can change your mind at
+        The banner on your first visit lets you accept or reject the optional cookies (&ldquo;Manage&rdquo; lets you
+        choose analytics and advertising separately). Nothing optional runs until you accept. You can change your mind at
         any time: <CookieSettingsButton className="font-medium text-teal-800 underline underline-offset-2 hover:text-teal-900" />.
-        If your browser sends a Do Not Track or Global Privacy Control signal, we treat it as a refusal and analytics stays
-        off.
+        If your browser sends a Do Not Track or Global Privacy Control signal, we treat it as a refusal and analytics and
+        advertising cookies stay off.
       </p>
 
       <h2 id="necessary">Strictly necessary</h2>
@@ -44,7 +47,7 @@ export default function CookiesPage() {
         label="Strictly necessary cookies and storage"
         columns={COLUMNS}
         rows={[
-          [<code key="n">{CONSENT_COOKIE}</code>, "Cookie (first-party)", "Remembers whether you accepted or rejected analytics", "6 months"],
+          [<code key="n">{CONSENT_COOKIE}</code>, "Cookie (first-party)", "Remembers whether you accepted or rejected analytics and advertising cookies", "6 months"],
           [
             <>
               <code>clinforms.*</code> (with a <code>__Secure-</code> prefix on secure connections)
@@ -97,6 +100,11 @@ export default function CookiesPage() {
             "Removed when you reject or withdraw consent; otherwise until you clear your browser data",
           ],
         ]}
+      />
+
+      <AdsCookiesSection
+        conversion="request access"
+        settings={<CookieSettingsButton className="font-medium text-teal-800 underline underline-offset-2 hover:text-teal-900" />}
       />
 
       <h2 id="more">More information</h2>

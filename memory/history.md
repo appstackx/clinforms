@@ -168,6 +168,10 @@ Times UTC from commits, file times, the production audit log and Vercel. Workflo
 ### Sat 2026-10-31 (billing)
 - Branch `feat/clindesk-billing`: SMS-credit review fixes + repricing + The SMS Works adapter (commit 1), subscription billing for ClinDesk/ClinForms (commit 2). Real TEST-mode e2e: card 4242 and Bacs 10-88-00/00012345 both pass (Bacs pending until cleared, then active); SMS-credit e2e 15/15 on the alias webhook.
 - Lesson: the hosted payment page cannot mix monthly and yearly prices in one subscription – the Reports add-on is monthly-only.
+### Sat 2026-10-31 (desktop – Google Ads tracking build)
+| Time (UTC) | Event |
+|---|---|
+| ~21:00–23:30 | Google Ads conversion tracking built on `feat/google-ads-tracking` (D72): consent v2 + ClinDesk banner, tag only on public pages after Accept, conversion on both demo forms, per-route CSP, legal pages updated; route/layout inventory test + `scripts/e2e/google-ads.cjs` (14/14 local). Found: on local `next start` a ClinDesk server-action redirect renders the 404 page (Next fetches the target from localhost = ClinForms brand); on Vercel it fetches the request host – unverified on production |
 
 ## 2. Workflow runs (cloud; journals not preserved)
 | Run | Window | Purpose | Outcome |

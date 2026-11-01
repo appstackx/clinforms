@@ -3,9 +3,15 @@
 /**
  * The "Request access" form → POST /api/access-requests. Labels above every field, errors tied to
  * their fields (aria-describedby), a hidden honeypot field, and a thank-you state on success.
+ *
+ * Advertising measurement: the "Demo request" conversion (src/components/ads/google-ads.ts) is sent once, only after
+ * the server accepted the request (2xx with ok: true) and only with advertising consent – never on a validation
+ * error or a failure, never for a filled-in honeypot, and with no form values. It is sent after the thank-you state
+ * has replaced the form, so no field is on the page at that moment.
  */
 import { useId, useRef, useState, type FormEvent } from "react";
 import { CheckCircle2, Loader2 } from "lucide-react";
+import { reportDemoConversion } from "@/components/ads/google-ads";
 import { track } from "@/components/analytics/posthog";
 import { btn } from "@/components/marketing/nav";
 import type { AnalyticsProps } from "@/components/analytics/events";
@@ -76,7 +82,11 @@ export function RequestAccessForm() {
       if (res.ok && payload.ok) {
         track("request_access_submitted", { area: "marketing", sites: body.sites as AnalyticsProps["sites"] });
         setStatus({ kind: "sent" });
-        requestAnimationFrame(() => statusRef.current?.focus());
+        const human = body.website === "";
+        requestAnimationFrame(() => {
+          statusRef.current?.focus();
+          if (human) reportDemoConversion();
+        });
         return;
       }
       if (res.status === 422 && payload.fieldErrors) {

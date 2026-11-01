@@ -14,6 +14,14 @@ Update this file at the end of every session (status, blockers, what changed).
 ## TOP-billing – Sat 2026-10-31: subscription billing + SMS-credit fixes BUILT (branch `feat/clindesk-billing`, not merged)
 - Runbooks: `docs/clinic-system/BILLING.md` (go-live order §7), `docs/clinic-system/SMS-CREDITS.md` (§7 The SMS Works set-up, §8 review fixes).
 - Khuram: review + merge decision; VAT decision (nothing adds VAT today); live catalogue with the same lookup keys; live webhook (10 events) at `/api/billing/stripe-webhook`; migrations 0009/0144/0145 before deploy; `npm run admin:billing-go-live` then `CLINDESK_BILLING_LIVE=1`; The SMS Works sign-up when the first real clinic onboards.
+## TOP-ADS – Sat 2026-10-31: Google Ads tracking built (branch `feat/google-ads-tracking`), waits for Khuram
+- Not merged, not deployed (D72). Before merging: Khuram reads the new cookie/privacy wording on both sites (Google
+  named as a separate controller – legal review advised) and OKs the merge = production deploy.
+- After deploy: Khuram checks with Google Tag Assistant (steps in the branch's report), keeps "Include user-provided
+  data from your website" OFF in the Google tag settings, and makes ONE test demo request per site himself (it emails
+  hello@clindesk.co.uk / creates a request row) → Google Ads "Demo request" goes Unverified → Recording in 24–48 h.
+- Check on production once: ClinDesk `/demo` with JavaScript lands on the real thank-you page (local `next start`
+  shows 404 for server-action redirects on the clinic host; Vercel should not).
 
 ## TOP-0 – Sun 2026-10-25: usage/packages LIVE; Dell's email WAITS for the trial bug fixes
 - **Don't send Dell's invitation yet.** The help-video test run found bugs (F-37 opinion flag blocks a faithful answer; "Delete unused cells" left in the Word output; 24–28 blocking items; raw merge codes; etc.). Workflow **bh-trial-fixes** (wf_f6b079c8-f05) fixes them on `release/bh-trial-fixes` (worktree `clinforms-wt/bhfix-release`), verifies all 17 forms live on a local mirror (`scratchpad/bh-fix/verify`, port 3245), reviews, writes `scratchpad/bh-fix/deploy-runbook.md`. Then: merge **main** (now has plan-usage) into the release, full chain + a short e2e, deploy, then Khuram emails Dell (video `marketing/clinforms/blue-heart-help-video-v1/…-email.mp4`, guide PDF, sample notes, invite link from `~/Desktop/bh-deploy-20261024/blue-heart-invite.txt`).

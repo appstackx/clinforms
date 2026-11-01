@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { GoogleAdsTag } from "@/components/ads/google-ads-tag";
 import { SiteFooter } from "@/components/marketing/site-footer";
 import { SiteHeader } from "@/components/marketing/site-header";
 import { PUBLIC_SITE_BRAND } from "@/lib/brand";
@@ -7,6 +8,9 @@ import { PUBLIC_SITE_BRAND } from "@/lib/brand";
  * The public website (/, /request-access, /security and the legal pages): indexable. Static, so it is built for one
  * brand – the public site's (src/lib/brand.ts); hosts of a brand without a public site are sent to sign-in by the
  * middleware.
+ *
+ * The advertising measurement tag (src/components/ads) is mounted here and in the clinic brand's site layout ONLY: it loads
+ * nothing until the visitor accepts advertising cookies, and never runs in the app, the demo or the sign-in pages.
  */
 export const metadata: Metadata = {
   robots: { index: true, follow: true },
@@ -26,6 +30,7 @@ export default function MarketingLayout({ children }: { children: React.ReactNod
         {children}
       </main>
       <SiteFooter brand={PUBLIC_SITE_BRAND} />
+      <GoogleAdsTag />
     </div>
   );
 }

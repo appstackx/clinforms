@@ -8,14 +8,14 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { CLINIC_SYSTEM_NAME } from "@/lib/brand";
-import { COMPANY } from "@/lib/site";
+import { CONTACT_EMAIL } from "@/lib/clindesk/site";
 import { clientIpFrom, hashClientIp } from "@/server/site/access-request";
 import { CLINDESK_SOURCE, demoRequestInput, submitDemoRequest } from "@/server/site/demo-request";
 import { mailerSendSettingsFromEnv, sendAccessRequestNotification } from "@/server/site/notify";
 import { isSameOrigin, siteRepoContext } from "@/server/site/request";
 import type { DemoFormState } from "./form-state";
 
-const UNAVAILABLE = `Your request could not be sent just now. Please email ${COMPANY.contactEmail} instead.`;
+const UNAVAILABLE = `Your request could not be sent just now. Please email ${CONTACT_EMAIL} instead.`;
 
 function log(event: string, detail: Record<string, unknown> = {}): void {
   // IDs and outcomes only – never names, emails or what the visitor typed.
@@ -67,7 +67,7 @@ export async function bookDemoAction(previous: DemoFormState, form: FormData): P
         return {
           attempt,
           status: "error",
-          message: `Too many requests from this connection. Please try again later or email ${COMPANY.contactEmail}.`,
+          message: `Too many requests from this connection. Please try again later or email ${CONTACT_EMAIL}.`,
           fieldErrors: {},
           values,
         };

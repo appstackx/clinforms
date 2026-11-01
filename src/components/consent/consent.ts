@@ -1,20 +1,26 @@
 /**
  * Cookie consent: the visitor's choice is kept in ONE first-party, strictly necessary cookie,
- * `clinforms_consent` (6 months). Nothing optional (analytics) runs until it says "analytics allowed",
- * and a Do Not Track or Global Privacy Control signal from the browser counts as a refusal.
+ * `clinforms_consent` (6 months, host-only – clinforms.co.uk and clindesk.co.uk each keep their own). Nothing optional
+ * runs until it says so, and a Do Not Track or Global Privacy Control signal from the browser counts as a refusal.
+ *
+ * Two optional purposes, each its own yes/no:
+ * - analytics: the EU product analytics (src/components/analytics), ClinForms' hosts only, when configured;
+ * - ads: the advertising measurement tag (src/components/ads), on both brands' PUBLIC website pages only.
  *
  * The parse/serialise helpers are pure (tested in consent.test.ts); the `browser*` helpers touch
  * document.cookie / navigator and must only run in the browser (effects and event handlers).
  *
- * Cookie value: `v1.a1.20261009` – version, analytics allowed (a1) or refused (a0), date of the choice.
+ * Cookie value: `v2.a1.m0.20261031` – version, analytics allowed (a1) or refused (a0), advertising measurement allowed
+ * (m1) or refused (m0), date of the choice. Version 1 (`v1.a1.20261009`, analytics only) is read as "no choice", so
+ * everyone is asked again now that a new purpose exists.
  */
 import { brandForHost } from "@/lib/brand";
 
 export const CONSENT_COOKIE = "clinforms_consent";
 /** 6 months, in seconds (the cookie's Max-Age). */
 export const CONSENT_MAX_AGE_SECONDS = 182 * 24 * 60 * 60;
-/** Bump to ask everyone again (e.g. when a new optional category is added). */
-export const CONSENT_VERSION = 1;
+/** Bump to ask everyone again (e.g. when a new optional category is added). 2 = advertising measurement added. */
+export const CONSENT_VERSION = 2;
 
 /** Window events: a choice was saved / someone asked to reopen the cookie settings. */
 export const CONSENT_CHANGE_EVENT = "clinforms:consent-change";
@@ -23,14 +29,22 @@ export const CONSENT_MANAGE_EVENT = "clinforms:consent-manage";
 export interface ConsentChoice {
   version: number;
   analytics: boolean;
+  /** Advertising measurement (the ads tag on the public website pages). */
+  ads: boolean;
   /** Date of the choice, YYYY-MM-DD. */
   date: string;
 }
 
-const VALUE_PATTERN = /^v(\d{1,3})\.a([01])\.(\d{4})(\d{2})(\d{2})$/;
+/** The optional purposes a visitor chooses (what the banner's buttons and the settings switches save). */
+export interface ConsentPurposes {
+  analytics: boolean;
+  ads: boolean;
+}
+
+const VALUE_PATTERN = /^v(\d{1,3})\.a([01])\.m([01])\.(\d{4})(\d{2})(\d{2})$/;
 
 export function serializeConsent(choice: ConsentChoice): string {
-  return `v${choice.version}.a${choice.analytics ? 1 : 0}.${choice.date.replace(/-/g, "")}`;
+  return `v${choice.version}.a${choice.analytics ? 1 : 0}.m${choice.ads ? 1 : 0}.${choice.date.replace(/-/g, "")}`;
 }
 
 /** The stored choice, or null when missing, malformed or from an older consent version. */
@@ -46,9 +60,9 @@ export function parseConsent(value: string | null | undefined): ConsentChoice | 
   if (!m) return null;
   const version = Number(m[1]);
   if (version !== CONSENT_VERSION) return null;
-  const date = `${m[3]}-${m[4]}-${m[5]}`;
+  const date = `${m[4]}-${m[5]}-${m[6]}`;
   if (Number.isNaN(Date.parse(`${date}T00:00:00Z`))) return null;
-  return { version, analytics: m[2] === "1", date };
+  return { version, analytics: m[2] === "1", ads: m[3] === "1", date };
 }
 
 /** Reads the consent cookie from a Cookie header / document.cookie string. */
@@ -95,6 +109,11 @@ export function analyticsAllowed(choice: ConsentChoice | null, signals: PrivacyS
   return choice?.analytics === true && !optOutSignalled(signals);
 }
 
+/** The advertising measurement tag may load only with a stored "allowed" choice and no opt-out signal. */
+export function adsAllowed(choice: ConsentChoice | null, signals: PrivacySignals): boolean {
+  return choice?.ads === true && !optOutSignalled(signals);
+}
+
 // ---- browser-only helpers -------------------------------------------------------------------------
 
 export function browserPrivacySignals(): PrivacySignals {
@@ -113,9 +132,9 @@ export function browserStoredConsent(): ConsentChoice | null {
   return readConsentFromCookieString(document.cookie);
 }
 
-/** Saves a choice in the consent cookie and tells the page (analytics starts or stops at once). */
-export function browserSaveConsent(analytics: boolean): ConsentChoice {
-  const choice: ConsentChoice = { version: CONSENT_VERSION, analytics, date: todayIso() };
+/** Saves a choice in the consent cookie and tells the page (analytics and the ads tag start or stop at once). */
+export function browserSaveConsent(purposes: ConsentPurposes): ConsentChoice {
+  const choice: ConsentChoice = { version: CONSENT_VERSION, analytics: purposes.analytics, ads: purposes.ads, date: todayIso() };
   document.cookie = consentCookieString(choice, { secure: window.location.protocol === "https:" });
   window.dispatchEvent(new CustomEvent(CONSENT_CHANGE_EVENT, { detail: choice }));
   return choice;
@@ -142,9 +161,20 @@ export function analyticsConfigured(): boolean {
 }
 
 /**
- * Whether this host's brand uses analytics at all (src/lib/brand.ts). ClinDesk's hosts do not: no banner, no
- * analytics, and the cookie settings say the site does not use analytics. ClinForms' hosts are unchanged.
+ * Whether this host's brand uses product analytics at all (src/lib/brand.ts). ClinDesk's hosts do not: its banner and
+ * cookie settings offer advertising measurement only. ClinForms' hosts are unchanged.
  */
 export function analyticsAllowedOnHost(host: string | null): boolean {
   return brandForHost(host).analytics;
+}
+
+/** Whether this host's brand may load the advertising measurement tag on its public website pages (both brands). */
+export function adsAllowedOnHost(host: string | null): boolean {
+  return brandForHost(host).ads;
+}
+
+/** The optional purposes this page can offer (what the banner asks about and the settings dialog switches). */
+export function availablePurposes(): ConsentPurposes {
+  const host = typeof window === "undefined" ? null : window.location.host;
+  return { analytics: analyticsConfigured(), ads: adsAllowedOnHost(host) };
 }
