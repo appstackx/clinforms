@@ -52,6 +52,18 @@ deployed. Text credits: [`SMS-CREDITS.md`](SMS-CREDITS.md) (same payment account
   change now **keeps the items whose price is unchanged** (adding the add-on adds one item; only it is prorated).
   Browser check: `scripts/e2e/clinic-shell-billing-nav.cjs` (TEST mode). Note: on a **yearly** plan the add-on's
   prorated part is invoiced and charged at once (`proration_behavior=always_invoice`, `payment_behavior=pending_if_incomplete`: the change applies only once that payment succeeds – Khuram 01/11/2026).
+- **Brands on Plan and billing (01/11/2026, Khuram's R1/R2):** a ClinDesk clinic (clinic package, or created for
+  the clinic brand) is only ever offered ClinDesk plans with the **Reports add-on** – no ClinForms plans, no ClinForms
+  name ("What is included" is built per product). A ClinForms clinic's owners and admins see the **offer card** "Run
+  your whole clinic with ClinDesk" (`src/lib/clindesk-offer.ts`, `src/components/account/clindesk-offer.tsx`) on the
+  Overview (with "Hide this", a host-only cookie) and on Plan and billing, plan or no plan: "See ClinDesk plans" →
+  `?product=clindesk` and "See what is included" → clindesk.co.uk/features (new tab). With a **running ClinForms plan**
+  `?product=clindesk` changes the subscription in place (`views.ts offeredProduct` + `changePlan`): the ClinForms item
+  is replaced by the band and the Reports add-on of the same allowance (preselected, `addonForTier`), charged at once;
+  the sync switches `clinic` on and keeps `reports` active. Afterwards the page (and the done page) links to ClinDesk's
+  sign-in on its own host. Billing notice emails link to the host of the brand they speak for (`notify.ts
+  billingLinkTarget`). Browser checks: `scripts/e2e/journey-clindesk-only.cjs`, `journey-clinforms-only.cjs`,
+  `journey-edge-brands.cjs` (TEST mode).
 - **Entitlements follow the subscription** (`src/server/billing/sync.ts`, re-read from the payment service every time):
 
   | Subscription | Packages |

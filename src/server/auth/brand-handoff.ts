@@ -42,3 +42,11 @@ export function brandHandoffUrl(input: { hostBrand: BrandId; clinicBrand: BrandI
   if (exempt(input.path)) return null;
   return brandSignInUrl(input.setting, input.clinicBrand, { moved: true });
 }
+
+/** The package an /app path needs: the clinic area → "clinic", the Studio → "reports", anything else → null. */
+export function packageAreaOf(path: string | null | undefined): "clinic" | "reports" | null {
+  const bare = (path ?? "").split(/[?#]/)[0];
+  if (bare === "/app/clinic" || bare.startsWith("/app/clinic/")) return "clinic";
+  if (bare === "/app/studio" || bare.startsWith("/app/studio/")) return "reports";
+  return null;
+}

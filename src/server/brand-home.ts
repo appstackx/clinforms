@@ -6,7 +6,7 @@ import "server-only";
 import { redirect } from "next/navigation";
 import { CLINFORMS_NAME, type BrandId } from "../lib/brand";
 import { clinicLinkBrand } from "./auth/brand-links";
-import { brandHandoffUrl, brandSignInUrl } from "./auth/brand-handoff";
+import { brandHandoffUrl, brandSignInUrl, packageAreaOf } from "./auth/brand-handoff";
 import { baseUrlSetting } from "./auth/config";
 import { findMembership } from "./auth/membership";
 import { activeOrganizationId, currentPath, getServerSession } from "./auth/session";
@@ -81,4 +81,12 @@ export function notFoundTitle(): string {
 export function studioTitleName(): string {
   const brand = currentBrand();
   return brand.id === "clinic" ? brand.productName : CLINFORMS_NAME;
+}
+
+/** Whether `path` (/app/clinic… or /app/studio…) needs a package the signed-in member's active clinic does not have. */
+export async function packageMissingForPath(path: string | null | undefined): Promise<boolean> {
+  const area = packageAreaOf(path);
+  if (!area) return false;
+  const packages = await activeClinicPackages();
+  return Boolean(packages && !packages[area]);
 }

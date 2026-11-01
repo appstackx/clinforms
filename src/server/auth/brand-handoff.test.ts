@@ -10,7 +10,7 @@ import { after, before, describe, it } from "node:test";
 import { createSqliteTestDb, type TestDb } from "../db/testing/databases";
 import { setEmailProviderForTests } from "../email";
 import { listEntitlements, setEntitlement } from "../repos/pms/entitlements";
-import { brandHandoffUrl, brandLandingPath, brandSignInUrl, HANDOFF_EXEMPT_PATHS } from "./brand-handoff";
+import { brandHandoffUrl, brandLandingPath, brandSignInUrl, HANDOFF_EXEMPT_PATHS, packageAreaOf } from "./brand-handoff";
 import { clinicBrandFor, clinicLinkBrand, SIGNUP_BRAND_KEY, signupBrandOf } from "./brand-links";
 import { baseUrlSetting, linkTarget } from "./config";
 import { createClinic } from "./platform";
@@ -61,6 +61,14 @@ describe("host hand-off (brand-handoff.ts)", () => {
     const single = baseUrlSetting({ BETTER_AUTH_URL: "https://clinforms.co.uk" });
     assert.equal(brandHandoffUrl({ hostBrand: "clinforms", clinicBrand: "clinic", setting: single, path: "/app" }), null);
     assert.equal(brandSignInUrl(single, "clinic"), null);
+  });
+  it("the package each /app area needs (404 titles)", () => {
+    assert.equal(packageAreaOf("/app/clinic"), "clinic");
+    assert.equal(packageAreaOf("/app/clinic/patients/x?tab=1"), "clinic");
+    assert.equal(packageAreaOf("/app/studio/forms"), "reports");
+    assert.equal(packageAreaOf("/app/clinicx"), null);
+    assert.equal(packageAreaOf("/app/settings/billing"), null);
+    assert.equal(packageAreaOf(null), null);
   });
   it("landing pages per brand", () => {
     assert.equal(brandLandingPath("clinic"), "/app/start");
