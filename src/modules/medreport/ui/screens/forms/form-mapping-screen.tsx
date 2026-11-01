@@ -22,7 +22,7 @@ import { CheckCircle2, Download, Eye, EyeOff, FilePlus2, Loader2, Pencil, Plus, 
 import { formatUkDate, formatUkDateTime, nowIso } from "../../../core/dates";
 import { answerableFields, checkFormDefinition } from "../../../core/forms";
 import { currentGuidance } from "../../../core/forms/guidance";
-import { LINT_RULE_TITLES } from "../../../core/form-map-lint";
+import { LINT_RULE_TITLES, PREPARED_NOTE } from "../../../core/form-map-lint";
 import { humaniseMergeCodes } from "../../../core/practice-merge-codes";
 import { isQuestionSet, withQuestionSetFile } from "../../../core/question-set";
 import { isConvertedFromRtf, isRtfConversionNote, rtfNoteText } from "../../../core/rtf/notes";
@@ -34,10 +34,11 @@ import {
   REFERRER_TO_BE_CONFIRMED,
   REFERRER_TYPE_LABELS,
 } from "../../../core/labels";
+import { PRODUCT } from "../../../config.public";
 import { ReferrerTypeSchema } from "../../../core/schemas";
 import type { FormDefinition, FormField } from "../../../core/types";
 import { ApiError, api } from "../../api-client";
-import { useHostHooks, useStudioMode, type StudioMember } from "../../host-hooks";
+import { useHostHooks, useStudioBrand, useStudioMode, type StudioMember } from "../../host-hooks";
 import { useStudioPaths } from "../../routes";
 import { formWriteError, getSession, saveFormDurable, useForm } from "../../store";
 import { TENANT_COPY } from "../../studio-copy";
@@ -137,6 +138,8 @@ export function FormMappingScreen({ formId }: { formId: string }) {
 }
 
 function MappingEditor({ saved }: { saved: FormDefinition }) {
+  // The stored "Prepared by ClinForms …" line (load-forms) reads with the host brand's name (F4; display only).
+  const { productName } = useStudioBrand();
   const hooks = useHostHooks();
   const paths = useStudioPaths();
   const tenant = hooks.mode === "tenant";
@@ -405,7 +408,7 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
         <Notice tone="warning" title="Notes from the analysis">
           <ul className="list-disc space-y-0.5 pl-4">
             {analysisNotes.map((w) => (
-              <li key={w}>{humaniseMergeCodes(w)}</li>
+              <li key={w}>{humaniseMergeCodes(w === PREPARED_NOTE ? PREPARED_NOTE.replace(PRODUCT.name, productName) : w)}</li>
             ))}
           </ul>
         </Notice>

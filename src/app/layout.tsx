@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import { AdsRouteGuard } from "@/components/ads/ads-route-guard";
 import { AnalyticsProvider } from "@/components/analytics/analytics-provider";
 import { ConsentBanner } from "@/components/consent/consent-banner";
+import { PUBLIC_SITE_BRAND, brandViewport } from "@/lib/brand";
 import { SITE_URL } from "@/lib/site";
 import { PRODUCT } from "@/modules/medreport/config.public";
 import "./globals.css";
@@ -40,9 +41,8 @@ export const metadata: Metadata = {
   twitter: { card: "summary", title: PRODUCT.name, description: PRODUCT.tagline },
 };
 
-export const viewport: Viewport = {
-  themeColor: "#0D9488",
-};
+/** ClinForms' theme colour (static: the public pages are built once); pages that answer on either host override it. */
+export const viewport: Viewport = brandViewport(PUBLIC_SITE_BRAND);
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

@@ -32,7 +32,7 @@ import { createContext, useContext, useState, type ReactNode } from "react";
 import { ArrowLeft, ChevronDown, LayoutTemplate, LogOut, Settings, ShieldCheck } from "lucide-react";
 import { PRODUCT } from "../../../config.public";
 import { WORDING } from "../../../core/wording";
-import { useHostHooks, useStudioMode } from "../../host-hooks";
+import { useHostHooks, useStudioBrand, useStudioMode } from "../../host-hooks";
 import { cn } from "../../primitives";
 import { studioSection, useStudioPaths, type StudioPaths, type StudioSection } from "../../routes";
 import { AiModeBadge, PasscodeNotice } from "./ai-mode";
@@ -108,6 +108,7 @@ function OuterShell({ children, ...page }: StudioShellProps) {
   const mode = useStudioMode();
   const tenant = mode === "tenant";
   const { clinic } = useHostHooks();
+  const brand = useStudioBrand();
   const demoClinic = tenant && clinic?.demoClinic === true;
   const pathname = usePathname() ?? paths.home;
   const section = studioSection(pathname, paths.basePath);
@@ -129,8 +130,10 @@ function OuterShell({ children, ...page }: StudioShellProps) {
             href={paths.home}
             className="flex min-w-0 shrink-0 items-center gap-2 rounded-lg font-semibold text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600"
           >
-            <BrandMark className="h-8 w-8 shrink-0" />
-            <span className="truncate">{PRODUCT.name}</span>
+            {brand.mark ?? <BrandMark className="h-8 w-8 shrink-0" />}
+            <span className="truncate" data-studio-name="">
+              {brand.studioName}
+            </span>
           </Link>
           {tenant && clinic?.name ? (
             <span className="hidden min-w-0 items-center gap-2 text-sm text-slate-700 sm:flex" data-studio-clinic="">
@@ -212,7 +215,7 @@ function OuterShell({ children, ...page }: StudioShellProps) {
             <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
               <StudioLegalLinks />
               <p>
-                {PRODUCT.name} v{PRODUCT.version}
+                {brand.footerName} v{PRODUCT.version}
               </p>
             </div>
           ) : (

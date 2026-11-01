@@ -12,6 +12,7 @@
  * Shared contract (orchestrator-owned): additive optional hooks only.
  */
 import { Fragment, createContext, useContext, type ReactNode } from "react";
+import { PRODUCT } from "../config.public";
 import type { AttachReceipt, ConnectorId, SignReceipt } from "../core/types";
 import { setStoreMode, setStoreScope } from "./store/mode";
 
@@ -101,6 +102,22 @@ export interface StudioEventProps {
   batch?: boolean;
 }
 
+/**
+ * The brand the Studio is shown under (01/11/2026, F4): the host decides it by the host name (ClinForms' hosts: none –
+ * ClinForms' own name and mark, exactly as before; the clinic brand's host: its mark, the Reports add-on's name in the
+ * header and the clinic system's name where the copy names the product). Chrome only – never what goes to referrers.
+ */
+export interface StudioBrand {
+  /** The product named in the Studio's own copy (security screen, support lines). */
+  productName: string;
+  /** The name next to the mark in the header. */
+  studioName: string;
+  /** The name before the version in the footer. */
+  footerName: string;
+  /** The mark in the header (drawn by the host); none = ClinForms' mark. */
+  mark?: ReactNode;
+}
+
 export interface HostHooks {
   /** A signed document was written back; keep a browser copy for the (simulated) clinic record. */
   onDocumentFiled?(doc: FiledDocument): Promise<void> | void;
@@ -136,6 +153,8 @@ export interface HostHooks {
   onSignOut?(): Promise<void> | void;
   /** Tenant mode (fix wave 2): where a clinic asks for help (e.g. setting up its practice system's notes layout). */
   supportEmail?: string;
+  /** 01/11/2026 (F4): the brand the Studio is shown under; default ClinForms'. */
+  brand?: StudioBrand;
 }
 
 const HostHooksContext = createContext<HostHooks>({});
@@ -168,4 +187,12 @@ export function useDemoClinic(): boolean {
 /** "demo" unless the host mounted the Studio for a clinic. */
 export function useStudioMode(): StudioMode {
   return useContext(HostHooksContext).mode === "tenant" ? "tenant" : "demo";
+}
+
+/** ClinForms' own brand (the public demo and ClinForms' hosts). */
+export const DEFAULT_STUDIO_BRAND: StudioBrand = { productName: PRODUCT.name, studioName: PRODUCT.name, footerName: PRODUCT.name };
+
+/** The brand the Studio is shown under (HostHooks.brand; default ClinForms'). */
+export function useStudioBrand(): StudioBrand {
+  return useContext(HostHooksContext).brand ?? DEFAULT_STUDIO_BRAND;
 }

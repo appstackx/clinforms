@@ -31,7 +31,6 @@ import "server-only";
  */
 import { createHash } from "node:crypto";
 import { verifyFileToken } from "../../auth/attestations";
-import { PRODUCT } from "../../config.public";
 import { AUDIT_ACTIONS, assertActorConnector, assertActorEpisode, auditActor, macPrefix, requireActor } from "../../auth/actor";
 import { verifyReceiptMac } from "../../auth/sign-receipt";
 import { callConnector, requireConnector } from "../../connectors/handler-support";
@@ -105,7 +104,7 @@ export const handleDocuments: MedreportHandler = async (req, ctx, deps) => {
   if (!tokenOk) {
     throw new HttpError(422, "Not the issued final document", {
       code: "RECEIPT_INVALID",
-      detail: `Only the final completed document issued by ${PRODUCT.name} for this approval and this patient can be filed. Download the final copy again and file that.`,
+      detail: `Only the final completed document issued for this approval and this patient can be filed. Download the final copy again and file that.`,
     });
   }
 

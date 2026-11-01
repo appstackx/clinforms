@@ -1,5 +1,5 @@
-import type { Metadata } from "next";
-import { brandIcons, brandMetadata } from "@/lib/brand";
+import type { Metadata, Viewport } from "next";
+import { brandIcons, brandMetadata, brandViewport } from "@/lib/brand";
 import { headers } from "next/headers";
 import { currentBrand } from "@/server/brand";
 import { notFoundTitle, packageMissingForPath } from "@/server/brand-home";
@@ -9,6 +9,11 @@ import { notFoundTitle, packageMissingForPath } from "@/server/brand-home";
  * and clinic membership itself (src/server/auth/session.ts); the Edge middleware only redirects requests
  * without a session cookie.
  */
+/** The host brand's theme colour (V3). */
+export function generateViewport(): Viewport {
+  return brandViewport(currentBrand());
+}
+
 export async function generateMetadata(): Promise<Metadata> {
   // The brand of the host (src/lib/brand.ts): "· ClinForms" on ClinForms' hosts, the clinic brand's name on its own –
   // and its tab icon on every signed-in page (ClinForms' hosts: no entry, the root's src/app/icon.svg as before).

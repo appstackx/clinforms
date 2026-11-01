@@ -1,8 +1,8 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 import Link from "next/link";
 import { FileQuestion } from "lucide-react";
-import { brandForHost, brandIcons, brandMetadata, type Brand } from "@/lib/brand";
+import { brandForHost, brandIcons, brandMetadata, brandViewport, type Brand } from "@/lib/brand";
 
 /**
  * The brand of the host the 404 is answered on (src/lib/brand.ts): ClinForms' hosts as before, the clinic brand's
@@ -18,6 +18,10 @@ export function generateMetadata(): Metadata {
   const brand = notFoundBrand();
   const icons = brandIcons(brand);
   return { ...brandMetadata(brand), title: { absolute: `Page not found · ${brand.productName}` }, ...(icons ? { icons } : {}) };
+}
+
+export function generateViewport(): Viewport {
+  return brandViewport(notFoundBrand());
 }
 
 /** Any unknown URL: back to the home page. */

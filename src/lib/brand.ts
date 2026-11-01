@@ -63,6 +63,11 @@ export interface Brand {
    * that names no icon of its own (the 404 page) shows the brand's too.
    */
   icons: { icon: string; apple: string } | null;
+  /**
+   * The browser's theme colour (`<meta name="theme-color">`, the address bar on phones) on this brand's pages
+   * (01/11/2026, V3): ClinForms' teal; the clinic brand's coral tape (#C4432B, the accent of its mark and website).
+   */
+  themeColor: string;
 }
 
 export const BRANDS: Readonly<Record<BrandId, Brand>> = {
@@ -78,6 +83,7 @@ export const BRANDS: Readonly<Record<BrandId, Brand>> = {
     appHome: "/app",
     contactEmail: "hello@clinforms.co.uk",
     icons: null,
+    themeColor: "#0D9488",
   },
   clinic: {
     id: "clinic",
@@ -91,6 +97,7 @@ export const BRANDS: Readonly<Record<BrandId, Brand>> = {
     appHome: "/app/clinic",
     contactEmail: "hello@clindesk.co.uk",
     icons: { icon: "/clindesk/favicon.svg", apple: "/clindesk/apple-touch-icon.png" },
+    themeColor: "#C4432B",
   },
 };
 
@@ -129,6 +136,15 @@ export function brandIcons(brand: Pick<Brand, "icons">):
   | undefined {
   if (!brand.icons) return undefined;
   return { icon: [{ url: brand.icons.icon, type: "image/svg+xml" }], apple: [{ url: brand.icons.apple, sizes: "180x180" }] };
+}
+
+/**
+ * Next's `viewport` for a brand's pages (its theme colour). The root layout sets ClinForms' statically (its public pages
+ * are built once); the layouts that answer on either host (sign-in, /app, 404, patient pages, /reports) set the host
+ * brand's with generateViewport, and ClinDesk's website its own.
+ */
+export function brandViewport(brand: Pick<Brand, "themeColor">): { themeColor: string } {
+  return { themeColor: brand.themeColor };
 }
 
 /** One line about each product (page descriptions of the app, sign-in and error pages on the brand's hosts). */
