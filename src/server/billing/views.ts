@@ -9,6 +9,7 @@
  *   changePlan          a running subscription → its items replaced (prorated on the next invoice)
  *   openBillingPortal   "Manage billing": card / Direct Debit details, invoices, cancelling
  *   completeCheckoutFor back from the payment page: re-read and synced at once (idempotent with the webhook)
+ *   checkoutDoneView    what the success page says about that result (plan bought, "Open ClinDesk" or not)
  */
 import "server-only";
 import type { Kysely } from "kysely";
@@ -234,9 +235,19 @@ export async function changePlan(db: Kysely<Database>, actor: BillingActor, inpu
     if (current.ok && JSON.stringify(current.choice) === JSON.stringify(choice)) return { ok: false, error: "That is your plan already." };
     const items = choiceItems(choice);
     const prices = await clients.subs.prices(items.map((i) => i.lookupKey));
-    const add = items.map((i) => prices.get(i.lookupKey));
-    if (add.some((p) => !p)) return { ok: false, error: "That plan is not on sale at the moment. Contact us." };
-    const updated = await clients.subs.changeSubscription({ subscriptionId: sub.subscriptionRef, removeItemIds: live.items.map((i) => i.itemId), addPriceIds: add as string[], tenantId: actor.tenantId, idempotencyKey: input.idempotencyKey });
+    const target = items.map((i) => prices.get(i.lookupKey));
+    if (target.some((p) => !p)) return { ok: false, error: "That plan is not on sale at the moment. Contact us." };
+    // Items already on the subscription at today's price stay as they are (01/11/2026: adding the Reports add-on to a
+    // running plan adds only the add-on – the plan itself is not removed and re-added, so only the add-on is prorated).
+    const keep = new Set<string>();
+    for (const priceId of target as string[]) {
+      const found = live.items.find((i) => i.priceId === priceId && !keep.has(i.itemId));
+      if (found) keep.add(found.itemId);
+    }
+    const keptPrices = live.items.filter((i) => keep.has(i.itemId)).map((i) => i.priceId);
+    const add = (target as string[]).filter((p) => !keptPrices.includes(p));
+    const remove = live.items.filter((i) => !keep.has(i.itemId)).map((i) => i.itemId);
+    const updated = await clients.subs.changeSubscription({ subscriptionId: sub.subscriptionRef, removeItemIds: remove, addPriceIds: add, tenantId: actor.tenantId, idempotencyKey: input.idempotencyKey });
     await audit(db, actor, "clinic.subscription_change", { to: items.map((i) => i.lookupKey) });
     await applySubscription({ ...syncDeps, db }, clients.subs, updated, { expectTenantId: actor.tenantId });
     return { ok: true, value: { message: `Your plan is now ${choiceLabel(choice)}. Any difference is added to your next invoice.` } };
@@ -272,4 +283,54 @@ export async function completeCheckoutFor(db: Kysely<Database>, actor: BillingAc
   } catch {
     return { status: "unavailable" };
   }
+}
+
+export interface CheckoutDoneView {
+  state: "active" | "pending_payment" | "unknown";
+  tone: "success" | "info";
+  title: string;
+  detail: string;
+  /** The plan bought ("ClinDesk Solo with Reports (25 a month)"), when known. */
+  planLabel: string | null;
+  /** "Open ClinDesk" – only once the plan is active AND the clinic system is switched on for the clinic. */
+  openClinicSystem: boolean;
+}
+
+/**
+ * The success page (/app/settings/billing/done) for a completeCheckoutFor result. Active: the plan bought, and "Open
+ * ClinDesk" when the clinic package is on. A Direct Debit still clearing: said so, no "Open ClinDesk" yet (nothing is
+ * switched on until it clears). Anything else: not confirmed yet.
+ */
+export function checkoutDoneView(result: SyncResult | { status: "unavailable" }, clinicSystemOn: boolean): CheckoutDoneView {
+  const sub = result.status === "synced" ? result.subscription : null;
+  const choice = choiceOf(sub);
+  const planLabel = choice ? choiceLabel(choice) : null;
+  if (sub?.state === "active") {
+    return {
+      state: "active",
+      tone: "success",
+      title: "Payment received – your plan is active.",
+      detail: planLabel ? `You are now on ${planLabel}. Everything in your plan is switched on.` : "Everything in your plan is switched on.",
+      planLabel,
+      openClinicSystem: clinicSystemOn,
+    };
+  }
+  if (sub?.state === "pending_payment") {
+    return {
+      state: "pending_payment",
+      tone: "info",
+      title: "Thank you – your Direct Debit is being set up.",
+      detail: `${planLabel ? `${planLabel} starts` : "Your plan starts"} as soon as the first payment clears, usually within a few working days. We will email you if anything goes wrong.`,
+      planLabel,
+      openClinicSystem: false,
+    };
+  }
+  return {
+    state: "unknown",
+    tone: "info",
+    title: "We could not confirm this payment yet.",
+    detail: "If you paid, your plan will appear on the Plan and billing page within a few minutes. Nothing was charged twice.",
+    planLabel,
+    openClinicSystem: false,
+  };
 }

@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import type { PmsNavEntry } from "@/modules/pms/core/nav";
 import { pmsCan, type PmsRole } from "@/modules/pms/core/permissions";
 import { PMS_NAV } from "@/modules/pms/nav";
-import { clinicRoleLabel, currentNavId, currentSection, shellNav, sitesSummary } from "./nav-model";
+import { accountAdminLinks, clinicRoleLabel, currentNavId, currentSection, shellNav, sitesSummary, withSetupAccountLinks } from "./nav-model";
 import { resolveSiteChoice } from "./site-cookie";
 
 const B = "/app/clinic";
@@ -149,5 +149,36 @@ describe("sites", () => {
     assert.equal(resolveSiteChoice("all", ["a", "b"], "all"), "all");
     assert.equal(resolveSiteChoice("all", ["a"], "all"), "a");
     assert.equal(resolveSiteChoice("a", [], "all"), null);
+  });
+});
+
+describe("the way back to the clinic account (owners and administrators only)", () => {
+  // The billing page's rule (src/server/billing/views.ts canManageBilling): owner and admin.
+  const manager = (role: PmsRole) => role === "owner" || role === "admin";
+  it("user menu: Plan and billing and Clinic administration for owners and admins; nothing for clinicians or reception", () => {
+    for (const role of ["owner", "admin"] as const) {
+      const { menu, setup } = accountAdminLinks(manager(role));
+      assert.deepEqual(menu.map((l) => [l.label, l.href]), [["Plan and billing", "/app/settings/billing"], ["Clinic administration", "/app"]]);
+      assert.deepEqual(setup.map((l) => [l.label, l.href]), [["Plan and billing", "/app/settings/billing"], ["Members and security", "/app/settings/members"]]);
+    }
+    for (const role of ["clinician", "staff"] as const) {
+      assert.deepEqual(accountAdminLinks(manager(role)), { menu: [], setup: [] });
+    }
+  });
+  it("Set-up: a Clinic account group last in the Set-up section; never added to the main list or without a Set-up section", () => {
+    const owner = withSetupAccountLinks(shellNav(PMS_NAV, as("owner")), accountAdminLinks(true).setup);
+    const setup = owner.sections.find((s) => s.id === "setup")!;
+    assert.deepEqual(setup.groups.at(-1)?.label, "Clinic account");
+    assert.deepEqual(setup.groups.at(-1)?.items.map((i) => i.label), ["Plan and billing", "Members and security"]);
+    assert.ok(!owner.main.some((i) => i.id.startsWith("account.")));
+    assert.ok(!owner.manage.some((i) => i.id.startsWith("account.")));
+    // The links never make a clinic page "current" or change which section a page belongs to.
+    assert.equal(currentSection("/app/clinic/setup/sites", owner)?.id, "setup");
+    assert.equal(currentSection("/app/clinic", owner), null);
+    assert.equal(currentNavId("/app/clinic", [...owner.main, ...setup.groups.flatMap((g) => g.items)]), "foundation.overview");
+    const staff = shellNav(PMS_NAV, as("staff"));
+    assert.equal(withSetupAccountLinks(staff, accountAdminLinks(true).setup), staff, "no Set-up section: unchanged");
+    const ownerNoLinks = shellNav(PMS_NAV, as("owner"));
+    assert.equal(withSetupAccountLinks(ownerNoLinks, []), ownerNoLinks);
   });
 });

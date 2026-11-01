@@ -42,6 +42,16 @@ deployed. Text credits: [`SMS-CREDITS.md`](SMS-CREDITS.md) (same payment account
   `metadata.app=clindesk` is created on first use; plan changes stay in the app). A running plan is **changed** (items
   replaced, prorated on the next invoice), never bought twice. No vendor name on screen (neutral-wording test now bans
   "stripe" in the screens).
+- **Getting there and back (01/11/2026, Khuram's production report):** owners and admins reach the account area from
+  the clinic system – user menu "Plan and billing" + "Clinic administration" (/app), Set-up's "Clinic account" group
+  "Plan and billing" + "Members and security" (`nav-model.ts accountAdminLinks`, the billing page's owner/admin rule;
+  nobody else sees them). The account area has an "Open ClinDesk" tab and button. The success page `/done` names the
+  plan bought, with **Open ClinDesk** once the plan is active and the clinic package on (+ "Back to Plan and billing");
+  a Direct Debit still clearing gets no Open ClinDesk (`views.ts checkoutDoneView`). A running ClinDesk plan without
+  Reports gets its own **"Add the Reports add-on"** panel (same plan and interval, monthly or yearly add-on); a plan
+  change now **keeps the items whose price is unchanged** (adding the add-on adds one item; only it is prorated).
+  Browser check: `scripts/e2e/clinic-shell-billing-nav.cjs` (TEST mode). Note: on a **yearly** plan the add-on's
+  prorated part waits for the next invoice (the renewal) under the current `create_prorations` setting – see §9.
 - **Entitlements follow the subscription** (`src/server/billing/sync.ts`, re-read from the payment service every time):
 
   | Subscription | Packages |
@@ -190,7 +200,9 @@ AppstackX is **not VAT registered** (Khuram 01/11/2026): no VAT is charged, scre
 
 ## 9. Known limits
 
-- Plan changes are prorated onto the next invoice (not charged at once); a downgrade credits the difference.
+- Plan changes are prorated onto the next invoice (not charged at once); a downgrade credits the difference. On a yearly plan
+  the next invoice is the renewal, so an add-on added mid-year is used before it is paid for (open decision: invoice
+  plan changes at once on yearly plans – `proration_behavior=always_invoice`).
 - The last part-month's extra reports after a subscription ends are not billed (no further invoice) – add by hand.
 - A yearly plan changed to monthly (or back) is re-invoiced at once by the payment service (the billing cycle resets).
 - No dunning beyond the payment service's own retries; the "on hold" email goes when the next sync after the grace

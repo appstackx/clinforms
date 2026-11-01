@@ -70,6 +70,11 @@ export interface ClinicShellProps {
   clinForms: { href: string; label: string; waiting?: number } | null;
   /** Owners/administrators: their account page; everyone: theirs. */
   accountHref: string;
+  /**
+   * Owners/administrators only (nav-model accountAdminLinks): the clinic account's administration area in the user
+   * menu – "Plan and billing", "Clinic administration". Empty for everyone else.
+   */
+  adminLinks?: readonly ShellNavItem[];
   children: React.ReactNode;
 }
 
@@ -100,7 +105,7 @@ const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [{ title: "Everywhere", shortc
 const focusRing = "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary";
 
 export function ClinicShell(props: ClinicShellProps) {
-  const { productName, mark, homeHref, clinicName, user, nav, sites, searchHref, clinForms, accountHref, children } = props;
+  const { productName, mark, homeHref, clinicName, user, nav, sites, searchHref, clinForms, accountHref, adminLinks = [], children } = props;
   const pathname = usePathname() ?? "";
   const router = useRouter();
   const [navOpen, setNavOpen] = React.useState(false);
@@ -229,6 +234,7 @@ export function ClinicShell(props: ClinicShellProps) {
             <UserMenu
               user={user}
               accountHref={accountHref}
+              adminLinks={adminLinks}
               clinForms={clinForms}
               onShortcuts={() => setShortcutsOpen(true)}
             />
@@ -319,12 +325,13 @@ function NavLink({ item, current, plain = false }: { item: ShellNavItem; current
 interface UserMenuProps {
   user: ClinicShellProps["user"];
   accountHref: string;
+  adminLinks: readonly ShellNavItem[];
   clinForms: ClinicShellProps["clinForms"];
   onShortcuts: () => void;
 }
 
 /** The account menu (role="menu"): ↓/↑ move, Esc closes and returns to the button, Tab leaves. */
-function UserMenu({ user, accountHref, clinForms, onShortcuts }: UserMenuProps) {
+function UserMenu({ user, accountHref, adminLinks, clinForms, onShortcuts }: UserMenuProps) {
   const [open, setOpen] = React.useState(false);
   const rootRef = React.useRef<HTMLDivElement>(null);
   const buttonRef = React.useRef<HTMLButtonElement>(null);
@@ -420,6 +427,15 @@ function UserMenu({ user, accountHref, clinForms, onShortcuts }: UserMenuProps) 
             <User className="h-4 w-4 shrink-0" aria-hidden />
             <span className="flex-1">My account and security</span>
           </Link>
+          {adminLinks.map((link) => {
+            const Icon = NAV_ICONS[link.icon] ?? LayoutDashboard;
+            return (
+              <Link key={link.id} role="menuitem" tabIndex={-1} href={link.href} className={itemClass} onClick={() => close(false)} data-testid={`menu-${link.id}`}>
+                <Icon className="h-4 w-4 shrink-0" aria-hidden />
+                <span className="flex-1">{link.label}</span>
+              </Link>
+            );
+          })}
           <button
             role="menuitem"
             tabIndex={-1}
