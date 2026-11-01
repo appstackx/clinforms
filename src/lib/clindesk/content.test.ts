@@ -32,7 +32,7 @@ function filesUnder(dir: string): string[] {
 describe("content/clindesk-site.json", () => {
   it("is valid, has exactly the listed keys, each with a value and a description", () => {
     assert.deepEqual(Object.keys(CLINDESK_CONTENT.values).sort(), [...CLINDESK_CONTENT_KEYS].sort());
-    assert.equal(CLINDESK_CONTENT_KEYS.length, 58);
+    assert.equal(CLINDESK_CONTENT_KEYS.length, 51);
     for (const k of CLINDESK_CONTENT_KEYS) {
       assert.ok(CLINDESK_CONTENT.values[k].value.length > 0, k);
       assert.ok(CLINDESK_CONTENT.values[k].description.length >= 10, k);
@@ -69,13 +69,13 @@ describe("content/clindesk-site.json", () => {
     assert.equal(isPlaceholderValue("[£X]"), true);
     assert.equal(isPlaceholderValue("£49"), false);
     const c = parseClindeskContent(clone());
-    assert.deepEqual(contentText("pricing.essentialsPrice", { content: c, draft: true }), { key: "pricing.essentialsPrice", filled: false, text: "[£X]" });
-    assert.deepEqual(contentText("pricing.essentialsPrice", { content: c, draft: false }), { key: "pricing.essentialsPrice", filled: false, text: TO_CONFIRM });
+    assert.deepEqual(contentText("pricing.switchingFeeSummary", { content: c, draft: true }), { key: "pricing.switchingFeeSummary", filled: false, text: "[Any switching fee]" });
+    assert.deepEqual(contentText("pricing.switchingFeeSummary", { content: c, draft: false }), { key: "pricing.switchingFeeSummary", filled: false, text: TO_CONFIRM });
     const filled = clone();
-    filled.values["pricing.essentialsPrice"].value = " £49 ";
+    filled.values["pricing.switchingFeeSummary"].value = " Included ";
     const f = parseClindeskContent(filled);
-    assert.deepEqual(contentText("pricing.essentialsPrice", { content: f, draft: false }), { key: "pricing.essentialsPrice", filled: true, text: "£49" });
-    assert.equal(unfilledKeys(f).includes("pricing.essentialsPrice"), false);
+    assert.deepEqual(contentText("pricing.switchingFeeSummary", { content: f, draft: false }), { key: "pricing.switchingFeeSummary", filled: true, text: "Included" });
+    assert.equal(unfilledKeys(f).includes("pricing.switchingFeeSummary"), false);
   });
   it("drafts: next dev, Vercel previews or CLINDESK_SITE_DRAFT=1; production builds are not", () => {
     assert.equal(isDraftBuild({ NODE_ENV: "development" }), true);

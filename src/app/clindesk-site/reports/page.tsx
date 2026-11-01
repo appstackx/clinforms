@@ -8,6 +8,7 @@ import { SitePage } from "@/components/clindesk/site-page";
 import { TourLink } from "@/components/clindesk/tour-link";
 import { TOUR_CHAPTERS, formatTourTime, tourChapterHref } from "@/lib/clindesk-site/tour-video";
 import "@/components/clindesk/styles/reports.css";
+import { REPORTS_FROM } from "@/lib/clindesk/pricing";
 
 /**
  * ClinDesk website – /reports (ClinDesk Reports – referrer reports in their own form, completed from your notes).
@@ -83,7 +84,7 @@ function Hero() {
             {" "}
             <a className="btn btn-outline" href="/pricing">See pricing <span className="arr" aria-hidden="true">→</span></a>
           </div>
-          <p className="small rp-price">Add-on to any {CLINIC_SYSTEM_NAME} plan · <Fill k="reports.price" /></p>
+          <p className="small rp-price">Add-on to any {CLINIC_SYSTEM_NAME} plan · {REPORTS_FROM}</p>
           <p className="rp-tour">
             <TourLink href={tourChapterHref(REPORTS_CHAPTER)}>
               Watch Reports in the 3-minute tour (from {formatTourTime(REPORTS_CHAPTER.at)})

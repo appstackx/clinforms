@@ -8,13 +8,13 @@ file:
     content/clindesk-site.json
 
 It is read when the site is built (the pages are static) and validated with zod (`src/lib/clindesk/content.ts`).
-**58 keys.**
+**51 keys.**
 
 ## How to edit it
 
 1. Open `content/clindesk-site.json`. Each key has a `value` and a `description` (what it is and where it shows).
 2. Change only `value`. Write it as it should read in its sentence (the description says what comes before it), e.g.
-   `"value": "£35"` for `pricing.essentialsPrice`, `"value": "one working day"` for `contact.responseTime`.
+   `"value": "Included"` for `pricing.switchingFeeSummary`, `"value": "one working day"` for `contact.responseTime`.
 3. Leave a value **in [square brackets]** while it is not known. It stays visible on the page:
    - `next dev`, Vercel previews (and any build with `CLINDESK_SITE_DRAFT=1`): the placeholder as written, e.g.
      "[£X]", in the design's placeholder colour;
@@ -31,9 +31,14 @@ brackets + description), use `<Fill k="…" />` on the page and add a row below.
 fails until the key list, the JSON, the pages and this document agree.
 
 Not in this file, on purpose:
+- **prices** (01/11/2026): the plans, the Reports add-on, extra reports and the text message packs are read from the
+  same tables checkout uses and checks the payment account against – `src/lib/billing/plans.ts` and
+  `src/modules/pms/comms/credits.ts`, put into words by `src/lib/clindesk/pricing.ts` (Pricing page, the "From £39 a
+  month" line under every closing call to action, the Reports add-on line on Home, Features and Reports). Change a
+  price there (and at the payment account) – never type an amount on a page;
 - the contact email (`COMPANY.contactEmail` in `src/lib/site.ts`: khuram@appstackx.co.uk);
-- the free-trial link: the design keeps a "TrialLink" slot only for when a free trial is confirmed (pricing plans and
-  the closing call to action) – add it in `src/components/clindesk/cta-band.tsx` / the pricing page then;
+- a free-trial link: the trial is offered after the demo (`pricing.trialSummary`), so every plan button books a demo
+  and there is no sign-up or checkout link on the public site;
 - the legal pages' text itself: ClinDesk has its own privacy policy, terms and cookie policy
   (`src/app/clindesk-site/{privacy,terms,cookies}`, adapted from ClinForms' – whose pages stay unchanged – and dated
   `CLINDESK_LEGAL_LAST_UPDATED` in `src/lib/clindesk/site.ts`). Only their open points are fill-ins here (the `legal.*`
@@ -58,25 +63,18 @@ Not in this file, on purpose:
 
 | Key | Placeholder (current value) | What it is and where it shows |
 |---|---|---|
-| `pricing.fromPrice` | [£X a month – price and unit to confirm] | Lowest price line in the closing call to action ("From … · Reports is an add-on"), e.g. "£39 a month" (no VAT is charged). Home, Features, Reports and Switching pages. |
 | `pricing.vat` | No VAT is charged | The VAT sentence (01/11/2026: AppstackX is not VAT registered). Pricing page, top and the VAT question; the terms (fees). Change it if AppstackX registers for VAT (BILLING.md §8). |
-| `pricing.trialSummary` | [length and terms] | Free trial in a few words after "Free trial:", e.g. "14 days, no card" – or "none". Pricing page, top. |
-| `pricing.essentialsPrice` | [£X] | Price of the Essentials plan per practitioner a month, e.g. "£35". Pricing page, Essentials card. |
-| `pricing.completePrice` | [£X] | Price of the Complete plan per practitioner a month, e.g. "£49". Pricing page, Complete card. |
-| `pricing.groupPlan` | [Plan names and what each includes – to confirm] | Line under the plan cards: the plan names and what each includes (or a note that they are final). Pricing page. |
+| `pricing.trialSummary` | Free trial available after your demo | The free trial in one sentence (Khuram 01/11/2026, option A). Pricing page, top and the "Is there a free trial?" answer. |
 | `pricing.switchingFeeSummary` | [Any switching fee] | Short note on any switching fee in the "With every plan" list, e.g. "Included" or "£X one-off per site". Pricing page. |
 | `pricing.contractLength` | [Contract length, e.g. monthly rolling or 12 months] | Contract length ("How long is the contract?"), e.g. "Monthly rolling". Pricing page FAQ. |
 | `pricing.noticePeriod` | [Notice period] | Notice period, written as a sentence fragment after the contract length, e.g. "30 days' notice to leave". Pricing page FAQ. |
 | `pricing.dataExport` | [How export works: formats, timescale and any cost] | How a clinic exports its data when it leaves: formats, timescale and any cost. Pricing page FAQ. Also the terms, after "How the data is returned:". |
 | `pricing.switchingFee` | [Switching fee, if any] | Switching fee, if any ("Will you help us switch?" answer). Pricing page FAQ. |
-| `pricing.trialTerms` | [Trial length and terms] | Free trial answer ("Is there a free trial?"), e.g. "Yes – 14 days on your own data, no card needed". Pricing page FAQ. |
 
 ### Reports add-on
 
 | Key | Placeholder (current value) | What it is and where it shows |
 |---|---|---|
-| `reports.price` | [£X a month for up to N reports] | Price of the Reports add-on, e.g. "£40 a month for up to 20 reports". Home, Features, Pricing and Reports pages. |
-| `reports.aboveAllowance` | [What happens above N reports] | What happens above the included number of reports, e.g. "Each extra report is £2". Pricing page FAQ. |
 | `reports.supportedForms` | [List of supported forms – to come] | Which referrer forms are supported today (or a short summary). Reports page, "Forms you're sent". |
 | `reports.newFormProcess` | [process and turnaround – to confirm] | How a new referrer's form is added and how long it takes, after "Adding a new referrer's form:". Reports page. |
 

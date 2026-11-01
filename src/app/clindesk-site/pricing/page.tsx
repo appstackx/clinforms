@@ -1,4 +1,16 @@
-import { CLINIC_SYSTEM_NAME } from "@/lib/brand";
+import type { ReactNode } from "react";
+import { BRANDS, CLINFORMS_NAME, CLINIC_SYSTEM_NAME } from "@/lib/brand";
+import {
+  EXTRA_REPORT_PRICE,
+  FREE_MONTHS_TEXT,
+  FROM_PRICE,
+  LARGEST_BAND_MAX,
+  PLAN_CARDS,
+  REPORTS_ALLOWANCES,
+  REPORTS_FROM,
+  REPORTS_TIERS,
+  TEXT_PACKS,
+} from "@/lib/clindesk/pricing";
 import { CONTACT_EMAIL, clindeskMetadata } from "@/lib/clindesk/site";
 import { cssVars } from "@/components/clindesk/css-vars";
 import { CtaBand } from "@/components/clindesk/cta-band";
@@ -8,15 +20,24 @@ import { SitePage } from "@/components/clindesk/site-page";
 import "@/components/clindesk/styles/pricing.css";
 
 /**
- * ClinDesk website – /pricing (Pricing – ClinDesk).
- * Ported from the approved design export Site-Pricing (bh2-handover/k2-designs/clindesk-site): same sections, copy,
- * classes and drawings; fill-ins via <Fill> (content/clindesk-site.json).
+ * ClinDesk website – /pricing (Pricing – ClinDesk), the real offer (01/11/2026).
+ * Layout, classes and drawings from the approved design export Site-Pricing (bh2-handover/k2-designs/clindesk-site).
+ * Every amount comes from the billing plan table checkout uses (src/lib/clindesk/pricing.ts → src/lib/billing/plans.ts
+ * and src/modules/pms/comms/credits.ts) – never typed here. Every plan button books a demo: no checkout on the public
+ * site; the free trial is offered after the demo.
+ *
+ * Monthly / yearly: two radio buttons (#bill-month, #bill-year) and CSS only (pricing.css, `:has()`), so the switch
+ * works without JavaScript; a browser without `:has()` simply shows both prices.
  */
 export const metadata = clindeskMetadata({
   path: "/pricing",
   title: `Pricing – ${CLINIC_SYSTEM_NAME}`,
-  description: `${CLINIC_SYSTEM_NAME} pricing: per practitioner, with plans for single clinics and multi-site groups and a Reports add-on.`,
+  description: `${CLINIC_SYSTEM_NAME} pricing: plans by number of practitioners from ${FROM_PRICE}, every feature on every plan, a Reports add-on and prepaid text messages.`,
 });
+
+const CLINFORMS_HOST = BRANDS.clinforms.hosts[0];
+const GROUP_CARD = PLAN_CARDS.find((c) => c.key === "group") ?? PLAN_CARDS[PLAN_CARDS.length - 1];
+const PLAN_TAPES = ["tape--coral", "tape--sun", "tape--teal", "tape--pink", "tape--coral"];
 
 export default function PricingPage() {
   return (
@@ -24,6 +45,7 @@ export default function PricingPage() {
       <PricingHero />
       <Plans />
       <ReportsAddOn />
+      <TextMessages />
       <WithEveryPlan />
       <FAQs />
       <CtaBand
@@ -42,6 +64,16 @@ export default function PricingPage() {
   );
 }
 
+/** A price on each billing interval: only the chosen one shows (pricing.css), both without CSS. */
+function MonthYear({ month, year }: { month: ReactNode; year: ReactNode }) {
+  return (
+    <>
+      <span className="when-month">{month}</span>
+      <span className="when-year">{year}</span>
+    </>
+  );
+}
+
 /** 1 · Pricing hero */
 function PricingHero() {
   return (
@@ -49,12 +81,12 @@ function PricingHero() {
       <div className="wrap grid12">
         <div className="p-hero-copy">
           <p className="pen marker" style={cssVars({"--tilt": "-2deg"})}>17:10 · Sam, doing the sums</p>
-          <h1 className="display-xxl" id="pricing-title">Pay per <span className="hl">practitioner.<span className="tape tape--sun hl-tape" aria-hidden="true" /></span></h1>
+          <h1 className="display-xxl" id="pricing-title">Priced by your <span className="hl">team size.<span className="tape tape--sun hl-tape" aria-hidden="true" /></span></h1>
           <p className="lead">
-            <span className="t-long"><b>Pay monthly for each practitioner using {CLINIC_SYSTEM_NAME}.</b> Add Reports if you need it. Groups get a plan built around their sites.</span>
-            <span className="t-short"><b>Pay monthly for each practitioner.</b> Add Reports if you need it.</span>
+            <span className="t-long"><b>One monthly price, set by how many practitioners you have – from {FROM_PRICE}.</b> Every feature on every plan, with unlimited reception staff, sites and patients.</span>
+            <span className="t-short"><b>Plans by number of practitioners, from {FROM_PRICE}.</b> Every feature on every plan.</span>
           </p>
-          <p className="p-vat"><Fill k="pricing.vat" /> · Free trial: <Fill k="pricing.trialSummary" /></p>
+          <p className="p-vat"><Fill k="pricing.vat" /> · <Fill k="pricing.trialSummary" /></p>
           <div className="p-ctas">
             <a className="btn btn-coral" href="/demo">Book a demo <span className="arr" aria-hidden="true">→</span></a>
             {" "}
@@ -67,12 +99,12 @@ function PricingHero() {
             <Drawing src="/clindesk/card-terminal.svg" width={600} height={400} decoding="async" />
             <span className="tape tape--teal print-tape" aria-hidden="true" />
           </figure>
-          <div className="product frag p-plan-frag" role="img" aria-label="A fictional clinic’s plan summary: Pebblegate Physio on the Complete plan, 11 practitioners across 3 sites, with the Reports add-on, next invoice 01/12/2026. Sample data, fictional.">
+          <div className="product frag p-plan-frag" role="img" aria-label={`A fictional clinic’s plan summary: Pebblegate Physio on the ${GROUP_CARD.name} plan (${GROUP_CARD.practitioners}) at ${GROUP_CARD.price.month} a month, 11 practitioners across 3 sites, with the Reports add-on, next invoice 01/12/2026. Sample data, fictional.`}>
             <span className="ftag p-tag">Sample data (fictional)</span>
             {" "}
             <span className="p-frag-k">Your plan · Pebblegate Physio</span>
             {" "}
-            <b className="p-frag-plan">Complete</b>
+            <b className="p-frag-plan">{GROUP_CARD.name} · {GROUP_CARD.price.month} a month</b>
             {" "}
             <span className="p-frag-row">
               <span>Practitioners</span>
@@ -97,6 +129,20 @@ function PricingHero() {
   );
 }
 
+const EVERY_PLAN_FEATURES = [
+  "Diary and online booking",
+  "Patient records and signed notes",
+  "Letters, templates and intake forms",
+  "Invoicing and card payments",
+  "Insurer, case-management and medico-legal billing",
+  "Authorisations",
+  "Patient portal",
+  "Reminders and messages",
+  "Multi-site diary and central booking",
+  "Roles and multi-site admin",
+  "Reporting",
+];
+
 /** 2 · Plans */
 function Plans() {
   return (
@@ -104,78 +150,66 @@ function Plans() {
       <div className="wrap">
         <div className="plans-head">
           <div>
-            <p className="pen marker" style={cssVars({"--tilt": "-2deg"})}>17:15 · three plans</p>
-            <h2 className="display-l" id="plans-title">From one treatment room to fifteen sites</h2>
+            <p className="pen marker" style={cssVars({"--tilt": "-2deg"})}>17:15 · count the practitioners</p>
+            <h2 className="display-l" id="plans-title">From one treatment room to {LARGEST_BAND_MAX} practitioners</h2>
+            <p className="body plans-lead">Pick the plan for the number of practitioners at your clinic. Every plan has every feature, with unlimited reception staff, sites and patients.</p>
           </div>
-          <p className="pen-note plans-pen">more than one site? this one</p>
-          <svg className="wl plans-wl draw" viewBox="0 0 1280 260" aria-hidden="true">
-            <path pathLength="1" d="M1128 118 C 1160 132, 1176 168, 1180 214" />
-            <circle cx="1180" cy="214" r="4" />
-          </svg>
+          <fieldset className="bill-switch">
+            <legend className="bill-legend">Show prices</legend>
+            <div className="bill-opts">
+              <label className="bill-opt" htmlFor="bill-month">
+                <input type="radio" name="billing" id="bill-month" value="month" defaultChecked />
+                <span>Monthly</span>
+              </label>
+              <label className="bill-opt" htmlFor="bill-year">
+                <input type="radio" name="billing" id="bill-year" value="year" />
+                <span>Yearly <span className="bill-save">{FREE_MONTHS_TEXT}</span></span>
+              </label>
+            </div>
+          </fieldset>
         </div>
         <ul className="plan-grid">
+          {PLAN_CARDS.map((card, i) => (
+            <li className="plan-wrap" key={card.key}>
+              <article className="plan" aria-labelledby={`pl-${card.key}`}>
+                <span className={`tape ${PLAN_TAPES[i % PLAN_TAPES.length]} plan-tape`} aria-hidden="true" />
+                <h3 className="display-m" id={`pl-${card.key}`}>{card.name}</h3>
+                <p className="plan-for">{card.practitioners}</p>
+                <p className="plan-price">
+                  <MonthYear
+                    month={<><span className="plan-amt">{card.price.month}</span> <span className="plan-unit">a month</span></>}
+                    year={<><span className="plan-amt">{card.price.year}</span> <span className="plan-unit">a year · {FREE_MONTHS_TEXT}</span></>}
+                  />
+                </p>
+                <a className="btn btn-outline plan-btn" href="/demo">Book a demo<span className="vh"> for the {card.name} plan</span> <span className="arr" aria-hidden="true">→</span></a>
+              </article>
+            </li>
+          ))}
           <li className="plan-wrap">
-            <article className="plan" aria-labelledby="pl-ess">
-              <span className="tape tape--coral plan-tape" aria-hidden="true" />
-              <h3 className="display-m" id="pl-ess">Essentials</h3>
-              <p className="plan-for">For a single clinic getting started.</p>
-              <p className="plan-price">
-                <Fill k="pricing.essentialsPrice" className="plan-amt" />
-                <span className="plan-unit">per practitioner a month</span>
-              </p>
-              <a className="btn btn-outline plan-btn" href="/demo">Book a demo <span className="arr" aria-hidden="true">→</span></a>
-              <ul className="plan-list">
-                <li><span className="tb" aria-hidden="true" />Diary and online booking</li>
-                <li><span className="tb" aria-hidden="true" />Patient records and signed notes</li>
-                <li><span className="tb" aria-hidden="true" />Letters, templates and intake forms</li>
-                <li><span className="tb" aria-hidden="true" />Invoicing and card payments</li>
-                <li><span className="tb" aria-hidden="true" />Reminders and messages</li>
-              </ul>
-            </article>
-          </li>
-          <li className="plan-wrap">
-            <article className="plan" aria-labelledby="pl-com">
-              <span className="tape tape--sun plan-tape" aria-hidden="true" />
-              <h3 className="display-m" id="pl-com">Complete</h3>
-              <p className="plan-for">For clinics billing insurers and case managers.</p>
-              <p className="plan-price">
-                <Fill k="pricing.completePrice" className="plan-amt" />
-                <span className="plan-unit">per practitioner a month</span>
-              </p>
-              <a className="btn btn-outline plan-btn" href="/demo">Book a demo <span className="arr" aria-hidden="true">→</span></a>
-              <ul className="plan-list">
-                <li className="plan-plus">Everything in Essentials, plus:</li>
-                <li><span className="tb" aria-hidden="true" />Insurer, case-management and medico-legal billing</li>
-                <li><span className="tb" aria-hidden="true" />Authorisations</li>
-                <li><span className="tb" aria-hidden="true" />Patient portal</li>
-                <li><span className="tb" aria-hidden="true" />Reporting</li>
-              </ul>
-            </article>
-          </li>
-          <li className="plan-wrap">
-            <article className="plan plan--groups on-dark" aria-labelledby="pl-grp">
+            <article className="plan plan--groups on-dark" aria-labelledby="pl-larger">
               <span className="tape tape--teal plan-tape" aria-hidden="true" />
-              <h3 className="display-m" id="pl-grp">Groups</h3>
-              <p className="plan-for">For groups with more than one site.</p>
+              <h3 className="display-m" id="pl-larger">Larger groups</h3>
+              <p className="plan-for">Over {LARGEST_BAND_MAX} practitioners</p>
               <p className="plan-price">
                 <span className="plan-amt plan-amt--talk">Talk to us</span>
                 <span className="plan-unit">a plan built around your sites</span>
               </p>
               <a className="btn btn-coral plan-btn" href="/demo">Talk to us <span className="arr" aria-hidden="true">→</span></a>
-              <ul className="plan-list">
-                <li className="plan-plus">Everything in Complete, plus:</li>
-                <li><span className="tb tb--sun" aria-hidden="true" />Multi-site diary and central booking</li>
-                <li><span className="tb tb--sun" aria-hidden="true" />Roles and multi-site admin</li>
-                <li><span className="tb tb--sun" aria-hidden="true" />Group reporting</li>
-                <li><span className="tb tb--sun" aria-hidden="true" />A switching plan for every site</li>
-              </ul>
             </article>
           </li>
         </ul>
-        <p className="small plans-note">
-          <Fill k="pricing.groupPlan" />
-        </p>
-        {/* TrialLink: add "Start free trial" (href="#start-trial" data-todo="trial sign-up URL") under each plan button only if a free trial is confirmed */}
+        <div className="plan-every">
+          <h3 className="display-m">Every plan includes</h3>
+          <ul className="plan-every-list">
+            <li className="plan-every-key"><span className="tb" aria-hidden="true" />Unlimited reception staff, sites and patients</li>
+            {EVERY_PLAN_FEATURES.map((f) => (
+              <li key={f}><span className="tb tb--teal" aria-hidden="true" />{f}</li>
+            ))}
+          </ul>
+          <p className="small plans-note">
+            Paying yearly costs ten months’ price – {FREE_MONTHS_TEXT}. <Fill k="pricing.vat" />.
+          </p>
+        </div>
       </div>
     </section>
   );
@@ -189,21 +223,42 @@ function ReportsAddOn() {
         <div className="p-reports-text">
           <div className="lockup">
             <span className="display-m">{CLINIC_SYSTEM_NAME} Reports</span>
-            <span className="lockup-sub">powered by ClinForms</span>
+            <span className="lockup-sub">powered by {CLINFORMS_NAME}</span>
             <span className="addon addon--tilt">Add-on</span>
           </div>
           <p className="pen marker" style={cssVars({"--tilt": "-1.5deg"})}>17:25 · the add-on</p>
           <h2 className="display-l" id="addon-title">Works with any plan</h2>
           <p className="body">
-            <span className="t-long"><b>Referrers’ own report forms, completed from your notes and signed by the physio.</b> Add it to Essentials, Complete or Groups – the form arrives mostly filled, and nothing leaves until it’s signed.</span>
+            <span className="t-long"><b>Referrers’ own report forms, completed from your notes and signed by the physio.</b> Add it to any plan – the form arrives mostly filled, and nothing leaves until it’s signed.</span>
             <span className="t-short">
               <b>Referrers’ own report forms, completed from your notes and signed by the physio.</b>
             </span>
           </p>
-          <p className="p-addon-price">
-            <Fill k="reports.price" />
-          </p>
+          <table className="addon-tiers">
+            <caption className="vh">Reports add-on prices</caption>
+            <thead>
+              <tr>
+                <th scope="col">Reports a month</th>
+                <th scope="col">Price</th>
+              </tr>
+            </thead>
+            <tbody>
+              {REPORTS_TIERS.map((t) => (
+                <tr key={t.key}>
+                  <th scope="row">Up to {t.reports}</th>
+                  <td>
+                    <MonthYear month={<><b>{t.price.month}</b> a month</>} year={<><b>{t.price.year}</b> a year</>} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="small addon-extra">Extra reports {EXTRA_REPORT_PRICE} each. Billed with your plan, monthly or yearly.</p>
           <a className="btn btn-pine" href="/reports">About Reports <span className="arr" aria-hidden="true">→</span></a>
+          <p className="small addon-alone">
+            On another clinic system? {CLINFORMS_NAME} works on its own:{" "}
+            <a className="link" href={BRANDS.clinforms.siteUrl}>{CLINFORMS_HOST}</a>
+          </p>
         </div>
         <div className="p-reports-scene">
           <div className="scene-box" role="img" aria-label="Three referrers’ report forms, from Calder Case Management, Hartley and Moss Solicitors and Northway Health. The Northway form for a fictional patient is filled from signed notes, with one answer left for the physio, and stamped reviewed and signed by S. Marsh on 10/11/2026 at 11:52. Sample data, fictional.">
@@ -296,13 +351,44 @@ function ReportsAddOn() {
   );
 }
 
-/** 4 · With every plan */
+/** 4 · Text messages */
+function TextMessages() {
+  return (
+    <section className="p-texts g-cardboard" id="texts" aria-labelledby="texts-title">
+      <div className="wrap grid12">
+        <div className="p-texts-text">
+          <p className="pen marker" style={cssVars({"--tilt": "-2deg"})}>17:30 · reminders out</p>
+          <h2 className="display-l" id="texts-title">Text messages, paid as you go</h2>
+          <p className="body">
+            Appointment reminders and messages by text use prepaid credits. Buy a pack when you need one – one credit sends one text of up to 160 characters.
+          </p>
+          <ul className="p-texts-notes small">
+            <li><span className="tb tb--teal" aria-hidden="true" />Credits don’t expire while your account is open.</li>
+            <li><span className="tb tb--teal" aria-hidden="true" />Nothing is sent on credit, and credits are not refundable.</li>
+          </ul>
+        </div>
+        <ul className="pack-grid" aria-label="Text message packs">
+          {TEXT_PACKS.map((p) => (
+            <li className="pack" key={p.key}>
+              <span className="pack-n">{p.credits}</span>
+              <span className="pack-k">credits</span>
+              <span className="pack-price">{p.price}</span>
+              <span className="pack-each">{p.perText}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  );
+}
+
+/** 5 · With every plan */
 function WithEveryPlan() {
   return (
     <section className="p-every g-pine on-dark" aria-labelledby="every-title">
       <div className="wrap">
         <div className="every-head">
-          <p className="pen marker" style={cssVars({"--tilt": "-2deg"})}>17:30 · whichever you pick</p>
+          <p className="pen marker" style={cssVars({"--tilt": "-2deg"})}>17:35 · whichever you pick</p>
           <h2 className="display-l" id="every-title">With every plan</h2>
         </div>
         <ul className="every-list">
@@ -334,7 +420,12 @@ function WithEveryPlan() {
   );
 }
 
-/** 5 · FAQs */
+/** "500, 1,000 or 5,000" */
+function orList(items: readonly string[]): string {
+  return items.length > 1 ? `${items.slice(0, -1).join(", ")} or ${items[items.length - 1]}` : items.join("");
+}
+
+/** 6 · FAQs */
 function FAQs() {
   return (
     <section className="p-faq g-blush" id="faq" aria-labelledby="faq-title">
@@ -350,6 +441,14 @@ function FAQs() {
             <p className="body"><Fill k="pricing.contractLength" />. <Fill k="pricing.noticePeriod" />.</p>
           </details>
           <details>
+            <summary>Can we pay yearly?</summary>
+            <p className="body">Yes. A year costs ten months’ price – {FREE_MONTHS_TEXT}. The Reports add-on is billed the same way as your plan.</p>
+          </details>
+          <details>
+            <summary>What if our team grows?</summary>
+            <p className="body">Your plan follows the number of practitioners. If you add more than your plan covers, we’ll suggest the next plan up – nothing stops working. Over {LARGEST_BAND_MAX} practitioners, <a className="link" href="/demo">talk to us</a>.</p>
+          </details>
+          <details>
             <summary>Can we export our data if we leave?</summary>
             <p className="body">Your data belongs to your clinic. <Fill k="pricing.dataExport" />.</p>
           </details>
@@ -363,11 +462,15 @@ function FAQs() {
           </details>
           <details>
             <summary>How does Reports pricing work?</summary>
-            <p className="body">Reports is an add-on to any plan. <Fill k="reports.aboveAllowance" />.</p>
+            <p className="body">Reports is an add-on to any plan, for up to {REPORTS_ALLOWANCES} reports a month. {REPORTS_FROM}. Each report above your allowance is {EXTRA_REPORT_PRICE}.</p>
+          </details>
+          <details>
+            <summary>How do text messages work?</summary>
+            <p className="body">Texts are prepaid: buy a pack of {orList(TEXT_PACKS.map((p) => p.credits))} credits ({orList(TEXT_PACKS.map((p) => p.price))}). Credits don’t expire while your account is open, and they’re not refundable.</p>
           </details>
           <details>
             <summary>Is there a free trial?</summary>
-            <p className="body"><Fill k="pricing.trialTerms" />.</p>
+            <p className="body">Yes. <Fill k="pricing.trialSummary" /> – <a className="link" href="/demo">book a demo</a> to get started.</p>
           </details>
           <details>
             <summary>Do prices include VAT?</summary>

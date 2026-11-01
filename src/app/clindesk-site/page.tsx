@@ -7,6 +7,7 @@ import { Drawing } from "@/components/clindesk/drawing";
 import { SitePage } from "@/components/clindesk/site-page";
 import { TourLink } from "@/components/clindesk/tour-link";
 import "@/components/clindesk/styles/home.css";
+import { REPORTS_FROM } from "@/lib/clindesk/pricing";
 
 /**
  * ClinDesk website – / (ClinDesk – practice software for UK physio and MSK clinics).
@@ -340,7 +341,7 @@ function Reports() {
               </ul>
               <div className="rep-cta">
                 <a className="btn btn-pine" href="/reports">See the Reports add-on <span className="arr" aria-hidden="true">→</span></a>
-                <p className="small">Add-on to your {CLINIC_SYSTEM_NAME} plan · <Fill k="reports.price" /></p>
+                <p className="small">Add-on to your {CLINIC_SYSTEM_NAME} plan · {REPORTS_FROM}</p>
               </div>
             </div>
           </div>

@@ -1,5 +1,5 @@
 {
-  "_about": "ClinDesk website fill-ins (docs/clinic-system/CLINDESK-SITE-CONTENT.md). Edit only each \"value\". A value still in [square brackets] is NOT filled in: development and previews show it as written, production shows a neutral \"[to confirm]\" marker. A filled value must not contain [ or ]. The build fails if this file is invalid.",
+  "_about": "ClinDesk website fill-ins (docs/clinic-system/CLINDESK-SITE-CONTENT.md). Edit only each \"value\". A value still in [square brackets] is NOT filled in: development and previews show it as written, production shows a neutral \"[to confirm]\" marker. A filled value must not contain [ or ]. The build fails if this file is invalid. Prices are not here: the website reads them from the billing plan table (src/lib/billing/plans.ts, text packs src/modules/pms/comms/credits.ts) via src/lib/clindesk/pricing.ts.",
   "values": {
     "company.number": {
       "value": "[Company number]",
@@ -13,29 +13,13 @@
       "value": "one working day",
       "description": "How fast you reply to an email or a demo request, e.g. \"one working day\". Book a demo page and its thank-you page (\"we'll reply within …\")."
     },
-    "pricing.fromPrice": {
-      "value": "[£X a month – price and unit to confirm]",
-      "description": "Lowest price line in the closing call to action (\"From … · Reports is an add-on\"), e.g. \"£39 a month\" (no VAT is charged – AppstackX is not VAT registered, 01/11/2026). Home, Features, Reports and Switching pages."
-    },
     "pricing.vat": {
       "value": "No VAT is charged",
       "description": "The VAT sentence (Khuram 01/11/2026: AppstackX is not VAT registered, so no VAT is charged). Pricing page, top and the VAT question; the terms (fees). If AppstackX registers for VAT, change it to e.g. \"Prices are shown without VAT; VAT is added at the current rate\" (docs/clinic-system/BILLING.md §8)."
     },
     "pricing.trialSummary": {
-      "value": "[length and terms]",
-      "description": "Free trial in a few words after \"Free trial:\", e.g. \"14 days, no card\" – or \"none\". Pricing page, top."
-    },
-    "pricing.essentialsPrice": {
-      "value": "[£X]",
-      "description": "Price of the Essentials plan per practitioner a month, e.g. \"£35\". Pricing page, Essentials card."
-    },
-    "pricing.completePrice": {
-      "value": "[£X]",
-      "description": "Price of the Complete plan per practitioner a month, e.g. \"£49\". Pricing page, Complete card."
-    },
-    "pricing.groupPlan": {
-      "value": "[Plan names and what each includes – to confirm]",
-      "description": "Line under the plan cards: the plan names and what each includes (or a note that they are final). Pricing page."
+      "value": "Free trial available after your demo",
+      "description": "The free trial in one sentence (Khuram 01/11/2026, option A: a free trial is offered after the demo). Pricing page, top and the \"Is there a free trial?\" answer."
     },
     "pricing.switchingFeeSummary": {
       "value": "[Any switching fee]",
@@ -56,18 +40,6 @@
     "pricing.switchingFee": {
       "value": "[Switching fee, if any]",
       "description": "Switching fee, if any (\"Will you help us switch?\" answer). Pricing page FAQ."
-    },
-    "pricing.trialTerms": {
-      "value": "[Trial length and terms]",
-      "description": "Free trial answer (\"Is there a free trial?\"), e.g. \"Yes – 14 days on your own data, no card needed\". Pricing page FAQ."
-    },
-    "reports.price": {
-      "value": "[£X a month for up to N reports]",
-      "description": "Price of the Reports add-on, e.g. \"£40 a month for up to 20 reports\". Home, Features, Pricing and Reports pages."
-    },
-    "reports.aboveAllowance": {
-      "value": "[What happens above N reports]",
-      "description": "What happens above the included number of reports, e.g. \"Each extra report is £2\". Pricing page FAQ."
     },
     "reports.supportedForms": {
       "value": "[List of supported forms – to come]",

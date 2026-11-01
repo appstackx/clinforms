@@ -1,5 +1,5 @@
 /**
- * ClinDesk website fill-ins: every value Khuram must confirm (prices, plans, hosting region, certifications, contract
+ * ClinDesk website fill-ins: every value Khuram must confirm (hosting region, certifications, contract
  * and support details, timelines, company number, registered office, response times, the legal pages' open points …) comes from ONE file,
  * content/clindesk-site.json, read when the site is built (the pages are static). How to edit it and the list of
  * keys: docs/clinic-system/CLINDESK-SITE-CONTENT.md.
@@ -9,6 +9,9 @@
  * - A value still in [square brackets] is NOT filled in. Drafts (next dev, Vercel previews, CLINDESK_SITE_DRAFT=1)
  *   show it as written, so the gap is easy to find; production shows the neutral marker "[to confirm]". Either way it
  *   stays visible on the page (src/components/clindesk/fill.tsx) – nothing is invented.
+ *
+ * Prices are NOT fill-ins: the pages read them from the billing plan table checkout uses (src/lib/clindesk/pricing.ts
+ * → src/lib/billing/plans.ts, text packs src/modules/pms/comms/credits.ts) – one source, no second copy here.
  *
  * Browser-safe (no Node APIs); the pages are server components.
  */
@@ -20,20 +23,13 @@ export const CLINDESK_CONTENT_KEYS = [
   "company.number",
   "company.registeredOffice",
   "contact.responseTime",
-  "pricing.fromPrice",
   "pricing.vat",
   "pricing.trialSummary",
-  "pricing.essentialsPrice",
-  "pricing.completePrice",
-  "pricing.groupPlan",
   "pricing.switchingFeeSummary",
   "pricing.contractLength",
   "pricing.noticePeriod",
   "pricing.dataExport",
   "pricing.switchingFee",
-  "pricing.trialTerms",
-  "reports.price",
-  "reports.aboveAllowance",
   "reports.supportedForms",
   "reports.newFormProcess",
   "support.summary",
