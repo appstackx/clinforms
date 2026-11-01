@@ -144,7 +144,7 @@ export function DemoForm() {
           <div className="d-row">
             <div className="d-field">
               <label htmlFor="f-practitioners">
-                Number of practitioners <span className="req">(required)</span>
+                Practitioners <span className="req">(required)</span>
               </label>
               <span className="d-select">
                 <select id="f-practitioners" name="practitioners" required defaultValue={v.practitioners ?? ""} {...describe("f-practitioners", e.practitioners)}>
@@ -160,7 +160,7 @@ export function DemoForm() {
             </div>
             <div className="d-field d-field--sites">
               <label htmlFor="f-sites">
-                Number of sites <span className="req">(required)</span>
+                Sites <span className="req">(required)</span>
               </label>
               <span className="d-select">
                 <select id="f-sites" name="sites" required defaultValue={v.sites ?? ""} {...describe("f-sites", e.sites)}>
