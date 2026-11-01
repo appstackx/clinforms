@@ -8,9 +8,15 @@ import { billingClientsFromEnv, canManageBilling, checkoutDoneView, completeChec
 import { getDb } from "@/server/db";
 import { hasPackage } from "@/server/pms/entitlements";
 import { otherBrandSignIn } from "@/server/brand-home";
+import { currentBrand } from "@/server/brand";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Payment – Plan and billing" };
+/** The tab title (V-02): "… · ClinDesk" on the clinic brand's host; on ClinForms' hosts without a product name – the
+ * page may be the hand-off to the clinic system just bought, so it names neither brand there. */
+const DONE_TITLE = "Payment – Plan and billing";
+export function generateMetadata(): Metadata {
+  return currentBrand().id === "clinic" ? { title: DONE_TITLE } : { title: { absolute: DONE_TITLE } };
+}
 
 /**
  * /app/settings/billing/done?session_id=… – back from the payment page. The checkout and its subscription are re-read
@@ -47,6 +53,7 @@ export default async function BillingDonePage({ searchParams }: { searchParams: 
       {elsewhere ? (
         <p className="mt-4 text-sm text-slate-700" data-testid="billing-done-elsewhere">
           {CLINIC_SYSTEM_NAME} has its own address: sign in there with the same email and password (and your two-step code).
+          Your clinic is used there from now on.
         </p>
       ) : null}
       <div className="mt-6 flex flex-wrap items-center gap-4">
@@ -56,7 +63,7 @@ export default async function BillingDonePage({ searchParams }: { searchParams: 
             className="inline-flex h-10 items-center rounded-lg bg-teal-700 px-4 text-sm font-semibold text-white hover:bg-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-700 focus-visible:ring-offset-2"
             data-testid="open-clinic-system"
           >
-            Open {CLINIC_SYSTEM_NAME}
+            {elsewhere ? `Sign in to ${CLINIC_SYSTEM_NAME}` : `Open ${CLINIC_SYSTEM_NAME}`}
           </a>
         ) : null}
         <Link

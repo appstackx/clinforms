@@ -7,10 +7,10 @@
  * production before CLINFORMS_AUTH_ORIGINS is set) keeps every link on its own origin.
  *
  *   invitation          the inviting clinic's brand
- *   password reset      (01/11/2026) the brand of the host they asked on, when it is one of the app's own origins – a
- *                       reset asked for on clindesk.co.uk comes back to clindesk.co.uk; otherwise (a host that is not
- *                       ours, a call without a request) the brand of the person's clinics, and with clinics of both
- *                       brands ClinForms (resetLinkBrand)
+ *   password reset      (01/11/2026, F1) the brand of the person's clinics: a ClinDesk-only person asking on
+ *                       clinforms.co.uk still gets a ClinDesk email and a clindesk.co.uk link, and vice versa. Only
+ *                       with clinics of both brands (or none) does the host they asked on decide, when it is one of
+ *                       the app's own origins; else ClinForms (resetLinkBrand)
  *   withLinkBrand(b, f) an explicit brand for links built inside f (an administrator's reset link for a member of a
  *                       named clinic, the platform's owner reset link, a clinic created for the clinic brand)
  *
@@ -112,9 +112,10 @@ export async function userLinkBrand(db: Kysely<Database>, userId: string, reques
 
 /**
  * The brand of a password reset link (Better Auth's sendResetPassword): an explicit brand (withLinkBrand – an
- * administrator's link for a named clinic, the platform's owner link) first; then the brand of the host the person
- * asked on, when that host is one of the app's own origins (`requestBrand`, already checked – config.ts requestBrand);
- * only without one, the brand of their clinics (userLinkBrand). Invitations stay the inviting clinic's (package-driven).
+ * administrator's link for a named clinic, the platform's owner link) first; then the brand the person's clinics share
+ * (01/11/2026, F1: the clinic's brand wins over the host); only with clinics of both brands, or none, the brand of the
+ * host they asked on when it is one of the app's own origins (`requestBrand`, already checked – config.ts
+ * requestBrand), else ClinForms (userLinkBrand). Invitations stay the inviting clinic's (package-driven).
  */
 export async function resetLinkBrand(
   db: Kysely<Database>,
@@ -123,6 +124,5 @@ export async function resetLinkBrand(
   explicit: BrandId | undefined = linkBrandHint(),
 ): Promise<BrandId> {
   if (explicit) return explicit;
-  if (requestBrand) return requestBrand;
-  return userLinkBrand(db, userId, null);
+  return userLinkBrand(db, userId, requestBrand);
 }

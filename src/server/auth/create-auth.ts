@@ -230,9 +230,9 @@ export function createAuth(input: CreateAuthInput) {
       resetPasswordTokenExpiresIn: RESET_TOKEN_TTL_SECONDS,
       revokeSessionsOnPasswordReset: true,
       async sendResetPassword({ user, token }, request) {
-        // 01/11/2026: the host the person asked on wins when it is one of the app's own origins (a reset asked for on
-        // the clinic brand's host comes back there and speaks for it); otherwise the brand of their clinic(s) –
-        // brand-links.ts resetLinkBrand. Never a host from the request that is not ours.
+        // 01/11/2026 (F1): the brand of the person's clinic(s) wins; the host they asked on decides only for a person
+        // with clinics of both brands (or none), and only when it is one of the app's own origins – brand-links.ts
+        // resetLinkBrand. Never a host from the request that is not ours.
         const { origin, brand } = linkTarget(input.baseUrl, await resetLinkBrand(db, user.id, await hostBrand(request), linkBrandHint()));
         const link = `${origin}/reset-password?token=${encodeURIComponent(token)}`;
         const expiresAt = new Date(Date.now() + RESET_TOKEN_TTL_SECONDS * 1000).toISOString();
