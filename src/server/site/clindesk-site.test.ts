@@ -268,7 +268,8 @@ describe("clindesk.co.uk legal pages", () => {
     assert.match(text, /governed by the law of England and Wales/);
     assert.ok(!/public demo/.test(text), "ClinDesk has no public demo");
     assert.match(text, /No VAT is charged\./, "not VAT registered (01/11/2026)");
-    for (const k of ["legal.termsEffectiveFrom", "legal.medicalDeviceStatus", "legal.liabilityCap", "legal.paymentProviderTerms", "pricing.dataExport", "support.channels", "support.hours"]) {
+    // Filled 01/11/2026 (Khuram): data export, support channels and hours now read from the content file.
+    for (const k of ["legal.termsEffectiveFrom", "legal.medicalDeviceStatus", "legal.liabilityCap", "legal.paymentProviderTerms"]) {
       assert.ok(html.includes(`data-to-confirm="${k}"`), k);
     }
   });

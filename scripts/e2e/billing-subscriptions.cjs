@@ -304,7 +304,7 @@ async function submit(page) {
       await owner.goto(billing);
       assert.equal((await owner.locator("[data-testid=billing-plan]").innerText()).trim(), "No plan yet");
       const form = await owner.locator("[data-testid=plan-form]").innerText();
-      for (const s of ["Solo · £39 a month", "Small · £89 a month", "Practice · £169 a month", "Group · £299 a month", "Multi-site · £499 a month", "6–10 practitioners"]) assert(form.includes(s), `plan form: ${s}`);
+      for (const s of ["Solo · £25 a month", "Small · £50 a month", "Practice · £85 a month", "Group · £149 a month", "Multi-site · £249 a month", "6–10 practitioners"]) assert(form.includes(s), `plan form: ${s}`);
       const body = await owner.locator("main").innerText();
       assert(!/stripe/i.test(body), "the payment service is never named on screen");
       assert(!/ex VAT|plus VAT|exclude VAT/i.test(body), "no VAT is charged – no ex-VAT wording");
@@ -372,7 +372,7 @@ async function submit(page) {
     await check("C3", "the page shows the plan, status and next payment (DD/MM/YYYY); the nav has Plan and billing", async () => {
       await owner.goto(billing);
       assert.match(await owner.locator("[data-testid=billing-plan]").innerText(), /ClinDesk Practice with Reports \(100 a month\)/);
-      assert.match(await owner.locator("main").innerText(), /£3,280 a year/);
+      assert.match(await owner.locator("main").innerText(), /£2,440 a year/);
       assert.equal((await owner.locator("[data-testid=billing-status]").innerText()).trim(), "Active");
       assert.match(await owner.locator("[data-testid=billing-next]").innerText(), /^\d{2}\/\d{2}\/\d{4}$/);
       await owner.locator("nav >> text=Plan and billing").first().waitFor();

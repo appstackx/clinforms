@@ -46,18 +46,18 @@ describe("ClinDesk website prices come from the billing plan table", () => {
     assert.deepEqual(
       PLAN_CARDS.map((c) => [c.practitioners, c.price.month, c.price.year]),
       [
-        ["1 practitioner", "£39", "£390"],
-        ["2–5 practitioners", "£89", "£890"],
-        ["6–10 practitioners", "£169", "£1,690"],
-        ["11–25 practitioners", "£299", "£2,990"],
-        ["26–60 practitioners", "£499", "£4,990"],
+        ["1 practitioner", "£25", "£250"],
+        ["2–5 practitioners", "£50", "£500"],
+        ["6–10 practitioners", "£85", "£850"],
+        ["11–25 practitioners", "£149", "£1,490"],
+        ["26–200 practitioners", "£249", "£2,490"],
       ],
     );
     assert.equal(PLAN_CARDS.length, CLINDESK_BANDS.length);
     assert.equal(YEARLY_MONTHS, 10);
     assert.equal(FREE_MONTHS_TEXT, "2 months free");
-    assert.equal(LARGEST_BAND_MAX, 60);
-    assert.equal(FROM_PRICE, "£39 a month");
+    assert.equal(LARGEST_BAND_MAX, 200);
+    assert.equal(FROM_PRICE, "£25 a month");
   });
   it("the Reports add-on and extra reports", () => {
     assert.deepEqual(
@@ -100,15 +100,15 @@ describe("ClinDesk website prices come from the billing plan table", () => {
 });
 
 describe("/pricing shows the real offer", () => {
-  it("every plan with its monthly and yearly price, a Talk to us card above 60 practitioners, all features on every plan", async () => {
+  it("every plan with its monthly and yearly price, a Talk to us card above 200 practitioners, all features on every plan", async () => {
     const { html, text } = await render("pricing/");
     for (const c of PLAN_CARDS) {
       assert.ok(text.includes(`${c.name} ${c.practitioners} ${c.price.month} a month ${c.price.year} a year · 2 months free`), c.name);
     }
-    assert.match(text, /Larger groups Over 60 practitioners Talk to us a plan built around your sites Talk to us/);
+    assert.match(text, /Larger groups Over 200 practitioners Talk to us a plan built around your sites Talk to us/);
     assert.match(text, /Unlimited reception staff, sites and patients/);
     assert.match(text, /Every plan has every feature, with unlimited reception staff, sites and patients/);
-    assert.match(text, /from £39 a month/);
+    assert.match(text, /from £25 a month/);
     for (const old of ["Essentials", "Complete", "per practitioner a month", "[£X]"]) assert.ok(!text.includes(old), old);
     // The monthly / yearly switch: two radios in one group, monthly chosen – it works without JavaScript.
     assert.match(html, /<fieldset class="bill-switch"><legend class="bill-legend">Show prices<\/legend>/);

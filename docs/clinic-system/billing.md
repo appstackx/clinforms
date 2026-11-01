@@ -13,16 +13,16 @@ deployed. Text credits: [`SMS-CREDITS.md`](SMS-CREDITS.md) (same payment account
 
   | Plan | Practitioners | Monthly | Yearly (10×) | Lookup keys |
   |---|---|---|---|---|
-  | ClinDesk Solo | 1 | £39 | £390 | `clindesk_solo_monthly` / `_yearly` |
-  | ClinDesk Small | 2–5 | £89 | £890 | `clindesk_small_*` |
-  | ClinDesk Practice | 6–10 | £169 | £1,690 | `clindesk_practice_*` |
-  | ClinDesk Group | 11–25 | £299 | £2,990 | `clindesk_group_*` |
-  | ClinDesk Multi-site | 26–60 | £499 | £4,990 | `clindesk_multisite_*` |
+  | ClinDesk Solo | 1 | £25 | £250 | `clindesk_solo_monthly` / `_yearly` |
+  | ClinDesk Small | 2–5 | £50 | £500 | `clindesk_small_*` |
+  | ClinDesk Practice | 6–10 | £85 | £850 | `clindesk_practice_*` |
+  | ClinDesk Group | 11–25 | £149 | £1,490 | `clindesk_group_*` |
+  | ClinDesk Multi-site | 26–200 | £249 | £2,490 | `clindesk_multisite_*` |
   | Reports add-on 25 / 100 / 250 / 500 a month | – | £79 / £159 / £279 / £439 | £790 / £1,590 / £2,790 / £4,390 | `clindesk_reports_<n>_monthly` / `_yearly` |
   | ClinForms Starter / Practice / Group / Group Plus (25/100/250/500) | – | £99 / £199 / £349 / £549 | – | `clinforms_<tier>_monthly` |
   | Extra report above the allowance | – | £1.50 each | – | `extra_report` (one-off) |
 
-  **Public website (01/11/2026):** clindesk.co.uk/pricing (and the "From £39 a month" / Reports add-on lines on other
+  **Public website (01/11/2026):** clindesk.co.uk/pricing (and the "From £25 a month" / Reports add-on lines on other
   pages) reads these amounts from the same table via `src/lib/clindesk/pricing.ts` – change a price here and at the
   payment account, never on a page. Every plan button there books a demo; no checkout link on the public site.
 

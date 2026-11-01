@@ -46,7 +46,7 @@ export const LARGEST_BAND_MAX = Math.max(...CLINDESK_BANDS.map((b) => b.max));
 
 const cheapestBand = CLINDESK_BANDS.reduce((a, b) => (b.monthlyPence < a.monthlyPence ? b : a));
 
-/** "£39 a month" – the lowest price (closing call to action on every page: "From … · Reports is an add-on"). */
+/** "£25 a month" – the lowest price (closing call to action on every page: "From … · Reports is an add-on"). */
 export const FROM_PRICE = `${pounds(cheapestBand.monthlyPence)} a month`;
 
 /** One Reports add-on tier. */
