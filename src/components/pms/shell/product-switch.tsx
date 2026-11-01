@@ -7,7 +7,7 @@
 import Link from "next/link";
 import { Activity } from "lucide-react";
 
-export function ProductSwitchBar({ clinicSystemName, clinicHref }: { clinicSystemName: string; clinicHref: string }) {
+export function ProductSwitchBar({ clinicSystemName, clinicHref, reportsName }: { clinicSystemName: string; clinicHref: string; reportsName: string }) {
   return (
     <div className="flex items-center gap-2.5 border-b border-slate-200 bg-white px-4 py-1.5" data-testid="product-switch">
       <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#1842B4] text-white" aria-hidden>
@@ -18,7 +18,7 @@ export function ProductSwitchBar({ clinicSystemName, clinicHref }: { clinicSyste
           {clinicSystemName}
         </Link>
         <Link href="/app/studio" aria-current="page" className="inline-flex h-[28px] items-center rounded-[8px] bg-white px-3 font-semibold text-slate-900 shadow-[0_1px_2px_rgba(15,23,42,0.08)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700">
-          ClinForms
+          {reportsName}
         </Link>
       </nav>
     </div>

@@ -4,7 +4,10 @@ import { SubmitButton } from "@/components/account/form-controls";
 import { listClinicMembers } from "@/server/auth/membership";
 import { isManager } from "@/server/auth/roles";
 import { requireAppContext } from "@/server/auth/session";
+import { redirect } from "next/navigation";
 import { getDb } from "@/server/db";
+import { currentBrand } from "@/server/brand";
+import { hasReportsArea } from "@/server/brand-home";
 import { ukDateTime } from "@/server/email/templates";
 import { listPartnerKeys } from "@/server/repos/partner-keys";
 import { revokeApiKey } from "./actions";
@@ -15,6 +18,8 @@ export const metadata: Metadata = { title: "API keys" };
 
 export default async function ApiKeysPage() {
   const { membership } = await requireAppContext();
+  // 01/11/2026: the keys are for the Report API – a ClinDesk clinic without the Reports add-on has none.
+  if (!(await hasReportsArea(membership.tenantId))) redirect("/app");
   if (!isManager(membership.role)) {
     return (
       <>
@@ -30,7 +35,7 @@ export default async function ApiKeysPage() {
     <>
       <PageHeader
         title="API keys"
-        description="API keys will let your practice-management system connect to ClinForms. No connection uses them yet."
+        description={`API keys will let your practice-management system connect to ${currentBrand().productName}. No connection uses them yet.`}
       />
       <Panel title="Create a key" className="mb-6">
         <CreateKeyForm />

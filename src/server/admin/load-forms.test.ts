@@ -33,9 +33,9 @@ describe("admin:load-forms arguments", () => {
     assert.deepEqual((["ready", "loaded", "skipped", "refused"] as const).map((s) => statusLabel(s, false)), ["READY", "LOADED", "SKIPPED", "REFUSED"]);
   });
   it("the clinic's activity log words the replace rows (counts only)", () => {
-    assert.equal(activityLabel("form.replace"), "Form replaced by an updated version from ClinForms");
+    assert.equal(activityLabel("form.replace"), "Form replaced by an updated version from our support team");
     assert.equal(describeActivityDetail("form.replace", { via: "onboarding", replaces: ["frm_1"], fields: 12 }), "12 questions to check and confirm");
-    assert.equal(activityLabel("clinic.forms_replaced"), "Forms updated in the library by ClinForms");
+    assert.equal(activityLabel("clinic.forms_replaced"), "Forms updated in the library by our support team");
     assert.equal(describeActivityDetail("clinic.forms_replaced", { replaced: 15, forms: 1, refused: 2, skipped: 0 }), "16 forms to check and confirm");
     assert.equal(describeActivityDetail("clinic.forms_replaced", { replaced: 0, forms: 0 }), null);
   });

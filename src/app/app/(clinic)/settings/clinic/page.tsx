@@ -4,6 +4,7 @@ import { clinicTrialRunning } from "@/server/admin/clinic-plan";
 import { isManager } from "@/server/auth/roles";
 import { requireAppContext } from "@/server/auth/session";
 import { getDb } from "@/server/db";
+import { hasPackage } from "@/server/pms/entitlements";
 import { getClinicProfile } from "@/server/repos/clinic-profile";
 import { ClinicProfileForm } from "./form";
 
@@ -13,11 +14,11 @@ export const metadata: Metadata = { title: "Clinic details" };
 export default async function ClinicSettingsPage() {
   const { membership } = await requireAppContext();
   const db = getDb();
-  const [profile, trial] = await Promise.all([getClinicProfile({ db }, membership.tenantId), clinicTrialRunning(db, membership.tenantId)]);
+  const [profile, trial, reports] = await Promise.all([getClinicProfile({ db }, membership.tenantId), clinicTrialRunning(db, membership.tenantId), hasPackage(membership.tenantId, "reports")]);
   const editable = isManager(membership.role);
   return (
     <>
-      <PageHeader title="Clinic details" description="These details are written into the referrer forms your clinic completes." />
+      <PageHeader title="Clinic details" description={reports ? "These details are written into the referrer forms your clinic completes." : "Your clinic's name, address and contact details."} />
       <Panel>
         {!editable ? (
           <div className="mb-4">
@@ -27,6 +28,7 @@ export default async function ClinicSettingsPage() {
         <ClinicProfileForm
           editable={editable}
           trial={trial}
+          reports={reports}
           values={{
             displayName: profile?.displayName ?? membership.clinicName,
             legalName: profile?.legalName ?? "",

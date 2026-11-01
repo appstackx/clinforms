@@ -187,7 +187,7 @@ export function MemberAccessForm(props: MemberAccessFormProps) {
       {readOnly ? <PmsNotice tone="info" title="This access can’t be changed here">{readOnly}</PmsNotice> : null}
       {!access.active ? (
         <PmsNotice tone="warning" title={`${first} can’t use the clinic system`}>
-          Their clinic-system access is switched off. Their ClinForms membership is unchanged – to remove them from the clinic, use ClinForms settings → Members.
+          Their clinic-system access is switched off. Their clinic account membership is unchanged – to remove them from the clinic, use Clinic administration → Members.
         </PmsNotice>
       ) : null}
 
@@ -440,7 +440,7 @@ export function MemberAccessForm(props: MemberAccessFormProps) {
         open={confirmDeactivate}
         onOpenChange={setConfirmDeactivate}
         title={`Deactivate ${member.name}?`}
-        description={`${first} won’t be able to open anything in the clinic system until someone reactivates them. Their exceptions and sites are kept. Their ClinForms membership is unchanged.`}
+        description={`${first} won’t be able to open anything in the clinic system until someone reactivates them. Their exceptions and sites are kept. Their clinic account membership is unchanged.`}
         confirmLabel="Deactivate"
         cancelLabel="Keep access"
         destructive

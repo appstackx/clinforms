@@ -176,8 +176,8 @@ describe("activity wording", () => {
   });
 
   it("demo clinics (10/2026): the switch both ways, approvals and final documents say so; real clinics' rows are unchanged", () => {
-    assert.equal(activityLabel("clinic.demo_on"), "Made a demo clinic by ClinForms");
-    assert.equal(activityLabel("clinic.demo_off"), "Demo clinic switched off by ClinForms");
+    assert.equal(activityLabel("clinic.demo_on"), "Made a demo clinic by our support team");
+    assert.equal(activityLabel("clinic.demo_off"), "Demo clinic switched off by our support team");
     assert.equal(activityLabel("platform.demo_on"), "Demo clinic switched on");
     assert.equal(describeActivityDetail("clinic.demo_on", { demoClinic: true, membersWithDemoNumbers: 0 }), "Demo clinic: made-up data only, made-up PH-DEMO numbers accepted");
     assert.equal(

@@ -110,7 +110,7 @@ export const ACTIVITY_LABELS: Readonly<Record<string, string>> = {
   "auth.password_reset": "Password changed with a reset link",
   "auth.password_reset_link": "Password reset link created",
   "auth.password_reset_link_refused": "Password reset link refused",
-  "auth.two_factor_reset": "Two-step verification reset by ClinForms support",
+  "auth.two_factor_reset": "Two-step verification reset by our support team",
   "member.invite": "Member invited",
   "member.invite_cancel": "Invitation cancelled",
   "member.join": "Invitation accepted",
@@ -120,25 +120,25 @@ export const ACTIVITY_LABELS: Readonly<Record<string, string>> = {
   "clinic.create": "Clinic account opened",
   "clinic.update": "Clinic details updated",
   "clinic.offboard": "Clinic account closed",
-  "clinic.trial_set": "Trial set up by ClinForms",
+  "clinic.trial_set": "Trial set up by our support team",
   "clinic.trial_started": "Trial started",
-  "clinic.trial_extended": "Trial extended by ClinForms",
-  "clinic.trial_ended": "Trial ended by ClinForms",
+  "clinic.trial_extended": "Trial extended by our support team",
+  "clinic.trial_ended": "Trial ended by our support team",
   "clinic.trial_converted": "Trial converted to a full account",
-  "clinic.limits_set": "Drafting limits changed by ClinForms",
-  "clinic.package_set": "Package set by ClinForms",
-  "clinic.package_removed": "Package removed by ClinForms",
-  "clinic.forms_loaded": "Forms added to the library by ClinForms",
-  "clinic.forms_replaced": "Forms updated in the library by ClinForms",
-  "clinic.demo_on": "Made a demo clinic by ClinForms",
-  "clinic.demo_off": "Demo clinic switched off by ClinForms",
+  "clinic.limits_set": "Drafting limits changed by our support team",
+  "clinic.package_set": "Reports package set",
+  "clinic.package_removed": "Reports package removed",
+  "clinic.forms_loaded": "Forms added to the library by our support team",
+  "clinic.forms_replaced": "Forms updated in the library by our support team",
+  "clinic.demo_on": "Made a demo clinic by our support team",
+  "clinic.demo_off": "Demo clinic switched off by our support team",
   "api_key.create": "API key created",
   "api_key.revoke": "API key revoked",
   "audit.export": "Activity downloaded",
   // The Studio and the Report API (src/modules/medreport: auth/actor.ts AUDIT_ACTIONS and the /store handlers).
   "file.upload": "Form file uploaded",
   "form.create": "Form added to the library",
-  "form.replace": "Form replaced by an updated version from ClinForms",
+  "form.replace": "Form replaced by an updated version from our support team",
   "form.update": "Form mapping saved",
   "form.analyse_live": "Form questions read from the file",
   "form.confirm": "Form mapping confirmed",
@@ -191,7 +191,7 @@ export const ACTIVITY_LABELS: Readonly<Record<string, string>> = {
   "clinic.subscription_expired": "Plan not started (first payment did not go through)",
   "clinic.billing_portal": "Billing page opened",
   "clinic.extra_reports_billed": "Extra reports added to the next invoice",
-  "clinic.billing_override_on": "Plan managed by ClinForms support",
+  "clinic.billing_override_on": "Plan managed by our support team",
   "clinic.billing_override_off": "Plan follows the subscription again",
   "platform.billing_go_live": "Live payments switched on: test payments cleared",
   "clinic.billing_go_live": "Live payments switched on: test payments cleared",
@@ -287,7 +287,7 @@ export function describeActivityDetail(action: string, detail: Record<string, un
     case "auth.session_revoke":
       return SESSION_SCOPES[String(detail.scope)] ?? null;
     case "auth.password_reset_link":
-      if (detail.delivery === "platform") return "Created by ClinForms support for the owner";
+      if (detail.delivery === "platform") return "Created by our support team for the owner";
       return detail.delivery === "sent" ? "Emailed to the member" : "Shown to the administrator to pass on";
     case "auth.password_reset_link_refused":
       return RESET_REFUSALS[String(detail.reason)] ?? null;
@@ -433,7 +433,7 @@ function withClinic(action: string, detail: Record<string, unknown>, text: strin
 
 /** Names of the people and things an entry points at, for display. */
 export const ACTIVITY_ACTORS = {
-  platform: "ClinForms support",
+  platform: "Support team",
   system: "Automatic",
   formerMember: "Former member",
   deletedAccount: "Deleted account",

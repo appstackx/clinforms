@@ -394,8 +394,8 @@ export function defineLoadFormsBh2Suite(label: string, factory: () => Promise<Lo
     });
 
     it("activity labels: form.replace, clinic.forms_replaced and form.lint_accepted in plain words", () => {
-      assert.equal(activityLabel("form.replace"), "Form replaced by an updated version from ClinForms");
-      assert.equal(activityLabel("clinic.forms_replaced"), "Forms updated in the library by ClinForms");
+      assert.equal(activityLabel("form.replace"), "Form replaced by an updated version from our support team");
+      assert.equal(activityLabel("clinic.forms_replaced"), "Forms updated in the library by our support team");
       assert.equal(activityLabel("form.lint_accepted"), "Form question accepted as worded by a clinician");
       assert.equal(
         describeActivityDetail("form.lint_accepted", { rule: "L5", fieldId: "F-28", judgement: "fitness for work", reason: "The patient reports it." }),

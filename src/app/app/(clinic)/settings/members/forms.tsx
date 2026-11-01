@@ -2,7 +2,7 @@
 import { useFormState } from "react-dom";
 import { Field, Notice } from "@/components/account/shell";
 import { FormResult, SecretBox, SubmitButton } from "@/components/account/form-controls";
-import { INVITE_COPY, ROLE_DESCRIPTIONS, ROLE_LABELS, type RoleKey } from "@/lib/account-copy";
+import { INVITE_COPY, roleDescriptions, ROLE_LABELS, type RoleKey } from "@/lib/account-copy";
 import type { ActionResult } from "@/server/auth/session";
 import { changeRole, createResetLink, inviteMember, saveMemberProfile, type InviteResult, type ResetLinkResult } from "./actions";
 
@@ -22,7 +22,7 @@ function RoleSelect({ roles, defaultValue, name = "role" }: { roles: RoleKey[]; 
   );
 }
 
-export function InviteForm({ roles }: { roles: RoleKey[] }) {
+export function InviteForm({ roles, reports = true }: { roles: RoleKey[]; reports?: boolean }) {
   const [state, action] = useFormState(inviteMember, null as InviteResult | null);
   return (
     <div className="space-y-4">
@@ -56,7 +56,7 @@ export function InviteForm({ roles }: { roles: RoleKey[] }) {
       <ul className="grid gap-1 text-xs text-slate-500 sm:grid-cols-2">
         {roles.map((r) => (
           <li key={r}>
-            <strong className="text-slate-700">{ROLE_LABELS[r]}:</strong> {ROLE_DESCRIPTIONS[r]}
+            <strong className="text-slate-700">{ROLE_LABELS[r]}:</strong> {roleDescriptions(reports)[r]}
           </li>
         ))}
       </ul>

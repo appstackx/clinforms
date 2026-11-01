@@ -264,7 +264,7 @@ export function defineAdminSuite(name: string, setup: () => Promise<AdminSuiteDb
       clinicIds = (await listAudit(ctx, CLINIC, { limit: 500 })).map((e) => e.id);
     });
 
-    it("names: current members, former members, ClinForms support, deleted accounts; details in plain words", async () => {
+    it("names: current members, former members, the support team, deleted accounts; details in plain words", async () => {
       const v = viewer("owner");
       const page = await loadActivityPage(ctx, activityQuery(activityScope(v), parseActivityParams({})), 200);
       const lookups = await loadActivityLookups(t.db, v, page.entries);
@@ -278,7 +278,7 @@ export function defineAdminSuite(name: string, setup: () => Promise<AdminSuiteDb
       assert.equal(pick((e) => e.userId === "u-clin")?.who, "Clara Clinician (fictional)");
       assert.equal(pick((e) => e.userId === "u-former")?.who, "Fred Former (fictional) (former member)");
       const created = pick((e) => e.action === "clinic.create");
-      assert.equal(created?.who, "ClinForms support");
+      assert.equal(created?.who, "Support team");
       assert.equal(created?.label, "Clinic account opened");
       assert.equal(created?.detail, "Reports kept for 365 days");
       assert.equal(created?.target, "Clinic account");
