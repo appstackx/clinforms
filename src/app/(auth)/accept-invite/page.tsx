@@ -19,7 +19,7 @@ export default async function AcceptInvitePage({ searchParams }: { searchParams:
   const invitation = token ? await findInvitationForLink(getDb(), authSecret(), token) : null;
   if (!invitation) {
     return (
-      <AuthShell productName={currentBrand().productName} title="Invitation not available" footer={<TextLink href="/login">Sign in</TextLink>}>
+      <AuthShell brand={currentBrand()} title="Invitation not available" footer={<TextLink href="/login">Sign in</TextLink>}>
         <Notice tone="warning">{ACCOUNT_ERRORS.inviteInvalid} Ask your clinic&apos;s owner or an administrator for a new invitation.</Notice>
       </AuthShell>
     );
@@ -34,7 +34,7 @@ export default async function AcceptInvitePage({ searchParams }: { searchParams:
 
   if (session && session.user.email.toLowerCase() !== invitation.email.toLowerCase()) {
     return (
-      <AuthShell productName={currentBrand().productName} title="Accept your invitation">
+      <AuthShell brand={currentBrand()} title="Accept your invitation">
         {summary}
         <Notice tone="warning">
           You are signed in as {session.user.email}, but this invitation is for {invitation.email}.
@@ -51,7 +51,7 @@ export default async function AcceptInvitePage({ searchParams }: { searchParams:
 
   if (session) {
     return (
-      <AuthShell productName={currentBrand().productName} title="Accept your invitation">
+      <AuthShell brand={currentBrand()} title="Accept your invitation">
         {summary}
         <JoinForm token={token} clinicName={invitation.clinicName} />
       </AuthShell>
@@ -60,7 +60,7 @@ export default async function AcceptInvitePage({ searchParams }: { searchParams:
 
   if (invitation.accountExists) {
     return (
-      <AuthShell productName={currentBrand().productName} title="Accept your invitation">
+      <AuthShell brand={currentBrand()} title="Accept your invitation">
         {summary}
         <Notice>{ACCOUNT_ERRORS.inviteAccountExists}</Notice>
         <p className="mt-4 text-center text-sm">
@@ -71,7 +71,7 @@ export default async function AcceptInvitePage({ searchParams }: { searchParams:
   }
 
   return (
-    <AuthShell productName={currentBrand().productName} title="Create your account" subtitle="Next you will set up two-step verification with an authenticator app.">
+    <AuthShell brand={currentBrand()} title="Create your account" subtitle="Next you will set up two-step verification with an authenticator app.">
       {summary}
       <CreateAccountForm token={token} email={invitation.email} />
     </AuthShell>

@@ -28,9 +28,9 @@ describe("platform page: trial and limit actions are guarded and audited", () =>
   it("the clinic layout and the Studio layout record the visit and show the banner", () => {
     const clinicLayout = fs.readFileSync(path.join(process.cwd(), "src/app/app/(clinic)/layout.tsx"), "utf8");
     assert.match(clinicLayout, /noteClinicVisit\(getDb\(\)/);
-    assert.match(clinicLayout, /<TrialBannerBar access=\{trial\} \/>/);
+    assert.match(clinicLayout, /<TrialBannerBar access=\{trial\} contactEmail=\{brand\.contactEmail\} \/>/);
     const studioLayout = fs.readFileSync(path.join(process.cwd(), "src/app/app/studio/layout.tsx"), "utf8");
-    assert.match(studioLayout, /<TrialBannerBar access=\{context\.trial\} \/>/);
+    assert.match(studioLayout, /<TrialBannerBar access=\{context\.trial\} contactEmail=\{contactEmail\} \/>/);
     const studioAccess = fs.readFileSync(path.join(process.cwd(), "src/server/auth/studio-access.ts"), "utf8");
     assert.match(studioAccess, /noteClinicVisit\(deps\.db/);
   });

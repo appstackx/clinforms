@@ -13,11 +13,11 @@
  */
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
-import { BRANDS } from "../../lib/brand";
+import { BRANDS, CLINIC_SYSTEM_NAME } from "../../lib/brand";
 import { createSqliteTestDb, type TestDb } from "../db/testing/databases";
 import { invitationEmail, passwordResetEmail, setEmailProviderForTests, twoFactorEnabledEmail, type EmailMessage } from "../email";
 import { setEntitlement } from "../repos/pms/entitlements";
-import { clinicLinkBrand, userLinkBrand, withLinkBrand } from "./brand-links";
+import { clinicLinkBrand, resetLinkBrand, userLinkBrand, withLinkBrand } from "./brand-links";
 import {
   AuthConfigError,
   baseUrlSetting,
@@ -299,13 +299,44 @@ describe("brand hosts – Better Auth over HTTP (production settings, both hosts
     assert.equal(forms.subject, "Join Forms Only Physio (fictional) on ClinForms");
   });
 
-  it("reset links: the person's clinic brand; both brands → the host asked on (if ours); single use across hosts", async () => {
+  it("reset links: the host asked on wins when it is ours (01/11/2026); else the person's clinic brand; single use across hosts", async () => {
     sent.length = 0;
     const deskUser = await t.db.selectFrom("user").select("id").where("email", "=", "owner@desk-physio.example").executeTakeFirstOrThrow();
     const formsUser = await t.db.selectFrom("user").select("id").where("email", "=", "owner@forms-only.example").executeTakeFirstOrThrow();
     assert.equal(await userLinkBrand(t.db, deskUser.id, "clinforms"), "clinic");
     assert.equal(await userLinkBrand(t.db, formsUser.id, "clinic"), "clinforms");
-    // Desk Physio's owner joins Forms Only too: both brands.
+    // The requesting host first, then an explicit brand above both, then the clinics' brand.
+    assert.equal(await resetLinkBrand(t.db, formsUser.id, "clinic", undefined), "clinic");
+    assert.equal(await resetLinkBrand(t.db, deskUser.id, "clinforms", undefined), "clinforms");
+    assert.equal(await resetLinkBrand(t.db, formsUser.id, null, undefined), "clinforms");
+    assert.equal(await resetLinkBrand(t.db, deskUser.id, null, undefined), "clinic");
+    assert.equal(await resetLinkBrand(t.db, deskUser.id, "clinforms", "clinic"), "clinic");
+
+    const reset = (email: string, host: string) => asAction(new Headers({ host }), (headers) => auth.api.requestPasswordReset({ body: { email }, headers }));
+    // A ClinForms-only clinic's owner asking on the clinic brand's host (Khuram's report, 01/11/2026): back to that host.
+    await reset("owner@forms-only.example", "clindesk.co.uk");
+    await reset("owner@desk-physio.example", "clindesk.co.uk");
+    // A clinic-package owner asking on ClinForms' host: ClinForms' host.
+    await reset("owner@desk-physio.example", "clinforms.co.uk");
+    // A host that is not ours never picks the brand: the person's clinics' brand (Desk Physio: clinic).
+    await reset("owner@desk-physio.example", "evil.example");
+    await reset("owner@forms-only.example", "evil.example");
+    await withLinkBrand("clinic", () => reset("owner@forms-only.example", "clinforms.co.uk"));
+    const resets = sent.filter((m) => m.kind === "password_reset");
+    const links = resets.map((m) => [m.link ?? "", m.brand ?? "clinforms"]);
+    assert.equal(links.length, 6);
+    assert.match(links[0][0], /^https:\/\/clindesk\.co\.uk\/reset-password\?token=/, "asked on the clinic brand's host");
+    assert.equal(links[0][1], "clinic");
+    assert.match(resets[0].subject, new RegExp(CLINIC_SYSTEM_NAME), "the email speaks for the clinic brand");
+    assert.match(links[1][0], /^https:\/\/clindesk\.co\.uk\/reset-password\?token=/);
+    assert.equal(links[1][1], "clinic");
+    assert.match(links[2][0], /^https:\/\/clinforms\.co\.uk\/reset-password\?token=/, "asked on ClinForms' host");
+    assert.equal(links[2][1], "clinforms");
+    assert.match(links[3][0], /^https:\/\/clindesk\.co\.uk\//, "a forged host: the clinic's brand");
+    assert.match(links[4][0], /^https:\/\/clinforms\.co\.uk\//, "a forged host never picks the brand");
+    assert.match(links[5][0], /^https:\/\/clindesk\.co\.uk\//, "an explicit brand (platform / named clinic)");
+
+    // Desk Physio's owner joins Forms Only too: both brands – the host asked on, else ClinForms.
     await t.db
       .insertInto("member")
       .values({ id: "m-both-brands", organizationId: clinicA.organizationId, userId: deskUser.id, role: "admin", createdAt: new Date().toISOString() })
@@ -313,20 +344,8 @@ describe("brand hosts – Better Auth over HTTP (production settings, both hosts
     assert.equal(await userLinkBrand(t.db, deskUser.id, "clinforms"), "clinforms");
     assert.equal(await userLinkBrand(t.db, deskUser.id, "clinic"), "clinic");
     assert.equal(await userLinkBrand(t.db, deskUser.id, null), "clinforms");
-
-    const reset = (email: string, host: string) => asAction(new Headers({ host }), (headers) => auth.api.requestPasswordReset({ body: { email }, headers }));
-    await reset("owner@forms-only.example", "clindesk.co.uk");
-    await reset("owner@desk-physio.example", "clindesk.co.uk");
-    await reset("owner@desk-physio.example", "evil.example");
-    await withLinkBrand("clinic", () => reset("owner@forms-only.example", "clinforms.co.uk"));
-    const links = sent.filter((m) => m.kind === "password_reset").map((m) => [m.link ?? "", m.brand ?? "clinforms"]);
-    assert.equal(links.length, 4);
-    assert.match(links[0][0], /^https:\/\/clinforms\.co\.uk\/reset-password\?token=/);
-    assert.equal(links[0][1], "clinforms");
-    assert.match(links[1][0], /^https:\/\/clindesk\.co\.uk\/reset-password\?token=/);
-    assert.equal(links[1][1], "clinic");
-    assert.match(links[2][0], /^https:\/\/clinforms\.co\.uk\//, "a forged host never picks the brand");
-    assert.match(links[3][0], /^https:\/\/clindesk\.co\.uk\//, "an explicit brand (platform / named clinic)");
+    assert.equal(await resetLinkBrand(t.db, deskUser.id, "clinic", undefined), "clinic");
+    assert.equal(await resetLinkBrand(t.db, deskUser.id, null, undefined), "clinforms");
 
     // The token works once – on either host – and not again on the other.
     const token = new URL(links[1][0]).searchParams.get("token") as string;

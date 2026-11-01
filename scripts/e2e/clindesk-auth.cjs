@@ -17,7 +17,11 @@
  *   F  localhost (ClinForms, regression): the platform administrator joins from the localhost link, two-step issuer
  *      "ClinForms", lands on /app, opens /app/platform ("Owner signs in on" choice offered); the clinic brand's owner
  *      signs in on localhost too and lands on /app as before; a reset asked for on localhost for the clinic-brand
- *      owner still links to clinic.localhost (the clinic's brand).
+ *      owner links to localhost (01/11/2026: the host asked on wins); ClinForms' tab icon, mark and contact unchanged.
+ *   B  (01/11/2026) brand chrome on clinic.localhost: the tab icon (sign-in pages, /app, the clinic area, the 404 page,
+ *      the bare /icon.svg), the crossed-tapes mark on the sign-in card and in the headers, the contact address
+ *      hello@clindesk.co.uk; a ClinForms-only clinic's owner asking for a reset on clinic.localhost gets a
+ *      clinic.localhost link in a ClinDesk email, and the sign-in after it stays there. Screenshots in E2E_OUT.
  *   X  Origin/CSRF: Better Auth's sign-in refuses a foreign Origin on both hosts and takes each host's own; no link in
  *      the server output outside the log provider's messages.
  *
@@ -242,6 +246,46 @@ const visibleText = async (page) => (await page.locator("body").innerText()).rep
 const cli = (args) => execFileSync("npm", ["run", "-s", ...args], { cwd: REPO, env: appEnv(), encoding: "utf8" });
 const LINK_RE = /https?:\/\/\S+\/accept-invite\?token=[A-Za-z0-9._%-]+/;
 
+
+/* ------------------------------------------------------------------ brand chrome (01/11/2026) */
+/** The page's tab icon links: { icon, apple } hrefs (path + query), as the browser reads them. */
+async function iconLinks(page) {
+  return page.evaluate(() => {
+    const href = (sel) => {
+      const el = document.querySelector(sel);
+      if (!el) return null;
+      const u = new URL(el.getAttribute("href"), location.href);
+      return u.pathname + u.search;
+    };
+    return { icon: href("link[rel~='icon']"), apple: href("link[rel='apple-touch-icon']") };
+  });
+}
+/** The icon the browser would show in the tab: fetched by the page itself (same host), as text. */
+async function fetchedIcon(page) {
+  return page.evaluate(async () => {
+    const el = document.querySelector("link[rel~='icon']");
+    const res = await fetch(new URL(el.getAttribute("href"), location.href));
+    return { type: res.headers.get("content-type"), body: await res.text() };
+  });
+}
+/** A picture of the browser tab (headless Chromium draws no tabs): the page's own icon and title, as a tab shows them. */
+async function tabStrip(browser, page, file) {
+  const icon = await fetchedIcon(page);
+  const title = await page.title();
+  const url = page.url();
+  const shot = await browser.newPage({ viewport: { width: 760, height: 120 } });
+  const esc = (t) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  await shot.setContent(
+    `<body style="margin:0;font:13px system-ui;background:#dee1e6"><div style="display:flex;align-items:center;gap:8px;margin:12px 0 0 12px;padding:9px 14px;width:300px;background:#fff;border-radius:8px 8px 0 0">` +
+      `<img src="data:${icon.type};base64,${Buffer.from(icon.body).toString("base64")}" width="16" height="16"><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(title)}</span></div>` +
+      `<div style="margin:0 12px;padding:8px 14px;background:#fff;color:#444">${esc(url)}</div></body>`,
+  );
+  await shot.screenshot({ path: path.join(OUT, file) });
+  await shot.close();
+}
+const CLINFORMS_MARK = "#0D9488"; // src/app/icon.svg's teal
+const CLINIC_MARK = "#C4432B"; // public/clindesk/favicon.svg's coral tape
+
 /* ------------------------------------------------------------------ run */
 (async () => {
   const browser = await chromium.launch(process.env.PW_CHROMIUM ? { executablePath: process.env.PW_CHROMIUM } : {});
@@ -362,6 +406,66 @@ const LINK_RE = /https?:\/\/\S+\/accept-invite\?token=[A-Za-z0-9._%-]+/;
       }
     });
 
+
+    /* B – brand chrome on the clinic brand's host (Khuram's report, 01/11/2026) */
+    await check("B1", "clinic.localhost sign-in pages: ClinDesk's tab icon + home-screen icon, the crossed-tapes mark on the card", async () => {
+      const p = await newPage();
+      for (const page of ["/login", "/reset-password", "/accept-invite?token=nope"]) {
+        await p.goto(`${DESK}${page}`);
+        const links = await iconLinks(p);
+        assert.equal(links.icon, "/clindesk/favicon.svg", `${page} icon`);
+        assert.equal(links.apple, "/clindesk/apple-touch-icon.png", `${page} apple`);
+        assert.equal(await p.locator("main a[aria-label$=' home'] [data-mark=clinic]").count(), 1, `${page}: the clinic mark`);
+        assert.ok((await fetchedIcon(p)).body.includes(CLINIC_MARK), `${page}: the icon served is ClinDesk's`);
+      }
+      await p.goto(`${DESK}/login`);
+      await p.screenshot({ path: path.join(OUT, "clindesk-login.png") });
+      await tabStrip(browser, p, "clindesk-login-tab.png");
+      await p.goto(`${DESK}/reset-password`);
+      assert.doesNotMatch(await visibleText(p), /hello@clinforms/);
+      await p.context().close();
+    });
+    await check("B2", "clinic.localhost signed in: tab icon, header mark and the contact address are ClinDesk's (Plan & usage, Security, clinic area)", async () => {
+      await deskOwner.goto(`${DESK}/app/settings/plan`);
+      assert.equal((await iconLinks(deskOwner)).icon, "/clindesk/favicon.svg");
+      assert.equal(await deskOwner.locator("header [data-brand=clinic] [data-mark=clinic]").count(), 1, "header mark");
+      assert.equal(await deskOwner.locator(`header svg rect[fill='${CLINFORMS_MARK}']`).count(), 0, "no ClinForms mark in the header");
+      const plan = await visibleText(deskOwner);
+      assert.match(plan, /Questions about your package: hello@clindesk\.co\.uk\./);
+      assert.doesNotMatch(plan, /hello@clinforms/);
+      await deskOwner.screenshot({ path: path.join(OUT, "clindesk-app-plan.png") });
+      await deskOwner.locator("header").first().screenshot({ path: path.join(OUT, "clindesk-app-header.png") });
+      await tabStrip(browser, deskOwner, "clindesk-app-tab.png");
+      await deskOwner.goto(`${DESK}/app/settings/security`);
+      assert.equal((await iconLinks(deskOwner)).icon, "/clindesk/favicon.svg");
+      assert.match(await visibleText(deskOwner), new RegExp(`Email ${DESK_NAME} support at hello@clindesk\\.co\\.uk`));
+      await deskOwner.goto(`${DESK}/app/clinic`);
+      assert.equal((await iconLinks(deskOwner)).icon, "/clindesk/favicon.svg");
+      assert.equal(await deskOwner.locator(`a[aria-label='${DESK_NAME} home'] [data-mark=clinic]`).count(), 1, "clinic shell mark");
+      await deskOwner.screenshot({ path: path.join(OUT, "clindesk-clinic-area.png") });
+    });
+    await check("B3", "404 and the bare icon paths on clinic.localhost are ClinDesk's; localhost keeps ClinForms'", async () => {
+      const p = await newPage();
+      const res = await p.goto(`${DESK}/no-such-page`);
+      assert.equal(res.status(), 404);
+      assert.equal(await p.title(), `Page not found · ${DESK_NAME}`);
+      assert.equal((await iconLinks(p)).icon, "/clindesk/favicon.svg");
+      assert.match(await visibleText(p), new RegExp(`Go to the ${DESK_NAME} home page`));
+      await p.screenshot({ path: path.join(OUT, "clindesk-404.png") });
+      const deskIcon = await rawRequest("GET", `clinic.localhost:${PORT}`, "/icon.svg", {});
+      assert.equal(deskIcon.status, 200);
+      assert.ok(deskIcon.body.includes(CLINIC_MARK), "clinic.localhost/icon.svg");
+      const deskApple = await rawRequest("GET", `clinic.localhost:${PORT}`, "/apple-touch-icon.png", {});
+      assert.equal(deskApple.status, 200);
+      const formsIcon = await rawRequest("GET", `localhost:${PORT}`, "/icon.svg", {});
+      assert.ok(formsIcon.body.includes(CLINFORMS_MARK) && !formsIcon.body.includes(CLINIC_MARK), "localhost/icon.svg");
+      const formsRes = await p.goto(`${FORMS}/no-such-page`);
+      assert.equal(formsRes.status(), 404);
+      assert.equal(await p.title(), "Page not found · ClinForms");
+      assert.match((await iconLinks(p)).icon || "", /^\/icon\.svg/);
+      await p.context().close();
+    });
+
     /* F – ClinForms' host, unchanged */
     const admin = await newPage();
     const adminSetup = await acceptInvite(admin, formsLink, PLATFORM, "Pat Platform (fictional)");
@@ -387,7 +491,7 @@ const LINK_RE = /https?:\/\/\S+\/accept-invite\?token=[A-Za-z0-9._%-]+/;
       assert.equal(res.status(), 404, "platform 404 on localhost too");
       await both.context().close();
     });
-    await check("F4", "a reset asked for on localhost for the clinic-brand owner still links to clinic.localhost", async () => {
+    await check("F4", "a reset asked for on localhost for the clinic-brand owner links to localhost (the host asked on wins, 01/11/2026)", async () => {
       const p = await newPage();
       await p.goto(`${FORMS}/reset-password`);
       await p.fill("#f-email", DESK_OWNER);
@@ -395,7 +499,52 @@ const LINK_RE = /https?:\/\/\S+\/accept-invite\?token=[A-Za-z0-9._%-]+/;
       await p.waitForSelector("text=If an account exists for that address");
       const m = lastMail(DESK_OWNER, /^Reset your/);
       assert.notEqual(m.link, resetMail.link);
-      assert.ok(m.link.startsWith(`${DESK}/reset-password?token=`));
+      assert.ok(m.link.startsWith(`${FORMS}/reset-password?token=`), m.link.slice(0, 40));
+      assert.equal(m.subject, "Reset your ClinForms password");
+      await p.context().close();
+    });
+    await check("F5", "localhost (ClinForms) chrome unchanged: ClinForms' tab icon, document mark and hello@clinforms.co.uk", async () => {
+      await admin.goto(`${FORMS}/app/settings/plan`);
+      assert.match((await iconLinks(admin)).icon || "", /^\/icon\.svg/);
+      assert.equal((await iconLinks(admin)).apple, null);
+      assert.equal(await admin.locator("header [data-brand=clinforms]").count(), 1);
+      assert.equal(await admin.locator("[data-mark=clinic]").count(), 0);
+      assert.match(await visibleText(admin), /Questions about your package: hello@clinforms\.co\.uk\./);
+      await admin.screenshot({ path: path.join(OUT, "clinforms-app-plan.png") });
+      const p = await newPage();
+      await p.goto(`${FORMS}/login`);
+      assert.match((await iconLinks(p)).icon || "", /^\/icon\.svg/);
+      assert.equal(await p.locator("[data-mark=clinic]").count(), 0);
+      await p.screenshot({ path: path.join(OUT, "clinforms-login.png") });
+      await p.context().close();
+    });
+    await check("B4", "a ClinForms-only clinic's owner asks for a reset on clinic.localhost: link, email and the sign-in after it stay on clinic.localhost", async () => {
+      const p = await newPage();
+      await p.goto(`${DESK}/login`);
+      await p.click("text=Forgotten your password?");
+      await p.waitForURL(`${DESK}/reset-password`);
+      await p.fill("#f-email", PLATFORM);
+      await p.click("button[type=submit]");
+      await p.waitForSelector("text=If an account exists for that address");
+      assert.match(await visibleText(p), /contact us at hello@clindesk\.co\.uk/);
+      const m = lastMail(PLATFORM, /^Reset your/);
+      assert.ok(m && m.link.startsWith(`${DESK}/reset-password?token=`), m && m.link.slice(0, 40));
+      assert.equal(m.subject, `Reset your ${DESK_NAME} password`);
+      assert.doesNotMatch(m.text, /ClinForms/);
+      const pass = password();
+      await p.goto(m.link);
+      assert.equal((await iconLinks(p)).icon, "/clindesk/favicon.svg");
+      await p.fill("#f-password", pass);
+      await p.fill("#f-confirm", pass);
+      await p.click("button[type=submit]");
+      await p.waitForSelector("text=Your password has been changed");
+      users[PLATFORM].password = pass;
+      await p.click("main section a:has-text('Sign in')");
+      await p.waitForURL(`${DESK}/login`);
+      await p.screenshot({ path: path.join(OUT, "clindesk-after-reset.png") });
+      const landed = await signIn(p, DESK, PLATFORM);
+      assert.ok(landed.startsWith("/app"), landed);
+      assert.equal(new URL(p.url()).origin, DESK);
       await p.context().close();
     });
 

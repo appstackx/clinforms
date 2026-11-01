@@ -56,6 +56,8 @@ import { SITE_COOKIE, SITE_COOKIE_MAX_AGE } from "./site-cookie";
 
 export interface ClinicShellProps {
   productName: string;
+  /** The brand's mark beside the name (the clinic brand's hosts: its crossed tapes); unset = the generic glyph. */
+  mark?: React.ReactNode;
   /** The clinic's home in this product (the overview). */
   homeHref: string;
   clinicName: string;
@@ -98,7 +100,7 @@ const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [{ title: "Everywhere", shortc
 const focusRing = "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary";
 
 export function ClinicShell(props: ClinicShellProps) {
-  const { productName, homeHref, clinicName, user, nav, sites, searchHref, clinForms, accountHref, children } = props;
+  const { productName, mark, homeHref, clinicName, user, nav, sites, searchHref, clinForms, accountHref, children } = props;
   const pathname = usePathname() ?? "";
   const router = useRouter();
   const [navOpen, setNavOpen] = React.useState(false);
@@ -162,8 +164,12 @@ export function ClinicShell(props: ClinicShellProps) {
             <span className="sr-only">{navOpen ? "Close menu" : "Menu"}</span>
           </button>
           <div className="flex min-w-0 items-center gap-2.5">
-            <Link href={homeHref} className={cn("inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] bg-primary-strong text-white", focusRing)} aria-label={`${productName} home`}>
-              <Activity className="h-4 w-4" aria-hidden />
+            <Link
+              href={homeHref}
+              className={cn("inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px]", mark ? "" : "bg-primary-strong text-white", focusRing)}
+              aria-label={`${productName} home`}
+            >
+              {mark ?? <Activity className="h-4 w-4" aria-hidden />}
             </Link>
             {clinForms ? <span className="truncate font-semibold text-foreground lg:hidden">{productName}</span> : null}
             {clinForms ? (

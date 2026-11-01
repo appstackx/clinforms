@@ -6,8 +6,10 @@
  * production before CLINFORMS_AUTH_ORIGINS is set) keeps every link on its own origin.
  *
  *   invitation          the inviting clinic's brand
- *   password reset      the brand of the person's clinics; if they belong to clinics of both brands, the brand of the
- *                       host they asked on (when it is one of the app's own origins), else ClinForms
+ *   password reset      (01/11/2026) the brand of the host they asked on, when it is one of the app's own origins – a
+ *                       reset asked for on clindesk.co.uk comes back to clindesk.co.uk; otherwise (a host that is not
+ *                       ours, a call without a request) the brand of the person's clinics, and with clinics of both
+ *                       brands ClinForms (resetLinkBrand)
  *   withLinkBrand(b, f) an explicit brand for links built inside f (an administrator's reset link for a member of a
  *                       named clinic, the platform's owner reset link, a clinic created for the clinic brand)
  *
@@ -79,4 +81,21 @@ export async function userLinkBrand(db: Kysely<Database>, userId: string, reques
   const brands = new Set(await Promise.all(tenants.map((t) => clinicLinkBrand(db, t))));
   if (brands.size === 1) return Array.from(brands)[0];
   return requestBrand ?? "clinforms";
+}
+
+/**
+ * The brand of a password reset link (Better Auth's sendResetPassword): an explicit brand (withLinkBrand – an
+ * administrator's link for a named clinic, the platform's owner link) first; then the brand of the host the person
+ * asked on, when that host is one of the app's own origins (`requestBrand`, already checked – config.ts requestBrand);
+ * only without one, the brand of their clinics (userLinkBrand). Invitations stay the inviting clinic's (package-driven).
+ */
+export async function resetLinkBrand(
+  db: Kysely<Database>,
+  userId: string,
+  requestBrand: BrandId | null,
+  explicit: BrandId | undefined = linkBrandHint(),
+): Promise<BrandId> {
+  if (explicit) return explicit;
+  if (requestBrand) return requestBrand;
+  return userLinkBrand(db, userId, null);
 }

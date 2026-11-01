@@ -12,7 +12,7 @@ export default async function TwoFactorPage() {
   const enabled = hasTwoFactor(session);
   const brand = currentBrand();
   return (
-    <AuthShell productName={brand.productName} title="Two-step verification" subtitle={enabled ? undefined : `Required for every clinic member before using ${brand.productName}.`}>
+    <AuthShell brand={brand} title="Two-step verification" subtitle={enabled ? undefined : `Required for every clinic member before using ${brand.productName}.`}>
       <TwoFactorSetup email={session.user.email} enabled={enabled} productName={brand.productName} continueHref={landingPath()} />
     </AuthShell>
   );

@@ -38,7 +38,8 @@ import { WORDING } from "@/modules/medreport/core/wording";
 import { dispatchSimRequest } from "@/sandbox/tm3-sim/handlers";
 import { SESSION_COOKIE_NAMES } from "@/lib/session-cookie";
 import { getAuth } from "@/server/auth/auth";
-import { loadClinicProfile, resolveMedreportCaller } from "@/server/auth/medreport-actor";
+import { loadClinicProfile, resolveMedreportCaller, withContactEmail } from "@/server/auth/medreport-actor";
+import { currentBrand } from "@/server/brand";
 import { getDb, type Database } from "@/server/db";
 import type { Kysely } from "kysely";
 import { appendAudit } from "@/server/repos/audit";
@@ -241,7 +242,8 @@ export function hostCapabilities(): Pick<MedreportDeps, "authenticate" | "clinic
   const clinicalAccess = clinicalAccessFrom(() => ({ db: getDb() }));
   return {
     authenticate: authenticateMember,
-    clinicProfile: (tenantId) => loadClinicProfile(getDb(), tenantId),
+    // The contact in a refusal is the host brand's (presentation only; the request's Host, src/server/brand.ts).
+    clinicProfile: async (tenantId) => withContactEmail(await loadClinicProfile(getDb(), tenantId), currentBrand().contactEmail),
     sharedState: sharedStateForEnv(),
     audit: dbAudit(getDb),
     verifyPartnerKey: dbPartnerKeys(getDb),

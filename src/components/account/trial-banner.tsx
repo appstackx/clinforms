@@ -3,10 +3,19 @@ import { COMPANY } from "@/lib/site";
 import { trialBanner, type TrialBannerState } from "@/lib/trial-copy";
 import { cn } from "@/lib/utils";
 
-export function TrialBannerBar({ access, className }: { access: TrialBannerState | null | undefined; className?: string }) {
-  const banner = trialBanner(access, COMPANY.contactEmail);
+/** `contactEmail`: the host brand's contact (src/lib/brand.ts – the layouts pass currentBrand()'s); default ClinForms'. */
+export function TrialBannerBar({
+  access,
+  className,
+  contactEmail = COMPANY.contactEmail,
+}: {
+  access: TrialBannerState | null | undefined;
+  className?: string;
+  contactEmail?: string;
+}) {
+  const banner = trialBanner(access, contactEmail);
   if (!banner) return null;
-  const [before, after] = banner.text.split(COMPANY.contactEmail);
+  const [before, after] = banner.text.split(contactEmail);
   return (
     <div
       role="status"
@@ -20,8 +29,8 @@ export function TrialBannerBar({ access, className }: { access: TrialBannerState
       {after !== undefined ? (
         <>
           {before}
-          <a href={`mailto:${COMPANY.contactEmail}`} className="font-medium underline underline-offset-2">
-            {COMPANY.contactEmail}
+          <a href={`mailto:${contactEmail}`} className="font-medium underline underline-offset-2">
+            {contactEmail}
           </a>
           {after}
         </>

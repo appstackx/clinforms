@@ -1,10 +1,12 @@
 /** The Edge middleware: optimistic cookie redirect for /app only; never touches the demo or the APIs. */
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import { describe, it } from "node:test";
 import { NextRequest } from "next/server";
 import { SESSION_COOKIE_NAMES } from "../../lib/session-cookie";
 import { BRANDS } from "../../lib/brand";
-import { CLINDESK_REDIRECTS, CLINDESK_SITE_PATHS, PUBLIC_SITE_PATHS, clindeskInternalPath, config, middleware } from "../../middleware";
+import { BRAND_ICON_PATHS, CLINDESK_REDIRECTS, CLINDESK_SITE_PATHS, PUBLIC_SITE_PATHS, brandIconFile, clindeskInternalPath, config, middleware } from "../../middleware";
 import { createSqliteTestDb } from "../db/testing/databases";
 import { createAuth } from "./create-auth";
 import { createClinic } from "./platform";
@@ -49,7 +51,7 @@ describe("middleware", () => {
   it("unconditionally, the matcher is main's plus the internal ClinDesk folder – public pages only on ClinDesk's hosts", () => {
     assert.deepEqual(plain(), ["/app", "/app/:path*", "/login", "/two-factor", "/accept-invite", "/reset-password", "/clindesk-site", "/clindesk-site/:path*"]);
     const conditional = entries().filter((e): e is Exclude<Matcher, string> => typeof e !== "string");
-    assert.deepEqual(conditional.map((e) => e.source).sort(), [...CLINDESK_SITE_PATHS, ...Object.keys(CLINDESK_REDIRECTS)].sort());
+    assert.deepEqual(conditional.map((e) => e.source).sort(), [...CLINDESK_SITE_PATHS, ...Object.keys(CLINDESK_REDIRECTS), ...BRAND_ICON_PATHS].sort());
     const pattern = clindeskHostPattern();
     assert.ok(pattern.length > 0);
     for (const e of conditional) {
@@ -106,6 +108,27 @@ describe("middleware", () => {
     const signedIn = middleware(new NextRequest("https://clindesk.co.uk/app/clinic", { headers: { host: "clindesk.co.uk", cookie: `${SESSION_COOKIE_NAMES[0]}=a.b` } }));
     assert.equal(signedIn.status, 200);
     assert.equal(signedIn.headers.get("x-robots-tag"), "noindex, nofollow");
+  });
+  it("tab icons (01/11/2026): the clinic brand's hosts answer /icon.svg and /apple-touch-icon.png with its own; ClinForms' hosts never", () => {
+    assert.ok(BRANDS.clinic.icons, "the clinic brand has icons of its own");
+    assert.equal(BRANDS.clinforms.icons, null, "ClinForms keeps src/app/icon.svg");
+    for (const host of ["clindesk.co.uk", "www.clindesk.co.uk", "clinic.localhost:3180"]) {
+      const proto = host.startsWith("clinic.localhost") ? "http" : "https";
+      for (const [p, file] of [["/icon.svg", BRANDS.clinic.icons?.icon], ["/apple-touch-icon.png", BRANDS.clinic.icons?.apple]] as const) {
+        const res = middleware(new NextRequest(`${proto}://${host}${p}?a1b2c3`, { headers: { host } }));
+        assert.equal(res.status, 200, `${host}${p}`);
+        assert.equal(res.headers.get("x-middleware-rewrite"), `${proto}://${host}${file}`, `${host}${p}`);
+      }
+    }
+    for (const host of ["clinforms.co.uk", "localhost:3180", "clinforms-abc-team.vercel.app"]) {
+      const res = middleware(new NextRequest(`https://${host}/icon.svg`, { headers: { host } }));
+      assert.equal(res.headers.get("x-middleware-rewrite"), null, `${host}: the app's own icon`);
+    }
+    assert.equal(brandIconFile(BRANDS.clinforms, "/icon.svg"), null);
+    assert.equal(brandIconFile(BRANDS.clinic, "/other.svg"), null);
+    for (const f of [BRANDS.clinic.icons?.icon, BRANDS.clinic.icons?.apple]) {
+      assert.ok(f && fs.existsSync(path.join(process.cwd(), "public", f)), `public${f}`);
+    }
   });
   it("the internal folder is never served under its own name, on any host", () => {
     for (const host of ["clinforms.co.uk", "clindesk.co.uk", "clinic.localhost:3180", "localhost:3180"]) {

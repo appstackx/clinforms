@@ -6,7 +6,7 @@ import { requestHeaders, requireAppContext } from "@/server/auth/session";
 import { ukDateTime } from "@/server/email/templates";
 import { revokeDevice, revokeOtherDevices } from "./actions";
 import { BackupCodesForm } from "./forms";
-import { COMPANY } from "@/lib/site";
+import { currentBrand } from "@/server/brand";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Security" };
@@ -24,6 +24,9 @@ function iso(value: Date | string): string {
 }
 
 export default async function SecurityPage() {
+  // The contact of the host's brand (src/lib/brand.ts): ClinForms' on its hosts, the clinic brand's on its own.
+  const brand = currentBrand();
+  const contactEmail = brand.contactEmail;
   const { session } = await requireAppContext();
   const sessions = await getAuth().api.listSessions({ headers: requestHeaders() });
   const sorted = [...sessions].sort((a, b) => iso(b.updatedAt).localeCompare(iso(a.updatedAt)));
@@ -43,9 +46,9 @@ export default async function SecurityPage() {
 
       <Panel title="Support" description="Lost your phone and your backup codes?" className="mb-6">
         <p className="text-sm text-slate-600" data-support-contact="">
-          Email ClinForms support at{" "}
-          <a href={`mailto:${COMPANY.contactEmail}?subject=${encodeURIComponent("Two-step verification reset")}`} className="font-medium text-teal-700 underline underline-offset-2">
-            {COMPANY.contactEmail}
+          Email {brand.productName} support at{" "}
+          <a href={`mailto:${contactEmail}?subject=${encodeURIComponent("Two-step verification reset")}`} className="font-medium text-teal-700 underline underline-offset-2">
+            {contactEmail}
           </a>{" "}
           from your work address. We check the request with your clinic&apos;s owner, reset two-step verification on your account, and you
           set it up again at your next sign-in. Never send us your password or a code.

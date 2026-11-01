@@ -51,7 +51,7 @@ export default async function ClinicLayout({ children }: { children: React.React
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3">
           <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-            <BrandMark compact name={brand.productName} />
+            <BrandMark compact name={brand.productName} brand={brand.id} />
             <span className="hidden text-slate-300 sm:inline" aria-hidden>
               /
             </span>
@@ -71,7 +71,7 @@ export default async function ClinicLayout({ children }: { children: React.React
           <AppNav items={items} />
         </div>
       </header>
-      <TrialBannerBar access={trial} />
+      <TrialBannerBar access={trial} contactEmail={brand.contactEmail} />
       <BillingBannerBar banner={billing} />
       <main className="mx-auto max-w-5xl px-4 py-8">{children}</main>
     </>
