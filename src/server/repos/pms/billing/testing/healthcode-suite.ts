@@ -9,7 +9,9 @@ import { listAudit } from "../../../audit";
 import { RepoInputError, type RepoContext } from "../../../context";
 import { createReferrer } from "../../referrers";
 import { unscopedStatements, type GuardedDb } from "../../testing/guarded-db";
-import { getPayerHealthcode, payerHealthcodes, setPayerHealthcode } from "../healthcode";
+import { healthcodeForSite } from "../../../../../modules/pms/billing/healthcode";
+import { createSite } from "../../directory";
+import { getHealthcodeSettings, getPayerHealthcode, payerHealthcodes, setClinicHealthcode, setPayerHealthcode, setSiteHealthcode } from "../healthcode";
 
 const A = "riverside-a";
 const B = "harbour-b";
@@ -27,6 +29,9 @@ export function defineHealthcodeRepoSuite(label: string, factory: () => Promise<
       ctx = { db: suite.db, cipher: testCipher(), now: () => new Date("2026-11-01T09:00:00.000Z") };
       id.insurer = (await createReferrer(ctx, A, { kind: "insurer", name: "Northwell Health Insurance (fictional)" }, ACTOR)).id;
       id.insurerB = (await createReferrer(ctx, B, { kind: "insurer", name: "Harbour Health (fictional)" }, ACTOR_B)).id;
+      id.site1 = (await createSite(ctx, A, { name: "Bletchley (fictional)" }, ACTOR)).id;
+      id.site2 = (await createSite(ctx, A, { name: "Towcester (fictional)" }, ACTOR)).id;
+      id.siteB = (await createSite(ctx, B, { name: "Harbour (fictional)" }, ACTOR_B)).id;
     });
     after(async () => {
       await suite?.close();
@@ -47,6 +52,28 @@ export function defineHealthcodeRepoSuite(label: string, factory: () => Promise<
       await assert.rejects(setPayerHealthcode(ctx, B, id.insurer, { insurerCode: "xx1" }, ACTOR_B), (e: unknown) => e instanceof RepoInputError);
       assert.equal((await payerHealthcodes(ctx, B)).size, 0);
       await assert.rejects(setPayerHealthcode(ctx, A, id.insurer, { insurerCode: "not a code!" }, ACTOR), (e: unknown) => e instanceof RepoInputError);
+    });
+
+    it("HC07 Site ID and payee provider number: the clinic's, a site's own, blank = the clinic's again", async () => {
+      const s0 = await getHealthcodeSettings(ctx, A);
+      assert.deepEqual([s0.rev, s0.clinic.siteCode, Object.keys(s0.sites).length], [0, null, 0]);
+      await setClinicHealthcode(ctx, A, { siteCode: "SITE-DEMO-1", payeeProviderNumber: "PAYEE-DEMO-1" }, ACTOR);
+      await setSiteHealthcode(ctx, A, id.site2, { siteCode: "SITE-DEMO-2" }, ACTOR);
+      let s = await getHealthcodeSettings(ctx, A);
+      assert.equal(s.rev, 1);
+      assert.deepEqual(healthcodeForSite(s, id.site1), { siteCode: "SITE-DEMO-1", payeeProviderNumber: "PAYEE-DEMO-1" });
+      assert.deepEqual(healthcodeForSite(s, id.site2), { siteCode: "SITE-DEMO-2", payeeProviderNumber: "PAYEE-DEMO-1" });
+      assert.deepEqual(healthcodeForSite(s, null), { siteCode: "SITE-DEMO-1", payeeProviderNumber: "PAYEE-DEMO-1" });
+      await setSiteHealthcode(ctx, A, id.site2, { siteCode: "", payeeProviderNumber: "" }, ACTOR);
+      s = await getHealthcodeSettings(ctx, A);
+      assert.deepEqual(s.sites, {});
+      // Another clinic's site is refused; clinic B sees nothing of A's.
+      await assert.rejects(setSiteHealthcode(ctx, A, id.siteB, { siteCode: "X1" }, ACTOR), (e: unknown) => e instanceof RepoInputError);
+      assert.equal((await getHealthcodeSettings(ctx, B)).rev, 0);
+      await assert.rejects(setClinicHealthcode(ctx, A, { siteCode: "bad code" }, ACTOR), (e: unknown) => e instanceof RepoInputError);
+      const audit = await listAudit(ctx, A, { limit: 50 });
+      assert.equal(audit.filter((e) => e.action === "pms.healthcode_settings.set").length, 1);
+      assert.equal(audit.filter((e) => e.action === "pms.site_healthcode.set").length, 2);
     });
 
     it("every statement names the clinic (tenant-scope guard)", () => {

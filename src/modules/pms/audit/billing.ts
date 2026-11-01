@@ -29,6 +29,8 @@ export const BILLING_AUDIT_LABELS: Readonly<Record<string, string>> = {
   "pms.payer_terms.set": "How a payer account bills the patient's part changed",
   "pms.case_terms.set": "How a case bills the patient's part changed",
   "pms.payer_healthcode.set": "Healthcode details of a payer account changed",
+  "pms.healthcode_settings.set": "Clinic's Healthcode Site ID or payee provider number changed",
+  "pms.site_healthcode.set": "A site's Healthcode Site ID or payee provider number changed",
 };
 
 /** Names of the record types its audit rows point at (target_type → label). */

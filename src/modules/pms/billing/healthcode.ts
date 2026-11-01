@@ -74,3 +74,49 @@ export function diagnosisRequired(payerName: string, own: boolean | null | undef
 export function isHealthcodePayerKind(kind: string): boolean {
   return kind === "insurer";
 }
+
+/* ------------------------------------------------------------------------------------------------
+ * HC07 – the clinic's (and a site's) Healthcode Site ID and payee provider number
+ * ----------------------------------------------------------------------------------------------*/
+
+/** A Healthcode Site ID: letters, digits and "-", up to 20. */
+export const SITE_CODE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9-]{0,19}$/;
+export const SiteCodeSchema = optionalCode(SITE_CODE_PATTERN, "Letters, numbers and - only, up to 20 characters");
+
+export const HealthcodeSiteInputSchema = z.object({
+  siteCode: SiteCodeSchema,
+  payeeProviderNumber: ProviderNumberSchema,
+});
+export type HealthcodeSiteInput = z.input<typeof HealthcodeSiteInputSchema>;
+
+export interface HealthcodeSiteDetails {
+  siteCode: string | null;
+  payeeProviderNumber: string | null;
+}
+
+export interface HealthcodeSettings {
+  /** The clinic's own (0 = not set up yet). */
+  rev: number;
+  clinic: HealthcodeSiteDetails;
+  /** Sites registered separately (site id → their own; a null field = the clinic's). */
+  sites: Record<string, HealthcodeSiteDetails>;
+  updatedAt: string | null;
+}
+
+export const NO_HEALTHCODE_SETTINGS: HealthcodeSettings = { rev: 0, clinic: { siteCode: null, payeeProviderNumber: null }, sites: {}, updatedAt: null };
+
+/** What bills from a site use: the site's own Site ID / payee provider number, else the clinic's. */
+export function healthcodeForSite(settings: HealthcodeSettings, siteId: string | null): HealthcodeSiteDetails {
+  const own = siteId ? settings.sites[siteId] : undefined;
+  return {
+    siteCode: own?.siteCode ?? settings.clinic.siteCode,
+    payeeProviderNumber: own?.payeeProviderNumber ?? settings.clinic.payeeProviderNumber,
+  };
+}
+
+/** The Healthcode card on Set-up → Billing settings. */
+export interface HealthcodeSettingsView {
+  settings: HealthcodeSettings;
+  sites: { id: string; name: string }[];
+  canEdit: boolean;
+}

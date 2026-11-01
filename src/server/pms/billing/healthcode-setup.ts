@@ -4,13 +4,21 @@
  * ids read back from the member's clinic, inputs validated, the repository writes with its audit row, plain results.
  */
 import "server-only";
-export type { PayerHealthcodeView } from "../../../modules/pms/billing/healthcode";
+export type { HealthcodeSettingsView, PayerHealthcodeView } from "../../../modules/pms/billing/healthcode";
 import { z } from "zod";
-import { PayerHealthcodeInputSchema, diagnosisRequiredByDefault, isHealthcodePayerKind, type PayerHealthcodeView } from "../../../modules/pms/billing/healthcode";
+import {
+  HealthcodeSiteInputSchema,
+  PayerHealthcodeInputSchema,
+  diagnosisRequiredByDefault,
+  isHealthcodePayerKind,
+  type HealthcodeSettingsView,
+  type PayerHealthcodeView,
+} from "../../../modules/pms/billing/healthcode";
 import { fieldErrors } from "../../../modules/pms/core/schemas";
 import { logAuthEvent } from "../../email/log";
 import { RepoInputError } from "../../repos/context";
-import { getPayerHealthcode, setPayerHealthcode } from "../../repos/pms/billing/healthcode";
+import { getHealthcodeSettings, getPayerHealthcode, setClinicHealthcode, setPayerHealthcode, setSiteHealthcode } from "../../repos/pms/billing/healthcode";
+import { listSites } from "../../repos/pms/directory";
 import { getReferrer } from "../../repos/pms/referrers";
 import { SETUP_MESSAGES, type SetupActor, type SetupResult } from "../reporting/setup";
 
@@ -80,5 +88,59 @@ export async function savePayerHealthcodeFor(actor: SetupActor, referrerId: stri
     if (!r || !isHealthcodePayerKind(r.kind)) return NOT_FOUND;
     await setPayerHealthcode(actor.repo(), actor.tenantId, r.id, input, actor.actor);
     return ok({ id: r.id });
+  });
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * HC07 – Healthcode Site ID and payee provider number (Set-up → Billing settings)
+ * ----------------------------------------------------------------------------------------------*/
+
+export async function healthcodeSettingsFor(actor: SetupActor): Promise<SetupResult<HealthcodeSettingsView>> {
+  if (!actor.can("settings.setup")) return FORBIDDEN;
+  return setupAttempt("setup.healthcode_settings", async () => {
+    const ctx = actor.repo();
+    const [settings, sites] = await Promise.all([getHealthcodeSettings(ctx, actor.tenantId), listSites(ctx, actor.tenantId)]);
+    return ok({ settings, sites: sites.map((s) => ({ id: s.id, name: s.name })), canEdit: actor.siteIds === null });
+  });
+}
+
+export interface HealthcodeSettingsFields {
+  siteCode?: string;
+  payeeProviderNumber?: string;
+  sites?: { siteId: string; siteCode?: string; payeeProviderNumber?: string }[];
+}
+
+/** Saves the clinic's Site ID and payee provider number, and each listed site's own (blank = the clinic's). */
+export async function saveHealthcodeSettingsFor(actor: SetupActor, f: HealthcodeSettingsFields): Promise<SetupResult<{ saved: true }>> {
+  if (!actor.can("settings.setup")) return FORBIDDEN;
+  if (actor.siteIds !== null) return WHOLE;
+  const clinic = { siteCode: typeof f.siteCode === "string" ? f.siteCode : null, payeeProviderNumber: typeof f.payeeProviderNumber === "string" ? f.payeeProviderNumber : null };
+  const parsed = HealthcodeSiteInputSchema.safeParse(clinic);
+  if (!parsed.success) return invalidFields(parsed.error);
+  const rows = (Array.isArray(f.sites) ? f.sites.slice(0, 200) : []).map((s) => ({
+    siteId: String(s?.siteId ?? ""),
+    siteCode: typeof s?.siteCode === "string" ? s.siteCode : null,
+    payeeProviderNumber: typeof s?.payeeProviderNumber === "string" ? s.payeeProviderNumber : null,
+  }));
+  const fe: Record<string, string> = {};
+  for (const r of rows) {
+    const p = HealthcodeSiteInputSchema.safeParse(r);
+    if (!p.success) for (const [k, v] of Object.entries(fieldErrors(p.error))) fe[`${k}-${r.siteId}`] = v;
+  }
+  if (Object.keys(fe).length) return fail(SETUP_MESSAGES.check, fe);
+  return setupAttempt("setup.healthcode_settings_save", async () => {
+    const ctx = actor.repo();
+    const known = new Set((await listSites(ctx, actor.tenantId, { includeInactive: true })).map((s) => s.id));
+    if (rows.some((r) => !known.has(r.siteId))) return NOT_FOUND;
+    const current = await getHealthcodeSettings(ctx, actor.tenantId);
+    const same = (a: { siteCode: string | null; payeeProviderNumber: string | null }, b: { siteCode?: string | null; payeeProviderNumber?: string | null }) =>
+      (a.siteCode ?? null) === (b.siteCode ?? null) && (a.payeeProviderNumber ?? null) === (b.payeeProviderNumber ?? null);
+    if (current.rev === 0 || !same(current.clinic, parsed.data)) await setClinicHealthcode(ctx, actor.tenantId, clinic, actor.actor);
+    for (const r of rows) {
+      const p = HealthcodeSiteInputSchema.parse(r);
+      const before = current.sites[r.siteId] ?? { siteCode: null, payeeProviderNumber: null };
+      if (!same(before, p)) await setSiteHealthcode(ctx, actor.tenantId, r.siteId, r, actor.actor);
+    }
+    return ok({ saved: true as const });
   });
 }

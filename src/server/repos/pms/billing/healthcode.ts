@@ -7,7 +7,14 @@
  * A release can reach a database before these migrations: every read answers "nothing set up yet" when its table does
  * not exist (isMissingPmsTable), and only a save fails until the migration is applied.
  */
-import { PayerHealthcodeInputSchema, type PayerHealthcode, type PayerHealthcodeInput } from "../../../../modules/pms/billing/healthcode";
+import {
+  HealthcodeSiteInputSchema,
+  PayerHealthcodeInputSchema,
+  type HealthcodeSettings,
+  type HealthcodeSiteInput,
+  type PayerHealthcode,
+  type PayerHealthcodeInput,
+} from "../../../../modules/pms/billing/healthcode";
 import type { PmsActor } from "../../../../modules/pms/core/types";
 import { isMissingPmsTable } from "../../../pms/missing-table";
 import { assertId, assertTenantId, nowIso, num, parseInput, pmsAuditQuery, writeWithAudit, type RepoContext } from "../context";
@@ -92,5 +99,70 @@ export async function setPayerHealthcode(ctx: RepoContext, tenantId: string, ref
       }),
     ],
     { foreignKey: "That payer account does not exist in this clinic." },
+  );
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * HC07 – the clinic's Healthcode Site ID and payee provider number (and a site's own)
+ * ----------------------------------------------------------------------------------------------*/
+
+const SETTINGS = "pms_healthcode_settings";
+const SITES = "pms_site_healthcode";
+
+export async function getHealthcodeSettings(ctx: RepoContext, tenantId: string): Promise<HealthcodeSettings> {
+  assertTenantId(tenantId);
+  const [clinic, sites] = await Promise.all([
+    readOrEmpty(SETTINGS, undefined, () => ctx.db.selectFrom(SETTINGS).select(["rev", "site_code", "payee_provider_number", "updated_at"]).where("tenant_id", "=", tenantId).executeTakeFirst()),
+    readOrEmpty(SITES, [] as { site_id: string; site_code: string | null; payee_provider_number: string | null }[], () =>
+      ctx.db.selectFrom(SITES).select(["site_id", "site_code", "payee_provider_number"]).where("tenant_id", "=", tenantId).limit(500).execute(),
+    ),
+  ]);
+  const out: HealthcodeSettings = {
+    rev: clinic ? num(clinic.rev) : 0,
+    clinic: { siteCode: clinic?.site_code ?? null, payeeProviderNumber: clinic?.payee_provider_number ?? null },
+    sites: {},
+    updatedAt: clinic ? String(clinic.updated_at) : null,
+  };
+  for (const s of sites) out.sites[s.site_id] = { siteCode: s.site_code, payeeProviderNumber: s.payee_provider_number };
+  return out;
+}
+
+/** The clinic's Site ID and payee provider number. */
+export async function setClinicHealthcode(ctx: RepoContext, tenantId: string, input: HealthcodeSiteInput, actor: PmsActor): Promise<void> {
+  assertTenantId(tenantId);
+  const d = parseInput(HealthcodeSiteInputSchema, input, "Healthcode settings");
+  const values = { site_code: d.siteCode ?? null, payee_provider_number: d.payeeProviderNumber ?? null };
+  const at = nowIso(ctx);
+  await writeWithAudit(ctx, [
+    ctx.db
+      .insertInto(SETTINGS)
+      .values({ tenant_id: tenantId, rev: 1, ...values, updated_by: actor.userId, created_at: at, updated_at: at })
+      .onConflict((oc) => oc.column("tenant_id").doUpdateSet((eb) => ({ ...values, rev: eb(`${SETTINGS}.rev`, "+", 1), updated_by: actor.userId, updated_at: at }))),
+    pmsAuditQuery(ctx, tenantId, actor, { action: "pms.healthcode_settings.set", targetType: "pms_billing_settings", targetId: tenantId, detail: { siteCode: values.site_code !== null, payeeProviderNumber: values.payee_provider_number !== null } }),
+  ]);
+}
+
+/** A site's own Site ID and payee provider number; both blank = the site uses the clinic's (its row is removed). */
+export async function setSiteHealthcode(ctx: RepoContext, tenantId: string, siteId: string, input: HealthcodeSiteInput, actor: PmsActor): Promise<void> {
+  assertTenantId(tenantId);
+  assertId(siteId, "site id");
+  const d = parseInput(HealthcodeSiteInputSchema, input, "Healthcode settings");
+  const values = { site_code: d.siteCode ?? null, payee_provider_number: d.payeeProviderNumber ?? null };
+  const at = nowIso(ctx);
+  const audit = pmsAuditQuery(ctx, tenantId, actor, { action: "pms.site_healthcode.set", targetType: "pms_site", targetId: siteId, detail: { siteCode: values.site_code !== null, payeeProviderNumber: values.payee_provider_number !== null } });
+  if (values.site_code === null && values.payee_provider_number === null) {
+    await writeWithAudit(ctx, [ctx.db.deleteFrom(SITES).where("tenant_id", "=", tenantId).where("site_id", "=", siteId), audit]);
+    return;
+  }
+  await writeWithAudit(
+    ctx,
+    [
+      ctx.db
+        .insertInto(SITES)
+        .values({ tenant_id: tenantId, site_id: siteId, rev: 1, ...values, updated_by: actor.userId, created_at: at, updated_at: at })
+        .onConflict((oc) => oc.columns(["tenant_id", "site_id"]).doUpdateSet((eb) => ({ ...values, rev: eb(`${SITES}.rev`, "+", 1), updated_by: actor.userId, updated_at: at }))),
+      audit,
+    ],
+    { foreignKey: "That site does not exist in this clinic." },
   );
 }

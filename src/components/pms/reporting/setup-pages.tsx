@@ -690,7 +690,7 @@ export function RecordsSetup({ templates, settings }: { templates: NoteTemplate[
  * Billing settings
  * ----------------------------------------------------------------------------------------------*/
 
-export function BillingSetup({ settings }: { settings: BillingSettings }) {
+export function BillingSetup({ settings, extra }: { settings: BillingSettings; extra?: React.ReactNode }) {
   const f = useSetupForm({
     invoicePrefix: settings.invoicePrefix,
     creditNotePrefix: settings.creditNotePrefix,
@@ -783,6 +783,7 @@ export function BillingSetup({ settings }: { settings: BillingSettings }) {
         <SetupError error={f.error} />
         <SetupFormBar dirty={f.dirty} saving={f.saving} onDiscard={f.discard} testId="billing-save" />
       </form>
+      {extra}
     </SetupPage>
   );
 }

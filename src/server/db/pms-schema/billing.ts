@@ -284,6 +284,29 @@ export interface PmsPayerHealthcodeTable {
   updated_at: IsoTimestamp;
 }
 
+/** 0221 (Healthcode, HC07): the clinic's Healthcode Site ID and payee provider number. */
+export interface PmsHealthcodeSettingsTable {
+  tenant_id: string;
+  rev: number;
+  site_code: string | null;
+  payee_provider_number: string | null;
+  updated_by: string | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
+/** 0221 (Healthcode, HC07): a site's own Site ID and payee provider number (NULL = the clinic's). */
+export interface PmsSiteHealthcodeTable {
+  tenant_id: string;
+  site_id: string;
+  rev: number;
+  site_code: string | null;
+  payee_provider_number: string | null;
+  updated_by: string | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
 export interface BillingTables {
   pms_billing_settings: PmsBillingSettingsTable;
   pms_service_vat: PmsServiceVatTable;
@@ -299,6 +322,8 @@ export interface BillingTables {
   pms_payer_billing_terms: PmsPayerBillingTermsTable;
   pms_case_billing_terms: PmsCaseBillingTermsTable;
   pms_payer_healthcode: PmsPayerHealthcodeTable;
+  pms_healthcode_settings: PmsHealthcodeSettingsTable;
+  pms_site_healthcode: PmsSiteHealthcodeTable;
 }
 
 /** Foreign-key order (parents first). */
@@ -317,6 +342,8 @@ export const BILLING_TABLES = [
   "pms_payer_billing_terms",
   "pms_case_billing_terms",
   "pms_payer_healthcode",
+  "pms_healthcode_settings",
+  "pms_site_healthcode",
 ] as const satisfies readonly (keyof BillingTables)[];
 
 export const BILLING_PRIMARY_KEYS: { readonly [T in (typeof BILLING_TABLES)[number]]: readonly (keyof BillingTables[T] & string)[] } = {
@@ -334,6 +361,8 @@ export const BILLING_PRIMARY_KEYS: { readonly [T in (typeof BILLING_TABLES)[numb
   pms_payer_billing_terms: ["tenant_id", "referrer_id"],
   pms_case_billing_terms: ["tenant_id", "case_id"],
   pms_payer_healthcode: ["tenant_id", "referrer_id"],
+  pms_healthcode_settings: ["tenant_id"],
+  pms_site_healthcode: ["tenant_id", "site_id"],
 };
 
 /** Timestamp columns beyond created_at/updated_at (TEXT in SQLite, timestamptz in Postgres) – the D1 → Postgres copy. */
