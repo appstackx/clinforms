@@ -11,7 +11,8 @@
  *  - the Healthcode Site ID of the invoice's site (or the clinic's);
  *  - the patient's first name, last name, date of birth and postcode;
  *  - the membership number on the case;
- *  - an authorisation, active, valid on every treatment date, with no more sessions used than authorised;
+ *  - an authorisation (the invoice's, else the case's from the same insurer), active, valid on every treatment date,
+ *    with no more sessions used than authorised;
  *  - a diagnosis code (the invoice's, else the case's) – needed when the insurer asks for one, and in ICD-10 format
  *    whenever one is given;
  *  - every treatment line: a date of service, a practitioner with their provider number for this insurer, and the
@@ -132,7 +133,7 @@ export function checkHealthcodeInvoice(f: HealthcodeInvoiceFacts): HealthcodeChe
   const treatments = f.lines.filter((l) => l.kind === "service");
   const dates = treatments.map((l) => l.serviceOn).filter((d): d is string => typeof d === "string").sort();
   const a = f.authorisation;
-  if (!a) add("authorisation_missing", `Add ${f.payer.name}'s authorisation code to the case and the invoice.`, { label: "Open the case", href: caseHref });
+  if (!a) add("authorisation_missing", `Add ${f.payer.name}'s authorisation to the case.`, { label: "Open the case", href: caseHref });
   else {
     if (a.status === "cancelled") add("authorisation_cancelled", `Authorisation ${a.code} is cancelled – use the one in force.`, { label: "Open the case", href: caseHref });
     const first = dates[0];

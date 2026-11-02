@@ -156,6 +156,15 @@ function suite(label: string, factory: () => Promise<GuardedDb>) {
       assert.equal((await setBillStatusFor(owner, draft.id, "exported")).ok, false);
     });
 
+    it("HC11/12: an invoice issued without its authorisation linked uses the case's authorisation from the same insurer", async () => {
+      const lines = [{ kind: "service" as const, serviceId: id.svc, practitionerId: id.prac, serviceOn: "2026-10-27", unitPricePence: 5500 }];
+      const { invoice } = await createDraftInvoice(ctx, A, { patientId: id.patient, caseId: id.case, siteId: id.site, billTo: "payer", lines }, SEED);
+      assert.ok((await issueInvoice(ctx, A, invoice.id, invoice.rev, { issuedOn: "2026-10-29" }, SEED)).ok);
+      const v = await healthcodeClaimsFor(owner, { from: "2026-10-01", until: "2026-11-01" });
+      assert.ok(v.ok);
+      assert.ok(v.value.ready.some((r) => r.invoiceId === invoice.id), JSON.stringify(v.value.needsReview.map((r) => r.issues)));
+    });
+
     it("every statement names the clinic (tenant-scope guard)", () => {
       assert.deepEqual(unscopedStatements(db.log.statements), []);
     });

@@ -24,7 +24,8 @@ import { checkHealthcodeBatch, type HealthcodeCheck, type HealthcodeInvoiceFacts
 import { OptionalIcd10Schema } from "../../../modules/pms/billing/icd10";
 import type { Invoice } from "../../../modules/pms/billing/types";
 import { ukToday } from "../../../modules/pms/core/text";
-import { getAuthorisation, getCase } from "../../repos/pms/cases";
+import type { Authorisation } from "../../../modules/pms/core/types";
+import { getAuthorisation, getCase, listAuthorisations } from "../../repos/pms/cases";
 import {
   billStatuses,
   caseDiagnoses,
@@ -151,6 +152,17 @@ export async function healthcodeFactsFor(actor: BillingActor, invoices: readonly
   const patientById = new Map(patients.map((p) => [p.id, p]));
   const caseById = new Map(cases.map((c) => [c.id, c]));
   const authById = new Map(auths.filter((a): a is NonNullable<typeof a> => !!a).map((a) => [a.id, a]));
+  // An invoice issued without its authorisation linked: the case's own authorisation from the same insurer is the one
+  // the bill carries (in force first, then the latest).
+  const caseAuths = new Map<string, Authorisation[]>();
+  for (const caseId of Array.from(new Set(invoices.filter((i) => !i.authorisationId && i.caseId).map((i) => i.caseId as string)))) {
+    caseAuths.set(caseId, await listAuthorisations(ctx, t, { caseId }));
+  }
+  const authFor = (inv: Invoice): Authorisation | undefined => {
+    if (inv.authorisationId) return authById.get(inv.authorisationId);
+    const list = (inv.caseId ? (caseAuths.get(inv.caseId) ?? []) : []).filter((a) => !a.referrerId || a.referrerId === inv.payerReferrerId);
+    return list.find((a) => a.status === "active") ?? list[list.length - 1];
+  };
   const serviceName = new Map(services.map((s) => [s.id, s.name]));
   const pracName = new Map(practitioners.map((p) => [p.id, p.displayName]));
   const patientNames = new Map<string, string>();
@@ -159,7 +171,7 @@ export async function healthcodeFactsFor(actor: BillingActor, invoices: readonly
     if (p) patientNames.set(p.id, `${p.preferred_name || p.first_name} ${p.last_name}`.trim());
     const insurer = inv.payerReferrerId ? insurers.get(inv.payerReferrerId) : undefined;
     const hc = insurer ? payerHc.get(insurer.id) : undefined;
-    const a = inv.authorisationId ? authById.get(inv.authorisationId) : undefined;
+    const a = authFor(inv);
     const site = healthcodeForSite(settings, inv.siteId);
     return {
       invoiceId: inv.id,
