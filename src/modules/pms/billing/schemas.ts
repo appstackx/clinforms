@@ -8,6 +8,7 @@
  */
 import { z } from "zod";
 import { IsoDateSchema, MoneyPenceSchema, OptionalDateSchema, PmsIdSchema, optionalText } from "../core/schemas";
+import { OptionalIcd10Schema } from "./icd10";
 import { DOCUMENT_PREFIX_PATTERN, MAX_DOCUMENT_SEQ } from "./numbers";
 import { VAT_CODES, normaliseVatNumber } from "./vat";
 
@@ -186,8 +187,8 @@ const draftShape = {
   billTo: BillToSchema.optional(),
   /** The treatment authorisation (insurer pre-authorisation) this invoice uses. */
   authorisationId: z.union([PmsIdSchema, z.null()]).optional(),
-  /** Diagnosis / condition code for the payer (e.g. ICD-10). Encrypted. */
-  diagnosisCode: optionalText(40),
+  /** ICD-10 diagnosis code for the payer (format checked, normalised – ./icd10.ts, HC10). Encrypted. */
+  diagnosisCode: OptionalIcd10Schema,
   /** Note printed on the invoice. Encrypted. */
   notes: optionalText(2000),
   lines: z.array(InvoiceLineInputSchema).min(1, "Add at least one line").max(MAX_INVOICE_LINES, `At most ${MAX_INVOICE_LINES} lines`),
@@ -207,7 +208,7 @@ export type InvoiceDraftInput = z.input<typeof InvoiceDraftInputSchema>;
 /** Editing a draft: the whole draft again (lines replaced). */
 export const InvoiceDraftPatchSchema = z.object({
   authorisationId: z.union([PmsIdSchema, z.null()]).optional(),
-  diagnosisCode: optionalText(40),
+  diagnosisCode: OptionalIcd10Schema,
   notes: optionalText(2000),
   lines: z.array(InvoiceLineInputSchema).min(1, "Add at least one line").max(MAX_INVOICE_LINES).optional(),
 });

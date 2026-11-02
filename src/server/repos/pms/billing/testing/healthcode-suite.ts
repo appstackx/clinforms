@@ -8,10 +8,13 @@ import { testCipher } from "../../../../db/testing/databases";
 import { listAudit } from "../../../audit";
 import { RepoInputError, type RepoContext } from "../../../context";
 import { createReferrer } from "../../referrers";
+import { createCase } from "../../cases";
+import { createPatient } from "../../patients";
+import { createDraftInvoice, getInvoice } from "../invoices";
 import { unscopedStatements, type GuardedDb } from "../../testing/guarded-db";
 import { healthcodeForSite } from "../../../../../modules/pms/billing/healthcode";
 import { createPractitioner, createService, createSite } from "../../directory";
-import { getHealthcodeSettings, getPayerHealthcode, payerHealthcodes, practitionerInsurerNumbers, serviceCcsdCodes, serviceInsurerCodes, setPractitionerInsurerNumber, setServiceCcsdCode, setServiceInsurerCode, setClinicHealthcode, setPayerHealthcode, setSiteHealthcode } from "../healthcode";
+import { caseDiagnoses, getHealthcodeSettings, getPayerHealthcode, setCaseDiagnosis, setInvoiceDiagnosis, payerHealthcodes, practitionerInsurerNumbers, serviceCcsdCodes, serviceInsurerCodes, setPractitionerInsurerNumber, setServiceCcsdCode, setServiceInsurerCode, setClinicHealthcode, setPayerHealthcode, setSiteHealthcode } from "../healthcode";
 
 const A = "riverside-a";
 const B = "harbour-b";
@@ -37,6 +40,9 @@ export function defineHealthcodeRepoSuite(label: string, factory: () => Promise<
       id.ia = (await createService(ctx, A, { name: "Initial assessment", category: "initial", durationMinutes: 45 }, ACTOR)).id;
       id.fu = (await createService(ctx, A, { name: "Follow-up", category: "follow_up", durationMinutes: 30 }, ACTOR)).id;
       id.svcB = (await createService(ctx, B, { name: "Follow-up", durationMinutes: 30 }, ACTOR_B)).id;
+      id.patient = (await createPatient(ctx, A, { firstName: "Daniel", lastName: "Brooks", dateOfBirth: "1980-01-19" }, ACTOR)).id;
+      id.case = (await createCase(ctx, A, { patientId: id.patient, title: "Lower back", openedOn: "2026-10-01", payerType: "insurer", payerReferrerId: id.insurer, membershipNumber: "NW-000123" }, ACTOR)).id;
+      id.selfCase = (await createCase(ctx, A, { patientId: id.patient, title: "Knee", openedOn: "2026-10-01" }, ACTOR)).id;
       id.siteB = (await createSite(ctx, B, { name: "Harbour (fictional)" }, ACTOR_B)).id;
     });
     after(async () => {
@@ -115,6 +121,32 @@ export function defineHealthcodeRepoSuite(label: string, factory: () => Promise<
       await assert.rejects(setServiceInsurerCode(ctx, A, id.svcB, id.insurer, "X1", ACTOR), (e: unknown) => e instanceof RepoInputError);
       await assert.rejects(setServiceCcsdCode(ctx, A, id.ia, "has space", ACTOR), (e: unknown) => e instanceof RepoInputError);
       assert.equal((await serviceInsurerCodes(ctx, B)).size, 0);
+    });
+
+    it("HC10 diagnosis codes: a case's (encrypted, normalised) and an insurer invoice's own; a patient invoice refused", async () => {
+      assert.equal((await caseDiagnoses(ctx, A, [id.case])).size, 0);
+      assert.equal(await setCaseDiagnosis(ctx, A, id.case, "m545", ACTOR), "M54.5");
+      assert.equal((await caseDiagnoses(ctx, A, [id.case, id.selfCase])).get(id.case), "M54.5");
+      const raw = await ctx.db.selectFrom("pms_case_diagnosis").select("diagnosis_enc").where("tenant_id", "=", A).where("id", "=", id.case).executeTakeFirstOrThrow();
+      assert.ok(raw.diagnosis_enc && !raw.diagnosis_enc.includes("M54"), "stored encrypted");
+      await assert.rejects(setCaseDiagnosis(ctx, A, id.case, "back pain", ACTOR), (e: unknown) => e instanceof RepoInputError);
+      await assert.rejects(setCaseDiagnosis(ctx, B, id.case, "M54.5", ACTOR_B), (e: unknown) => e instanceof RepoInputError);
+      assert.equal((await caseDiagnoses(ctx, B, [id.case])).size, 0);
+      assert.equal(await setCaseDiagnosis(ctx, A, id.case, "", ACTOR), null);
+      assert.equal((await caseDiagnoses(ctx, A, [id.case])).size, 0);
+
+      const { invoice } = await createDraftInvoice(ctx, A, { patientId: id.patient, caseId: id.case, billTo: "payer", lines: [{ kind: "item", description: "Follow-up (fictional)", unitPricePence: 4800 }] }, ACTOR);
+      const r = await setInvoiceDiagnosis(ctx, A, invoice.id, "S934", ACTOR);
+      assert.deepEqual(r, { ok: true, code: "S93.4" });
+      const after1 = await getInvoice(ctx, A, invoice.id);
+      assert.deepEqual([after1?.diagnosisCode, after1?.rev], ["S93.4", invoice.rev + 1]);
+      assert.deepEqual(await setInvoiceDiagnosis(ctx, B, invoice.id, "S93.4", ACTOR_B), { ok: false, code: null });
+      const { invoice: own } = await createDraftInvoice(ctx, A, { patientId: id.patient, caseId: id.selfCase, lines: [{ kind: "item", description: "Self-pay (fictional)", unitPricePence: 4800 }] }, ACTOR);
+      assert.equal((await setInvoiceDiagnosis(ctx, A, own.id, "M54.5", ACTOR)).ok, false);
+      const audit = await listAudit(ctx, A, { limit: 200 });
+      assert.equal(audit.filter((e) => e.action === "pms.case_diagnosis.set").length, 2);
+      assert.equal(audit.filter((e) => e.action === "pms.invoice.diagnosis_set").length, 1);
+      assert.ok(!JSON.stringify(audit).includes("M54.5"), "no diagnosis in the audit trail");
     });
 
     it("every statement names the clinic (tenant-scope guard)", () => {

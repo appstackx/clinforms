@@ -30,7 +30,9 @@ import { noteStatusLabel } from "@/modules/pms/records/notes";
 import { requireClinicActor } from "@/server/pms/actor";
 import { ReferrerFormsPanel } from "@/components/pms/integration/referrer-forms-panel";
 import { referrerFormsFor } from "@/server/pms/integration/referrer-forms";
-import { startReferrerFormAction } from "./actions";
+import { setCaseDiagnosisAction, startReferrerFormAction } from "./actions";
+import { DiagnosisPicker } from "@/components/pms/billing/diagnosis-picker";
+import { caseDiagnosisFor } from "@/server/pms/billing/healthcode";
 import {
   directoryOptions,
   type Choice,
@@ -108,6 +110,8 @@ export default async function CasePage({
   ).filter((a): a is NonNullable<typeof a> => Boolean(a));
   const today = ukToday();
   const forms = await referrerFormsFor(actor, patient.id, c.id);
+  // The case's ICD-10 diagnosis code for insurer bills (HC10) – clinical.view only.
+  const diagnosis = actor.can("clinical.view") ? await caseDiagnosisFor(actor, patient.id, c.id) : null;
   const canEdit = actor.can("patients.edit");
   const activeAuth = auths.find((a) => a.status === "active");
   const caseSummary = [
@@ -273,6 +277,18 @@ export default async function CasePage({
           </details>
         ) : null}
       </Panel>
+
+      {diagnosis?.ok ? (
+        <Panel title="Diagnosis" description="The ICD-10 code insurer bills for this case carry. An invoice can have its own.">
+          <DiagnosisPicker
+            id="case-diagnosis"
+            label="Diagnosis code (ICD-10)"
+            initial={diagnosis.value.code}
+            canEdit={diagnosis.value.canEdit}
+            save={setCaseDiagnosisAction.bind(null, patient.id, c.id)}
+          />
+        </Panel>
+      ) : null}
 
       <Panel
         title="Treatment authorisations"

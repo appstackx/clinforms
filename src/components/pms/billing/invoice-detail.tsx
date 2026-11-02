@@ -28,11 +28,13 @@ export interface InvoiceDetailProps {
   printedAt: string;
   demo: boolean;
   can: { edit: boolean; pay: boolean; refund: boolean; void: boolean };
+  /** Healthcode panel of an insurer invoice (diagnosis code, bill status – docs/clinic-system/healthcode.md). */
+  extra?: React.ReactNode;
 }
 
 type Dialog = null | "credit" | "refund" | "void" | "issue" | "cancel";
 
-export function InvoiceDetail({ invoice: inv, clinic, howToPay, printedBy, printedAt, demo, can }: InvoiceDetailProps) {
+export function InvoiceDetail({ invoice: inv, clinic, howToPay, printedBy, printedAt, demo, can, extra }: InvoiceDetailProps) {
   const router = useRouter();
   const toast = useToast();
   const [dialog, setDialog] = React.useState<Dialog>(null);
@@ -159,6 +161,7 @@ export function InvoiceDetail({ invoice: inv, clinic, howToPay, printedBy, print
 
       <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
         <div className="flex min-w-0 flex-col gap-4">
+          {extra}
           {inv.billTo === "payer" || inv.partner || inv.contribution ? (
             <section className="flex flex-col gap-4 rounded-xl border border-border bg-white p-5" aria-labelledby="split-h" data-testid="split-card" data-mode={inv.contribution?.mode ?? ""}>
               <h2 id="split-h" className="flex items-center gap-2 text-base font-semibold">

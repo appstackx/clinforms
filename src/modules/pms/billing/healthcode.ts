@@ -164,3 +164,16 @@ export interface InsurerCodesView {
   services: { id: string; name: string; active: boolean; ccsdCode: string | null; iscCode: string }[];
   canEdit: boolean;
 }
+
+/* ------------------------------------------------------------------------------------------------
+ * HC10 – the Healthcode panel of an insurer invoice
+ * ----------------------------------------------------------------------------------------------*/
+
+export interface InvoiceHealthcodeView {
+  invoiceId: string;
+  /** Only with clinical.view (else both codes are null). */
+  showDiagnosis: boolean;
+  diagnosisCode: string | null;
+  caseDiagnosisCode: string | null;
+  canEditDiagnosis: boolean;
+}

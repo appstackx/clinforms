@@ -20,9 +20,10 @@ import {
   type PayerHealthcode,
   type PayerHealthcodeInput,
 } from "../../../../modules/pms/billing/healthcode";
+import { OptionalIcd10Schema } from "../../../../modules/pms/billing/icd10";
 import type { PmsActor } from "../../../../modules/pms/core/types";
 import { isMissingPmsTable } from "../../../pms/missing-table";
-import { assertId, assertTenantId, nowIso, num, parseInput, pmsAuditQuery, writeWithAudit, type RepoContext } from "../context";
+import { assertId, assertTenantId, decryptField, encryptField, nowIso, num, parseInput, pmsAudit, pmsAuditQuery, writeWithAudit, type RepoContext } from "../context";
 import { chunks } from "./shared";
 
 const PAYER = "pms_payer_healthcode";
@@ -300,4 +301,73 @@ export async function setServiceInsurerCode(ctx: RepoContext, tenantId: string, 
     ],
     { foreignKey: "That service or insurer does not exist in this clinic." },
   );
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * HC10 – ICD-10 diagnosis codes: a case's (new table) and an insurer invoice's (pms_invoices.diagnosis_enc)
+ * ----------------------------------------------------------------------------------------------*/
+
+const CASE_DX = "pms_case_diagnosis";
+
+/** Cases' diagnosis codes, decrypted (cases without one are left out). */
+export async function caseDiagnoses(ctx: RepoContext, tenantId: string, caseIds: readonly string[]): Promise<Map<string, string>> {
+  assertTenantId(tenantId);
+  return readOrEmpty(CASE_DX, new Map<string, string>(), async () => {
+    const out = new Map<string, string>();
+    for (const group of chunks(Array.from(new Set(caseIds)))) {
+      if (group.length === 0) continue;
+      const rows = await ctx.db.selectFrom(CASE_DX).select(["id", "diagnosis_enc"]).where("tenant_id", "=", tenantId).where("id", "in", group).execute();
+      for (const r of rows) {
+        const code = decryptField(ctx, tenantId, CASE_DX, "diagnosis_enc", r.id, r.diagnosis_enc);
+        if (code) out.set(r.id, code);
+      }
+    }
+    return out;
+  });
+}
+
+/** Sets (or clears) a case's ICD-10 diagnosis code (format checked and normalised). */
+export async function setCaseDiagnosis(ctx: RepoContext, tenantId: string, caseId: string, code: string | null, actor: PmsActor): Promise<string | null> {
+  assertTenantId(tenantId);
+  assertId(caseId, "case id");
+  const value = parseInput(OptionalIcd10Schema, code, "Diagnosis code") ?? null;
+  const enc = encryptField(ctx, tenantId, CASE_DX, "diagnosis_enc", caseId, value);
+  const at = nowIso(ctx);
+  await writeWithAudit(
+    ctx,
+    [
+      ctx.db
+        .insertInto(CASE_DX)
+        .values({ tenant_id: tenantId, id: caseId, rev: 1, diagnosis_enc: enc, updated_by: actor.userId, created_at: at, updated_at: at })
+        .onConflict((oc) => oc.columns(["tenant_id", "id"]).doUpdateSet((eb) => ({ diagnosis_enc: enc, rev: eb(`${CASE_DX}.rev`, "+", 1), updated_by: actor.userId, updated_at: at }))),
+      pmsAuditQuery(ctx, tenantId, actor, { action: "pms.case_diagnosis.set", targetType: "pms_case", targetId: caseId, detail: { set: value !== null } }),
+    ],
+    { foreignKey: "That case does not exist in this clinic." },
+  );
+  return value;
+}
+
+/**
+ * Sets (or clears) an insurer invoice's own ICD-10 diagnosis code – a draft or an issued invoice addressed to a payer
+ * account (not cancelled or voided). The amounts are untouched; the change is audited. Returns false when no such
+ * invoice exists in this clinic.
+ */
+export async function setInvoiceDiagnosis(ctx: RepoContext, tenantId: string, invoiceId: string, code: string | null, actor: PmsActor): Promise<{ ok: boolean; code: string | null }> {
+  assertTenantId(tenantId);
+  assertId(invoiceId, "invoice id");
+  const value = parseInput(OptionalIcd10Schema, code, "Diagnosis code") ?? null;
+  const enc = encryptField(ctx, tenantId, "pms_invoices", "diagnosis_enc", invoiceId, value);
+  const at = nowIso(ctx);
+  const r = await ctx.db
+    .updateTable("pms_invoices")
+    .set((eb) => ({ diagnosis_enc: enc, rev: eb("rev", "+", 1), updated_at: at }))
+    .where("tenant_id", "=", tenantId)
+    .where("id", "=", invoiceId)
+    .where("bill_to", "=", "payer")
+    .where("status", "in", ["draft", "issued"])
+    .where("voided_at", "is", null)
+    .executeTakeFirst();
+  if (Number(r.numUpdatedRows ?? 0) === 0) return { ok: false, code: null };
+  await pmsAudit(ctx, tenantId, actor, { action: "pms.invoice.diagnosis_set", targetType: "pms_invoice", targetId: invoiceId, detail: { set: value !== null } });
+  return { ok: true, code: value };
 }
