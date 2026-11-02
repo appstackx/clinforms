@@ -11,5 +11,5 @@ export default async function ServicesSetupPage({ searchParams }: { searchParams
   const actor = await requireClinicActor({ permission: "settings.setup" });
   const r = await servicesScreenFor(actor);
   if (!r.ok) return <p role="alert">{r.error}</p>;
-  return <ServicesSetup services={r.value.services} serviceId={searchParams.service ?? null} />;
+  return <ServicesSetup services={r.value.services} ccsd={r.value.ccsd} serviceId={searchParams.service ?? null} />;
 }

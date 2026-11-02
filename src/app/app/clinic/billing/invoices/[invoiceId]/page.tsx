@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { InvoiceDetail } from "@/components/pms/billing/invoice-detail";
+import { InvoiceHealthcodePanel } from "@/components/pms/billing/invoice-healthcode";
+import { invoiceHealthcodeFor } from "@/server/pms/billing/healthcode";
 import { requireClinicActor } from "@/server/pms/actor";
 import { printInvoiceFor, invoiceDetailFor, printClinicOf } from "@/server/pms/billing/views";
 import { getPmsSettings } from "@/server/repos/pms/settings";
@@ -21,6 +23,7 @@ export default async function InvoicePage({ params }: { params: { invoiceId: str
   const inv = detail.value;
   const printed = inv.status === "issued" ? await printInvoiceFor(actor, inv.id) : null;
   const settings = await getPmsSettings(actor.repo(), actor.tenantId);
+  const hc = await invoiceHealthcodeFor(actor, inv.id);
   return (
     <InvoiceDetail
       invoice={inv}
@@ -30,6 +33,7 @@ export default async function InvoicePage({ params }: { params: { invoiceId: str
       printedAt={pmsNow().toISOString()}
       demo={settings.isDemo}
       can={{ edit: actor.can("billing.edit"), pay: actor.can("billing.pay"), refund: actor.can("billing.refund"), void: actor.can("billing.void") }}
+      extra={hc.ok && hc.value ? <InvoiceHealthcodePanel view={hc.value} /> : null}
     />
   );
 }

@@ -12,3 +12,4 @@ export * from "./reports";
 export * from "./saved-cards";
 export * from "./settings";
 export * from "./contribution-terms";
+export * from "./healthcode";

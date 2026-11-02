@@ -112,6 +112,7 @@ export const SETUP_ORDER: readonly string[] = [
   "reporting.services",
   "reporting.prices",
   "reporting.referrers",
+  "billing.insurer-codes",
   "reporting.practitioners",
   "diary.rotas",
   "reporting.records",

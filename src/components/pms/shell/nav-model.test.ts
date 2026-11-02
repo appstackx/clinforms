@@ -71,6 +71,7 @@ describe("shell navigation by permission", () => {
         "Services",
         "Price lists",
         "Referrers and insurers",
+        "Insurer codes",
         "Practitioners",
         "Practitioner rotas",
         "Record templates",

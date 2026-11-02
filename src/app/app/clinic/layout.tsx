@@ -91,7 +91,7 @@ export default async function ClinicSystemLayout({ children }: { children: React
   return (
     <ClinicShell
       productName={brand.id === "clinforms" ? CLINIC_SYSTEM_NAME : brand.productName}
-      mark={brand.id === "clinic" ? <ClinicSystemMark className="h-7 w-7" /> : undefined}
+      mark={<ClinicSystemMark className="h-7 w-7" />}
       homeHref={CLINIC_BASE_PATH}
       clinicName={actor.clinicName}
       user={{ name: actor.name, email: actor.email, roleLabel: clinicRoleLabel(actor.role, roleLabel(actor.role)), sitesSummary: sitesSummary(mySites.length, sites.length) }}

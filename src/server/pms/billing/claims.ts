@@ -12,6 +12,8 @@ import { z } from "zod";
 import { EXPORT_CHANNEL_INFO, type ExportChannelInfo } from "../../../modules/pms/billing/ebilling";
 import { PmsIdSchema } from "../../../modules/pms/core/schemas";
 import { ukToday } from "../../../modules/pms/core/text";
+import type { HealthcodeBillStatus } from "../../../modules/pms/billing/healthcode";
+import { billStatuses } from "../../repos/pms/billing/healthcode";
 import { listInvoicesPage } from "../../repos/pms/billing/invoices";
 import { MAX_EXPORT_INVOICES } from "../../repos/pms/billing/exports";
 import { attempt, fail, forbidden, ok, type BillingActor, type Result } from "./access";
@@ -38,6 +40,8 @@ export interface ClaimRowView {
   totalPence: number;
   balancePence: number;
   sentAt: string | null;
+  /** HC13: the Healthcode bill status set by hand (null = not sent yet). */
+  billStatus: HealthcodeBillStatus | null;
 }
 
 export interface ClaimsView {
@@ -88,11 +92,12 @@ export async function claimsFor(actor: BillingActor, input: Partial<ClaimsQuery>
     if (!payer) return fail("not_found", "That payer account is not in this clinic.");
     const all = await claimInvoices(actor, parsed.data);
     const chosen = includeSent ? all : all.filter((i) => !i.exportedAt);
+    const statuses = await billStatuses(ctx, actor.tenantId, chosen.map((i) => i.id));
     return ok({
       ...base,
       query: { payerReferrerId: payer.id, from, until, includeSent },
       payerName: payer.name,
-      rows: chosen.map((i) => ({ id: i.id, number: i.number as string, issuedOn: i.issuedOn as string, totalPence: i.totalPence, balancePence: i.balancePence, sentAt: i.exportedAt })),
+      rows: chosen.map((i) => ({ id: i.id, number: i.number as string, issuedOn: i.issuedOn as string, totalPence: i.totalPence, balancePence: i.balancePence, sentAt: i.exportedAt, billStatus: statuses.get(i.id) ?? null })),
       totalPence: chosen.reduce((s, i) => s + i.totalPence, 0),
       alreadySent: all.filter((i) => i.exportedAt).length,
     });

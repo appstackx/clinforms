@@ -1,5 +1,5 @@
 /**
- * Tables of the billing module (migrations 0130–0131 / 20261024000130–…131): billing settings, VAT per appointment
+ * Tables of the billing module (migrations 0130–0139, 0212 and the Healthcode groundwork 0220–0229): billing settings, VAT per appointment
  * type, invoices and their lines, credit notes and their lines, payments and refunds, their allocations to
  * invoices, card payment links (test mode) and the e-billing export log. Conventions: docs/clinic-system/contract.md
  * §4 and docs/clinic-system/billing.md.
@@ -268,6 +268,103 @@ export interface PmsCaseBillingTermsTable {
   updated_at: IsoTimestamp;
 }
 
+/** 0220 (Healthcode, HC06): a payer account's Healthcode identifier and the clinic's provider number with it. */
+export interface PmsPayerHealthcodeTable {
+  tenant_id: string;
+  referrer_id: string;
+  rev: number;
+  /** The insurer's Healthcode identifier (e.g. "bup"). */
+  insurer_code: string | null;
+  /** The clinic's provider number with this insurer. */
+  provider_number: string | null;
+  /** 0/1; NULL = the default for the insurer's name (src/modules/pms/billing/healthcode.ts). */
+  diagnosis_required: number | null;
+  updated_by: string | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
+/** 0221 (Healthcode, HC07): the clinic's Healthcode Site ID and payee provider number. */
+export interface PmsHealthcodeSettingsTable {
+  tenant_id: string;
+  rev: number;
+  site_code: string | null;
+  payee_provider_number: string | null;
+  updated_by: string | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
+/** 0221 (Healthcode, HC07): a site's own Site ID and payee provider number (NULL = the clinic's). */
+export interface PmsSiteHealthcodeTable {
+  tenant_id: string;
+  site_id: string;
+  rev: number;
+  site_code: string | null;
+  payee_provider_number: string | null;
+  updated_by: string | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
+/** 0222 (Healthcode, HC08): a practitioner's provider number with one insurer. */
+export interface PmsPractitionerInsurerNumbersTable {
+  tenant_id: string;
+  practitioner_id: string;
+  referrer_id: string;
+  rev: number;
+  provider_number: string;
+  updated_by: string | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
+/** 0223 (Healthcode, HC09): a service's CCSD code. */
+export interface PmsServiceCodesTable {
+  tenant_id: string;
+  service_id: string;
+  rev: number;
+  ccsd_code: string | null;
+  updated_by: string | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
+/** 0223 (Healthcode, HC09): an insurer's own treatment code (ISC) for a service. */
+export interface PmsServiceInsurerCodesTable {
+  tenant_id: string;
+  service_id: string;
+  referrer_id: string;
+  rev: number;
+  isc_code: string;
+  updated_by: string | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
+/** 0224 (Healthcode, HC10): a case's ICD-10 diagnosis code (encrypted). `id` IS the case id (one row per case). */
+export interface PmsCaseDiagnosisTable {
+  tenant_id: string;
+  id: string;
+  rev: number;
+  diagnosis_enc: string | null;
+  updated_by: string | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
+/** 0225 (Healthcode, HC13): an insurer invoice's bill status, set by hand (NULL = not set). */
+export interface PmsInvoiceBillStatusTable {
+  tenant_id: string;
+  invoice_id: string;
+  rev: number;
+  /** "exported" | "validated" | "failed" | "collected" | "paid" | NULL */
+  status: string | null;
+  updated_by: string | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
 export interface BillingTables {
   pms_billing_settings: PmsBillingSettingsTable;
   pms_service_vat: PmsServiceVatTable;
@@ -282,6 +379,14 @@ export interface BillingTables {
   pms_saved_cards: PmsSavedCardsTable;
   pms_payer_billing_terms: PmsPayerBillingTermsTable;
   pms_case_billing_terms: PmsCaseBillingTermsTable;
+  pms_payer_healthcode: PmsPayerHealthcodeTable;
+  pms_healthcode_settings: PmsHealthcodeSettingsTable;
+  pms_site_healthcode: PmsSiteHealthcodeTable;
+  pms_practitioner_insurer_numbers: PmsPractitionerInsurerNumbersTable;
+  pms_service_codes: PmsServiceCodesTable;
+  pms_service_insurer_codes: PmsServiceInsurerCodesTable;
+  pms_case_diagnosis: PmsCaseDiagnosisTable;
+  pms_invoice_bill_status: PmsInvoiceBillStatusTable;
 }
 
 /** Foreign-key order (parents first). */
@@ -299,6 +404,14 @@ export const BILLING_TABLES = [
   "pms_saved_cards",
   "pms_payer_billing_terms",
   "pms_case_billing_terms",
+  "pms_payer_healthcode",
+  "pms_healthcode_settings",
+  "pms_site_healthcode",
+  "pms_practitioner_insurer_numbers",
+  "pms_service_codes",
+  "pms_service_insurer_codes",
+  "pms_case_diagnosis",
+  "pms_invoice_bill_status",
 ] as const satisfies readonly (keyof BillingTables)[];
 
 export const BILLING_PRIMARY_KEYS: { readonly [T in (typeof BILLING_TABLES)[number]]: readonly (keyof BillingTables[T] & string)[] } = {
@@ -315,10 +428,35 @@ export const BILLING_PRIMARY_KEYS: { readonly [T in (typeof BILLING_TABLES)[numb
   pms_saved_cards: ["tenant_id", "id"],
   pms_payer_billing_terms: ["tenant_id", "referrer_id"],
   pms_case_billing_terms: ["tenant_id", "case_id"],
+  pms_payer_healthcode: ["tenant_id", "referrer_id"],
+  pms_healthcode_settings: ["tenant_id"],
+  pms_site_healthcode: ["tenant_id", "site_id"],
+  pms_practitioner_insurer_numbers: ["tenant_id", "practitioner_id", "referrer_id"],
+  pms_service_codes: ["tenant_id", "service_id"],
+  pms_service_insurer_codes: ["tenant_id", "service_id", "referrer_id"],
+  pms_case_diagnosis: ["tenant_id", "id"],
+  pms_invoice_bill_status: ["tenant_id", "invoice_id"],
 };
 
 /** Timestamp columns beyond created_at/updated_at (TEXT in SQLite, timestamptz in Postgres) – the D1 → Postgres copy. */
 export const BILLING_TIMESTAMP_COLUMNS: readonly string[] = ["issued_at", "cancelled_at", "exported_at", "reversed_at", "last_checked_at", "voided_at", "removed_at"];
+
+/**
+ * Healthcode groundwork tables (0220–0225): each row hangs off one parent row (a payer account, the clinic's billing
+ * settings, a site, practitioner, service, case or invoice) by a foreign key with ON DELETE CASCADE, so offboarding deletes them with their parents
+ * and does not name them in its batch (the gateway's statement limit – src/server/auth/offboard-batch.test.ts). They
+ * are still exported and counted like every other table.
+ */
+export const BILLING_CASCADE_DELETED_TABLES: readonly (typeof BILLING_TABLES)[number][] = [
+  "pms_payer_healthcode",
+  "pms_healthcode_settings",
+  "pms_site_healthcode",
+  "pms_practitioner_insurer_numbers",
+  "pms_service_codes",
+  "pms_service_insurer_codes",
+  "pms_case_diagnosis",
+  "pms_invoice_bill_status",
+];
 
 /** Every billing table holds one clinic's data (offboarding exports them decrypted, then deletes them). */
 export const BILLING_TENANT_TABLES: readonly (typeof BILLING_TABLES)[number][] = BILLING_TABLES;

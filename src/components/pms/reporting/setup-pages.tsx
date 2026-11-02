@@ -102,14 +102,14 @@ function RoomForm({ siteId, room, onCreated }: { siteId: string; room: Room | nu
  * Services
  * ----------------------------------------------------------------------------------------------*/
 
-export function ServicesSetup({ services, serviceId }: { services: Service[]; serviceId: string | null }) {
+export function ServicesSetup({ services, serviceId, ccsd = {} }: { services: Service[]; serviceId: string | null; ccsd?: Record<string, string> }) {
   const router = useRouter();
   const chosen = serviceId === "new" ? null : (services.find((s) => s.id === serviceId) ?? null);
   const showForm = serviceId === "new" || chosen !== null;
   return (
     <SetupPage>
       <SetupHeader title="Services and durations" description="What can be booked, for how long, at what standard price, and whether patients can book it online." action={<NewButton href={`${BASE}/services?service=new`} label="Add service" testId="add-service" />} />
-      {showForm ? <ServiceForm key={chosen?.id ?? "new"} service={chosen} onDone={() => router.push(`${BASE}/services`)} /> : null}
+      {showForm ? <ServiceForm key={chosen?.id ?? "new"} service={chosen} ccsdCode={chosen ? (ccsd[chosen.id] ?? "") : ""} onDone={() => router.push(`${BASE}/services`)} /> : null}
       <ScrollRegion label="Services and durations" className="relative overflow-x-auto rounded-2xl border border-border bg-white">
         <table className="w-full min-w-[720px] border-collapse text-sm">
           <caption className="sr-only">Services</caption>
@@ -120,6 +120,7 @@ export function ServicesSetup({ services, serviceId }: { services: Service[]; se
               <th scope="col" className="px-4 py-2.5 text-right">Duration</th>
               <th scope="col" className="px-4 py-2.5 text-right">Standard price</th>
               <th scope="col" className="px-4 py-2.5">Online</th>
+              <th scope="col" className="px-4 py-2.5">CCSD code</th>
               <th scope="col" className="px-4 py-2.5">
                 <span className="sr-only">Change</span>
               </th>
@@ -133,6 +134,7 @@ export function ServicesSetup({ services, serviceId }: { services: Service[]; se
                 <td className="px-4 py-2.5 text-right tabular-nums">{s.durationMinutes} min</td>
                 <td className="px-4 py-2.5 text-right tabular-nums">{s.defaultPricePence === null ? "–" : formatPence(s.defaultPricePence)}</td>
                 <td className="px-4 py-2.5">{s.onlineBookable ? "Yes" : "No"}</td>
+                <td className="px-4 py-2.5 font-mono text-xs">{ccsd[s.id] ?? "–"}</td>
                 <td className="px-4 py-2.5 text-right">
                   <Link href={`${BASE}/services?service=${s.id}`} scroll={false} className={`text-primary-strong underline underline-offset-2 ${setupFocus}`}>
                     Change<span className="sr-only"> {s.name}</span>
@@ -147,8 +149,9 @@ export function ServicesSetup({ services, serviceId }: { services: Service[]; se
   );
 }
 
-function ServiceForm({ service, onDone }: { service: Service | null; onDone: () => void }) {
+function ServiceForm({ service, ccsdCode, onDone }: { service: Service | null; ccsdCode: string; onDone: () => void }) {
   const f = useSetupForm({
+    ccsdCode,
     name: service?.name ?? "",
     durationMinutes: String(service?.durationMinutes ?? 30),
     bufferMinutes: String(service?.bufferMinutes ?? 0),
@@ -191,6 +194,9 @@ function ServiceForm({ service, onDone }: { service: Service | null; onDone: () 
           </FormField>
           <FormField id="service-colour" label="Colour (#RRGGBB, optional)" error={f.fieldErrors.colour}>
             <TextInput value={f.values.colour} onChange={(e) => f.set("colour", e.target.value)} />
+          </FormField>
+          <FormField id="service-ccsd" label="CCSD code (optional)" hint="For insurer bills through Healthcode. Each insurer's own code goes under Insurer treatment codes." error={f.fieldErrors.ccsdCode}>
+            <TextInput value={f.values.ccsdCode} onChange={(e) => f.set("ccsdCode", e.target.value)} autoComplete="off" maxLength={20} data-testid="service-ccsd" />
           </FormField>
         </SetupGrid>
         <div className="flex flex-wrap gap-6">
@@ -349,7 +355,7 @@ function PriceItems({ listId, items, services }: { listId: string; items: Prices
  * Referrers and insurers
  * ----------------------------------------------------------------------------------------------*/
 
-export function ReferrersSetup({ screen, isNew, kind }: { screen: ReferrersScreen; isNew: boolean; kind: string | null }) {
+export function ReferrersSetup({ screen, isNew, kind, extra }: { screen: ReferrersScreen; isNew: boolean; kind: string | null; extra?: React.ReactNode }) {
   const router = useRouter();
   const sel = isNew ? null : screen.selected;
   const q = (extra: string) => `${BASE}/referrers?${kind ? `kind=${kind}&` : ""}${extra}`;
@@ -380,6 +386,7 @@ export function ReferrersSetup({ screen, isNew, kind }: { screen: ReferrersScree
       >
         <ReferrerForm key={sel?.referrer.id ?? "new"} referrer={sel?.referrer ?? null} defaultKind={kind ?? "insurer"} onCreated={(id) => router.push(q(`referrer=${id ?? ""}`))} />
         {sel?.payer ? <PayerAccount key={`payer-${sel.referrer.id}`} referrerId={sel.referrer.id} name={sel.referrer.name} payer={sel.payer} /> : null}
+        {sel ? extra : null}
       </SetupSplit>
     </SetupPage>
   );
@@ -507,7 +514,7 @@ function PayerAccount({ referrerId, name, payer }: { referrerId: string; name: s
  * Practitioners
  * ----------------------------------------------------------------------------------------------*/
 
-export function PractitionersSetup({ screen, isNew }: { screen: PractitionersScreen; isNew: boolean }) {
+export function PractitionersSetup({ screen, isNew, extra }: { screen: PractitionersScreen; isNew: boolean; extra?: React.ReactNode }) {
   const router = useRouter();
   const sel = isNew ? null : screen.selected;
   const memberName = new Map(screen.members.map((m) => [m.userId, m.name]));
@@ -531,6 +538,7 @@ export function PractitionersSetup({ screen, isNew }: { screen: PractitionersScr
         }
       >
         <PractitionerForm key={sel?.id ?? "new"} p={sel} members={screen.members} sites={screen.sites} onCreated={(id) => router.push(`${BASE}/practitioners?practitioner=${id ?? ""}`)} />
+        {sel ? extra : null}
       </SetupSplit>
     </SetupPage>
   );
@@ -689,7 +697,7 @@ export function RecordsSetup({ templates, settings }: { templates: NoteTemplate[
  * Billing settings
  * ----------------------------------------------------------------------------------------------*/
 
-export function BillingSetup({ settings }: { settings: BillingSettings }) {
+export function BillingSetup({ settings, extra }: { settings: BillingSettings; extra?: React.ReactNode }) {
   const f = useSetupForm({
     invoicePrefix: settings.invoicePrefix,
     creditNotePrefix: settings.creditNotePrefix,
@@ -782,6 +790,7 @@ export function BillingSetup({ settings }: { settings: BillingSettings }) {
         <SetupError error={f.error} />
         <SetupFormBar dirty={f.dirty} saving={f.saving} onDiscard={f.discard} testId="billing-save" />
       </form>
+      {extra}
     </SetupPage>
   );
 }

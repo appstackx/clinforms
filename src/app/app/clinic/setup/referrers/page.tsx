@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import { ReferrersSetup } from "@/components/pms/reporting/setup-pages";
 import { REFERRER_KINDS } from "@/modules/pms/core/schemas";
+import { PayerHealthcodeCard } from "@/components/pms/billing/healthcode-setup";
 import { requireClinicActor } from "@/server/pms/actor";
+import { payerHealthcodeFor } from "@/server/pms/billing/healthcode-setup";
 import { referrersScreenFor } from "@/server/pms/reporting/setup";
 
 export const dynamic = "force-dynamic";
@@ -18,5 +20,8 @@ export default async function ReferrersSetupPage({ searchParams }: { searchParam
   const isNew = searchParams.referrer === "new";
   const r = await referrersScreenFor(actor, isNew ? null : (searchParams.referrer ?? null), kind);
   if (!r.ok) return <p role="alert">{r.error}</p>;
-  return <ReferrersSetup screen={r.value} isNew={isNew || r.value.referrers.length === 0} kind={kind} />;
+  // Healthcode details of an insurer (HC06, docs/clinic-system/healthcode.md).
+  const hc = isNew ? null : await payerHealthcodeFor(actor, r.value.selected?.referrer.id ?? null);
+  const extra = hc?.ok && hc.value ? <PayerHealthcodeCard key={`hc-${hc.value.referrerId}`} view={hc.value} /> : null;
+  return <ReferrersSetup screen={r.value} isNew={isNew || r.value.referrers.length === 0} kind={kind} extra={extra} />;
 }

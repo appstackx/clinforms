@@ -71,6 +71,7 @@ export const PAGE_PERMISSIONS: readonly (readonly [string, PmsPermission])[] = [
   ["/setup/billing", "settings.setup"],
   ["/setup/import/[batchId]", "settings.import"],
   ["/setup/import", "settings.import"],
+  ["/setup/insurer-codes", "settings.setup"],
   ["/setup/practitioners", "settings.setup"],
   ["/setup/prices", "settings.setup"],
   ["/setup/records", "settings.setup"],

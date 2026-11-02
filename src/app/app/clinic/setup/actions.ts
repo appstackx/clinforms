@@ -32,6 +32,7 @@ import {
   type SetupResult,
   type SiteFields,
 } from "@/server/pms/reporting/setup";
+import { saveHealthcodeSettingsFor, saveInsurerCodesFor, savePayerHealthcodeFor, savePractitionerInsurerNumbersFor, type HealthcodeSettingsFields, type PayerHealthcodeFields } from "@/server/pms/billing/healthcode-setup";
 
 export type SetupActionResult = { ok: true; id?: string; message?: string } | { ok: false; error: string; fieldErrors?: Record<string, string> };
 
@@ -125,4 +126,26 @@ export async function saveTargetsAction(fields: { rev: number; utilisationTarget
   const actor = await clinicActionActor({ permission: "settings.setup" });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) } as SetupActionResult;
   return done(actor, "targets", (a) => saveTargetsFor(a, fields));
+}
+
+/* Healthcode set-up (src/server/pms/billing/healthcode-setup.ts, docs/clinic-system/healthcode.md). */
+export async function savePayerHealthcodeAction(referrerId: string, fields: PayerHealthcodeFields) {
+  const actor = await clinicActionActor({ permission: "settings.setup" });
+  if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) } as SetupActionResult;
+  return done(actor, "referrers", (a) => savePayerHealthcodeFor(a, String(referrerId), fields), (v) => v.id);
+}
+export async function saveHealthcodeSettingsAction(fields: HealthcodeSettingsFields) {
+  const actor = await clinicActionActor({ permission: "settings.setup" });
+  if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) } as SetupActionResult;
+  return done(actor, "billing", (a) => saveHealthcodeSettingsFor(a, fields));
+}
+export async function savePractitionerInsurerNumbersAction(practitionerId: string, rows: { referrerId: string; providerNumber?: string }[]) {
+  const actor = await clinicActionActor({ permission: "settings.setup" });
+  if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) } as SetupActionResult;
+  return done(actor, "practitioners", (a) => savePractitionerInsurerNumbersFor(a, String(practitionerId), rows), (v) => v.id);
+}
+export async function saveInsurerCodesAction(insurerId: string, rows: { serviceId: string; iscCode?: string }[]) {
+  const actor = await clinicActionActor({ permission: "settings.setup" });
+  if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) } as SetupActionResult;
+  return done(actor, "insurer-codes", (a) => saveInsurerCodesFor(a, String(insurerId), rows), (v) => v.id);
 }

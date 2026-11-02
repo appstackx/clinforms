@@ -89,7 +89,7 @@ Follow-up numbers (M9b polish, handover §19), owned exactly like the ranges abo
 `0182`–`0185`, reporting `0186`–`0187`, records `0188` (`extra` in `src/modules/pms/core/modules.ts`). M10 security
 fixes (handover §20): portal `0190` (clinic-device pairing).
 M10 performance (handover §20.4, additive indexes only, 0210–0219): diary `0210`, records `0211`, billing `0212`,
-foundation `0213`.
+foundation `0213`. Healthcode e-billing groundwork (11/2026, `docs/clinic-system/healthcode.md`): billing `0220`–`0229`.
 
 Postgres twin of `0NNN_name.sql` = `supabase/migrations/20261024000NNN_name.sql` (`2026102400` + the 4 digits + same
 name). Single source: `src/modules/pms/core/modules.ts`; `scripts/pms/contract.test.ts` fails on a number outside a
