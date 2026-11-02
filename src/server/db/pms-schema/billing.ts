@@ -319,6 +319,29 @@ export interface PmsPractitionerInsurerNumbersTable {
   updated_at: IsoTimestamp;
 }
 
+/** 0223 (Healthcode, HC09): a service's CCSD code. */
+export interface PmsServiceCodesTable {
+  tenant_id: string;
+  service_id: string;
+  rev: number;
+  ccsd_code: string | null;
+  updated_by: string | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
+/** 0223 (Healthcode, HC09): an insurer's own treatment code (ISC) for a service. */
+export interface PmsServiceInsurerCodesTable {
+  tenant_id: string;
+  service_id: string;
+  referrer_id: string;
+  rev: number;
+  isc_code: string;
+  updated_by: string | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
 export interface BillingTables {
   pms_billing_settings: PmsBillingSettingsTable;
   pms_service_vat: PmsServiceVatTable;
@@ -337,6 +360,8 @@ export interface BillingTables {
   pms_healthcode_settings: PmsHealthcodeSettingsTable;
   pms_site_healthcode: PmsSiteHealthcodeTable;
   pms_practitioner_insurer_numbers: PmsPractitionerInsurerNumbersTable;
+  pms_service_codes: PmsServiceCodesTable;
+  pms_service_insurer_codes: PmsServiceInsurerCodesTable;
 }
 
 /** Foreign-key order (parents first). */
@@ -358,6 +383,8 @@ export const BILLING_TABLES = [
   "pms_healthcode_settings",
   "pms_site_healthcode",
   "pms_practitioner_insurer_numbers",
+  "pms_service_codes",
+  "pms_service_insurer_codes",
 ] as const satisfies readonly (keyof BillingTables)[];
 
 export const BILLING_PRIMARY_KEYS: { readonly [T in (typeof BILLING_TABLES)[number]]: readonly (keyof BillingTables[T] & string)[] } = {
@@ -378,6 +405,8 @@ export const BILLING_PRIMARY_KEYS: { readonly [T in (typeof BILLING_TABLES)[numb
   pms_healthcode_settings: ["tenant_id"],
   pms_site_healthcode: ["tenant_id", "site_id"],
   pms_practitioner_insurer_numbers: ["tenant_id", "practitioner_id", "referrer_id"],
+  pms_service_codes: ["tenant_id", "service_id"],
+  pms_service_insurer_codes: ["tenant_id", "service_id", "referrer_id"],
 };
 
 /** Timestamp columns beyond created_at/updated_at (TEXT in SQLite, timestamptz in Postgres) – the D1 → Postgres copy. */

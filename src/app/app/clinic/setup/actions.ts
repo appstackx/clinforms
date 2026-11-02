@@ -32,7 +32,7 @@ import {
   type SetupResult,
   type SiteFields,
 } from "@/server/pms/reporting/setup";
-import { saveHealthcodeSettingsFor, savePayerHealthcodeFor, savePractitionerInsurerNumbersFor, type HealthcodeSettingsFields, type PayerHealthcodeFields } from "@/server/pms/billing/healthcode-setup";
+import { saveHealthcodeSettingsFor, saveInsurerCodesFor, savePayerHealthcodeFor, savePractitionerInsurerNumbersFor, type HealthcodeSettingsFields, type PayerHealthcodeFields } from "@/server/pms/billing/healthcode-setup";
 
 export type SetupActionResult = { ok: true; id?: string; message?: string } | { ok: false; error: string; fieldErrors?: Record<string, string> };
 
@@ -143,4 +143,9 @@ export async function savePractitionerInsurerNumbersAction(practitionerId: strin
   const actor = await clinicActionActor({ permission: "settings.setup" });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) } as SetupActionResult;
   return done(actor, "practitioners", (a) => savePractitionerInsurerNumbersFor(a, String(practitionerId), rows), (v) => v.id);
+}
+export async function saveInsurerCodesAction(insurerId: string, rows: { serviceId: string; iscCode?: string }[]) {
+  const actor = await clinicActionActor({ permission: "settings.setup" });
+  if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) } as SetupActionResult;
+  return done(actor, "insurer-codes", (a) => saveInsurerCodesFor(a, String(insurerId), rows), (v) => v.id);
 }

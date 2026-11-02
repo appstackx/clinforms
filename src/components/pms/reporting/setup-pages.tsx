@@ -102,14 +102,14 @@ function RoomForm({ siteId, room, onCreated }: { siteId: string; room: Room | nu
  * Services
  * ----------------------------------------------------------------------------------------------*/
 
-export function ServicesSetup({ services, serviceId }: { services: Service[]; serviceId: string | null }) {
+export function ServicesSetup({ services, serviceId, ccsd = {} }: { services: Service[]; serviceId: string | null; ccsd?: Record<string, string> }) {
   const router = useRouter();
   const chosen = serviceId === "new" ? null : (services.find((s) => s.id === serviceId) ?? null);
   const showForm = serviceId === "new" || chosen !== null;
   return (
     <SetupPage>
       <SetupHeader title="Services and durations" description="What can be booked, for how long, at what standard price, and whether patients can book it online." action={<NewButton href={`${BASE}/services?service=new`} label="Add service" testId="add-service" />} />
-      {showForm ? <ServiceForm key={chosen?.id ?? "new"} service={chosen} onDone={() => router.push(`${BASE}/services`)} /> : null}
+      {showForm ? <ServiceForm key={chosen?.id ?? "new"} service={chosen} ccsdCode={chosen ? (ccsd[chosen.id] ?? "") : ""} onDone={() => router.push(`${BASE}/services`)} /> : null}
       <ScrollRegion label="Services and durations" className="relative overflow-x-auto rounded-2xl border border-border bg-white">
         <table className="w-full min-w-[720px] border-collapse text-sm">
           <caption className="sr-only">Services</caption>
@@ -120,6 +120,7 @@ export function ServicesSetup({ services, serviceId }: { services: Service[]; se
               <th scope="col" className="px-4 py-2.5 text-right">Duration</th>
               <th scope="col" className="px-4 py-2.5 text-right">Standard price</th>
               <th scope="col" className="px-4 py-2.5">Online</th>
+              <th scope="col" className="px-4 py-2.5">CCSD code</th>
               <th scope="col" className="px-4 py-2.5">
                 <span className="sr-only">Change</span>
               </th>
@@ -133,6 +134,7 @@ export function ServicesSetup({ services, serviceId }: { services: Service[]; se
                 <td className="px-4 py-2.5 text-right tabular-nums">{s.durationMinutes} min</td>
                 <td className="px-4 py-2.5 text-right tabular-nums">{s.defaultPricePence === null ? "–" : formatPence(s.defaultPricePence)}</td>
                 <td className="px-4 py-2.5">{s.onlineBookable ? "Yes" : "No"}</td>
+                <td className="px-4 py-2.5 font-mono text-xs">{ccsd[s.id] ?? "–"}</td>
                 <td className="px-4 py-2.5 text-right">
                   <Link href={`${BASE}/services?service=${s.id}`} scroll={false} className={`text-primary-strong underline underline-offset-2 ${setupFocus}`}>
                     Change<span className="sr-only"> {s.name}</span>
@@ -147,8 +149,9 @@ export function ServicesSetup({ services, serviceId }: { services: Service[]; se
   );
 }
 
-function ServiceForm({ service, onDone }: { service: Service | null; onDone: () => void }) {
+function ServiceForm({ service, ccsdCode, onDone }: { service: Service | null; ccsdCode: string; onDone: () => void }) {
   const f = useSetupForm({
+    ccsdCode,
     name: service?.name ?? "",
     durationMinutes: String(service?.durationMinutes ?? 30),
     bufferMinutes: String(service?.bufferMinutes ?? 0),
@@ -191,6 +194,9 @@ function ServiceForm({ service, onDone }: { service: Service | null; onDone: () 
           </FormField>
           <FormField id="service-colour" label="Colour (#RRGGBB, optional)" error={f.fieldErrors.colour}>
             <TextInput value={f.values.colour} onChange={(e) => f.set("colour", e.target.value)} />
+          </FormField>
+          <FormField id="service-ccsd" label="CCSD code (optional)" hint="For insurer bills through Healthcode. Each insurer's own code goes under Insurer treatment codes." error={f.fieldErrors.ccsdCode}>
+            <TextInput value={f.values.ccsdCode} onChange={(e) => f.set("ccsdCode", e.target.value)} autoComplete="off" maxLength={20} data-testid="service-ccsd" />
           </FormField>
         </SetupGrid>
         <div className="flex flex-wrap gap-6">

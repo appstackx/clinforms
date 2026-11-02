@@ -11,9 +11,11 @@ import {
   HealthcodeSiteInputSchema,
   PayerHealthcodeInputSchema,
   ProviderNumberSchema,
+  TreatmentCodeSchema,
   pairKey,
   type HealthcodeSettings,
   type PractitionerInsurerNumber,
+  type ServiceInsurerCode,
   type HealthcodeSiteInput,
   type PayerHealthcode,
   type PayerHealthcodeInput,
@@ -218,5 +220,84 @@ export async function setPractitionerInsurerNumber(ctx: RepoContext, tenantId: s
       audit,
     ],
     { foreignKey: "That practitioner or insurer does not exist in this clinic." },
+  );
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * HC09 – a service's CCSD code and each insurer's treatment code (ISC) for it
+ * ----------------------------------------------------------------------------------------------*/
+
+const SVC = "pms_service_codes";
+const ISC = "pms_service_insurer_codes";
+
+/** CCSD codes by service id (services without one are left out). */
+export async function serviceCcsdCodes(ctx: RepoContext, tenantId: string): Promise<Map<string, string>> {
+  assertTenantId(tenantId);
+  return readOrEmpty(SVC, new Map<string, string>(), async () => {
+    const rows = await ctx.db.selectFrom(SVC).select(["service_id", "ccsd_code"]).where("tenant_id", "=", tenantId).limit(2000).execute();
+    return new Map(rows.filter((r) => r.ccsd_code).map((r) => [r.service_id, r.ccsd_code as string]));
+  });
+}
+
+export async function setServiceCcsdCode(ctx: RepoContext, tenantId: string, serviceId: string, code: string | null, actor: PmsActor): Promise<void> {
+  assertTenantId(tenantId);
+  assertId(serviceId, "service id");
+  const value = parseInput(TreatmentCodeSchema, code, "CCSD code") ?? null;
+  const at = nowIso(ctx);
+  await writeWithAudit(
+    ctx,
+    [
+      ctx.db
+        .insertInto(SVC)
+        .values({ tenant_id: tenantId, service_id: serviceId, rev: 1, ccsd_code: value, updated_by: actor.userId, created_at: at, updated_at: at })
+        .onConflict((oc) => oc.columns(["tenant_id", "service_id"]).doUpdateSet((eb) => ({ ccsd_code: value, rev: eb(`${SVC}.rev`, "+", 1), updated_by: actor.userId, updated_at: at }))),
+      pmsAuditQuery(ctx, tenantId, actor, { action: "pms.service_ccsd.set", targetType: "pms_service", targetId: serviceId, detail: { set: value !== null } }),
+    ],
+    { foreignKey: "That service does not exist in this clinic." },
+  );
+}
+
+/** Insurer treatment codes (key: pairKey(serviceId, referrerId)), optionally for some insurers only. */
+export async function serviceInsurerCodes(ctx: RepoContext, tenantId: string, referrerIds?: readonly string[]): Promise<Map<string, ServiceInsurerCode>> {
+  assertTenantId(tenantId);
+  return readOrEmpty(ISC, new Map<string, ServiceInsurerCode>(), async () => {
+    const out = new Map<string, ServiceInsurerCode>();
+    const cols = ["service_id", "referrer_id", "isc_code"] as const;
+    const add = (rows: { service_id: string; referrer_id: string; isc_code: string }[]) => {
+      for (const r of rows) out.set(pairKey(r.service_id, r.referrer_id), { serviceId: r.service_id, referrerId: r.referrer_id, iscCode: r.isc_code });
+    };
+    if (referrerIds === undefined) {
+      add(await ctx.db.selectFrom(ISC).select(cols).where("tenant_id", "=", tenantId).limit(10000).execute());
+      return out;
+    }
+    for (const group of chunks(Array.from(new Set(referrerIds)))) {
+      if (group.length) add(await ctx.db.selectFrom(ISC).select(cols).where("tenant_id", "=", tenantId).where("referrer_id", "in", group).execute());
+    }
+    return out;
+  });
+}
+
+/** Sets (or, blank, removes) an insurer's treatment code for a service. */
+export async function setServiceInsurerCode(ctx: RepoContext, tenantId: string, serviceId: string, referrerId: string, code: string | null, actor: PmsActor): Promise<void> {
+  assertTenantId(tenantId);
+  assertId(serviceId, "service id");
+  assertId(referrerId, "payer account id");
+  const value = parseInput(TreatmentCodeSchema, code, "Insurer treatment code") ?? null;
+  const at = nowIso(ctx);
+  const audit = pmsAuditQuery(ctx, tenantId, actor, { action: "pms.service_insurer_code.set", targetType: "pms_service", targetId: serviceId, detail: { referrerId, set: value !== null } });
+  if (value === null) {
+    await writeWithAudit(ctx, [ctx.db.deleteFrom(ISC).where("tenant_id", "=", tenantId).where("service_id", "=", serviceId).where("referrer_id", "=", referrerId), audit]);
+    return;
+  }
+  await writeWithAudit(
+    ctx,
+    [
+      ctx.db
+        .insertInto(ISC)
+        .values({ tenant_id: tenantId, service_id: serviceId, referrer_id: referrerId, rev: 1, isc_code: value, updated_by: actor.userId, created_at: at, updated_at: at })
+        .onConflict((oc) => oc.columns(["tenant_id", "service_id", "referrer_id"]).doUpdateSet((eb) => ({ isc_code: value, rev: eb(`${ISC}.rev`, "+", 1), updated_by: actor.userId, updated_at: at }))),
+      audit,
+    ],
+    { foreignKey: "That service or insurer does not exist in this clinic." },
   );
 }

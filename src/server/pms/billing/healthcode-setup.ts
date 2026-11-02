@@ -4,16 +4,18 @@
  * ids read back from the member's clinic, inputs validated, the repository writes with its audit row, plain results.
  */
 import "server-only";
-export type { HealthcodeSettingsView, PayerHealthcodeView, PractitionerInsurerNumbersView } from "../../../modules/pms/billing/healthcode";
+export type { HealthcodeSettingsView, InsurerCodesView, PayerHealthcodeView, PractitionerInsurerNumbersView } from "../../../modules/pms/billing/healthcode";
 import { z } from "zod";
 import {
   HealthcodeSiteInputSchema,
   PayerHealthcodeInputSchema,
   ProviderNumberSchema,
+  TreatmentCodeSchema,
   diagnosisRequiredByDefault,
   pairKey,
   isHealthcodePayerKind,
   type HealthcodeSettingsView,
+  type InsurerCodesView,
   type PayerHealthcodeView,
   type PractitionerInsurerNumbersView,
 } from "../../../modules/pms/billing/healthcode";
@@ -24,12 +26,15 @@ import {
   getHealthcodeSettings,
   getPayerHealthcode,
   practitionerInsurerNumbers,
+  serviceCcsdCodes,
+  serviceInsurerCodes,
   setClinicHealthcode,
   setPayerHealthcode,
   setPractitionerInsurerNumber,
+  setServiceInsurerCode,
   setSiteHealthcode,
 } from "../../repos/pms/billing/healthcode";
-import { getPractitioner, listSites } from "../../repos/pms/directory";
+import { getPractitioner, listServices, listSites } from "../../repos/pms/directory";
 import { getReferrer, listReferrers } from "../../repos/pms/referrers";
 import { SETUP_MESSAGES, type SetupActor, type SetupResult } from "../reporting/setup";
 
@@ -202,5 +207,57 @@ export async function savePractitionerInsurerNumbersFor(actor: SetupActor, pract
       if (next !== before) await setPractitionerInsurerNumber(ctx, actor.tenantId, p.id, r.referrerId, next, actor.actor);
     }
     return ok({ id: p.id });
+  });
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * HC09 – insurer treatment codes (Set-up → Insurer treatment codes)
+ * ----------------------------------------------------------------------------------------------*/
+
+export async function insurerCodesFor(actor: SetupActor, insurerId: string | null): Promise<SetupResult<InsurerCodesView>> {
+  if (!actor.can("settings.setup")) return FORBIDDEN;
+  return setupAttempt("setup.insurer_codes", async () => {
+    const ctx = actor.repo();
+    const [insurers, services, ccsd] = await Promise.all([
+      listReferrers(ctx, actor.tenantId, { kind: "insurer", limit: 500 }),
+      listServices(ctx, actor.tenantId, { includeInactive: true }),
+      serviceCcsdCodes(ctx, actor.tenantId),
+    ]);
+    const chosen = insurers.find((i) => i.id === insurerId) ?? insurers[0] ?? null;
+    const codes = chosen ? await serviceInsurerCodes(ctx, actor.tenantId, [chosen.id]) : new Map();
+    return ok({
+      insurers: insurers.map((i) => ({ id: i.id, name: i.name })),
+      insurerId: chosen?.id ?? null,
+      services: services.map((s) => ({ id: s.id, name: s.name, active: s.active, ccsdCode: ccsd.get(s.id) ?? null, iscCode: chosen ? (codes.get(pairKey(s.id, chosen.id))?.iscCode ?? "") : "" })),
+      canEdit: actor.siteIds === null,
+    });
+  });
+}
+
+/** Saves one insurer's codes for the services given (blank = removed); only changed ones are written. */
+export async function saveInsurerCodesFor(actor: SetupActor, insurerId: string, rows: { serviceId: string; iscCode?: string }[]): Promise<SetupResult<{ id: string }>> {
+  if (!actor.can("settings.setup")) return FORBIDDEN;
+  if (actor.siteIds !== null) return WHOLE;
+  if (!plausibleId(insurerId)) return NOT_FOUND;
+  const list = (Array.isArray(rows) ? rows.slice(0, 1000) : []).map((r) => ({ serviceId: String(r?.serviceId ?? ""), iscCode: typeof r?.iscCode === "string" ? r.iscCode : "" }));
+  const fe: Record<string, string> = {};
+  for (const r of list) {
+    const p = TreatmentCodeSchema.safeParse(r.iscCode);
+    if (!p.success) fe[`isc-${r.serviceId}`] = p.error.issues[0]?.message ?? SETUP_MESSAGES.check;
+  }
+  if (Object.keys(fe).length) return fail(SETUP_MESSAGES.check, fe);
+  return setupAttempt("setup.insurer_codes_save", async () => {
+    const ctx = actor.repo();
+    const insurer = await getReferrer(ctx, actor.tenantId, insurerId);
+    if (!insurer || !isHealthcodePayerKind(insurer.kind)) return NOT_FOUND;
+    const services = new Set((await listServices(ctx, actor.tenantId, { includeInactive: true })).map((s) => s.id));
+    if (list.some((r) => !services.has(r.serviceId))) return NOT_FOUND;
+    const current = await serviceInsurerCodes(ctx, actor.tenantId, [insurer.id]);
+    for (const r of list) {
+      const next = (TreatmentCodeSchema.parse(r.iscCode) as string | null | undefined) ?? null;
+      const before = current.get(pairKey(r.serviceId, insurer.id))?.iscCode ?? null;
+      if (next !== before) await setServiceInsurerCode(ctx, actor.tenantId, r.serviceId, insurer.id, next, actor.actor);
+    }
+    return ok({ id: insurer.id });
   });
 }

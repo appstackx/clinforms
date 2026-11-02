@@ -141,3 +141,26 @@ export interface PractitionerInsurerNumbersView {
   insurers: { referrerId: string; name: string; providerNumber: string }[];
   canEdit: boolean;
 }
+
+/* ------------------------------------------------------------------------------------------------
+ * HC09 – treatment codes: a service's CCSD code and each insurer's own code (ISC) for it
+ * ----------------------------------------------------------------------------------------------*/
+
+/** A treatment code (CCSD or an insurer's ISC): letters, digits, "." and "-", up to 20. No values are built in. */
+export const TREATMENT_CODE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9.-]{0,19}$/;
+export const TreatmentCodeSchema = optionalCode(TREATMENT_CODE_PATTERN, "Letters, numbers, . and - only, up to 20 characters");
+
+export interface ServiceInsurerCode {
+  serviceId: string;
+  referrerId: string;
+  iscCode: string;
+}
+
+/** Set-up → Insurer treatment codes: one insurer at a time, a code per service. */
+export interface InsurerCodesView {
+  insurers: { id: string; name: string }[];
+  /** The insurer shown (null = the clinic has no insurer yet). */
+  insurerId: string | null;
+  services: { id: string; name: string; active: boolean; ccsdCode: string | null; iscCode: string }[];
+  canEdit: boolean;
+}

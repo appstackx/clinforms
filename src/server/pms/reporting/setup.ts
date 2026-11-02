@@ -35,6 +35,8 @@ import { scopeAllows, sitesInScope } from "../../../modules/pms/reporting/site-s
 import { logAuthEvent } from "../../email/log";
 import { RepoInputError } from "../../repos/context";
 import { getBillingSettings, updateBillingSettings } from "../../repos/pms/billing/settings";
+import { serviceCcsdCodes, setServiceCcsdCode } from "../../repos/pms/billing/healthcode";
+import { TreatmentCodeSchema } from "../../../modules/pms/billing/healthcode";
 import { payerContributionModes, setPayerContributionMode } from "../../repos/pms/billing/contribution-terms";
 import { createPractitioner, createRoom, createService, createSite, getPractitioner, getRoom, getService, getSite, listPractitioners, listRooms, listServices, listSites, updatePractitioner, updateRoom, updateService, updateSite } from "../../repos/pms/directory";
 import { createPriceList, getPriceList, listPriceListItems, listPriceLists, removePriceListItem, setPriceListItem, updatePriceList } from "../../repos/pms/price-lists";
@@ -308,9 +310,12 @@ export async function saveRoomFor(actor: SetupActor, input: { roomId?: string | 
  * Services (appointment types)
  * ----------------------------------------------------------------------------------------------*/
 
-export async function servicesScreenFor(actor: SetupActor): Promise<SetupResult<{ services: Service[] }>> {
+export async function servicesScreenFor(actor: SetupActor): Promise<SetupResult<{ services: Service[]; ccsd: Record<string, string> }>> {
   if (!actor.can("settings.setup")) return FORBIDDEN;
-  return attempt("setup.services", async () => ok({ services: await listServices(actor.repo(), actor.tenantId, { includeInactive: true }) }));
+  return attempt("setup.services", async () => {
+    const [services, ccsd] = await Promise.all([listServices(actor.repo(), actor.tenantId, { includeInactive: true }), serviceCcsdCodes(actor.repo(), actor.tenantId)]);
+    return ok({ services, ccsd: Object.fromEntries(ccsd) });
+  });
 }
 
 export interface ServiceFields {
@@ -323,6 +328,8 @@ export interface ServiceFields {
   colour?: string;
   onlineBookable?: boolean;
   active?: boolean;
+  /** The service's CCSD code (Healthcode groundwork, HC09); undefined = unchanged, "" = none. */
+  ccsdCode?: string;
 }
 
 export async function saveServiceFor(actor: SetupActor, f: ServiceFields): Promise<SetupResult<{ id: string }>> {
@@ -340,14 +347,24 @@ export async function saveServiceFor(actor: SetupActor, f: ServiceFields): Promi
   };
   const parsed = ServiceInputSchema.safeParse(input);
   if (!parsed.success) return invalid(parsed.error);
+  const ccsd = f.ccsdCode === undefined ? undefined : TreatmentCodeSchema.safeParse(f.ccsdCode);
+  if (ccsd && !ccsd.success) return fail(SETUP_MESSAGES.check, { ccsdCode: ccsd.error.issues[0]?.message ?? SETUP_MESSAGES.check });
+  const ccsdCode = ccsd?.success ? ((ccsd.data as string | null | undefined) ?? null) : undefined;
   return attempt("setup.service_save", async () => {
     const ctx = actor.repo();
+    const syncCcsd = async (serviceId: string) => {
+      if (ccsdCode === undefined) return;
+      const current = (await serviceCcsdCodes(ctx, actor.tenantId)).get(serviceId) ?? null;
+      if (current !== ccsdCode) await setServiceCcsdCode(ctx, actor.tenantId, serviceId, ccsdCode, actor.actor);
+    };
     if (f.serviceId) {
       if (!plausible(f.serviceId) || !(await getService(ctx, actor.tenantId, f.serviceId))) return NOT_FOUND;
       const saved = await updateService(ctx, actor.tenantId, f.serviceId, input as never, actor.actor);
+      if (saved) await syncCcsd(saved.id);
       return saved ? ok({ id: saved.id }) : NOT_FOUND;
     }
     const s = await createService(ctx, actor.tenantId, input as never, actor.actor);
+    await syncCcsd(s.id);
     return ok({ id: s.id });
   });
 }

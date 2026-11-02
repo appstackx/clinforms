@@ -10,8 +10,8 @@ import { RepoInputError, type RepoContext } from "../../../context";
 import { createReferrer } from "../../referrers";
 import { unscopedStatements, type GuardedDb } from "../../testing/guarded-db";
 import { healthcodeForSite } from "../../../../../modules/pms/billing/healthcode";
-import { createPractitioner, createSite } from "../../directory";
-import { getHealthcodeSettings, getPayerHealthcode, payerHealthcodes, practitionerInsurerNumbers, setPractitionerInsurerNumber, setClinicHealthcode, setPayerHealthcode, setSiteHealthcode } from "../healthcode";
+import { createPractitioner, createService, createSite } from "../../directory";
+import { getHealthcodeSettings, getPayerHealthcode, payerHealthcodes, practitionerInsurerNumbers, serviceCcsdCodes, serviceInsurerCodes, setPractitionerInsurerNumber, setServiceCcsdCode, setServiceInsurerCode, setClinicHealthcode, setPayerHealthcode, setSiteHealthcode } from "../healthcode";
 
 const A = "riverside-a";
 const B = "harbour-b";
@@ -34,6 +34,9 @@ export function defineHealthcodeRepoSuite(label: string, factory: () => Promise<
       id.prac = (await createPractitioner(ctx, A, { displayName: "Sarah Reid", registrationNumber: "PH-DEMO-01" }, ACTOR)).id;
       id.prac2 = (await createPractitioner(ctx, A, { displayName: "Tom Ellis", registrationNumber: "PH-DEMO-02" }, ACTOR)).id;
       id.insurer2 = (await createReferrer(ctx, A, { kind: "insurer", name: "Meadowbank Health (fictional)" }, ACTOR)).id;
+      id.ia = (await createService(ctx, A, { name: "Initial assessment", category: "initial", durationMinutes: 45 }, ACTOR)).id;
+      id.fu = (await createService(ctx, A, { name: "Follow-up", category: "follow_up", durationMinutes: 30 }, ACTOR)).id;
+      id.svcB = (await createService(ctx, B, { name: "Follow-up", durationMinutes: 30 }, ACTOR_B)).id;
       id.siteB = (await createSite(ctx, B, { name: "Harbour (fictional)" }, ACTOR_B)).id;
     });
     after(async () => {
@@ -94,6 +97,24 @@ export function defineHealthcodeRepoSuite(label: string, factory: () => Promise<
       await assert.rejects(setPractitionerInsurerNumber(ctx, B, id.prac, id.insurerB, "X1", ACTOR_B), (e: unknown) => e instanceof RepoInputError);
       assert.equal((await practitionerInsurerNumbers(ctx, B)).size, 0);
       assert.equal((await listAudit(ctx, A, { limit: 100 })).filter((e) => e.action === "pms.practitioner_insurer_number.set").length, 5);
+    });
+
+    it("HC09 treatment codes: a CCSD code per service, an insurer code per service and insurer; clear removes", async () => {
+      assert.equal((await serviceCcsdCodes(ctx, A)).size, 0);
+      await setServiceCcsdCode(ctx, A, id.ia, "CCSD-DEMO-1", ACTOR);
+      await setServiceCcsdCode(ctx, A, id.fu, "CCSD-DEMO-2", ACTOR);
+      await setServiceCcsdCode(ctx, A, id.fu, null, ACTOR);
+      assert.deepEqual(Array.from((await serviceCcsdCodes(ctx, A)).entries()), [[id.ia, "CCSD-DEMO-1"]]);
+      await setServiceInsurerCode(ctx, A, id.ia, id.insurer, "ISC-DEMO-IA", ACTOR);
+      await setServiceInsurerCode(ctx, A, id.fu, id.insurer, "ISC-DEMO-FU", ACTOR);
+      await setServiceInsurerCode(ctx, A, id.fu, id.insurer2, "ISC-MB-FU", ACTOR);
+      assert.equal((await serviceInsurerCodes(ctx, A)).size, 3);
+      assert.equal((await serviceInsurerCodes(ctx, A, [id.insurer])).get(`${id.fu}|${id.insurer}`)?.iscCode, "ISC-DEMO-FU");
+      await setServiceInsurerCode(ctx, A, id.fu, id.insurer2, " ", ACTOR);
+      assert.equal((await serviceInsurerCodes(ctx, A)).size, 2);
+      await assert.rejects(setServiceInsurerCode(ctx, A, id.svcB, id.insurer, "X1", ACTOR), (e: unknown) => e instanceof RepoInputError);
+      await assert.rejects(setServiceCcsdCode(ctx, A, id.ia, "has space", ACTOR), (e: unknown) => e instanceof RepoInputError);
+      assert.equal((await serviceInsurerCodes(ctx, B)).size, 0);
     });
 
     it("every statement names the clinic (tenant-scope guard)", () => {
