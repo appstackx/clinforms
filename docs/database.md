@@ -145,6 +145,11 @@ Rules for new migrations:
   tables are listed per module in `src/server/db/pms-schema/` and merged into `schema.ts` (no edit there). **Apply
   them before deploying code that reads them** (the app falls back to "Reports on, clinic system off" if it cannot).
 
+- *Healthcode groundwork (11/2026, branch `feat/healthcode-phase1`, `docs/clinic-system/healthcode.md`):* billing
+  `0220`–`0225` / `20261024000220`–`…0225`, new tables only (payer Healthcode details, Site ID / payee number, practitioner
+  numbers per insurer, CCSD and insurer treatment codes, case diagnosis, bill status). Reads treat a missing table as
+  "not set up yet". **Not applied anywhere yet.**
+
 Use `npm run db:migrate` for Supabase, not `supabase db push`: the CLI keeps its own history table
 (`supabase_migrations.schema_migrations`). Both are idempotent, so a mix does no harm, but stick to one.
 

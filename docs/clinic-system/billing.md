@@ -234,3 +234,20 @@ AppstackX is **not VAT registered** (Khuram 01/11/2026): no VAT is charged, scre
 | Repos | `src/server/repos/clinic-subscription.ts` |
 | Unit tests (payment service mocked) | `src/server/billing/billing.test.ts` → `testing/billing-suite.ts` on SQLite + PGlite (test:db) |
 | Browser, real TEST mode | `scripts/e2e/billing-subscriptions.cjs` (card 4242, Bacs 10-88-00 / 00012345, `stripe listen` forwarding to the one webhook) |
+
+## 11. Healthcode – planned recipient of insurer bills (data protection note)
+
+**Planned, not live.** No internal DPIA or sub-processor register exists in `docs/` yet, so it is recorded here:
+once a clinic switches on Healthcode file submission (not built – `HEALTHCODE_FILE_SUBMISSION_ENABLED = false`),
+**Healthcode Ltd** becomes a **recipient** of that clinic's insurer bills. Healthcode is the clinic's own clearing
+service (the clinic registers and contracts with it), so for that data flow Healthcode acts for the clinic, not as
+AppstackX's sub-processor; the DPA/DPIA must still name it as a recipient and describe the transfer.
+
+| What would be sent | Why | Legal basis (clinic) |
+|---|---|---|
+| Patient name, date of birth, postcode, membership number, authorisation code | identify the insured patient to the insurer | contract / legitimate interests; special category: Art. 9(2)(h) health care |
+| Diagnosis code (ICD-10), treatment dates and codes (ISC / CCSD), practitioner and provider numbers, amounts | the bill itself | as above |
+
+Before go-live: add Healthcode to the DPA's recipient list and the DPIA (data map, transfer, retention on
+Healthcode's side), confirm the transfer channel and security with Healthcode, and tell clinics in the set-up guide.
+Today nothing is sent: the data only sits in the clinic's own records. Detail: [`healthcode.md`](healthcode.md).
