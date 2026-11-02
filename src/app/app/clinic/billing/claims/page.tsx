@@ -5,6 +5,8 @@ import { BILLING_PATH, date, focusRing, money } from "@/components/pms/billing/f
 import { PmsNotice, pmsButtonVariants } from "@/components/pms/ui";
 import { requireClinicActor } from "@/server/pms/actor";
 import { claimsFor } from "@/server/pms/billing/claims";
+import { healthcodeClaimsFor } from "@/server/pms/billing/healthcode";
+import { HealthcodeClaims } from "@/components/pms/billing/healthcode-claims";
 import { ScrollRegion } from "@/components/pms/ui/scroll-region";
 
 export const dynamic = "force-dynamic";
@@ -20,21 +22,29 @@ const field = "h-9 rounded-lg border border-[#CBD5E1] bg-white px-3 text-sm text
  * /app/clinic/billing/claims (K2-BILL-011): choose a payer account and the invoice dates → the issued invoices to
  * claim → "Download claims file" (CSV, one row per treatment, each invoice logged as sent). Healthcode e-billing is
  * listed as not connected. billing.view; the download also reports.export (checked again on the server).
+ * ?tab=healthcode (HC12): issued insurer invoices split into Ready / Needs review, and the export log by batch.
  */
 export default async function ClaimsPage({ searchParams }: { searchParams: Record<string, string | string[] | undefined> }) {
   const actor = await requireClinicActor({ permission: "billing.view" });
+  const tab = one(searchParams.tab) === "healthcode" ? "healthcode" : "file";
+  if (tab === "healthcode") {
+    const hc = await healthcodeClaimsFor(actor, { payerReferrerId: one(searchParams.payer) || undefined, from: one(searchParams.from) || undefined, until: one(searchParams.until) || undefined });
+    return (
+      <ClaimsShell tab="healthcode">
+        {hc.ok ? (
+          <HealthcodeClaims view={hc.value} />
+        ) : (
+          <p role="alert" className="text-sm text-destructive-strong">
+            {hc.error}
+          </p>
+        )}
+      </ClaimsShell>
+    );
+  }
   const r = await claimsFor(actor, { payerReferrerId: one(searchParams.payer) || undefined, from: one(searchParams.from) || undefined, until: one(searchParams.until) || undefined, includeSent: one(searchParams.sent) === "1" });
   const v = r.ok ? r.value : null;
   return (
-    <div className="mx-auto flex w-full min-w-0 max-w-[1080px] flex-col gap-4">
-      <nav aria-label="Breadcrumb" className="text-sm text-[#475569]">
-        <Link href={BILLING_PATH} className={cn("text-primary-strong underline underline-offset-2", focusRing)}>
-          Billing
-        </Link>
-        <span aria-hidden> / </span>
-        <span>Insurer claims</span>
-      </nav>
-      <h1 className="text-2xl font-semibold text-foreground">Insurer claims</h1>
+    <ClaimsShell tab="file">
       <p className="text-sm text-[#475569]">The claims file lists the issued invoices of one payer account, one row per treatment, with the membership number, claim reference and authorisation code – to upload to the insurer&apos;s provider portal or send as agreed with them.</p>
       {!r.ok ? (
         <p role="alert" className="text-sm text-destructive-strong">
@@ -143,6 +153,44 @@ export default async function ClaimsPage({ searchParams }: { searchParams: Recor
           </section>
         </>
       ) : null}
+    </ClaimsShell>
+  );
+}
+
+/** The page frame: breadcrumb, title and the two tabs (links – each tab is its own address). */
+function ClaimsShell({ tab, children }: { tab: "file" | "healthcode"; children: React.ReactNode }) {
+  const tabs = [
+    { id: "file", label: "Claims file", href: `${BILLING_PATH}/claims` },
+    { id: "healthcode", label: "Healthcode", href: `${BILLING_PATH}/claims?tab=healthcode` },
+  ] as const;
+  return (
+    <div className="mx-auto flex w-full min-w-0 max-w-[1080px] flex-col gap-4">
+      <nav aria-label="Breadcrumb" className="text-sm text-[#475569]">
+        <Link href={BILLING_PATH} className={cn("text-primary-strong underline underline-offset-2", focusRing)}>
+          Billing
+        </Link>
+        <span aria-hidden> / </span>
+        <span>Insurer claims</span>
+      </nav>
+      <h1 className="text-2xl font-semibold text-foreground">Insurer claims</h1>
+      <nav aria-label="Claims" className="flex gap-1 overflow-x-auto border-b border-border">
+        {tabs.map((t) => (
+          <Link
+            key={t.id}
+            href={t.href}
+            aria-current={tab === t.id ? "page" : undefined}
+            data-testid={`claims-tab-${t.id}`}
+            className={cn(
+              "-mb-px inline-flex h-11 items-center whitespace-nowrap border-b-2 px-3 text-sm font-medium",
+              tab === t.id ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
+              focusRing,
+            )}
+          >
+            {t.label}
+          </Link>
+        ))}
+      </nav>
+      {children}
     </div>
   );
 }

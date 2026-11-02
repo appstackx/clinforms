@@ -177,3 +177,40 @@ export interface InvoiceHealthcodeView {
   caseDiagnosisCode: string | null;
   canEditDiagnosis: boolean;
 }
+
+/* ------------------------------------------------------------------------------------------------
+ * HC12 – the claims page's Healthcode tab
+ * ----------------------------------------------------------------------------------------------*/
+
+/**
+ * Sending the Healthcode file. OFF until Healthcode's file specification is in and the clinic's submission is
+ * switched on (docs/clinic-system/healthcode.md): the button stays disabled and nothing is ever sent.
+ */
+export const HEALTHCODE_FILE_SUBMISSION_ENABLED = false;
+
+export const HEALTHCODE_FILE_OFF_NOTE = "Available once Healthcode file submission is switched on";
+
+export interface HealthcodeClaimRow {
+  invoiceId: string;
+  number: string;
+  issuedOn: string;
+  patientName: string;
+  payerName: string;
+  totalPence: number;
+  siteCode: string | null;
+  issues: { message: string; fix: { label: string; href: string } | null }[];
+}
+
+export interface HealthcodeClaimsView {
+  payers: { id: string; name: string }[];
+  query: { payerReferrerId: string | null; from: string; until: string };
+  ready: HealthcodeClaimRow[];
+  needsReview: HealthcodeClaimRow[];
+  /** Plain notes about the ready batch (one Site ID per file). */
+  notes: string[];
+  /** More invoices than are checked at once (the rest: choose a shorter range). */
+  truncated: boolean;
+  batches: { batchRef: string; channel: string; channelLabel: string; invoices: number; createdAt: string }[];
+  fileEnabled: boolean;
+  fileNote: string;
+}

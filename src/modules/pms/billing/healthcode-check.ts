@@ -145,7 +145,7 @@ export function checkHealthcodeInvoice(f: HealthcodeInvoiceFacts): HealthcodeChe
 
   if (blank(f.diagnosisCode)) {
     if (f.payer.diagnosisRequired) add("diagnosis_missing", `Add a diagnosis code – ${f.payer.name} needs one on every bill.`, { label: "Open the invoice", href: invoiceHref });
-  } else if (!isValidIcd10(f.diagnosisCode)) add("diagnosis_format", `Change the diagnosis code "${f.diagnosisCode}" to ICD-10 format (for example M54.5).`, { label: "Open the invoice", href: invoiceHref });
+  } else if (!isValidIcd10(f.diagnosisCode)) add("diagnosis_format", "Change the diagnosis code to ICD-10 format (for example M54.5).", { label: "Open the invoice", href: invoiceHref });
 
   if (treatments.length === 0) add("no_treatments", "Add the treatments to the invoice – Healthcode bills list each one.", { label: "Open the invoice", href: invoiceHref });
   for (const l of treatments) {

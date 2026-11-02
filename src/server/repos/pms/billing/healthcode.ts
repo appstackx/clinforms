@@ -371,3 +371,30 @@ export async function setInvoiceDiagnosis(ctx: RepoContext, tenantId: string, in
   await pmsAudit(ctx, tenantId, actor, { action: "pms.invoice.diagnosis_set", targetType: "pms_invoice", targetId: invoiceId, detail: { set: value !== null } });
   return { ok: true, code: value };
 }
+
+/* ------------------------------------------------------------------------------------------------
+ * HC12 – the export log by batch (pms_invoice_exports, 0130)
+ * ----------------------------------------------------------------------------------------------*/
+
+export interface ExportBatch {
+  batchRef: string;
+  channel: string;
+  invoices: number;
+  createdAt: string;
+  createdBy: string | null;
+}
+
+/** The latest export batches, newest first (counts only – no patient data). */
+export async function listExportBatches(ctx: RepoContext, tenantId: string, options: { limit?: number } = {}): Promise<ExportBatch[]> {
+  assertTenantId(tenantId);
+  const limit = Math.min(Math.max(1, Math.floor(options.limit ?? 20)), 100);
+  const rows = await ctx.db
+    .selectFrom("pms_invoice_exports")
+    .select((eb) => ["batch_ref", "channel", eb.fn.countAll<number>().as("n"), eb.fn.min("created_at").as("at"), eb.fn.min("created_by").as("by")])
+    .where("tenant_id", "=", tenantId)
+    .groupBy(["batch_ref", "channel"])
+    .orderBy("at", "desc")
+    .limit(limit)
+    .execute();
+  return rows.map((r) => ({ batchRef: r.batch_ref, channel: r.channel, invoices: Number(r.n), createdAt: (r.at as unknown) instanceof Date ? (r.at as unknown as Date).toISOString() : new Date(String(r.at)).toISOString(), createdBy: (r.by as string | null) ?? null }));
+}
