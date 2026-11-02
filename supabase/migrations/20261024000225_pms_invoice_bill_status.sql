@@ -12,7 +12,7 @@ create table if not exists public.pms_invoice_bill_status (
   created_at timestamptz not null,
   updated_at timestamptz not null,
   primary key (tenant_id, invoice_id),
-  foreign key (tenant_id, invoice_id) references public.pms_invoices (tenant_id, id)
+  foreign key (tenant_id, invoice_id) references public.pms_invoices (tenant_id, id) on delete cascade
 );
 
 alter table public.pms_invoice_bill_status enable row level security;

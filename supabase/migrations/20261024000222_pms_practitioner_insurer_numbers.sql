@@ -13,8 +13,8 @@ create table if not exists public.pms_practitioner_insurer_numbers (
   created_at timestamptz not null,
   updated_at timestamptz not null,
   primary key (tenant_id, practitioner_id, referrer_id),
-  foreign key (tenant_id, practitioner_id) references public.pms_practitioners (tenant_id, id),
-  foreign key (tenant_id, referrer_id) references public.pms_referrers (tenant_id, id)
+  foreign key (tenant_id, practitioner_id) references public.pms_practitioners (tenant_id, id) on delete cascade,
+  foreign key (tenant_id, referrer_id) references public.pms_referrers (tenant_id, id) on delete cascade
 );
 
 create index if not exists pms_practitioner_insurer_numbers_referrer on public.pms_practitioner_insurer_numbers (tenant_id, referrer_id);

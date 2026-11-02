@@ -10,7 +10,8 @@ create table if not exists public.pms_healthcode_settings (
   payee_provider_number text,
   updated_by text,
   created_at timestamptz not null,
-  updated_at timestamptz not null
+  updated_at timestamptz not null,
+  foreign key (tenant_id) references public.pms_billing_settings (tenant_id) on delete cascade
 );
 
 create table if not exists public.pms_site_healthcode (
@@ -23,7 +24,7 @@ create table if not exists public.pms_site_healthcode (
   created_at timestamptz not null,
   updated_at timestamptz not null,
   primary key (tenant_id, site_id),
-  foreign key (tenant_id, site_id) references public.pms_sites (tenant_id, id)
+  foreign key (tenant_id, site_id) references public.pms_sites (tenant_id, id) on delete cascade
 );
 
 alter table public.pms_healthcode_settings enable row level security;

@@ -14,8 +14,8 @@ CREATE TABLE IF NOT EXISTS pms_practitioner_insurer_numbers (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   PRIMARY KEY (tenant_id, practitioner_id, referrer_id),
-  FOREIGN KEY (tenant_id, practitioner_id) REFERENCES pms_practitioners (tenant_id, id),
-  FOREIGN KEY (tenant_id, referrer_id) REFERENCES pms_referrers (tenant_id, id)
+  FOREIGN KEY (tenant_id, practitioner_id) REFERENCES pms_practitioners (tenant_id, id) ON DELETE CASCADE,
+  FOREIGN KEY (tenant_id, referrer_id) REFERENCES pms_referrers (tenant_id, id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS pms_practitioner_insurer_numbers_referrer ON pms_practitioner_insurer_numbers (tenant_id, referrer_id);

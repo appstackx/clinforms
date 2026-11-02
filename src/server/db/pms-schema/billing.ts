@@ -441,5 +441,22 @@ export const BILLING_PRIMARY_KEYS: { readonly [T in (typeof BILLING_TABLES)[numb
 /** Timestamp columns beyond created_at/updated_at (TEXT in SQLite, timestamptz in Postgres) – the D1 → Postgres copy. */
 export const BILLING_TIMESTAMP_COLUMNS: readonly string[] = ["issued_at", "cancelled_at", "exported_at", "reversed_at", "last_checked_at", "voided_at", "removed_at"];
 
+/**
+ * Healthcode groundwork tables (0220–0225): each row hangs off one parent row (a payer account, the clinic's billing
+ * settings, a site, practitioner, service, case or invoice) by a foreign key with ON DELETE CASCADE, so offboarding deletes them with their parents
+ * and does not name them in its batch (the gateway's statement limit – src/server/auth/offboard-batch.test.ts). They
+ * are still exported and counted like every other table.
+ */
+export const BILLING_CASCADE_DELETED_TABLES: readonly (typeof BILLING_TABLES)[number][] = [
+  "pms_payer_healthcode",
+  "pms_healthcode_settings",
+  "pms_site_healthcode",
+  "pms_practitioner_insurer_numbers",
+  "pms_service_codes",
+  "pms_service_insurer_codes",
+  "pms_case_diagnosis",
+  "pms_invoice_bill_status",
+];
+
 /** Every billing table holds one clinic's data (offboarding exports them decrypted, then deletes them). */
 export const BILLING_TENANT_TABLES: readonly (typeof BILLING_TABLES)[number][] = BILLING_TABLES;

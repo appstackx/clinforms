@@ -15,5 +15,5 @@ CREATE TABLE IF NOT EXISTS pms_case_diagnosis (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   PRIMARY KEY (tenant_id, id),
-  FOREIGN KEY (tenant_id, id) REFERENCES pms_cases (tenant_id, id)
+  FOREIGN KEY (tenant_id, id) REFERENCES pms_cases (tenant_id, id) ON DELETE CASCADE
 );

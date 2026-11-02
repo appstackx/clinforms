@@ -10,7 +10,7 @@
 import type { Kysely } from "kysely";
 import type { DataCipher } from "../crypto/envelope";
 import type { BatchQuery } from "../db/batch";
-import { PMS_PRIMARY_KEYS, PMS_TENANT_TABLES, type PmsTableName } from "../db/pms-schema";
+import { PMS_CASCADE_DELETED_TABLES, PMS_PRIMARY_KEYS, PMS_TENANT_TABLES, type PmsTableName } from "../db/pms-schema";
 import type { Database } from "../db/schema";
 import { decryptField } from "../repos/pms/context";
 import { isMissingPmsTable } from "./missing-table";
@@ -105,6 +105,7 @@ export async function exportPmsData(
  * `keep`: tables left alone (the local demo seed's --fresh keeps the packages and the demo flag).
  * `only`: just these tables (offboarding: the tables that hold the clinic's rows – one statement per table counts
  * against the gateway's GATEWAY_MAX_STATEMENTS, and a table that does not exist yet must not be named).
+ * PMS_CASCADE_DELETED_TABLES are left out: their rows go with their parents' (ON DELETE CASCADE).
  */
 export function deletePmsQueries(
   db: Kysely<Database>,
@@ -115,6 +116,8 @@ export function deletePmsQueries(
   const only = options.only ? new Set(options.only) : null;
   return PMS_TENANT_TABLES.slice()
     .reverse()
+    // Tables removed with their parent rows (ON DELETE CASCADE) are never named: one statement fewer each.
+    .filter((table) => !PMS_CASCADE_DELETED_TABLES.has(table))
     .filter((table) => !keep.has(table) && (!only || only.has(table)))
     .map((table) => loose(db).deleteFrom(table).where("tenant_id", "=", tenantId));
 }

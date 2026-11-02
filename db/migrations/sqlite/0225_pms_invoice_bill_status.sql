@@ -14,5 +14,5 @@ CREATE TABLE IF NOT EXISTS pms_invoice_bill_status (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   PRIMARY KEY (tenant_id, invoice_id),
-  FOREIGN KEY (tenant_id, invoice_id) REFERENCES pms_invoices (tenant_id, id)
+  FOREIGN KEY (tenant_id, invoice_id) REFERENCES pms_invoices (tenant_id, id) ON DELETE CASCADE
 );

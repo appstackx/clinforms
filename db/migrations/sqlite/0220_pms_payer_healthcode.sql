@@ -17,5 +17,5 @@ CREATE TABLE IF NOT EXISTS pms_payer_healthcode (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   PRIMARY KEY (tenant_id, referrer_id),
-  FOREIGN KEY (tenant_id, referrer_id) REFERENCES pms_referrers (tenant_id, id)
+  FOREIGN KEY (tenant_id, referrer_id) REFERENCES pms_referrers (tenant_id, id) ON DELETE CASCADE
 );

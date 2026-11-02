@@ -56,6 +56,11 @@ Billing owns `0220`–`0229` (`src/modules/pms/core/modules.ts`). Each SQLite fi
 | `0224_pms_case_diagnosis.sql` | `20261024000224_pms_case_diagnosis.sql` | `pms_case_diagnosis` (`id` = the case id, so the offboarding export decrypts it) |
 | `0225_pms_invoice_bill_status.sql` | `20261024000225_pms_invoice_bill_status.sql` | `pms_invoice_bill_status` |
 
+Every foreign key is `ON DELETE CASCADE` to its parent row (payer account, the clinic's `pms_billing_settings` row,
+site, practitioner, service, case, invoice): offboarding deletes these rows with their parents and does not name the
+tables in its one-batch delete (the gateway's 100-statement limit; `PMS_CASCADE_DELETED_TABLES`). Nothing in the app
+hard-deletes those parents otherwise.
+
 Production (Supabase): apply with the usual runner (session pooler, `CLINFORMS_DB=postgres npm run db:migrate`)
 **only with Khuram's go**. All tables are in `src/server/db/pms-schema/billing.ts`, so the D1 → Postgres copy and
 offboarding (export + delete) include them.

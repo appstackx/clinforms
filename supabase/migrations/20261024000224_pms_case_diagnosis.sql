@@ -12,7 +12,7 @@ create table if not exists public.pms_case_diagnosis (
   created_at timestamptz not null,
   updated_at timestamptz not null,
   primary key (tenant_id, id),
-  foreign key (tenant_id, id) references public.pms_cases (tenant_id, id)
+  foreign key (tenant_id, id) references public.pms_cases (tenant_id, id) on delete cascade
 );
 
 alter table public.pms_case_diagnosis enable row level security;

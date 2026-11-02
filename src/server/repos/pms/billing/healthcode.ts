@@ -27,6 +27,7 @@ import { OptionalIcd10Schema } from "../../../../modules/pms/billing/icd10";
 import type { PmsActor } from "../../../../modules/pms/core/types";
 import { isMissingPmsTable } from "../../../pms/missing-table";
 import { assertId, assertTenantId, decryptField, encryptField, nowIso, num, parseInput, pmsAudit, pmsAuditQuery, writeWithAudit, type RepoContext } from "../context";
+import { ensureSettingsQuery } from "./settings";
 import { chunks } from "./shared";
 
 const PAYER = "pms_payer_healthcode";
@@ -143,6 +144,8 @@ export async function setClinicHealthcode(ctx: RepoContext, tenantId: string, in
   const values = { site_code: d.siteCode ?? null, payee_provider_number: d.payeeProviderNumber ?? null };
   const at = nowIso(ctx);
   await writeWithAudit(ctx, [
+    // The row hangs off the clinic's billing settings row (deleted with it at offboarding): create that first if missing.
+    ensureSettingsQuery(ctx, tenantId, at),
     ctx.db
       .insertInto(SETTINGS)
       .values({ tenant_id: tenantId, rev: 1, ...values, updated_by: actor.userId, created_at: at, updated_at: at })

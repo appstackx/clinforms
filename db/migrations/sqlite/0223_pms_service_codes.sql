@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS pms_service_codes (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   PRIMARY KEY (tenant_id, service_id),
-  FOREIGN KEY (tenant_id, service_id) REFERENCES pms_services (tenant_id, id)
+  FOREIGN KEY (tenant_id, service_id) REFERENCES pms_services (tenant_id, id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS pms_service_insurer_codes (
@@ -27,8 +27,8 @@ CREATE TABLE IF NOT EXISTS pms_service_insurer_codes (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   PRIMARY KEY (tenant_id, service_id, referrer_id),
-  FOREIGN KEY (tenant_id, service_id) REFERENCES pms_services (tenant_id, id),
-  FOREIGN KEY (tenant_id, referrer_id) REFERENCES pms_referrers (tenant_id, id)
+  FOREIGN KEY (tenant_id, service_id) REFERENCES pms_services (tenant_id, id) ON DELETE CASCADE,
+  FOREIGN KEY (tenant_id, referrer_id) REFERENCES pms_referrers (tenant_id, id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS pms_service_insurer_codes_referrer ON pms_service_insurer_codes (tenant_id, referrer_id);

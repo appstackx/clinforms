@@ -15,7 +15,7 @@ create table if not exists public.pms_payer_healthcode (
   created_at timestamptz not null,
   updated_at timestamptz not null,
   primary key (tenant_id, referrer_id),
-  foreign key (tenant_id, referrer_id) references public.pms_referrers (tenant_id, id)
+  foreign key (tenant_id, referrer_id) references public.pms_referrers (tenant_id, id) on delete cascade
 );
 
 alter table public.pms_payer_healthcode enable row level security;

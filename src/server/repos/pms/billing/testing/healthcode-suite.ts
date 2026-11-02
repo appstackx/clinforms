@@ -12,6 +12,9 @@ import { createCase } from "../../cases";
 import { createPatient } from "../../patients";
 import { createDraftInvoice, getInvoice } from "../invoices";
 import { unscopedStatements, type GuardedDb } from "../../testing/guarded-db";
+import { runBatch } from "../../../../db/batch";
+import { BILLING_CASCADE_DELETED_TABLES } from "../../../../db/pms-schema/billing";
+import { countPmsRows, deletePmsQueries } from "../../../../pms/offboard";
 import { healthcodeForSite } from "../../../../../modules/pms/billing/healthcode";
 import { createPractitioner, createService, createSite } from "../../directory";
 import { billStatuses, caseDiagnoses, getHealthcodeSettings, setBillStatus, getPayerHealthcode, setCaseDiagnosis, setInvoiceDiagnosis, payerHealthcodes, practitionerInsurerNumbers, serviceCcsdCodes, serviceInsurerCodes, setPractitionerInsurerNumber, setServiceCcsdCode, setServiceInsurerCode, setClinicHealthcode, setPayerHealthcode, setSiteHealthcode } from "../healthcode";
@@ -161,6 +164,23 @@ export function defineHealthcodeRepoSuite(label: string, factory: () => Promise<
       await assert.rejects(setBillStatus(ctx, B, id.invoice, "paid", ACTOR_B), (e: unknown) => e instanceof RepoInputError);
       const rows = (await listAudit(ctx, A, { limit: 200 })).filter((e) => e.action === "pms.invoice.bill_status");
       assert.deepEqual(rows.map((r) => r.detail).reverse(), [{ from: "none", to: "exported" }, { from: "exported", to: "failed" }, { from: "failed", to: "none" }]);
+    });
+
+    it("offboarding: the Healthcode rows go with their parents (ON DELETE CASCADE) – none is named, none is left", async () => {
+      await setSiteHealthcode(ctx, A, id.site1, { siteCode: "SITE-DEMO-9" }, ACTOR);
+      await setPractitionerInsurerNumber(ctx, A, id.prac, id.insurer2, "MB-DEMO-9", ACTOR);
+      await setServiceCcsdCode(ctx, A, id.fu, "CCSD-DEMO-9", ACTOR);
+      await setCaseDiagnosis(ctx, A, id.case, "M75.1", ACTOR);
+      await setBillStatus(ctx, A, id.invoice, "paid", ACTOR);
+      const before = await countPmsRows(suite.db, A);
+      for (const t of BILLING_CASCADE_DELETED_TABLES) assert.ok((before[t] ?? 0) > 0, `${t} has rows to begin with`);
+      const queries = deletePmsQueries(suite.db, A, { only: Object.keys(before) });
+      const named = queries.map((q) => ("compile" in q && typeof q.compile === "function" ? q.compile().sql : ""));
+      for (const t of BILLING_CASCADE_DELETED_TABLES) assert.ok(!named.some((sql) => sql.includes(`"${t}"`)), `${t} is not named`);
+      await runBatch(suite.db, queries);
+      const after = await countPmsRows(suite.db, A);
+      assert.deepEqual(after, {}, "nothing of clinic A is left");
+      assert.ok(Object.keys(await countPmsRows(suite.db, B)).length > 0, "clinic B untouched");
     });
 
     it("every statement names the clinic (tenant-scope guard)", () => {
