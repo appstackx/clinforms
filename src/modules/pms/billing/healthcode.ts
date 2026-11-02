@@ -176,6 +176,9 @@ export interface InvoiceHealthcodeView {
   diagnosisCode: string | null;
   caseDiagnosisCode: string | null;
   canEditDiagnosis: boolean;
+  /** HC13: the bill status (null = not sent yet); settable on issued invoices with billing.edit. */
+  billStatus: HealthcodeBillStatus | null;
+  canSetBillStatus: boolean;
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -198,6 +201,8 @@ export interface HealthcodeClaimRow {
   payerName: string;
   totalPence: number;
   siteCode: string | null;
+  /** HC13: the bill status set by hand (null = not sent yet). */
+  billStatus: HealthcodeBillStatus | null;
   issues: { message: string; fix: { label: string; href: string } | null }[];
 }
 
@@ -213,4 +218,47 @@ export interface HealthcodeClaimsView {
   batches: { batchRef: string; channel: string; channelLabel: string; invoices: number; createdAt: string }[];
   fileEnabled: boolean;
   fileNote: string;
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * HC13 – an insurer invoice's bill status with Healthcode (set by hand for now)
+ * ----------------------------------------------------------------------------------------------*/
+
+export const HEALTHCODE_BILL_STATUSES = ["exported", "validated", "failed", "collected", "paid"] as const;
+export type HealthcodeBillStatus = (typeof HEALTHCODE_BILL_STATUSES)[number];
+export const HealthcodeBillStatusSchema = z.union([z.enum(HEALTHCODE_BILL_STATUSES), z.null()]);
+
+export function isHealthcodeBillStatus(v: unknown): v is HealthcodeBillStatus {
+  return typeof v === "string" && (HEALTHCODE_BILL_STATUSES as readonly string[]).includes(v);
+}
+
+export const HEALTHCODE_BILL_STATUS_LABELS: Readonly<Record<HealthcodeBillStatus, string>> = {
+  exported: "Exported",
+  validated: "Validated",
+  failed: "Failed",
+  collected: "Collected",
+  paid: "Paid",
+};
+
+export const HEALTHCODE_BILL_STATUS_HINTS: Readonly<Record<HealthcodeBillStatus, string>> = {
+  exported: "The bill has gone to Healthcode.",
+  validated: "Healthcode has accepted the bill's details.",
+  failed: "Healthcode sent the bill back – put it right and send it again.",
+  collected: "The insurer has collected the bill.",
+  paid: "The insurer has paid the bill.",
+};
+
+/** Pill tone per status (the shell's StatusPill palette names). */
+export const HEALTHCODE_BILL_STATUS_TONES: Readonly<Record<HealthcodeBillStatus, "info" | "success" | "warning" | "neutral">> = {
+  exported: "info",
+  validated: "info",
+  failed: "warning",
+  collected: "neutral",
+  paid: "success",
+};
+
+export const NO_BILL_STATUS_LABEL = "Not sent yet";
+
+export function billStatusLabel(status: HealthcodeBillStatus | null | undefined): string {
+  return status ? HEALTHCODE_BILL_STATUS_LABELS[status] : NO_BILL_STATUS_LABEL;
 }

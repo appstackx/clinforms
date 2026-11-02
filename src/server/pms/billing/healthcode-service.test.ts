@@ -17,7 +17,8 @@ import { createReferrer } from "../../repos/pms/referrers";
 import { createGuardedPgliteDb, createGuardedSqliteDb, unscopedStatements, type GuardedDb } from "../../repos/pms/testing/guarded-db";
 import type { SetupActor } from "../reporting/setup";
 import { testActor } from "./access";
-import { caseDiagnosisFor, healthcodeClaimsFor, invoiceHealthcodeFor, setCaseDiagnosisFor, setInvoiceDiagnosisFor } from "./healthcode";
+import { caseDiagnosisFor, healthcodeClaimsFor, invoiceHealthcodeFor, setBillStatusFor, setCaseDiagnosisFor, setInvoiceDiagnosisFor } from "./healthcode";
+import { claimsFor } from "./claims";
 import {
   healthcodeSettingsFor,
   insurerCodesFor,
@@ -138,6 +139,21 @@ function suite(label: string, factory: () => Promise<GuardedDb>) {
       assert.ok(v.ok);
       assert.deepEqual(v.value.batches.map((b) => [b.batchRef, b.channelLabel, b.invoices]), [[batchRef, "Claims file (CSV)", 1]]);
       assert.match(v.value.batches[0].createdAt, /^2026-11-01T10:00:00/);
+    });
+
+    it("HC13: the bill status – billing.edit, issued insurer invoices only; shown on the invoice and in both claims lists", async () => {
+      const clinician = testActor(ctx, A, "clinician", { userId: "user_clin_01", name: "Carl Clinician (fictional)" });
+      assert.equal((await setBillStatusFor(clinician, id.invoice, "exported")).ok, false);
+      assert.equal((await setBillStatusFor(owner, id.invoice, "lost")).ok, false);
+      assert.ok((await setBillStatusFor(owner, id.invoice, "validated")).ok);
+      const panel = await invoiceHealthcodeFor(owner, id.invoice);
+      assert.ok(panel.ok && panel.value?.billStatus === "validated" && panel.value.canSetBillStatus);
+      const hc = await healthcodeClaimsFor(owner, { from: "2026-10-01", until: "2026-11-01" });
+      assert.ok(hc.ok && hc.value.ready[0].billStatus === "validated");
+      const file = await claimsFor(owner, { payerReferrerId: id.insurer, from: "2026-10-01", until: "2026-11-01", includeSent: true });
+      assert.ok(file.ok && file.value.rows[0].billStatus === "validated");
+      const { invoice: draft } = await createDraftInvoice(ctx, A, { patientId: id.patient, caseId: id.case, siteId: id.site, billTo: "payer", lines: [{ kind: "item", description: "Report (fictional)", unitPricePence: 2000 }] }, SEED);
+      assert.equal((await setBillStatusFor(owner, draft.id, "exported")).ok, false);
     });
 
     it("every statement names the clinic (tenant-scope guard)", () => {

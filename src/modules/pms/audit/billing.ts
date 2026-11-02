@@ -36,6 +36,7 @@ export const BILLING_AUDIT_LABELS: Readonly<Record<string, string>> = {
   "pms.service_insurer_code.set": "An insurer's treatment code for a service changed",
   "pms.case_diagnosis.set": "Diagnosis code of a case changed",
   "pms.invoice.diagnosis_set": "Diagnosis code of an insurer invoice changed",
+  "pms.invoice.bill_status": "Healthcode bill status of an invoice changed",
 };
 
 /** Names of the record types its audit rows point at (target_type → label). */

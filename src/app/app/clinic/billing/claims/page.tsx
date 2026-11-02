@@ -7,6 +7,7 @@ import { requireClinicActor } from "@/server/pms/actor";
 import { claimsFor } from "@/server/pms/billing/claims";
 import { healthcodeClaimsFor } from "@/server/pms/billing/healthcode";
 import { HealthcodeClaims } from "@/components/pms/billing/healthcode-claims";
+import { BillStatusPill } from "@/components/pms/billing/bill-status-pill";
 import { ScrollRegion } from "@/components/pms/ui/scroll-region";
 
 export const dynamic = "force-dynamic";
@@ -116,7 +117,8 @@ export default async function ClaimsPage({ searchParams }: { searchParams: Recor
                         <th scope="col" className="py-2 pr-3">Issued</th>
                         <th scope="col" className="py-2 pr-3 text-right">Total</th>
                         <th scope="col" className="py-2 pr-3 text-right">Balance</th>
-                        <th scope="col" className="py-2">Claimed</th>
+                        <th scope="col" className="py-2 pr-3">Claimed</th>
+                        <th scope="col" className="py-2">Bill status</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -130,7 +132,10 @@ export default async function ClaimsPage({ searchParams }: { searchParams: Recor
                           <td className="py-2 pr-3">{date(row.issuedOn)}</td>
                           <td className="py-2 pr-3 text-right tabular-nums">{money(row.totalPence)}</td>
                           <td className="py-2 pr-3 text-right tabular-nums">{money(row.balancePence)}</td>
-                          <td className="py-2">{row.sentAt ? date(row.sentAt.slice(0, 10)) : "Not yet"}</td>
+                          <td className="py-2 pr-3">{row.sentAt ? date(row.sentAt.slice(0, 10)) : "Not yet"}</td>
+                          <td className="py-2">
+                            <BillStatusPill status={row.billStatus} />
+                          </td>
                         </tr>
                       ))}
                     </tbody>

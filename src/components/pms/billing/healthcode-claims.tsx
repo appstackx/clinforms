@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import type { HealthcodeClaimRow, HealthcodeClaimsView } from "@/modules/pms/billing/healthcode";
 import { PmsNotice, pmsButtonVariants } from "@/components/pms/ui";
 import { ScrollRegion } from "@/components/pms/ui/scroll-region";
+import { BillStatusPill } from "./bill-status-pill";
 import { BILLING_PATH, date, focusRing, money } from "./format";
 
 const field = "h-9 rounded-lg border border-[#CBD5E1] bg-white px-3 text-sm text-foreground";
@@ -20,7 +21,7 @@ function count(n: number, one: string, many: string): string {
 function Rows({ rows, testId, reasons }: { rows: HealthcodeClaimRow[]; testId: string; reasons: boolean }) {
   return (
     <ScrollRegion label={reasons ? "Invoices that need review" : "Invoices ready for Healthcode"} className="relative overflow-x-auto">
-      <table className="w-full min-w-[640px] text-sm" data-testid={testId}>
+      <table className="w-full min-w-[760px] text-sm" data-testid={testId}>
         <thead>
           <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-[#475569]">
             <th scope="col" className="py-2 pr-3">Invoice</th>
@@ -28,6 +29,7 @@ function Rows({ rows, testId, reasons }: { rows: HealthcodeClaimRow[]; testId: s
             <th scope="col" className="py-2 pr-3">Patient</th>
             <th scope="col" className="py-2 pr-3">Insurer</th>
             <th scope="col" className="py-2 pr-3 text-right">Total</th>
+            <th scope="col" className="py-2 pr-3">Bill status</th>
             <th scope="col" className="py-2">{reasons ? "What to do" : "Site ID"}</th>
           </tr>
         </thead>
@@ -43,6 +45,9 @@ function Rows({ rows, testId, reasons }: { rows: HealthcodeClaimRow[]; testId: s
               <td className="py-2 pr-3">{r.patientName}</td>
               <td className="py-2 pr-3">{r.payerName}</td>
               <td className="py-2 pr-3 text-right tabular-nums">{money(r.totalPence)}</td>
+              <td className="py-2 pr-3">
+                <BillStatusPill status={r.billStatus} />
+              </td>
               <td className="py-2">
                 {reasons ? (
                   <ul className="flex flex-col gap-1">

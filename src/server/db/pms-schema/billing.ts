@@ -353,6 +353,18 @@ export interface PmsCaseDiagnosisTable {
   updated_at: IsoTimestamp;
 }
 
+/** 0225 (Healthcode, HC13): an insurer invoice's bill status, set by hand (NULL = not set). */
+export interface PmsInvoiceBillStatusTable {
+  tenant_id: string;
+  invoice_id: string;
+  rev: number;
+  /** "exported" | "validated" | "failed" | "collected" | "paid" | NULL */
+  status: string | null;
+  updated_by: string | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
 export interface BillingTables {
   pms_billing_settings: PmsBillingSettingsTable;
   pms_service_vat: PmsServiceVatTable;
@@ -374,6 +386,7 @@ export interface BillingTables {
   pms_service_codes: PmsServiceCodesTable;
   pms_service_insurer_codes: PmsServiceInsurerCodesTable;
   pms_case_diagnosis: PmsCaseDiagnosisTable;
+  pms_invoice_bill_status: PmsInvoiceBillStatusTable;
 }
 
 /** Foreign-key order (parents first). */
@@ -398,6 +411,7 @@ export const BILLING_TABLES = [
   "pms_service_codes",
   "pms_service_insurer_codes",
   "pms_case_diagnosis",
+  "pms_invoice_bill_status",
 ] as const satisfies readonly (keyof BillingTables)[];
 
 export const BILLING_PRIMARY_KEYS: { readonly [T in (typeof BILLING_TABLES)[number]]: readonly (keyof BillingTables[T] & string)[] } = {
@@ -421,6 +435,7 @@ export const BILLING_PRIMARY_KEYS: { readonly [T in (typeof BILLING_TABLES)[numb
   pms_service_codes: ["tenant_id", "service_id"],
   pms_service_insurer_codes: ["tenant_id", "service_id", "referrer_id"],
   pms_case_diagnosis: ["tenant_id", "id"],
+  pms_invoice_bill_status: ["tenant_id", "invoice_id"],
 };
 
 /** Timestamp columns beyond created_at/updated_at (TEXT in SQLite, timestamptz in Postgres) – the D1 → Postgres copy. */

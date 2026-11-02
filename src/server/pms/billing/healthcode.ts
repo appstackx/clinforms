@@ -13,7 +13,9 @@ import {
   HEALTHCODE_FILE_SUBMISSION_ENABLED,
   diagnosisRequired,
   healthcodeForSite,
+  isHealthcodeBillStatus,
   pairKey,
+  type HealthcodeBillStatus,
   type HealthcodeClaimRow,
   type HealthcodeClaimsView,
   type InvoiceHealthcodeView,
@@ -24,12 +26,14 @@ import type { Invoice } from "../../../modules/pms/billing/types";
 import { ukToday } from "../../../modules/pms/core/text";
 import { getAuthorisation, getCase } from "../../repos/pms/cases";
 import {
+  billStatuses,
   caseDiagnoses,
   getHealthcodeSettings,
   listExportBatches,
   payerHealthcodes,
   practitionerInsurerNumbers,
   serviceInsurerCodes,
+  setBillStatus,
   setCaseDiagnosis,
   setInvoiceDiagnosis,
 } from "../../repos/pms/billing/healthcode";
@@ -103,6 +107,8 @@ export async function invoiceHealthcodeFor(actor: BillingActor, invoiceId: strin
       diagnosisCode: clinical ? inv.diagnosisCode : null,
       caseDiagnosisCode: caseCode,
       canEditDiagnosis: clinical && actor.can("billing.edit") && inv.status !== "cancelled" && !inv.voidedAt,
+      billStatus: (await billStatuses(actor.repo(), actor.tenantId, [inv.id])).get(inv.id) ?? null,
+      canSetBillStatus: actor.can("billing.edit") && inv.status === "issued",
     });
   });
 }
@@ -227,10 +233,11 @@ export async function healthcodeClaimsFor(actor: BillingActor, input: { payerRef
         payerName: f.payer?.name ?? "Insurer",
         totalPence: inv.totalPence,
         siteCode: f.siteCode,
+        billStatus: statuses.get(inv.id) ?? null,
         issues: c.issues.map((i) => ({ message: i.message, fix: i.fix })),
       };
     };
-    const batches = await listExportBatches(ctx, t, { limit: 20 });
+    const [batches, statuses] = await Promise.all([listExportBatches(ctx, t, { limit: 20 }), billStatuses(ctx, t, invoices.map((i) => i.id))]);
     return ok({
       payers: insurerList.filter((r) => r.active || r.id === payerReferrerId).map((r) => ({ id: r.id, name: r.name })),
       query: { payerReferrerId, from, until },
@@ -242,5 +249,23 @@ export async function healthcodeClaimsFor(actor: BillingActor, input: { payerRef
       fileEnabled: HEALTHCODE_FILE_SUBMISSION_ENABLED,
       fileNote: HEALTHCODE_FILE_OFF_NOTE,
     });
+  });
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * HC13 – the bill status, set by hand (billing.edit) on an issued insurer invoice
+ * ----------------------------------------------------------------------------------------------*/
+
+/** `status`: one of HEALTHCODE_BILL_STATUSES, or "" / null to clear. Audited with the old and new status. */
+export async function setBillStatusFor(actor: BillingActor, invoiceId: string, status: unknown): Promise<Result<{ status: HealthcodeBillStatus | null }>> {
+  if (!actor.can("billing.edit")) return forbidden();
+  const next = status === "" || status === null || status === undefined ? null : isHealthcodeBillStatus(status) ? status : undefined;
+  if (next === undefined) return fail("invalid", "Choose a status from the list.");
+  return attempt("healthcode.bill_status", async () => {
+    const inv = await invoiceInScope(actor, invoiceId);
+    if (!inv) return fail("not_found", BILLING_NOT_FOUND);
+    if (inv.billTo !== "payer" || inv.status !== "issued") return fail("invalid", "A bill status is kept for issued invoices to an insurer or other payer account.");
+    await setBillStatus(actor.repo(), actor.tenantId, inv.id, next, actor.actor);
+    return ok({ status: next });
   });
 }

@@ -10,7 +10,7 @@ import type { RemittanceInput, TakePaymentInput } from "@/modules/pms/billing/sc
 import type { RemittanceInvoiceView, TakePaymentView } from "@/modules/pms/billing/view";
 import { CLINIC_BASE_PATH } from "@/modules/pms/core/modules";
 import { actorErrorMessage, clinicActionActor } from "@/server/pms/actor";
-import { setInvoiceDiagnosisFor } from "@/server/pms/billing/healthcode";
+import { setBillStatusFor, setInvoiceDiagnosisFor } from "@/server/pms/billing/healthcode";
 import { remittanceInvoicesFor, takePaymentViewFor } from "@/server/pms/billing/views";
 import {
   cancelDraftFor,
@@ -196,4 +196,14 @@ export async function setInvoiceDiagnosisAction(invoiceId: string, code: string)
   if (!r.ok) return { ok: false, error: r.error };
   refresh([invoicePath(invoiceId), `${BILLING}/claims`]);
   return { ok: true, code: r.value.code };
+}
+
+/** An insurer invoice's Healthcode bill status, set by hand (HC13): billing.edit, checked again in the service. */
+export async function setBillStatusAction(invoiceId: string, status: string): Promise<BillingActionResult<{ status: string | null }>> {
+  const actor = await clinicActionActor({ permission: "billing.edit" });
+  if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
+  const r = await setBillStatusFor(actor, String(invoiceId), typeof status === "string" ? status.slice(0, 20) : "");
+  if (!r.ok) return { ok: false, error: r.error };
+  refresh([invoicePath(invoiceId), `${BILLING}/claims`]);
+  return { ok: true, status: r.value.status };
 }

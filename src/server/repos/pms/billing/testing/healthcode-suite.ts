@@ -14,7 +14,7 @@ import { createDraftInvoice, getInvoice } from "../invoices";
 import { unscopedStatements, type GuardedDb } from "../../testing/guarded-db";
 import { healthcodeForSite } from "../../../../../modules/pms/billing/healthcode";
 import { createPractitioner, createService, createSite } from "../../directory";
-import { caseDiagnoses, getHealthcodeSettings, getPayerHealthcode, setCaseDiagnosis, setInvoiceDiagnosis, payerHealthcodes, practitionerInsurerNumbers, serviceCcsdCodes, serviceInsurerCodes, setPractitionerInsurerNumber, setServiceCcsdCode, setServiceInsurerCode, setClinicHealthcode, setPayerHealthcode, setSiteHealthcode } from "../healthcode";
+import { billStatuses, caseDiagnoses, getHealthcodeSettings, setBillStatus, getPayerHealthcode, setCaseDiagnosis, setInvoiceDiagnosis, payerHealthcodes, practitionerInsurerNumbers, serviceCcsdCodes, serviceInsurerCodes, setPractitionerInsurerNumber, setServiceCcsdCode, setServiceInsurerCode, setClinicHealthcode, setPayerHealthcode, setSiteHealthcode } from "../healthcode";
 
 const A = "riverside-a";
 const B = "harbour-b";
@@ -147,6 +147,20 @@ export function defineHealthcodeRepoSuite(label: string, factory: () => Promise<
       assert.equal(audit.filter((e) => e.action === "pms.case_diagnosis.set").length, 2);
       assert.equal(audit.filter((e) => e.action === "pms.invoice.diagnosis_set").length, 1);
       assert.ok(!JSON.stringify(audit).includes("M54.5"), "no diagnosis in the audit trail");
+      id.invoice = invoice.id;
+    });
+
+    it("HC13 bill status: set, change, clear – each change audited with the old and new status", async () => {
+      assert.equal((await billStatuses(ctx, A, [id.invoice])).size, 0);
+      await setBillStatus(ctx, A, id.invoice, "exported", ACTOR);
+      await setBillStatus(ctx, A, id.invoice, "failed", ACTOR);
+      assert.equal((await billStatuses(ctx, A, [id.invoice])).get(id.invoice), "failed");
+      await setBillStatus(ctx, A, id.invoice, null, ACTOR);
+      assert.equal((await billStatuses(ctx, A, [id.invoice])).size, 0);
+      await assert.rejects(setBillStatus(ctx, A, id.invoice, "lost" as never, ACTOR), (e: unknown) => e instanceof RepoInputError);
+      await assert.rejects(setBillStatus(ctx, B, id.invoice, "paid", ACTOR_B), (e: unknown) => e instanceof RepoInputError);
+      const rows = (await listAudit(ctx, A, { limit: 200 })).filter((e) => e.action === "pms.invoice.bill_status");
+      assert.deepEqual(rows.map((r) => r.detail).reverse(), [{ from: "none", to: "exported" }, { from: "exported", to: "failed" }, { from: "failed", to: "none" }]);
     });
 
     it("every statement names the clinic (tenant-scope guard)", () => {

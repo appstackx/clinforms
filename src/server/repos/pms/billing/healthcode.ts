@@ -8,11 +8,14 @@
  * not exist (isMissingPmsTable), and only a save fails until the migration is applied.
  */
 import {
+  HealthcodeBillStatusSchema,
   HealthcodeSiteInputSchema,
+  isHealthcodeBillStatus,
   PayerHealthcodeInputSchema,
   ProviderNumberSchema,
   TreatmentCodeSchema,
   pairKey,
+  type HealthcodeBillStatus,
   type HealthcodeSettings,
   type PractitionerInsurerNumber,
   type ServiceInsurerCode,
@@ -397,4 +400,43 @@ export async function listExportBatches(ctx: RepoContext, tenantId: string, opti
     .limit(limit)
     .execute();
   return rows.map((r) => ({ batchRef: r.batch_ref, channel: r.channel, invoices: Number(r.n), createdAt: (r.at as unknown) instanceof Date ? (r.at as unknown as Date).toISOString() : new Date(String(r.at)).toISOString(), createdBy: (r.by as string | null) ?? null }));
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * HC13 – an insurer invoice's bill status (set by hand for now)
+ * ----------------------------------------------------------------------------------------------*/
+
+const STATUS = "pms_invoice_bill_status";
+
+export async function billStatuses(ctx: RepoContext, tenantId: string, invoiceIds: readonly string[]): Promise<Map<string, HealthcodeBillStatus>> {
+  assertTenantId(tenantId);
+  return readOrEmpty(STATUS, new Map<string, HealthcodeBillStatus>(), async () => {
+    const out = new Map<string, HealthcodeBillStatus>();
+    for (const group of chunks(Array.from(new Set(invoiceIds)))) {
+      if (group.length === 0) continue;
+      const rows = await ctx.db.selectFrom(STATUS).select(["invoice_id", "status"]).where("tenant_id", "=", tenantId).where("invoice_id", "in", group).execute();
+      for (const r of rows) if (isHealthcodeBillStatus(r.status)) out.set(r.invoice_id, r.status);
+    }
+    return out;
+  });
+}
+
+/** Sets (or, null, clears) an invoice's bill status; the audit row names the old and new status. */
+export async function setBillStatus(ctx: RepoContext, tenantId: string, invoiceId: string, status: HealthcodeBillStatus | null, actor: PmsActor): Promise<void> {
+  assertTenantId(tenantId);
+  assertId(invoiceId, "invoice id");
+  const next = parseInput(HealthcodeBillStatusSchema, status, "Bill status");
+  const before = (await billStatuses(ctx, tenantId, [invoiceId])).get(invoiceId) ?? null;
+  const at = nowIso(ctx);
+  await writeWithAudit(
+    ctx,
+    [
+      ctx.db
+        .insertInto(STATUS)
+        .values({ tenant_id: tenantId, invoice_id: invoiceId, rev: 1, status: next, updated_by: actor.userId, created_at: at, updated_at: at })
+        .onConflict((oc) => oc.columns(["tenant_id", "invoice_id"]).doUpdateSet((eb) => ({ status: next, rev: eb(`${STATUS}.rev`, "+", 1), updated_by: actor.userId, updated_at: at }))),
+      pmsAuditQuery(ctx, tenantId, actor, { action: "pms.invoice.bill_status", targetType: "pms_invoice", targetId: invoiceId, detail: { from: before ?? "none", to: next ?? "none" } }),
+    ],
+    { foreignKey: "That invoice does not exist in this clinic." },
+  );
 }
