@@ -307,6 +307,18 @@ export interface PmsSiteHealthcodeTable {
   updated_at: IsoTimestamp;
 }
 
+/** 0222 (Healthcode, HC08): a practitioner's provider number with one insurer. */
+export interface PmsPractitionerInsurerNumbersTable {
+  tenant_id: string;
+  practitioner_id: string;
+  referrer_id: string;
+  rev: number;
+  provider_number: string;
+  updated_by: string | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
 export interface BillingTables {
   pms_billing_settings: PmsBillingSettingsTable;
   pms_service_vat: PmsServiceVatTable;
@@ -324,6 +336,7 @@ export interface BillingTables {
   pms_payer_healthcode: PmsPayerHealthcodeTable;
   pms_healthcode_settings: PmsHealthcodeSettingsTable;
   pms_site_healthcode: PmsSiteHealthcodeTable;
+  pms_practitioner_insurer_numbers: PmsPractitionerInsurerNumbersTable;
 }
 
 /** Foreign-key order (parents first). */
@@ -344,6 +357,7 @@ export const BILLING_TABLES = [
   "pms_payer_healthcode",
   "pms_healthcode_settings",
   "pms_site_healthcode",
+  "pms_practitioner_insurer_numbers",
 ] as const satisfies readonly (keyof BillingTables)[];
 
 export const BILLING_PRIMARY_KEYS: { readonly [T in (typeof BILLING_TABLES)[number]]: readonly (keyof BillingTables[T] & string)[] } = {
@@ -363,6 +377,7 @@ export const BILLING_PRIMARY_KEYS: { readonly [T in (typeof BILLING_TABLES)[numb
   pms_payer_healthcode: ["tenant_id", "referrer_id"],
   pms_healthcode_settings: ["tenant_id"],
   pms_site_healthcode: ["tenant_id", "site_id"],
+  pms_practitioner_insurer_numbers: ["tenant_id", "practitioner_id", "referrer_id"],
 };
 
 /** Timestamp columns beyond created_at/updated_at (TEXT in SQLite, timestamptz in Postgres) – the D1 → Postgres copy. */

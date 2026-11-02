@@ -10,7 +10,10 @@
 import {
   HealthcodeSiteInputSchema,
   PayerHealthcodeInputSchema,
+  ProviderNumberSchema,
+  pairKey,
   type HealthcodeSettings,
+  type PractitionerInsurerNumber,
   type HealthcodeSiteInput,
   type PayerHealthcode,
   type PayerHealthcodeInput,
@@ -164,5 +167,56 @@ export async function setSiteHealthcode(ctx: RepoContext, tenantId: string, site
       audit,
     ],
     { foreignKey: "That site does not exist in this clinic." },
+  );
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * HC08 – practitioners' provider numbers with each insurer
+ * ----------------------------------------------------------------------------------------------*/
+
+const PRAC = "pms_practitioner_insurer_numbers";
+
+/** The numbers recorded, optionally for some practitioners only (key: pairKey(practitionerId, referrerId)). */
+export async function practitionerInsurerNumbers(ctx: RepoContext, tenantId: string, practitionerIds?: readonly string[]): Promise<Map<string, PractitionerInsurerNumber>> {
+  assertTenantId(tenantId);
+  return readOrEmpty(PRAC, new Map<string, PractitionerInsurerNumber>(), async () => {
+    const out = new Map<string, PractitionerInsurerNumber>();
+    const cols = ["practitioner_id", "referrer_id", "provider_number"] as const;
+    const add = (rows: { practitioner_id: string; referrer_id: string; provider_number: string }[]) => {
+      for (const r of rows) out.set(pairKey(r.practitioner_id, r.referrer_id), { practitionerId: r.practitioner_id, referrerId: r.referrer_id, providerNumber: r.provider_number });
+    };
+    if (practitionerIds === undefined) {
+      add(await ctx.db.selectFrom(PRAC).select(cols).where("tenant_id", "=", tenantId).limit(5000).execute());
+      return out;
+    }
+    for (const group of chunks(Array.from(new Set(practitionerIds)))) {
+      if (group.length) add(await ctx.db.selectFrom(PRAC).select(cols).where("tenant_id", "=", tenantId).where("practitioner_id", "in", group).execute());
+    }
+    return out;
+  });
+}
+
+/** Sets (or, with null / blank, removes) a practitioner's provider number with one insurer. */
+export async function setPractitionerInsurerNumber(ctx: RepoContext, tenantId: string, practitionerId: string, referrerId: string, providerNumber: string | null, actor: PmsActor): Promise<void> {
+  assertTenantId(tenantId);
+  assertId(practitionerId, "practitioner id");
+  assertId(referrerId, "payer account id");
+  const value = parseInput(ProviderNumberSchema, providerNumber, "Provider number") ?? null;
+  const at = nowIso(ctx);
+  const audit = pmsAuditQuery(ctx, tenantId, actor, { action: "pms.practitioner_insurer_number.set", targetType: "pms_practitioner", targetId: practitionerId, detail: { referrerId, set: value !== null } });
+  if (value === null) {
+    await writeWithAudit(ctx, [ctx.db.deleteFrom(PRAC).where("tenant_id", "=", tenantId).where("practitioner_id", "=", practitionerId).where("referrer_id", "=", referrerId), audit]);
+    return;
+  }
+  await writeWithAudit(
+    ctx,
+    [
+      ctx.db
+        .insertInto(PRAC)
+        .values({ tenant_id: tenantId, practitioner_id: practitionerId, referrer_id: referrerId, rev: 1, provider_number: value, updated_by: actor.userId, created_at: at, updated_at: at })
+        .onConflict((oc) => oc.columns(["tenant_id", "practitioner_id", "referrer_id"]).doUpdateSet((eb) => ({ provider_number: value, rev: eb(`${PRAC}.rev`, "+", 1), updated_by: actor.userId, updated_at: at }))),
+      audit,
+    ],
+    { foreignKey: "That practitioner or insurer does not exist in this clinic." },
   );
 }

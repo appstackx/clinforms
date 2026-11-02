@@ -5,8 +5,8 @@
  */
 import * as React from "react";
 import { FormField, TextInput } from "@/components/pms/ui";
-import { saveHealthcodeSettingsAction, savePayerHealthcodeAction } from "@/app/app/clinic/setup/actions";
-import type { HealthcodeSettingsView, PayerHealthcodeView } from "@/modules/pms/billing/healthcode";
+import { saveHealthcodeSettingsAction, savePayerHealthcodeAction, savePractitionerInsurerNumbersAction } from "@/app/app/clinic/setup/actions";
+import type { HealthcodeSettingsView, PayerHealthcodeView, PractitionerInsurerNumbersView } from "@/modules/pms/billing/healthcode";
 import { SetupCard, SetupError, SetupFormBar, SetupGrid, useSetupForm } from "@/components/pms/reporting/setup-kit";
 
 /** HC06: the insurer's Healthcode identifier, the clinic's provider number with it, and whether bills need a diagnosis. */
@@ -115,6 +115,48 @@ export function HealthcodeSettingsCard({ view }: { view: HealthcodeSettingsView 
         <SetupError error={f.error} />
         {view.canEdit ? <SetupFormBar dirty={f.dirty} saving={f.saving} onDiscard={f.discard} testId="healthcode-settings-save" /> : null}
       </form>
+    </SetupCard>
+  );
+}
+
+/** HC08: the practitioner's own provider number with each insurer (blank = not registered with that insurer yet). */
+export function PractitionerInsurerNumbersCard({ view }: { view: PractitionerInsurerNumbersView }) {
+  const f = useSetupForm({ rows: view.insurers.map((i) => ({ referrerId: i.referrerId, providerNumber: i.providerNumber })) });
+  const e = f.fieldErrors;
+  return (
+    <SetupCard title="Insurer provider numbers">
+      {view.insurers.length === 0 ? (
+        <p className="text-sm text-[#475569]">Add the insurers the clinic works with under Referrers and insurers; each one then gets a box here.</p>
+      ) : (
+        <form
+          className="flex flex-col gap-3"
+          data-testid="practitioner-insurer-numbers"
+          onSubmit={(ev) => {
+            ev.preventDefault();
+            void f.submit(() => savePractitionerInsurerNumbersAction(view.practitionerId, f.values.rows), `Insurer numbers saved for ${view.name}.`);
+          }}
+        >
+          <p className="text-sm text-[#475569]">The number each insurer gave {view.name}. Healthcode bills name the practitioner who gave the treatment by this number.</p>
+          <SetupGrid>
+            {f.values.rows.map((row, i) => {
+              const name = view.insurers[i]?.name ?? "Insurer";
+              return (
+                <FormField key={row.referrerId} id={`pin-${row.referrerId}`} label={name} error={e[`number-${row.referrerId}`]}>
+                  <TextInput
+                    value={row.providerNumber}
+                    onChange={(ev) => f.set("rows", f.values.rows.map((r, j) => (j === i ? { ...r, providerNumber: ev.target.value } : r)))}
+                    disabled={!view.canEdit}
+                    autoComplete="off"
+                    maxLength={30}
+                  />
+                </FormField>
+              );
+            })}
+          </SetupGrid>
+          <SetupError error={f.error} />
+          {view.canEdit ? <SetupFormBar dirty={f.dirty} saving={f.saving} onDiscard={f.discard} testId="practitioner-insurer-numbers-save" /> : null}
+        </form>
+      )}
     </SetupCard>
   );
 }

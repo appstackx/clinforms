@@ -508,7 +508,7 @@ function PayerAccount({ referrerId, name, payer }: { referrerId: string; name: s
  * Practitioners
  * ----------------------------------------------------------------------------------------------*/
 
-export function PractitionersSetup({ screen, isNew }: { screen: PractitionersScreen; isNew: boolean }) {
+export function PractitionersSetup({ screen, isNew, extra }: { screen: PractitionersScreen; isNew: boolean; extra?: React.ReactNode }) {
   const router = useRouter();
   const sel = isNew ? null : screen.selected;
   const memberName = new Map(screen.members.map((m) => [m.userId, m.name]));
@@ -532,6 +532,7 @@ export function PractitionersSetup({ screen, isNew }: { screen: PractitionersScr
         }
       >
         <PractitionerForm key={sel?.id ?? "new"} p={sel} members={screen.members} sites={screen.sites} onCreated={(id) => router.push(`${BASE}/practitioners?practitioner=${id ?? ""}`)} />
+        {sel ? extra : null}
       </SetupSplit>
     </SetupPage>
   );

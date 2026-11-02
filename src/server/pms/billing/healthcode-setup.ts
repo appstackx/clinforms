@@ -4,22 +4,33 @@
  * ids read back from the member's clinic, inputs validated, the repository writes with its audit row, plain results.
  */
 import "server-only";
-export type { HealthcodeSettingsView, PayerHealthcodeView } from "../../../modules/pms/billing/healthcode";
+export type { HealthcodeSettingsView, PayerHealthcodeView, PractitionerInsurerNumbersView } from "../../../modules/pms/billing/healthcode";
 import { z } from "zod";
 import {
   HealthcodeSiteInputSchema,
   PayerHealthcodeInputSchema,
+  ProviderNumberSchema,
   diagnosisRequiredByDefault,
+  pairKey,
   isHealthcodePayerKind,
   type HealthcodeSettingsView,
   type PayerHealthcodeView,
+  type PractitionerInsurerNumbersView,
 } from "../../../modules/pms/billing/healthcode";
 import { fieldErrors } from "../../../modules/pms/core/schemas";
 import { logAuthEvent } from "../../email/log";
 import { RepoInputError } from "../../repos/context";
-import { getHealthcodeSettings, getPayerHealthcode, setClinicHealthcode, setPayerHealthcode, setSiteHealthcode } from "../../repos/pms/billing/healthcode";
-import { listSites } from "../../repos/pms/directory";
-import { getReferrer } from "../../repos/pms/referrers";
+import {
+  getHealthcodeSettings,
+  getPayerHealthcode,
+  practitionerInsurerNumbers,
+  setClinicHealthcode,
+  setPayerHealthcode,
+  setPractitionerInsurerNumber,
+  setSiteHealthcode,
+} from "../../repos/pms/billing/healthcode";
+import { getPractitioner, listSites } from "../../repos/pms/directory";
+import { getReferrer, listReferrers } from "../../repos/pms/referrers";
 import { SETUP_MESSAGES, type SetupActor, type SetupResult } from "../reporting/setup";
 
 const ok = <T>(value: T): SetupResult<T> => ({ ok: true, value });
@@ -142,5 +153,54 @@ export async function saveHealthcodeSettingsFor(actor: SetupActor, f: Healthcode
       if (!same(before, p)) await setSiteHealthcode(ctx, actor.tenantId, r.siteId, r, actor.actor);
     }
     return ok({ saved: true as const });
+  });
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * HC08 – a practitioner's provider number with each insurer (Set-up → Practitioners)
+ * ----------------------------------------------------------------------------------------------*/
+
+export async function practitionerInsurerNumbersFor(actor: SetupActor, practitionerId: string | null): Promise<SetupResult<PractitionerInsurerNumbersView | null>> {
+  if (!actor.can("settings.setup")) return FORBIDDEN;
+  if (!practitionerId || !plausibleId(practitionerId)) return ok(null);
+  return setupAttempt("setup.practitioner_insurer_numbers", async () => {
+    const ctx = actor.repo();
+    const p = await getPractitioner(ctx, actor.tenantId, practitionerId);
+    if (!p) return ok(null);
+    const [insurers, numbers] = await Promise.all([listReferrers(ctx, actor.tenantId, { kind: "insurer", limit: 500 }), practitionerInsurerNumbers(ctx, actor.tenantId, [p.id])]);
+    return ok({
+      practitionerId: p.id,
+      name: p.displayName,
+      insurers: insurers.map((r) => ({ referrerId: r.id, name: r.name, providerNumber: numbers.get(pairKey(p.id, r.id))?.providerNumber ?? "" })),
+      canEdit: actor.siteIds === null,
+    });
+  });
+}
+
+/** Saves the numbers given (blank = removed); only changed ones are written. */
+export async function savePractitionerInsurerNumbersFor(actor: SetupActor, practitionerId: string, rows: { referrerId: string; providerNumber?: string }[]): Promise<SetupResult<{ id: string }>> {
+  if (!actor.can("settings.setup")) return FORBIDDEN;
+  if (actor.siteIds !== null) return WHOLE;
+  if (!plausibleId(practitionerId)) return NOT_FOUND;
+  const list = (Array.isArray(rows) ? rows.slice(0, 500) : []).map((r) => ({ referrerId: String(r?.referrerId ?? ""), providerNumber: typeof r?.providerNumber === "string" ? r.providerNumber : "" }));
+  const fe: Record<string, string> = {};
+  for (const r of list) {
+    const p = ProviderNumberSchema.safeParse(r.providerNumber);
+    if (!p.success) fe[`number-${r.referrerId}`] = p.error.issues[0]?.message ?? SETUP_MESSAGES.check;
+  }
+  if (Object.keys(fe).length) return fail(SETUP_MESSAGES.check, fe);
+  return setupAttempt("setup.practitioner_insurer_numbers_save", async () => {
+    const ctx = actor.repo();
+    const p = await getPractitioner(ctx, actor.tenantId, practitionerId);
+    if (!p) return NOT_FOUND;
+    const insurers = new Set((await listReferrers(ctx, actor.tenantId, { kind: "insurer", includeInactive: true, limit: 500 })).map((r) => r.id));
+    if (list.some((r) => !insurers.has(r.referrerId))) return NOT_FOUND;
+    const current = await practitionerInsurerNumbers(ctx, actor.tenantId, [p.id]);
+    for (const r of list) {
+      const next = (ProviderNumberSchema.parse(r.providerNumber) as string | null | undefined) ?? null;
+      const before = current.get(pairKey(p.id, r.referrerId))?.providerNumber ?? null;
+      if (next !== before) await setPractitionerInsurerNumber(ctx, actor.tenantId, p.id, r.referrerId, next, actor.actor);
+    }
+    return ok({ id: p.id });
   });
 }

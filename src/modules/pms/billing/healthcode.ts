@@ -120,3 +120,24 @@ export interface HealthcodeSettingsView {
   sites: { id: string; name: string }[];
   canEdit: boolean;
 }
+
+/* ------------------------------------------------------------------------------------------------
+ * HC08 – a practitioner's provider number with each insurer
+ * ----------------------------------------------------------------------------------------------*/
+
+export interface PractitionerInsurerNumber {
+  practitionerId: string;
+  referrerId: string;
+  providerNumber: string;
+}
+
+/** Key of a practitioner × insurer pair in lookups. */
+export const pairKey = (a: string, b: string): string => `${a}|${b}`;
+
+/** The Healthcode card on Set-up → Practitioners: one number per insurer of the clinic. */
+export interface PractitionerInsurerNumbersView {
+  practitionerId: string;
+  name: string;
+  insurers: { referrerId: string; name: string; providerNumber: string }[];
+  canEdit: boolean;
+}

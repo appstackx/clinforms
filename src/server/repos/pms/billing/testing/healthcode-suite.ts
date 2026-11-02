@@ -10,8 +10,8 @@ import { RepoInputError, type RepoContext } from "../../../context";
 import { createReferrer } from "../../referrers";
 import { unscopedStatements, type GuardedDb } from "../../testing/guarded-db";
 import { healthcodeForSite } from "../../../../../modules/pms/billing/healthcode";
-import { createSite } from "../../directory";
-import { getHealthcodeSettings, getPayerHealthcode, payerHealthcodes, setClinicHealthcode, setPayerHealthcode, setSiteHealthcode } from "../healthcode";
+import { createPractitioner, createSite } from "../../directory";
+import { getHealthcodeSettings, getPayerHealthcode, payerHealthcodes, practitionerInsurerNumbers, setPractitionerInsurerNumber, setClinicHealthcode, setPayerHealthcode, setSiteHealthcode } from "../healthcode";
 
 const A = "riverside-a";
 const B = "harbour-b";
@@ -31,6 +31,9 @@ export function defineHealthcodeRepoSuite(label: string, factory: () => Promise<
       id.insurerB = (await createReferrer(ctx, B, { kind: "insurer", name: "Harbour Health (fictional)" }, ACTOR_B)).id;
       id.site1 = (await createSite(ctx, A, { name: "Bletchley (fictional)" }, ACTOR)).id;
       id.site2 = (await createSite(ctx, A, { name: "Towcester (fictional)" }, ACTOR)).id;
+      id.prac = (await createPractitioner(ctx, A, { displayName: "Sarah Reid", registrationNumber: "PH-DEMO-01" }, ACTOR)).id;
+      id.prac2 = (await createPractitioner(ctx, A, { displayName: "Tom Ellis", registrationNumber: "PH-DEMO-02" }, ACTOR)).id;
+      id.insurer2 = (await createReferrer(ctx, A, { kind: "insurer", name: "Meadowbank Health (fictional)" }, ACTOR)).id;
       id.siteB = (await createSite(ctx, B, { name: "Harbour (fictional)" }, ACTOR_B)).id;
     });
     after(async () => {
@@ -74,6 +77,23 @@ export function defineHealthcodeRepoSuite(label: string, factory: () => Promise<
       const audit = await listAudit(ctx, A, { limit: 50 });
       assert.equal(audit.filter((e) => e.action === "pms.healthcode_settings.set").length, 1);
       assert.equal(audit.filter((e) => e.action === "pms.site_healthcode.set").length, 2);
+    });
+
+    it("HC08 practitioner numbers per insurer: set, change, clear; another clinic's practitioner refused", async () => {
+      await setPractitionerInsurerNumber(ctx, A, id.prac, id.insurer, "NW-PRAC-DEMO-1", ACTOR);
+      await setPractitionerInsurerNumber(ctx, A, id.prac, id.insurer2, "MB-DEMO-7", ACTOR);
+      await setPractitionerInsurerNumber(ctx, A, id.prac2, id.insurer, "NW-PRAC-DEMO-2", ACTOR);
+      await setPractitionerInsurerNumber(ctx, A, id.prac, id.insurer, "NW-PRAC-DEMO-1A", ACTOR);
+      let all = await practitionerInsurerNumbers(ctx, A);
+      assert.equal(all.size, 3);
+      assert.equal(all.get(`${id.prac}|${id.insurer}`)?.providerNumber, "NW-PRAC-DEMO-1A");
+      assert.equal((await practitionerInsurerNumbers(ctx, A, [id.prac2])).size, 1);
+      await setPractitionerInsurerNumber(ctx, A, id.prac, id.insurer2, "", ACTOR);
+      all = await practitionerInsurerNumbers(ctx, A);
+      assert.equal(all.size, 2);
+      await assert.rejects(setPractitionerInsurerNumber(ctx, B, id.prac, id.insurerB, "X1", ACTOR_B), (e: unknown) => e instanceof RepoInputError);
+      assert.equal((await practitionerInsurerNumbers(ctx, B)).size, 0);
+      assert.equal((await listAudit(ctx, A, { limit: 100 })).filter((e) => e.action === "pms.practitioner_insurer_number.set").length, 5);
     });
 
     it("every statement names the clinic (tenant-scope guard)", () => {
