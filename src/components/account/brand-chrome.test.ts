@@ -93,6 +93,11 @@ describe("brand chrome per host", () => {
     assert.match(src, /if \(brand\.id !== "clinic"\) return undefined;/);
   });
 
+  it("the clinic system's shell always shows its own mark beside its name, on either host (02/11/2026)", () => {
+    const src = read("src/app/app/clinic/layout.tsx");
+    assert.match(src, /mark=\{<ClinicSystemMark className="h-7 w-7" \/>\}/);
+  });
+
   it("the mark: ClinForms' document mark by default, the clinic system's crossed tapes for the clinic brand", () => {
     const forms = renderToStaticMarkup(createElement(BrandMark, { name: "ClinForms" }));
     assert.match(forms, /data-brand="clinforms"/);
@@ -121,7 +126,6 @@ describe("brand chrome per host", () => {
       assert.match(src, /<AuthShell brand=\{/, f);
     }
     assert.match(read("src/app/app/(clinic)/layout.tsx"), /<BrandMark compact name=\{brand\.productName\} brand=\{brand\.id\} \/>/);
-    assert.match(read("src/app/app/clinic/layout.tsx"), /mark=\{brand\.id === "clinic" \? <ClinicSystemMark/);
   });
 
   it("the trial banner names the contact it is given (the host brand's)", () => {
