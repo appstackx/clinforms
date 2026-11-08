@@ -3,8 +3,15 @@
  * `clinforms_consent` (6 months, host-only – clinforms.co.uk and clindesk.co.uk each keep their own). Nothing optional
  * runs until it says so, and a Do Not Track or Global Privacy Control signal from the browser counts as a refusal.
  *
+ * Usage statistics (08/11/2026) are NOT a consent purpose: under the statistical-purposes exemption (PECR Schedule A1,
+ * Data (Use and Access) Act 2025, in force 5 Feb 2026) the EU product analytics counts visits to both brands' PUBLIC
+ * website pages for every visitor, with no device storage, unless the visitor turns it off (one click, in the banner,
+ * the cookie settings or /cookies) or the browser sends Do Not Track / Global Privacy Control. The opt-out is kept in a
+ * second strictly necessary cookie, `clinforms_stats` = "off" (12 months, host-only).
+ *
  * Two optional purposes, each its own yes/no:
- * - analytics: the EU product analytics (src/components/analytics), ClinForms' hosts only, when configured;
+ * - analytics: lets the statistics remember this browser between visits (device storage, localStorage) and count the
+ *   few product actions in the app (src/components/analytics), when configured;
  * - ads: the advertising measurement tag (src/components/ads), on both brands' PUBLIC website pages only.
  *
  * The parse/serialise helpers are pure (tested in consent.test.ts); the `browser*` helpers touch
@@ -104,7 +111,7 @@ export function optOutSignalled(signals: PrivacySignals): boolean {
   return signals.globalPrivacyControl === true || dnt(signals.doNotTrack) || dnt(signals.windowDoNotTrack);
 }
 
-/** Analytics may run only with a stored "allowed" choice and no opt-out signal. */
+/** Analytics with device storage may run only with a stored "allowed" choice and no opt-out signal. */
 export function analyticsAllowed(choice: ConsentChoice | null, signals: PrivacySignals): boolean {
   return choice?.analytics === true && !optOutSignalled(signals);
 }
@@ -112,6 +119,57 @@ export function analyticsAllowed(choice: ConsentChoice | null, signals: PrivacyS
 /** The advertising measurement tag may load only with a stored "allowed" choice and no opt-out signal. */
 export function adsAllowed(choice: ConsentChoice | null, signals: PrivacySignals): boolean {
   return choice?.ads === true && !optOutSignalled(signals);
+}
+
+// ---- usage statistics (opt-out) --------------------------------------------------------------------
+
+/** The strictly necessary opt-out cookie for usage statistics ("off"); no cookie = statistics on. */
+export const STATS_COOKIE = "clinforms_stats";
+/** 12 months, in seconds. */
+export const STATS_MAX_AGE_SECONDS = 365 * 24 * 60 * 60;
+
+/** Whether a Cookie header / document.cookie string carries the statistics opt-out. */
+export function statsOptedOutInCookieString(cookieString: string | null | undefined): boolean {
+  if (!cookieString) return false;
+  for (const part of cookieString.split(";")) {
+    const eq = part.indexOf("=");
+    if (eq === -1) continue;
+    if (part.slice(0, eq).trim() === STATS_COOKIE) return part.slice(eq + 1).trim() === "off";
+  }
+  return false;
+}
+
+/** The document.cookie string that stores (off) or removes (on) the statistics opt-out. */
+export function statsCookieString(on: boolean, options: { secure: boolean }): string {
+  return [
+    `${STATS_COOKIE}=${on ? "" : "off"}`,
+    `Max-Age=${on ? 0 : STATS_MAX_AGE_SECONDS}`,
+    "Path=/",
+    "SameSite=Lax",
+    ...(options.secure ? ["Secure"] : []),
+  ].join("; ");
+}
+
+/** Usage statistics run unless the visitor turned them off or the browser sends an opt-out signal. */
+export function statsAllowed(optedOut: boolean, signals: PrivacySignals): boolean {
+  return !optedOut && !optOutSignalled(signals);
+}
+
+/**
+ * What the analytics may do on this page:
+ * - "off": nothing loads, nothing is sent (statistics turned off, an opt-out signal, or a page without statistics and
+ *   no cookie consent);
+ * - "stats": cookieless usage statistics (memory only, no device storage) – public website pages only;
+ * - "full": the visitor allowed analytics cookies: statistics remember this browser (localStorage), on every page that
+ *   records events (as before 08/11/2026).
+ * Turning statistics off wins over an earlier "allow analytics cookies".
+ */
+export type AnalyticsMode = "off" | "stats" | "full";
+
+export function analyticsMode(input: { choice: ConsentChoice | null; signals: PrivacySignals; statsOptedOut: boolean; statsPage: boolean }): AnalyticsMode {
+  if (!statsAllowed(input.statsOptedOut, input.signals)) return "off";
+  if (analyticsAllowed(input.choice, input.signals)) return "full";
+  return input.statsPage ? "stats" : "off";
 }
 
 // ---- browser-only helpers -------------------------------------------------------------------------
@@ -136,8 +194,31 @@ export function browserStoredConsent(): ConsentChoice | null {
 export function browserSaveConsent(purposes: ConsentPurposes): ConsentChoice {
   const choice: ConsentChoice = { version: CONSENT_VERSION, analytics: purposes.analytics, ads: purposes.ads, date: todayIso() };
   document.cookie = consentCookieString(choice, { secure: window.location.protocol === "https:" });
+  // Allowing analytics cookies turns usage statistics back on.
+  if (choice.analytics) document.cookie = statsCookieString(true, { secure: window.location.protocol === "https:" });
   window.dispatchEvent(new CustomEvent(CONSENT_CHANGE_EVENT, { detail: choice }));
   return choice;
+}
+
+export function browserStatsOptedOut(): boolean {
+  if (typeof document === "undefined") return false;
+  return statsOptedOutInCookieString(document.cookie);
+}
+
+/**
+ * Turns usage statistics on or off (one click; the analytics stops and clears its storage at once). Turning them off
+ * also withdraws an earlier "allow analytics cookies".
+ */
+export function browserSetStats(on: boolean): void {
+  document.cookie = statsCookieString(on, { secure: window.location.protocol === "https:" });
+  if (!on) {
+    const stored = browserStoredConsent();
+    if (stored?.analytics) {
+      const choice: ConsentChoice = { ...stored, analytics: false, date: todayIso() };
+      document.cookie = consentCookieString(choice, { secure: window.location.protocol === "https:" });
+    }
+  }
+  window.dispatchEvent(new CustomEvent(CONSENT_CHANGE_EVENT));
 }
 
 export function onConsentChange(listener: () => void): () => void {
@@ -160,10 +241,7 @@ export function analyticsConfigured(): boolean {
   return Boolean(process.env.NEXT_PUBLIC_POSTHOG_KEY) && analyticsAllowedOnHost(typeof window === "undefined" ? null : window.location.host);
 }
 
-/**
- * Whether this host's brand uses product analytics at all (src/lib/brand.ts). ClinDesk's hosts do not: its banner and
- * cookie settings offer advertising measurement only. ClinForms' hosts are unchanged.
- */
+/** Whether this host's brand uses product analytics at all (src/lib/brand.ts; both brands since 08/11/2026). */
 export function analyticsAllowedOnHost(host: string | null): boolean {
   return brandForHost(host).analytics;
 }

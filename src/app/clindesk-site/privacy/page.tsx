@@ -2,7 +2,7 @@ import { Fill } from "@/components/clindesk/fill";
 import { LegalFrame } from "@/components/clindesk/legal-frame";
 import { LegalPage, LegalTable } from "@/components/marketing/legal-page";
 import { CLINIC_SYSTEM_NAME } from "@/lib/brand";
-import { CLINDESK_LEGAL_LAST_UPDATED, CONTACT_EMAIL, clindeskMetadata } from "@/lib/clindesk/site";
+import { CLINDESK_PRIVACY_COOKIES_LAST_UPDATED, CONTACT_EMAIL, clindeskMetadata } from "@/lib/clindesk/site";
 import { COMPANY } from "@/lib/site";
 
 /**
@@ -31,7 +31,7 @@ export default function ClindeskPrivacyPage() {
     <LegalFrame>
       <LegalPage
         title="Privacy policy"
-        lastUpdated={CLINDESK_LEGAL_LAST_UPDATED}
+        lastUpdated={CLINDESK_PRIVACY_COOKIES_LAST_UPDATED}
         intro={
           <p>
             This policy explains how {COMPANY.legalName} (&ldquo;we&rdquo;, &ldquo;us&rdquo;) uses personal data in
@@ -96,6 +96,25 @@ export default function ClindeskPrivacyPage() {
             ],
             [
               <>
+                <strong>Usage statistics</strong> (on unless you turn them off): pages of this website you view, the website
+                you came from, the campaign tags in the link you followed, whether you arrived from an advert (yes or no
+                only), clicks on our main buttons and links, whether you started and sent the demo form (never what you
+                type), approximate location derived from your IP address, and browser and device type. No cookies and
+                nothing stored on your device unless you allow analytics cookies
+              </>,
+              <>
+                To count visits and clicks so we can improve our own website – never for advertising, and never shared.
+                Processed for us only by PostHog, in its EU region
+              </>,
+              <>
+                Legitimate interests (improving our website), using the UK exemption for statistics that improve our own
+                website; analytics cookies only with your consent. Turn it off with one click on our{" "}
+                <a href="/cookies#statistics">cookie policy</a> page or in &ldquo;Cookie settings&rdquo;
+              </>,
+              "Up to 12 months",
+            ],
+            [
+              <>
                 <strong>Advertising measurement</strong> (only if you allow advertising cookies, and only on this
                 website&rsquo;s public pages): whether a visit followed a click on one of our Google adverts and whether
                 it led to a demo booking, with the identifiers in Google&rsquo;s advertising cookies, your IP address and
@@ -148,7 +167,7 @@ export default function ClindeskPrivacyPage() {
           We do not sell personal data, and we do not make decisions about anyone based solely on automated processing that
           have legal or similarly significant effects. Nothing you type in our forms, no account data and no patient
           information is ever used for advertising; the only advertising use of personal data is the measurement above,
-          and only if you allow it. This website uses no analytics.
+          and only if you allow it. Our usage statistics are never used for advertising and never shared.
         </p>
         <h3 id="tour-video">The tour video</h3>
         <p>
@@ -248,6 +267,10 @@ export default function ClindeskPrivacyPage() {
             <strong>Email delivery</strong> – sends invitations, password resets and security notices to clinic users.
           </li>
           <li>
+            <strong>Website statistics (PostHog, EU region)</strong> – counts visits and clicks on this website for us
+            only, without cookies, unless a visitor turns it off. It receives no clinic data and no patient information.
+          </li>
+          <li>
             <strong>Patient messaging</strong> (only where switched on) – sends the emails and text messages the clinic
             chooses to send to patients and payers. Until it is switched on, messages stay in the clinic&rsquo;s outbox and
             are not sent.
@@ -313,7 +336,8 @@ export default function ClindeskPrivacyPage() {
           <li>have your data erased, or its use restricted, in certain circumstances;</li>
           <li>object to our use of your data where we rely on legitimate interests;</li>
           <li>receive data you gave us in a portable format, in certain circumstances;</li>
-          <li>withdraw consent at any time, where we rely on consent (for advertising cookies, use &ldquo;Cookie settings&rdquo; at the bottom of every page).</li>
+          <li>withdraw consent at any time, where we rely on consent (for analytics and advertising cookies, use &ldquo;Cookie settings&rdquo; at the bottom of every page);</li>
+          <li>turn usage statistics off at any time, with one click on our cookie policy page or in &ldquo;Cookie settings&rdquo;.</li>
         </ul>
         <p>
           To use any of these rights, email <a href={`mailto:${email}`}>{email}</a>. We will reply within one month, and
@@ -333,8 +357,9 @@ export default function ClindeskPrivacyPage() {
 
         <h2 id="cookies">9. Cookies</h2>
         <p>
-          We use the cookies needed to sign in and to run the features you use, and Google&rsquo;s advertising cookies on
-          this website&rsquo;s public pages only if you allow them – no analytics. See our{" "}
+          We use the cookies needed to sign in and to run the features you use, and analytics and Google&rsquo;s advertising
+          cookies on this website&rsquo;s public pages only if you allow them. Our usage statistics set no cookies and
+          store nothing on your device. See our{" "}
           <a href="/cookies">cookie policy</a>.
         </p>
 

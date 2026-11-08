@@ -18,7 +18,7 @@ import { analyticsAllowedOnHost } from "@/components/consent/consent";
 import { BRANDS, PUBLIC_SITE_BRAND, brandForHost } from "@/lib/brand";
 import { SITE_COOKIE, SITE_COOKIE_MAX_AGE } from "@/components/pms/shell/site-cookie";
 import { BANNED_TERM_PATTERNS } from "@/modules/medreport/core/wording";
-import { CONSENT_COOKIE } from "@/components/consent/consent";
+import { CONSENT_COOKIE, STATS_COOKIE } from "@/components/consent/consent";
 import { DEMO_SENT_KEY } from "@/components/ads/google-ads";
 import { GOOGLE_ADS_FIRST_PARTY_COOKIES } from "@/components/marketing/ads-cookies";
 import { TO_CONFIRM } from "@/lib/clindesk/content";
@@ -67,8 +67,8 @@ describe("clinforms.co.uk is unchanged", () => {
       { url: "https://clinforms.co.uk/request-access", lastModified: "2026-11-01", changeFrequency: "yearly", priority: 0.8 },
       { url: "https://clinforms.co.uk/security", lastModified: "2026-11-01", changeFrequency: "monthly", priority: 0.7 },
       // 01/11/2026: company name, number and ICO registration on every page (footer) and the legal pages.
-      { url: "https://clinforms.co.uk/privacy", lastModified: "2026-11-01", changeFrequency: "yearly", priority: 0.4 },
-      { url: "https://clinforms.co.uk/cookies", lastModified: "2026-11-01", changeFrequency: "yearly", priority: 0.3 },
+      { url: "https://clinforms.co.uk/privacy", lastModified: "2026-11-08", changeFrequency: "yearly", priority: 0.4 },
+      { url: "https://clinforms.co.uk/cookies", lastModified: "2026-11-08", changeFrequency: "yearly", priority: 0.3 },
       { url: "https://clinforms.co.uk/terms", lastModified: "2026-11-01", changeFrequency: "yearly", priority: 0.3 },
     ]);
   });
@@ -117,10 +117,10 @@ describe("clindesk.co.uk", () => {
       assert.ok(fs.existsSync(file), file);
     }
   });
-  it("its hosts are the clinic brand: no analytics, ClinDesk's own canonical origin", () => {
+  it("its hosts are the clinic brand: usage statistics on (08/11/2026), ClinDesk's own canonical origin", () => {
     for (const host of ["clindesk.co.uk", "www.clindesk.co.uk", "clinic.localhost:3184"]) {
       assert.equal(brandForHost(host).id, "clinic");
-      assert.equal(analyticsAllowedOnHost(host), false, host);
+      assert.equal(analyticsAllowedOnHost(host), true, host);
     }
     assert.equal(CLINDESK_SITE_URL, "https://clindesk.co.uk");
     assert.equal(BRANDS.clinic.publicSite, "clindesk");
@@ -213,10 +213,14 @@ describe("clindesk.co.uk legal pages", () => {
       assert.match(text, /Appstack X Ltd/);
       assert.ok(!/ClinForms/.test(text), `${page}: names ClinForms: …${text.slice(Math.max(0, text.indexOf("ClinForms") - 80), text.indexOf("ClinForms") + 40)}…`);
       for (const re of BANNED_TERM_PATTERNS) assert.ok(!re.test(text), `${page}: ${re}`);
-      for (const vendor of [/vercel/i, /cloudflare/i, /turnstile/i, /mailersend/i, /mailpit/i, /supabase/i, /stripe/i, /posthog/i, /anthropic/i, /healthcode/i]) {
+      // PostHog is named on /privacy and /cookies only (owner's decision 08/11/2026: the usage-statistics provider).
+      const vendors = [/vercel/i, /cloudflare/i, /turnstile/i, /mailersend/i, /mailpit/i, /supabase/i, /stripe/i, /anthropic/i, /healthcode/i];
+      if (page !== "privacy" && page !== "cookies") vendors.push(/posthog/i);
+      for (const vendor of vendors) {
         assert.ok(!vendor.test(text), `${page}: names a vendor (${vendor})`);
       }
-      if (page !== "accessibility") assert.match(text, /Last updated: 1 November 2026/);
+      if (page === "terms") assert.match(text, /Last updated: 1 November 2026/);
+      if (page === "privacy" || page === "cookies") assert.match(text, /Last updated: 8 November 2026/);
     });
   }
 
@@ -289,14 +293,18 @@ describe("clindesk.co.uk legal pages", () => {
     assert.match(text, /Opening the page loads nothing from that provider: the poster image comes from this website/);
     assert.match(text, /It carries no cookies, the video sets none/);
     for (const [name, re] of subs) assert.match(text, re, name);
-    // ClinDesk's hosts have no analytics and no ClinForms demo video (the tour video is ClinDesk's own, above); the
-    // database region is a fill-in, not the old "EU".
+    // No ClinForms demo video (the tour video is ClinDesk's own, above); the database region is a fill-in, not the old
+    // "EU". Usage statistics (08/11/2026): on unless turned off, PostHog EU named, one-click opt-out.
     for (const absent of [/Product analytics/, /demo video/i, /\(EU\)/, /stored in the EU/]) assert.ok(!absent.test(text), String(absent));
+    assert.match(text, /Usage statistics \(on unless you turn them off\)/);
+    assert.match(text, /Processed for us only by PostHog, in its EU region/);
+    assert.match(text, /UK exemption for statistics that improve our own website/);
+    assert.match(text, /turn usage statistics off at any time, with one click/);
     // Advertising measurement (since 31/10/2026): consent only, public pages only, Google named as the provider.
     assert.match(text, /Advertising measurement \(only if you allow advertising cookies, and only on this website's public pages\)/);
     assert.match(text, /Google acts as a separate controller/);
-    assert.match(text, /withdraw consent at any time, where we rely on consent \(for advertising cookies, use .Cookie settings/);
-    assert.match(text, /This website uses no analytics/);
+    assert.match(text, /withdraw consent at any time, where we rely on consent \(for analytics and advertising cookies, use .Cookie settings/);
+    assert.ok(!/This website uses no analytics/.test(text), "no longer true (08/11/2026)");
     assert.ok(!/we do not use it for advertising/.test(text), "no longer true");
     // Filled 01/11/2026 (Khuram): ICO number, region, sub-processor list title, retention.
     for (const k of ["legal.accountRetention", "legal.demoRequestRetention", "legal.providerLocations", "security.icoRegistration", "security.region", "security.subProcessorsDocument", "security.backupRetention", "security.auditRetention", "security.retentionGuidance"]) {
@@ -324,14 +332,17 @@ describe("clindesk.co.uk legal pages", () => {
     assert.ok(!text.includes(TO_CONFIRM));
   });
 
-  it("/cookies: exactly the cookies the code sets on ClinDesk – the consent cookie and advertising cookies, no analytics storage", async () => {
+  it("/cookies: exactly the cookies the code sets on ClinDesk – consent and statistics opt-out cookies, analytics storage with consent, advertising cookies", async () => {
     const { text, html } = await mainOf("cookies");
     for (const name of [PORTAL_COOKIE, MANAGE_COOKIE, DEVICE_COOKIE, SITE_COOKIE]) assert.ok(html.includes(`<code>${name}</code>`), name);
     for (const n of SESSION_COOKIE_NAMES) assert.ok(html.includes(`<code>${n.replace(/^__Secure-/, "").split(".")[0]}.*</code>`), n);
     assert.equal(SITE_COOKIE_MAX_AGE, 365 * 24 * 3600, "pms_site lasts 12 months, as the page says");
     assert.match(text, /pms_site Type Cookie Purpose Remembers which of the clinic's sites a signed-in user last chose to look at Duration 12 months/);
-    for (const absent of ["ph_*", "medreport", "tm3sim", "Analytics (optional)", "no cookie banner"]) assert.ok(!text.includes(absent), absent);
-    for (const name of [CONSENT_COOKIE, DEMO_SENT_KEY, ...GOOGLE_ADS_FIRST_PARTY_COOKIES]) assert.ok(html.includes(`<code>${name}</code>`), name);
+    for (const absent of ["medreport", "tm3sim", "no cookie banner", "We do not use analytics"]) assert.ok(!text.includes(absent), absent);
+    for (const name of [CONSENT_COOKIE, STATS_COOKIE, "ph_*", DEMO_SENT_KEY, ...GOOGLE_ADS_FIRST_PARTY_COOKIES]) assert.ok(html.includes(`<code>${name}</code>`), name);
+    assert.match(text, /Usage statistics \(on unless you turn them off\)/);
+    assert.match(text, /No cookies are set and nothing is stored on your device/);
+    assert.match(text, /Analytics cookies \(optional\)/);
     assert.match(text, /Advertising \(optional\)/);
     assert.match(text, /Nothing is loaded from Google until you accept/);
     assert.ok(!html.includes('data-to-confirm="legal.humanCheckStorage"'));

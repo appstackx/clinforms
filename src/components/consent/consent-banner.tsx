@@ -5,6 +5,8 @@
  * own, in ClinDesk's design (src/components/clindesk/cookie-consent.tsx, mounted in its site layout), so this one
  * renders nothing there.
  *
+ * - Also tells every visitor about the cookieless usage statistics (on by default) with a one-click "Turn off
+ *   statistics"; the settings dialog has a "Usage statistics" switch (consent.ts browserSetStats).
  * - Shown only when this page has something optional to offer (product analytics when NEXT_PUBLIC_POSTHOG_KEY is set;
  *   advertising measurement – src/components/ads), the visitor has not chosen yet, the browser sends no Do Not Track /
  *   Global Privacy Control signal, and the page is not part of the app, the sign-in pages, the public demo or the APIs
@@ -31,10 +33,13 @@ const buttonBase =
 const primaryButton = `${buttonBase} bg-teal-700 text-white hover:bg-teal-800`;
 const secondaryButton = `${buttonBase} border border-slate-300 bg-white text-slate-900 hover:bg-slate-50`;
 
+/** The usage-statistics notice (cookieless, on by default; one click turns it off). */
+export const STATS_NOTICE = "We count visits and clicks to improve this website – no cookies, nothing stored on your device.";
+
 /** What the banner asks for, in words, for the purposes this page offers. */
 export function bannerAsk(purposes: ConsentPurposes): string {
   const parts = [
-    ...(purposes.analytics ? ["analytics to see which pages are useful"] : []),
+    ...(purposes.analytics ? ["analytics cookies so those statistics can recognise a returning browser"] : []),
     ...(purposes.ads ? ["Google’s advertising cookies to see whether our adverts lead to requests for access"] : []),
   ];
   return `We use strictly necessary cookies to run this site. With your permission we would also like to use ${parts.join(", and ")}.`;
@@ -42,7 +47,7 @@ export function bannerAsk(purposes: ConsentPurposes): string {
 
 export function ConsentBanner() {
   const pathname = usePathname() ?? "/";
-  const { mounted, choice, signalled, purposes, undecided, managing, setManaging, save } = useConsent();
+  const { mounted, choice, signalled, purposes, undecided, managing, setManaging, save, statsOn, setStats } = useConsent();
   const [otherSite, setOtherSite] = useState(false);
   useEffect(() => setOtherSite(brandForHost(window.location.host).publicSite === "clindesk"), []);
 
@@ -75,12 +80,22 @@ export function ConsentBanner() {
           <div className="mx-auto flex max-w-3xl flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-700 shadow-xl sm:flex-row sm:items-center sm:gap-5 sm:p-5">
             <div className="flex min-w-0 flex-1 gap-3">
               <Cookie className="mt-0.5 hidden h-5 w-5 shrink-0 text-teal-700 sm:block" aria-hidden />
-              <p>
-                {bannerAsk(purposes)}{" "}
-                <Link href="/cookies" className="font-medium text-teal-800 underline underline-offset-2 hover:text-teal-900">
-                  Cookie policy
-                </Link>
-              </p>
+              <div className="space-y-1.5">
+                {purposes.analytics ? (
+                  <p>
+                    {statsOn ? STATS_NOTICE : "Usage statistics are off."}{" "}
+                    <button type="button" className="font-medium text-teal-800 underline underline-offset-2 hover:text-teal-900" onClick={() => setStats(!statsOn)}>
+                      {statsOn ? "Turn off statistics" : "Turn statistics back on"}
+                    </button>
+                  </p>
+                ) : null}
+                <p>
+                  {bannerAsk(purposes)}{" "}
+                  <Link href="/cookies" className="font-medium text-teal-800 underline underline-offset-2 hover:text-teal-900">
+                    Cookie policy
+                  </Link>
+                </p>
+              </div>
             </div>
             <div className="flex shrink-0 flex-wrap gap-1.5 sm:gap-2">
               <button type="button" className={primaryButton} onClick={() => save({ analytics: true, ads: true })}>
@@ -102,7 +117,11 @@ export function ConsentBanner() {
         purposes={purposes}
         signalled={signalled}
         initial={{ analytics: choice?.analytics ?? false, ads: choice?.ads ?? false }}
-        onSave={save}
+        initialStats={statsOn}
+        onSave={(wanted, stats) => {
+          save({ analytics: stats && wanted.analytics, ads: wanted.ads });
+          if (purposes.analytics && !signalled) setStats(stats);
+        }}
       />
     </>
   );
@@ -114,6 +133,7 @@ function CookieSettingsDialog({
   purposes,
   signalled,
   initial,
+  initialStats,
   onSave,
 }: {
   open: boolean;
@@ -121,8 +141,10 @@ function CookieSettingsDialog({
   purposes: ConsentPurposes;
   signalled: boolean;
   initial: ConsentPurposes;
-  onSave: (purposes: ConsentPurposes) => void;
+  initialStats: boolean;
+  onSave: (purposes: ConsentPurposes, stats: boolean) => void;
 }) {
+  const [stats, setStatsSwitch] = useState(initialStats);
   const [analytics, setAnalytics] = useState(initial.analytics);
   const [ads, setAds] = useState(initial.ads);
   // What opened the dialog (the banner's Manage button, a footer or policy link): focus goes back there on close.
@@ -132,10 +154,11 @@ function CookieSettingsDialog({
 
   useEffect(() => {
     if (open) {
+      setStatsSwitch(initialStats && canAnalytics);
       setAnalytics(initial.analytics && canAnalytics);
       setAds(initial.ads && canAds);
     }
-  }, [open, initial.analytics, initial.ads, canAnalytics, canAds]);
+  }, [open, initialStats, initial.analytics, initial.ads, canAnalytics, canAds]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -173,16 +196,32 @@ function CookieSettingsDialog({
             </p>
           </div>
           <PurposeSwitch
-            label="Analytics"
-            checked={analytics}
+            label="Usage statistics"
+            checked={stats}
             disabled={!canAnalytics}
+            onToggle={() => {
+              setStatsSwitch((v) => !v);
+              if (stats) setAnalytics(false);
+            }}
+            description={
+              !purposes.analytics
+                ? "This site does not count visits at the moment."
+                : signalled
+                  ? "Your browser asks websites not to track you, so usage statistics stay off."
+                  : "On unless you turn it off. We count visits and clicks on our public pages to improve the website – no cookies, nothing stored on your device, never used for advertising. Our provider (PostHog, EU) processes this for us only."
+            }
+          />
+          <PurposeSwitch
+            label="Analytics cookies"
+            checked={analytics}
+            disabled={!canAnalytics || !stats}
             onToggle={() => setAnalytics((v) => !v)}
             description={
               !purposes.analytics
                 ? "This site does not use analytics at the moment."
                 : signalled
                   ? "Your browser asks websites not to track you, so analytics stays off."
-                  : "Count visits to our public pages and a few product actions, without names, emails or any patient information. Stored in the EU."
+                  : "Lets the statistics recognise this browser on a later visit (stored in your browser) and count a few product actions in the application, without names, emails or any patient information. Stored in the EU."
             }
           />
           <PurposeSwitch
@@ -200,10 +239,10 @@ function CookieSettingsDialog({
           />
         </div>
         <DialogFooter className="gap-2 sm:gap-0">
-          <button type="button" className={secondaryButton} onClick={() => onSave({ analytics: false, ads: false })}>
-            Reject all
+          <button type="button" className={secondaryButton} onClick={() => onSave({ analytics: false, ads: false }, stats)}>
+            Reject all cookies
           </button>
-          <button type="button" className={primaryButton} onClick={() => onSave({ analytics: canAnalytics && analytics, ads: canAds && ads })}>
+          <button type="button" className={primaryButton} onClick={() => onSave({ analytics: canAnalytics && stats && analytics, ads: canAds && ads }, stats)}>
             Save choices
           </button>
         </DialogFooter>

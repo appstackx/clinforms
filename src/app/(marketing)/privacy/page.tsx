@@ -73,11 +73,30 @@ export default function PrivacyPage() {
           ],
           [
             <>
-              <strong>Analytics</strong> (only if you allow it): pages of this public website you visit, the site you came
-              from, approximate location derived from your IP address, browser and device type, and a few product actions
-              without names or other content
+              <strong>Usage statistics</strong> (on unless you turn them off): pages of this public website you view, the
+              website you came from, the campaign tags in the link you followed, whether you arrived from an advert (yes or
+              no only), clicks on our main buttons and links, whether you started and sent one of our forms (never what you
+              type), approximate location derived from your IP address, and browser and device type. No cookies and nothing
+              stored on your device
             </>,
-            "To understand which pages are useful and improve the website and the product",
+            <>
+              To count visits and clicks so we can improve our own website – never for advertising, and never shared.
+              Processed for us only by PostHog, in its EU region
+            </>,
+            <>
+              Legitimate interests (improving our website), using the UK exemption for statistics that improve our own
+              website. Turn it off with one click on our <Link href="/cookies#statistics">cookie policy</Link> page or in
+              &ldquo;Cookie settings&rdquo;
+            </>,
+            "Up to 12 months",
+          ],
+          [
+            <>
+              <strong>Analytics cookies</strong> (only if you allow them): the same statistics with a random identifier kept
+              in your browser, so a returning visit is recognised, and a few product actions in the application without
+              names or other content
+            </>,
+            "To understand which pages and features are useful and improve the website and the product",
             <>Consent – you can withdraw it at any time through &ldquo;Cookie settings&rdquo;</>,
             "Up to 12 months",
           ],
@@ -156,8 +175,8 @@ export default function PrivacyPage() {
         The provider keeps a record of each request: for example the IP address, the time, the file, the browser type,
         the site it was played from and the country it came from. Its dashboard shows us a sample of these records for
         about the last month. We use these records only to keep the video available and to count how often it is
-        played, and we do not try to work out who watched. If you allow analytics, we also count that the video was
-        played and played to the end, with nothing that identifies you. Our lawful basis is our legitimate interest in
+        played, and we do not try to work out who watched. Unless you turn usage statistics off, we also count that the
+        video was played and played to the end, with nothing that identifies you. Our lawful basis is our legitimate interest in
         showing our product to people who choose to watch it.
       </p>
 
@@ -209,7 +228,9 @@ export default function PrivacyPage() {
           <strong>Email delivery</strong> – sends invitations, password resets and notifications.
         </li>
         <li>
-          <strong>Product analytics</strong> – only for visitors and users who allow analytics (EU).
+          <strong>Website statistics (PostHog, EU region)</strong> – counts visits and clicks on our public pages for us
+          only, without cookies, unless a visitor turns it off; with analytics cookies only for visitors and users who
+          allow them. It receives no clinic data and no patient information.
         </li>
         <li>
           <strong>Media delivery</strong> – stores our product demo video in the EU and delivers it when a visitor presses
@@ -258,7 +279,8 @@ export default function PrivacyPage() {
         <li>have your data erased, or its use restricted, in certain circumstances;</li>
         <li>object to our use of your data where we rely on legitimate interests;</li>
         <li>receive data you gave us in a portable format, in certain circumstances;</li>
-        <li>withdraw consent at any time, where we rely on consent (for analytics and advertising cookies, use &ldquo;Cookie settings&rdquo;).</li>
+        <li>withdraw consent at any time, where we rely on consent (for analytics and advertising cookies, use &ldquo;Cookie settings&rdquo;);</li>
+        <li>turn usage statistics off at any time, with one click on our cookie policy page or in &ldquo;Cookie settings&rdquo;.</li>
       </ul>
       <p>
         To use any of these rights, email <a href={`mailto:${email}`}>{email}</a>. We will reply within one month, and may
@@ -279,7 +301,7 @@ export default function PrivacyPage() {
       <h2 id="cookies">9. Cookies</h2>
       <p>
         We use strictly necessary cookies and browser storage to run the site, and analytics and advertising cookies only
-        if you allow them. See our{" "}
+        if you allow them. Our usage statistics set no cookies and store nothing on your device. See our{" "}
         <Link href="/cookies">cookie policy</Link>.
       </p>
 

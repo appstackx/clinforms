@@ -471,7 +471,7 @@ describe("banners and legal pages tell the truth about advertising cookies", () 
     assert.match(clinforms, /brandForHost\(window\.location\.host\)\.publicSite === "clindesk"/);
     assert.ok(!/No advertising cookies/.test(clinforms));
     const clindesk = read("src/components/clindesk/cookie-consent.tsx");
-    assert.match(clindesk, /className="btn btn-pine cd-consent-btn" onClick=\{\(\) => save\(\{ analytics: false, ads: true \}\)\}>\s*Accept\s*<\/button>\s*<button type="button" className="btn btn-pine cd-consent-btn" onClick=\{\(\) => save\(\{ analytics: false, ads: false \}\)\}>\s*Reject\s*</);
+    assert.match(clindesk, /className="btn btn-pine cd-consent-btn" onClick=\{\(\) => save\(\{ analytics: true, ads: true \}\)\}>\s*Accept\s*<\/button>\s*<button type="button" className="btn btn-pine cd-consent-btn" onClick=\{\(\) => save\(\{ analytics: false, ads: false \}\)\}>\s*Reject\s*</);
     assert.match(read("src/app/clindesk-site/layout.tsx"), /<ClindeskCookieConsent \/>\s*\{children\}/, "first in the tab order");
     assert.match(read("src/components/clindesk/site-footer.tsx"), /<CookieSettingsButton className="f-cookie-btn" \/>/);
     assert.match(read("src/components/marketing/site-footer.tsx"), /<CookieSettingsButton/);

@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { filterOutgoingEvent, sanitizePath, sanitizeProps, sanitizeUrl, shouldCapturePageview } from "./events";
+import { posthogInitConfig } from "./posthog";
 
 const ORIGIN = "https://clinforms.co.uk";
 
@@ -37,12 +38,14 @@ test("URLs keep only the origin and a sanitised path; UTM tags only on public pa
   assert.equal(sanitizeUrl("https://clinforms.co.uk/?utm_source=<script>", ORIGIN), "https://clinforms.co.uk/");
 });
 
-test("only campaign-level UTM parameters are kept: utm_content and utm_term could name a recipient", () => {
+test("the five UTM parameters are kept on public pages (08/11/2026); click ids and other parameters never", () => {
+  // Outreach links still carry campaign-level values only – never a clinic or a person (CLAUDE.md hard rule).
   assert.equal(
-    sanitizeUrl("https://clinforms.co.uk/demo?utm_source=email&utm_medium=outreach&utm_campaign=oct26&utm_content=red-physio&utm_term=daniel", ORIGIN),
-    "https://clinforms.co.uk/demo?utm_source=email&utm_medium=outreach&utm_campaign=oct26",
+    sanitizeUrl("https://clinforms.co.uk/demo?utm_source=email&utm_medium=outreach&utm_campaign=nov26&utm_content=video&utm_term=forms&gclid=Cj0abc&email=a@b.com", ORIGIN),
+    "https://clinforms.co.uk/demo?utm_source=email&utm_medium=outreach&utm_campaign=nov26&utm_content=video&utm_term=forms",
   );
-  assert.equal(sanitizeUrl("https://clinforms.co.uk/?utm_content=blue-heart", ORIGIN), "https://clinforms.co.uk/");
+  assert.equal(sanitizeUrl("https://clinforms.co.uk/?utm_content=<script>", ORIGIN), "https://clinforms.co.uk/");
+  assert.equal(sanitizeUrl("https://clinforms.co.uk/app?utm_source=x", ORIGIN), "https://clinforms.co.uk/app");
 });
 
 test("only allow-listed properties with allowed values survive", () => {
@@ -130,7 +133,8 @@ test("the demo video's play and completed events leave with nothing but the area
 test("analytics sends each event when it is captured, so nothing queued before a withdrawal leaves after it", () => {
   // scripts/e2e/demo-video.cjs ANALYTICS=1 checks the same in a browser: accept, withdraw at once, nothing sent after.
   const source = fs.readFileSync(path.join(process.cwd(), "src/components/analytics/posthog.ts"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
-  assert.match(source, /posthog\.init\(key, \{[\s\S]*?\brequest_batching: false,[\s\S]*?\}\);/);
+  assert.match(source, /posthog\.init\(key, \{\s*\.\.\.posthogInitConfig\(initialMode, apiHost\(\)\),/);
+  for (const mode of ["stats", "full"] as const) assert.equal(posthogInitConfig(mode, "/ingest").request_batching, false);
 });
 
 test("invitation and reset links never leave in an event (24/10/2026): page views dropped, URL properties stripped of the token", () => {
