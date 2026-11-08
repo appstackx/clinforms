@@ -10,6 +10,8 @@ import {
   availablePurposes,
   browserPrivacySignals,
   browserSaveConsent,
+  browserSetStats,
+  browserStatsOptedOut,
   browserStoredConsent,
   onConsentManage,
   optOutSignalled,
@@ -31,6 +33,12 @@ export interface ConsentControls {
   setManaging: (open: boolean) => void;
   /** Saves a choice (only purposes this page offers can be "yes") and closes the settings. */
   save: (purposes: ConsentPurposes) => void;
+  /**
+   * Usage statistics (cookieless, on by default – not a consent purpose): on unless the visitor turned them off or the
+   * browser sends an opt-out signal. `setStats(false)` is the one-click opt-out (also withdraws analytics cookies).
+   */
+  statsOn: boolean;
+  setStats: (on: boolean) => void;
 }
 
 const NONE: ConsentPurposes = { analytics: false, ads: false };
@@ -41,9 +49,11 @@ export function useConsent(): ConsentControls {
   const [signalled, setSignalled] = useState(false);
   const [purposes, setPurposes] = useState<ConsentPurposes>(NONE);
   const [managing, setManaging] = useState(false);
+  const [statsOptedOut, setStatsOptedOut] = useState(false);
 
   useEffect(() => {
     setChoice(browserStoredConsent());
+    setStatsOptedOut(browserStatsOptedOut());
     setSignalled(optOutSignalled(browserPrivacySignals()));
     setPurposes(availablePurposes());
     setMounted(true);
@@ -53,11 +63,19 @@ export function useConsent(): ConsentControls {
   const save = useCallback(
     (wanted: ConsentPurposes) => {
       setChoice(browserSaveConsent({ analytics: wanted.analytics && purposes.analytics, ads: wanted.ads && purposes.ads }));
+      if (wanted.analytics && purposes.analytics) setStatsOptedOut(false);
       setManaging(false);
     },
     [purposes],
   );
 
+  const setStats = useCallback((on: boolean) => {
+    browserSetStats(on);
+    setStatsOptedOut(!on);
+    setChoice(browserStoredConsent());
+  }, []);
+
   const offers = purposes.analytics || purposes.ads;
-  return { mounted, choice, signalled, purposes, undecided: mounted && offers && !choice && !signalled, managing, setManaging, save };
+  const statsOn = purposes.analytics && !signalled && !statsOptedOut;
+  return { mounted, choice, signalled, purposes, undecided: mounted && offers && !choice && !signalled, managing, setManaging, save, statsOn, setStats };
 }

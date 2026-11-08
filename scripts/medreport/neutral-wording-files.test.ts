@@ -98,6 +98,21 @@ const ALLOW: AllowEntry[] = [
     text: /^https:\/\/challenges\.cloudflare\.com\/turnstile\/v0\/api\.js\?render=explicit$/,
     reason: "The bot-check widget's script address (loaded, never shown); the widget's visible text names no vendor.",
   },
+  {
+    file: "src/app/(marketing)/cookies/page.tsx",
+    text: /^(No cookies are set and nothing is stored on your device|Only if you allow analytics cookies, the same usage statistics)/,
+    reason: "Owner decided (Khuram, 08/11/2026) to name the website-statistics provider (PostHog, EU) where the cookieless usage statistics are disclosed.",
+  },
+  {
+    file: "src/app/(marketing)/privacy/page.tsx",
+    text: /^(To count visits and clicks so we can improve our own website|Website statistics \(PostHog, EU region\)$)/,
+    reason: "Owner decided (Khuram, 08/11/2026) to name the website-statistics provider (PostHog, EU) where the cookieless usage statistics are disclosed.",
+  },
+  {
+    file: "src/components/consent/consent-banner.tsx",
+    text: /^On unless you turn it off\. We count visits and clicks/,
+    reason: "Owner decided (Khuram, 08/11/2026) to name the website-statistics provider (PostHog, EU) where the cookieless usage statistics are disclosed.",
+  },
 ];
 
 export interface ExtractedString {

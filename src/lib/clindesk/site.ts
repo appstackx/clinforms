@@ -21,6 +21,9 @@ export const ACCESSIBILITY_LAST_UPDATED = "2026-10-30";
  */
 export const CLINDESK_LEGAL_LAST_UPDATED = "2026-11-01";
 
+/** "Last updated" of the privacy and cookie policies since the usage statistics (08/11/2026); the terms keep the above. */
+export const CLINDESK_PRIVACY_COOKIES_LAST_UPDATED = "2026-11-08";
+
 /** Date the site's pages last changed (sitemap lastModified; /tour uses its video's publishedOn). */
 export const CLINDESK_SITE_UPDATED = "2026-11-01";
 

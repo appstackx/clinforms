@@ -122,7 +122,8 @@ He decides everything; the agent proposes.
 - **What is live:** public site `/` + **`/demo`** (the 1:30 video from `media.clinforms.co.uk`, R2 bucket
   `clinforms-media`, EU, folder `demo/2026-10-10/`), `/privacy` `/cookies` `/terms` `/security` (drafts – owner review
   pending), `/request-access` (row in D1, **no email notification** – check `/app/platform` daily); cookie banner,
-  **PostHog EU project 300254 only after consent** (via `/ingest`); **clinic sign-in** (Better Auth, invite-only,
+  **PostHog EU project 300254** (via `/ingest`; since 08/11/2026 cookieless usage statistics by default on the public
+  pages of both sites – see "Analytics and consent" below); **clinic sign-in** (Better Auth, invite-only,
   TOTP two-step required; email off → invite/reset links handed over by hand); `/app` (overview + checklist, settings:
   clinic/members/security/api-keys, **activity log** `/app/settings/activity` with CSV); **clinic Studio
   `/app/studio`** (reports, form maps, files AES-256-GCM encrypted per clinic in D1 via the gateway Worker
@@ -163,6 +164,29 @@ He decides everything; the agent proposes.
 4. **Outreach** with the video (link `https://clinforms.co.uk/demo`, campaign-level UTM only) – Khuram's call.
 5. **Ask Khuram** (one message): RED call time; Anthropic key done?; Dell video sent/replied?; price line for RED;
    "Organise these notes" yes/no.
+
+## Analytics and consent (since 08/11/2026)
+- **Usage statistics on by default** on the PUBLIC website pages of **both** sites (clinforms.co.uk `PUBLIC_PAGES`,
+  clindesk.co.uk `CLINDESK_PAGES`) under the UK statistical-purposes exemption (PECR Sched. A1, Data (Use and Access)
+  Act 2025). PostHog starts on the first page view **without consent** with `persistence: "memory"` – no cookies, no
+  localStorage – and only `STATS_EVENTS` leave (`$pageview` with path + utm_source/medium/campaign/content/term +
+  `has_gclid` boolean (never the gclid value), referrer domain; `cta_clicked` {book_demo|book_visit|request_access},
+  `form_started` / `form_submitted` {request_access|demo_request} (server-accepted only, never a value),
+  `cross_site_clicked` {clindesk|clinforms}, demo video events). Never on /app, /login & other sign-in pages, /clinics,
+  /reports, /pms-sandbox, /api.
+- **Cookie consent ("Accept" / Analytics cookies on)** switches the same instance to `localStorage` persistence and
+  allows the app/Studio events (as before). Advertising (Google Ads tag + "Demo request" conversion) is **unchanged:
+  consent-only**.
+- **Opt-out:** one click – banner "Turn off statistics", the "Usage statistics" switch in Cookie settings, or the
+  `StatsToggle` on /cookies (both sites). Stored in the strictly necessary cookie `clinforms_stats=off` (12 months);
+  stops PostHog at once and clears `ph_*` / `__ph*` storage; also withdraws analytics cookies. DNT / GPC = opt-out.
+- Code: `src/components/consent/consent.ts` (`analyticsMode`, `STATS_COOKIE`, `browserSetStats`),
+  `src/components/analytics/{posthog,events,analytics-provider}.ts(x)`, banners `consent-banner.tsx` +
+  `clindesk/cookie-consent.tsx`, wording on both sites' /cookies + /privacy (PostHog EU named – owner's decision, allow-
+  listed in `scripts/medreport/neutral-wording-files.test.ts`). Tests: `src/components/analytics/stats.test.ts`.
+- Outreach links: utm_content / utm_term are now recorded – still campaign-level values only, never a clinic/person.
+- Headless browsers are dropped by PostHog's bot filter (HeadlessChrome / navigator.webdriver): local Playwright checks
+  must override the user agent, `navigator.webdriver` and `navigator.userAgentData`.
 
 ## Key commands
 ```bash

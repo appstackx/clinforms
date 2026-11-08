@@ -81,6 +81,7 @@ export function RequestAccessForm() {
       const payload = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; fieldErrors?: Record<string, string> };
       if (res.ok && payload.ok) {
         track("request_access_submitted", { area: "marketing", sites: body.sites as AnalyticsProps["sites"] });
+        track("form_submitted", { area: "marketing", form: "request_access" });
         setStatus({ kind: "sent" });
         const human = body.website === "";
         requestAnimationFrame(() => {
@@ -134,6 +135,7 @@ export function RequestAccessForm() {
 
   return (
     <form
+      data-analytics-form="request_access"
       ref={formRef}
       onSubmit={onSubmit}
       noValidate

@@ -17,6 +17,7 @@
  */
 import { useEffect, useRef, type FormEvent } from "react";
 import { forgetDemoSent, noteDemoSent } from "@/components/ads/google-ads";
+import { noteDemoFormSubmit } from "@/components/analytics/posthog";
 import { useFormState, useFormStatus } from "react-dom";
 import { bookDemoAction } from "@/app/clindesk-site/demo/actions";
 import { INITIAL_DEMO_FORM_STATE, type DemoFormState } from "@/app/clindesk-site/demo/form-state";
@@ -75,6 +76,7 @@ export function DemoForm() {
     const honeypot = new FormData(event.currentTarget).get("website");
     if (!honeypot) noteDemoSent();
     else forgetDemoSent();
+    if (!honeypot) noteDemoFormSubmit();
   };
 
   const errorEntries = Object.entries(e).filter(([k]) => k !== "website");
@@ -85,7 +87,7 @@ export function DemoForm() {
         Tell us about your clinic
       </h2>
       <p className="small d-form-note">Fields marked (required) need an answer.</p>
-      <form className="d-form" action={action} onSubmit={onSubmit} aria-labelledby="form-title">
+      <form className="d-form" data-analytics-form="demo_request" action={action} onSubmit={onSubmit} aria-labelledby="form-title">
         {state.status !== "idle" ? (
           <div className="d-error-summary" ref={summaryRef} tabIndex={-1} role="alert" aria-labelledby="form-errors-title">
             <p className="d-error-title" id="form-errors-title">

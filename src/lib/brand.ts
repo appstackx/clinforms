@@ -42,7 +42,11 @@ export interface Brand {
   publicSite: "clinforms" | "clindesk";
   /** Canonical origin of this brand's public website (canonical links, sitemap, robots). */
   siteUrl: string;
-  /** Whether the consent-gated product analytics may run on this brand's hosts (ClinDesk: no product analytics). */
+  /**
+   * Whether the product analytics may run on this brand's hosts: cookieless usage statistics on the public website pages
+   * (on by default, one-click opt-out – PECR Sched. A1 statistical purposes, 08/11/2026), with device storage only after
+   * cookie consent (src/components/analytics). Both brands.
+   */
   analytics: boolean;
   /**
    * Whether the consent-gated advertising measurement tag (src/components/ads/google-ads.ts) may load on this brand's
@@ -92,7 +96,7 @@ export const BRANDS: Readonly<Record<BrandId, Brand>> = {
     devHosts: ["clinic.localhost"],
     publicSite: "clindesk",
     siteUrl: "https://clindesk.co.uk",
-    analytics: false,
+    analytics: true,
     ads: true,
     appHome: "/app/clinic",
     contactEmail: "hello@clindesk.co.uk",

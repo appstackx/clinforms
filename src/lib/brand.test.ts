@@ -40,7 +40,7 @@ describe("brands", () => {
     assert.equal(hostName("[::1]:3000"), "[::1]");
     assert.equal(BRANDS.clinic.publicSite, "clindesk");
     assert.equal(BRANDS.clinic.siteUrl, "https://clindesk.co.uk");
-    assert.equal(BRANDS.clinic.analytics, false);
+    assert.equal(BRANDS.clinic.analytics, true);
     assert.equal(BRANDS.clinic.appHome, "/app/clinic");
     assert.deepEqual(BRANDS.clinic.hosts, ["clindesk.co.uk", "www.clindesk.co.uk"]);
   });
