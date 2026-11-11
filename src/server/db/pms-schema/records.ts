@@ -137,7 +137,7 @@ export interface PmsAttachmentsTable {
   withdrawn_at: IsoTimestamp | null;
   withdrawn_by: string | null;
   withdrawn_reason_enc: string | null;
-  /** NULL = the encrypted pieces are in pms_attachment_chunks; else the key of the one encrypted object in the file store (0226). */
+  /** NULL = the encrypted pieces are in pms_attachment_chunks; else the key of the one encrypted object in the file store (0230). */
   object_key: string | null;
   uploaded_by: string | null;
   anonymised_at: IsoTimestamp | null;
