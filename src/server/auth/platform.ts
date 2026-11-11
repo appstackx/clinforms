@@ -8,7 +8,7 @@
  * 0/1 on SQLite/D1).
  */
 import { isMissingBillingTable } from "../repos/clinic-subscription";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { Kysely } from "kysely";
@@ -29,6 +29,8 @@ import { listMemberProfiles } from "../repos/member-profile";
 import { listPartnerKeys } from "../repos/partner-keys";
 import { getTenantSettings } from "../repos/tenant-settings";
 import { countPmsRows, deletePmsQueries, exportPmsData } from "../pms/offboard";
+import { attachmentObjectKeysForClinic, getAttachmentFile } from "../repos/pms/records/attachments";
+import { getFileStore } from "../storage/file-store";
 import { PLATFORM_USER_EMAIL, PLATFORM_USER_ID, RESET_TOKEN_TTL_SECONDS, invitationRef } from "./create-auth";
 import { invitationExpiry } from "./invitation-expiry";
 import { inviteLink } from "./invite-token";
@@ -400,6 +402,18 @@ export async function offboardClinic(db: Kysely<Database>, cipher: DataCipher | 
     writePrivate(path.join(dir, rel), file.bytes);
     fileManifest.push({ sha256: meta.sha256, fileName: meta.fileName, mimeType: meta.mimeType, sizeBytes: meta.sizeBytes, path: rel });
   }
+  // B07: patient files held in the file store (not in clinic-system.json's rows): each one read, verified, written.
+  const storedFiles = clinicSystem?.pms_attachments ? await attachmentObjectKeysForClinic(ctx, tenantId) : [];
+  const attachmentManifest: { attachmentId: string; fileName: string; mimeType: string; sizeBytes: number; sha256: string; path: string }[] = [];
+  if (storedFiles.length) fs.mkdirSync(path.join(dir, "files", "attachments"), { recursive: true, mode: 0o700 });
+  for (const f of storedFiles) {
+    if (!cipher) throw new Error("The data keys are needed to export the clinic's files.");
+    const file = await getAttachmentFile({ db, cipher }, tenantId, f.id);
+    if (!file) throw new Error(`Patient file ${f.id} is missing: stop and investigate before offboarding.`);
+    const rel = path.join("files", "attachments", f.id);
+    writePrivate(path.join(dir, rel), file.bytes);
+    attachmentManifest.push({ attachmentId: f.id, fileName: file.details.fileName, mimeType: file.details.mimeType, sizeBytes: file.details.sizeBytes, sha256: file.details.sha256, path: rel });
+  }
   const clinic = {
     exportedAt: new Date().toISOString(),
     tenantId,
@@ -416,6 +430,7 @@ export async function offboardClinic(db: Kysely<Database>, cipher: DataCipher | 
     partnerKeys: keys,
     auditLog: audit,
     files: fileManifest,
+    patientFiles: attachmentManifest,
   };
   const outputs: [string, unknown][] = [
     ["clinic.json", clinic],
@@ -433,6 +448,11 @@ export async function offboardClinic(db: Kysely<Database>, cipher: DataCipher | 
     if (JSON.stringify(back) !== JSON.stringify(JSON.parse(JSON.stringify(value)))) throw new Error(`Export check failed for ${name}: nothing deleted.`);
   }
   exportFiles.push(...fileManifest.map((f) => f.path));
+  for (const f of attachmentManifest) {
+    const back = fs.readFileSync(path.join(dir, f.path));
+    if (back.length !== f.sizeBytes || createHash("sha256").update(back).digest("hex") !== f.sha256) throw new Error(`Export check failed for ${f.path}: nothing deleted.`);
+  }
+  exportFiles.push(...attachmentManifest.map((f) => f.path));
 
   // 2. Delete the tenant's data, memberships and the accounts that belong to no other clinic – one atomic batch
   //    (ordered batches only past the gateway's statement limit: offboardBatches).
@@ -467,6 +487,12 @@ export async function offboardClinic(db: Kysely<Database>, cipher: DataCipher | 
     } catch (err) {
       if (!isMissingBillingTable(err)) throw err;
     }
+  }
+  // B07: the exported, verified patient files leave the file store once their rows are gone.
+  if (storedFiles.length) {
+    const store = getFileStore();
+    if (!store) throw new Error(`The clinic is closed but its ${storedFiles.length} stored files could not be removed: the file store is not configured here. Remove the "${tenantId}/" prefix by hand.`);
+    await store.remove(storedFiles.map((f) => f.objectKey));
   }
   // Rows written to a clinic-system table that was empty when it was read (a member still working until the batch
   // above removed every membership) – none in practice; deleted here so nothing of the closed clinic stays behind.
