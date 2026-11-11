@@ -22,6 +22,7 @@ export const PAGE_PERMISSIONS: readonly (readonly [string, PmsPermission])[] = [
   ["/billing/invoices/[invoiceId]", "billing.view"],
   ["/billing/invoices/[invoiceId]/print", "billing.view"],
   ["/billing", "billing.view"],
+  ["/billing/gift-cards", "billing.view"],
   ["/billing/payers", "billing.view"],
   ["/billing/remittances/new", "billing.pay"],
   ["/billing/statements/print", "billing.view"],

@@ -45,6 +45,11 @@ export const BILLING_AUDIT_LABELS: Readonly<Record<string, string>> = {
   "pms.course.use_reverse": "Visit put back on a course",
   "pms.course.cancel": "Course cancelled",
   "pms.course.expiry": "Course expiry changed",
+  "pms.gift_card.sell": "Gift card sold (draft invoice)",
+  "pms.gift_card.start": "Gift card can be spent (its invoice issued)",
+  "pms.gift_card.redeem": "Gift card spent on a payment",
+  "pms.gift_card.refund": "Gift card amount put back (payment reversed)",
+  "pms.gift_card.cancel": "Gift card cancelled",
 };
 
 /** Names of the record types its audit rows point at (target_type → label). */
@@ -58,4 +63,5 @@ export const BILLING_AUDIT_TARGETS: Readonly<Record<string, string>> = {
   pms_case: "Case",
   pms_course_type: "Course",
   pms_patient_course: "Patient's course",
+  pms_gift_card: "Gift card",
 };

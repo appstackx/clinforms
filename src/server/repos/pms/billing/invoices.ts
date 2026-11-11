@@ -39,6 +39,7 @@ import type { PmsInvoicesTable } from "../../../db/pms-schema/billing";
 import { recordAuthorisationUsage } from "../cases";
 import { RepoInputError, assertId, assertTenantId, decryptField, encryptField, nowIso, num, numOrNull, parseInput, parseLines, pmsAudit, pmsAuditQuery, pmsId, translateDbError, type RepoContext } from "../context";
 import { contributionModeForCase } from "./contribution-terms";
+import { giftCardCancelDraftQueries, giftCardStartQueries } from "./gift-cards";
 import { courseStartQueries, courseUsedAppointmentIds, invoiceLineRefs, lineRefInsert, type LineRefType } from "./courses";
 import { ensureSettingsQuery, getBillingSettings } from "./settings";
 import { INV, LINES, OPEN_INVOICE, PAY, SUMMARY_COLUMNS, affected, billingAuditWhen, billingBatch, chunks, editToken, isUniqueRefusal, todayOf, toInvoiceLine, toInvoiceSummary } from "./shared";
@@ -270,6 +271,8 @@ export interface CreateDraftOptions {
    * draft's own batch. `lineIndex` is the line's place in `input.lines` (0-based). Not with applyExcess.
    */
   lineRefs?: { lineIndex: number; refType: LineRefType; refId: string }[];
+  /** More statements for the draft's own batch, given its lines in input order (e.g. a gift card's row – PK04). */
+  extra?: (lines: { id: string }[], invoiceId: string, at: string) => BatchQuery[];
 }
 
 export interface CreateDraftResult {
@@ -495,6 +498,10 @@ export async function createDraftInvoice(ctx: RepoContext, tenantId: string, inp
       queries.push(lineRefInsert(ctx, tenantId, { invoiceLineId: payerLines[r.lineIndex].id, refType: r.refType, refId: r.refId }, at));
       if (r.refType === "course") queries.push(pmsAuditQuery(ctx, tenantId, actor, { action: "pms.course.sell", targetType: "pms_invoice", targetId: id, detail: { courseTypeId: r.refId } }));
     }
+    if (options.extra) {
+      if (split) throw new RepoInputError("A course, gift card or product is sold on an invoice to the patient.");
+      queries.push(...options.extra(payerLines, id, at));
+    }
     if (split) queries.push(ctx.db.updateTable(INV).set({ related_invoice_id: id }).where("tenant_id", "=", tenantId).where("id", "=", split.id));
     queries.push(pmsAuditQuery(ctx, tenantId, actor, { action: "pms.invoice.create", targetType: "pms_invoice", targetId: id, detail: { billTo, lines: payerLines.length, ...(split ? { excessInvoiceId: split.id } : {}) } }));
   }
@@ -632,6 +639,8 @@ export async function cancelDraftInvoice(ctx: RepoContext, tenantId: string, id:
       .where("invoice_id", "in", ids)
       .where(sql<boolean>`exists (select 1 from pms_invoices i where i.tenant_id = ${tenantId} and i.id = pms_invoice_lines.invoice_id and i.status = 'cancelled')`),
     pmsAuditQuery(ctx, tenantId, actor, { action: "pms.invoice.cancel", targetType: "pms_invoice", targetId: id, detail: { rev: expectedRev + 1 } }),
+    // Gift cards sold on the draft (PK04) are cancelled with it.
+    ...(await giftCardCancelDraftQueries(ctx, tenantId, ids, at)),
   );
   const results = await billingBatch(ctx, queries, MESSAGES);
   if (affected(results[0]) === 0) return (await draftState(ctx, tenantId, id)) ?? { ok: false, reason: "not_found" };
@@ -738,7 +747,7 @@ export async function issueInvoice(ctx: RepoContext, tenantId: string, id: strin
     for (let attempt = 0; attempt < 4 && !issued; attempt++) {
       const token = editToken();
       // Courses sold on it start now (PK02) – each insert reads the issue's own token, so a stale issue starts none.
-      const starts = await courseStartQueries(ctx, tenantId, inv, issuedOn, token, actor, at);
+      const starts = [...(await courseStartQueries(ctx, tenantId, inv, issuedOn, token, actor, at)), ...(await giftCardStartQueries(ctx, tenantId, inv, issuedOn, token, actor, at))];
       const queries = [
         ensureSettingsQuery(ctx, tenantId, at),
         ctx.db

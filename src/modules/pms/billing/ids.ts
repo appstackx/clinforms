@@ -15,6 +15,8 @@ export const BILLING_ID_PREFIXES = {
   courseType: "crst",
   patientCourse: "pcrs",
   courseUse: "cruse",
+  giftCard: "gcard",
+  giftCardMove: "gcmv",
 } as const;
 
 export type BillingIdKind = keyof typeof BILLING_ID_PREFIXES;

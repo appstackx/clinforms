@@ -31,6 +31,7 @@ import {
   type RemittanceResult,
   type TakePaymentResult,
 } from "@/server/pms/billing/writes";
+import { giftCardsFor, sellGiftCardFor } from "@/server/pms/billing/gift-cards";
 import { cancelCourseFor, reverseCourseUseFor, sellCourseFor, setCourseExpiryFor } from "@/server/pms/billing/courses";
 
 export type BillingActionResult<T = unknown> = ({ ok: true } & T) | { ok: false; error: string; fieldErrors?: Record<string, string> };
@@ -258,4 +259,29 @@ export async function setCourseExpiryAction(patientId: string, courseId: string,
   if (!r.ok) return { ok: false, error: r.error };
   refresh([patientPath(patientId)]);
   return { ok: true };
+}
+
+/* Gift cards (PK04, src/server/pms/billing/gift-cards.ts). The code comes back once, here. */
+export async function sellGiftCardAction(patientId: string, input: { amountPence: number; recipientName?: string | null; siteId?: string | null; issue?: boolean }): Promise<BillingActionResult<{ code: string; invoiceId: string; number: string | null; issued: boolean; expiresOn: string | null }>> {
+  const actor = await clinicActionActor({ permission: "billing.edit" });
+  if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
+  const r = await sellGiftCardFor(actor, String(patientId), {
+    amountPence: Number(input?.amountPence),
+    recipientName: typeof input?.recipientName === "string" ? input.recipientName.slice(0, 80) : null,
+    siteId: input?.siteId ? String(input.siteId) : null,
+    issue: Boolean(input?.issue),
+  });
+  if (!r.ok) return { ok: false, error: r.error };
+  refresh([patientPath(patientId), `${BILLING}/gift-cards`]);
+  return { ok: true, code: r.value.code, invoiceId: r.value.invoiceId, number: r.value.number, issued: r.value.issued, expiresOn: r.value.expiresOn };
+}
+
+/** Looks a gift card up by its code (billing.view): the card's id, so the page opens it without the code in the URL. */
+export async function lookUpGiftCardAction(code: string): Promise<BillingActionResult<{ cardId: string }>> {
+  const actor = await clinicActionActor({ permission: "billing.view" });
+  if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
+  const r = await giftCardsFor(actor, { code: typeof code === "string" ? code.slice(0, 40) : "" });
+  if (!r.ok) return { ok: false, error: r.error };
+  if (!r.value.card) return { ok: false, error: r.value.lookupError ?? "No gift card has that code in this clinic." };
+  return { ok: true, cardId: r.value.card.id };
 }

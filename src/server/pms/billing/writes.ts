@@ -45,6 +45,9 @@ import { paymentLinkProvider, PaymentProviderError, type PaymentLinkProvider } f
 import { billableVisitSource } from "./visit-source";
 import { priceVisits, referrerNames } from "./views";
 import { useCoursesForVisits } from "./courses";
+import { maskedCode, normaliseGiftCardCode } from "../../../modules/pms/billing/gift-cards";
+import { findGiftCardByCode, giftCardRedeemQueries, giftCardRefusal } from "../../repos/pms/billing/gift-cards";
+import type { BatchQuery } from "../../db/batch";
 import { pmsNow, pmsNowMs } from "../../../modules/pms/core/clock";
 
 const CONFLICT = "Someone else changed this invoice. Reload the page and try again.";
@@ -374,8 +377,21 @@ export async function takePaymentFor(actor: BillingActor, input: TakePaymentInpu
 
     let method: PaymentMethod;
     let reference: string | null = d.reference ?? null;
-    let providerOpts: { provider?: string; providerRef?: string } = {};
-    if (d.method === "card_on_file") {
+    let providerOpts: { provider?: string; providerRef?: string; extra?: (paymentId: string, at: string) => BatchQuery[]; extraRefusal?: string } = {};
+    if (d.method === "gift_card") {
+      // PK04: the payment is method "other" with the card in its reference; the card's balance drops in its batch.
+      const code = normaliseGiftCardCode(d.giftCardCode ?? "");
+      const card = code ? await findGiftCardByCode(ctx, t, code) : null;
+      if (!card) return fail("invalid", "No gift card has that code in this clinic. Check the code and try again.", { fieldErrors: { giftCardCode: "No gift card has that code" } });
+      const refusal = giftCardRefusal(card, d.amountPence, today);
+      if (refusal) return fail("invalid", refusal, { fieldErrors: { giftCardCode: refusal } });
+      method = "other";
+      reference = `Gift card ${maskedCode(card.codeLast4)}`;
+      providerOpts = {
+        extra: (paymentId, at) => giftCardRedeemQueries(ctx, t, card, d.amountPence, paymentId, actor.actor, at),
+        extraRefusal: "The gift card was used meanwhile. Check its balance and try again.",
+      };
+    } else if (d.method === "card_on_file") {
       const card = d.savedCardId ? await getSavedCard(ctx, t, d.savedCardId) : null;
       if (!card || card.patientId !== patient.id || card.status !== "active") return fail("invalid", "That saved card is not this patient's.");
       if (!provider.configured) return fail("invalid", provider.unavailableReason ?? "Saved cards are not set up.");

@@ -93,3 +93,31 @@ course statement is added unless the invoice has course rows), the visits list k
 **Tests:** `src/modules/pms/billing/courses.test.ts` (pure), `src/server/repos/pms/billing/courses-repos.test.ts`
 (+ `testing/courses-suite.ts`) and `src/server/pms/billing/courses-service.test.ts` on node:sqlite and PGlite with the
 tenant-scope guard; parity, ranges, offboarding batch and Set-up navigation as before.
+
+## 7. Built – PK04 gift cards (11/11/2026, branch `feat/courses`, not merged, migrations not applied anywhere)
+
+| What | Where (screen) | Code |
+|---|---|---|
+| Sell a gift card (value £1–£1,000, optional "for" name, encrypted): a draft invoice to the buyer with an `item` line "Gift card (no VAT – VAT is charged when it is spent)" + its line reference + the card (status pending) – one batch; or "Sell and issue invoice". The **code is shown once** ("Write this code on the gift card now"), stored only as SHA-256 of clinic + code and its last 4 | Patient → **Invoices** → Gift cards → **Sell a gift card** | `pms_gift_cards` (0234); `giftCardDraftQueries` via `createDraftInvoice(…, { extra })` |
+| The card can be spent once its invoice is **issued** (activated in the issue batch: balance = value, "sale" move, expiry 24 months less a day); a cancelled draft cancels the card | – | `giftCardStartQueries`, `giftCardCancelDraftQueries` |
+| Spend: **Take payment → Gift card** asks for the code (typed any way); refused when not issued, cancelled, expired, empty or more than is left ("Only £30.00 is left…"). The payment and the balance change are one batch, optimistic on the balance read | Take payment dialog | `giftCardRedeemQueries` via `recordPayment(…, { extra })`; `pms_gift_card_moves` (0235) |
+| Reversing that payment puts the amount back (a "refund" move) in the reversal's batch | Invoice → payments | `giftCardRestoreQueries` in `reversePayment` |
+| Crediting (or voiding) the sale line: only in full and only while the card is unspent – the card is then cancelled (balance 0, an "adjust" move) | Invoice → credit note / void | `giftCardCreditQueries` in `issueCreditNote` |
+| Billing → **Gift cards**: what active cards still hold (liability), the latest 200 cards, look one up by its code (a server action – **a code never goes in a URL**), a card's history | `/app/clinic/billing/gift-cards` (billing.view; site-limited members see cards bought by patients of their sites) | `src/server/pms/billing/gift-cards.ts`, `src/components/pms/billing/gift-cards.tsx` |
+
+**Decisions taken while building (differ from §1):**
+- **No `gift_card` payment method:** `pms_payments.method` HAS a CHECK (0131), so changing it means rebuilding the table on
+  SQLite. A gift-card payment is method **`other`** with reference "Gift card •••• •••• X2HP"; the link payment → card is
+  the move's `payment_id` (that is how a reversal finds what to put back).
+- The buyer must be a **patient** (an invoice needs one); `buyer_patient_id` stays nullable for later.
+- The card row is made with the **draft** (status `pending`, one more status than §2) so the code can be handed over at
+  the till; it spends nothing until the invoice is issued.
+- Expiry fixed at 24 months less a day from the sale (no per-card choice yet); no expiry sweep job (the screens show
+  "Expired" from the date; the `expire` move kind is reserved).
+- Line VAT code `exempt` when the clinic is VAT-registered (`none` otherwise) – the line carries no VAT either way.
+- Codes: 12 characters from `ACDEFGHJKMNPQRTUVWXYZ234679` (no 0/O, 1/I/L, 5/S, 8/B), `XXXX-XXXX-XXXX`.
+
+**Audit:** `pms.gift_card.sell|start|redeem|refund|cancel` (ids and amounts, never the code). **Before the migrations:**
+reads answer "no gift cards"; invoices, credit notes and payments get no gift-card statement unless they have card rows.
+**Tests:** `src/server/pms/billing/gift-cards.test.ts` (pure code rules + the whole flow on node:sqlite and PGlite, offboarding,
+tenant-scope guard).

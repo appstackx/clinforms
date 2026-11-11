@@ -1,7 +1,7 @@
 "use client";
 /**
  * Take payment (design round 3 "Take payment – dialog" and "– 375 px"): full balance or a part payment, the method
- * (card on file, card now, cash, bank transfer, payment link), what it pays towards (oldest first, or changed by
+ * (card on file, card now, cash, bank transfer, payment link, gift card), what it pays towards (oldest first, or changed by
  * hand) and the receipt. On a phone it is a full-screen sheet with the button fixed at the bottom.
  *
  * Card on file and payment links go through the payment provider in TEST MODE ONLY (no real card is charged);
@@ -10,7 +10,7 @@
  */
 import * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { Banknote, Building2, Copy, CreditCard, Link2, Smartphone, X } from "lucide-react";
+import { Banknote, Building2, Copy, CreditCard, Gift, Link2, Smartphone, X } from "lucide-react";
 import { loadTakePaymentAction, takePaymentAction } from "@/app/app/clinic/billing/actions";
 import { emailReceiptAction } from "@/app/app/clinic/messages/actions";
 import type { TakePaymentMethod } from "@/modules/pms/billing/schemas";
@@ -39,6 +39,7 @@ const METHODS: { key: TakePaymentMethod; label: string; icon: React.ComponentTyp
   { key: "cash", label: "Cash", icon: Banknote, hint: () => "Work out change" },
   { key: "bank_transfer", label: "Bank transfer", icon: Building2, hint: () => "Record a transfer received" },
   { key: "payment_link", label: "Payment link", icon: Link2, hint: () => "Patient pays by text or email" },
+  { key: "gift_card", label: "Gift card", icon: Gift, hint: () => "Type the code on the card" },
 ];
 
 export function TakePaymentDialog({ open, onOpenChange, patientId, context, invoiceId, onDone, returnFocusTo }: TakePaymentDialogProps) {
@@ -52,6 +53,7 @@ export function TakePaymentDialog({ open, onOpenChange, patientId, context, invo
   const [cardId, setCardId] = React.useState<string | null>(null);
   const [tendered, setTendered] = React.useState("");
   const [reference, setReference] = React.useState("");
+  const [giftCode, setGiftCode] = React.useState("");
   const [editAlloc, setEditAlloc] = React.useState(false);
   const [alloc, setAlloc] = React.useState<Record<string, string>>({});
   const [receipt, setReceipt] = React.useState<"none" | "print" | "email">("none");
@@ -123,6 +125,7 @@ export function TakePaymentDialog({ open, onOpenChange, patientId, context, invo
       savedCardId: method === "card_on_file" ? cardId : null,
       tenderedPence: method === "cash" && tenderedPence !== null ? tenderedPence : undefined,
       reference: reference.trim() || undefined,
+      giftCardCode: method === "gift_card" ? giftCode : undefined,
     });
     setBusy(false);
     if (!r.ok) return setError(r.error);
@@ -287,6 +290,13 @@ export function TakePaymentDialog({ open, onOpenChange, patientId, context, invo
                         </span>
                       ) : null}
                     </div>
+                  ) : null}
+                  {method === "gift_card" ? (
+                    <label className="flex flex-col gap-1 text-sm md:w-1/2">
+                      Gift card code
+                      <input value={giftCode} maxLength={20} autoComplete="off" spellCheck={false} placeholder="XXXX-XXXX-XXXX" onChange={(e) => setGiftCode(e.target.value.toUpperCase())} data-testid="gift-card-code" className={cn("h-9 rounded-[8px] border border-[#94A3B8] px-2 font-mono uppercase tracking-wider", focusRing)} />
+                      <span className="text-xs text-[#475569]">The amount is taken off the card&apos;s balance. VAT is charged on what it pays for, as usual.</span>
+                    </label>
                   ) : null}
                   {method === "bank_transfer" || method === "card_now" ? (
                     <label className="flex flex-col gap-1 text-sm md:w-1/2">

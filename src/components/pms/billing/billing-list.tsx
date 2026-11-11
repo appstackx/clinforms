@@ -129,6 +129,9 @@ export function BillingList(props: BillingListProps) {
         <Link href={`${BILLING_PATH}/payers`} className={cn("text-sm font-medium text-primary-strong underline underline-offset-2", focusRing)} data-testid="payer-accounts-link">
           Payer accounts
         </Link>
+        <Link href={`${BILLING_PATH}/gift-cards`} className={cn("text-sm font-medium text-primary-strong underline underline-offset-2", focusRing)} data-testid="gift-cards-link">
+          Gift cards
+        </Link>
         {can.edit ? (
           <Link href={`${BILLING_PATH}/visits`} className={cn(pmsButtonVariants({ variant: "primary" }), "h-9")} data-testid="invoice-visits-button">
             <Plus aria-hidden />

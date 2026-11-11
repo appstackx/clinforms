@@ -432,6 +432,42 @@ export interface PmsInvoiceLineRefsTable {
   created_at: IsoTimestamp;
 }
 
+/** 0234 (gift cards, PK04): a card sold on an invoice line; the code only as SHA-256 + last 4. */
+export interface PmsGiftCardsTable {
+  tenant_id: string;
+  id: string;
+  rev: number;
+  code_sha256: string;
+  code_last4: string;
+  initial_pence: number;
+  balance_pence: number;
+  sold_on: IsoDate | null;
+  expires_on: IsoDate | null;
+  sale_invoice_id: string | null;
+  sale_line_id: string | null;
+  buyer_patient_id: string | null;
+  recipient_name_enc: string | null;
+  /** "pending" | "active" | "used" | "expired" | "cancelled" */
+  status: string;
+  created_by: string | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
+/** 0235 (gift cards, PK04): every change to a card's balance (append-only). */
+export interface PmsGiftCardMovesTable {
+  tenant_id: string;
+  id: string;
+  gift_card_id: string;
+  /** "sale" | "redeem" | "refund" | "expire" | "adjust" */
+  kind: string;
+  amount_pence: number;
+  payment_id: string | null;
+  balance_after: number;
+  created_by: string | null;
+  created_at: IsoTimestamp;
+}
+
 export interface BillingTables {
   pms_billing_settings: PmsBillingSettingsTable;
   pms_service_vat: PmsServiceVatTable;
@@ -458,6 +494,8 @@ export interface BillingTables {
   pms_patient_courses: PmsPatientCoursesTable;
   pms_course_uses: PmsCourseUsesTable;
   pms_invoice_line_refs: PmsInvoiceLineRefsTable;
+  pms_gift_cards: PmsGiftCardsTable;
+  pms_gift_card_moves: PmsGiftCardMovesTable;
 }
 
 /** Foreign-key order (parents first). */
@@ -487,6 +525,8 @@ export const BILLING_TABLES = [
   "pms_patient_courses",
   "pms_course_uses",
   "pms_invoice_line_refs",
+  "pms_gift_cards",
+  "pms_gift_card_moves",
 ] as const satisfies readonly (keyof BillingTables)[];
 
 export const BILLING_PRIMARY_KEYS: { readonly [T in (typeof BILLING_TABLES)[number]]: readonly (keyof BillingTables[T] & string)[] } = {
@@ -515,6 +555,8 @@ export const BILLING_PRIMARY_KEYS: { readonly [T in (typeof BILLING_TABLES)[numb
   pms_patient_courses: ["tenant_id", "id"],
   pms_course_uses: ["tenant_id", "id"],
   pms_invoice_line_refs: ["tenant_id", "invoice_line_id"],
+  pms_gift_cards: ["tenant_id", "id"],
+  pms_gift_card_moves: ["tenant_id", "id"],
 };
 
 /** Timestamp columns beyond created_at/updated_at (TEXT in SQLite, timestamptz in Postgres) – the D1 → Postgres copy. */
@@ -544,7 +586,10 @@ export const HEALTHCODE_CASCADE_DELETED_TABLES: readonly (typeof BILLING_TABLES)
  */
 export const COURSE_CASCADE_DELETED_TABLES: readonly (typeof BILLING_TABLES)[number][] = ["pms_course_types", "pms_patient_courses", "pms_course_uses", "pms_invoice_line_refs"];
 
-export const BILLING_CASCADE_DELETED_TABLES: readonly (typeof BILLING_TABLES)[number][] = [...HEALTHCODE_CASCADE_DELETED_TABLES, ...COURSE_CASCADE_DELETED_TABLES];
+/** Gift cards (0234–0235): cards go with the clinic's billing settings row (and buyer, invoice, line); moves with their card. */
+export const GIFT_CARD_CASCADE_DELETED_TABLES: readonly (typeof BILLING_TABLES)[number][] = ["pms_gift_cards", "pms_gift_card_moves"];
+
+export const BILLING_CASCADE_DELETED_TABLES: readonly (typeof BILLING_TABLES)[number][] = [...HEALTHCODE_CASCADE_DELETED_TABLES, ...COURSE_CASCADE_DELETED_TABLES, ...GIFT_CARD_CASCADE_DELETED_TABLES];
 
 /** Every billing table holds one clinic's data (offboarding exports them decrypted, then deletes them). */
 export const BILLING_TENANT_TABLES: readonly (typeof BILLING_TABLES)[number][] = BILLING_TABLES;
