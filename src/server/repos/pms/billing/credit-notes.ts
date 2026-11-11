@@ -165,12 +165,16 @@ export async function issueCreditNote(ctx: RepoContext, tenantId: string, inv: I
     );
   }
   if (options.extra) queries.push(...options.extra(id, at));
-  // A course sold on a line credited in full closes with it (PK02).
-  if (releases) queries.push(...(await courseCloseOnCreditQueries(ctx, tenantId, inv.id, parts.map((p) => p.line.id), at)));
-  // A gift card sold on a credited line (PK04): credited in full and unspent only; the card is cancelled with it.
-  // A product line credited in full puts its stock back (PK05).
-  if (releases) queries.push(...(await stockReturnQueries(ctx, tenantId, parts.map((p) => p.line.id), actor, at)));
-  if (releases) queries.push(...(await giftCardCreditQueries(ctx, tenantId, parts.map((p) => ({ lineId: p.line.id, creditPence: p.share.totalPence, lineLeftPence: p.line.totalPence - p.line.creditedPence })), actor, at)));
+  // Only item lines sell a course, gift card or product: a credit note on other lines makes no extra reads.
+  const items = releases ? parts.filter((p) => p.line.kind === "item") : [];
+  if (items.length) {
+    // A course sold on a line credited in full closes with it (PK02).
+    queries.push(...(await courseCloseOnCreditQueries(ctx, tenantId, inv.id, items.map((p) => p.line.id), at)));
+    // A product line credited in full puts its stock back (PK05).
+    queries.push(...(await stockReturnQueries(ctx, tenantId, items.map((p) => p.line.id), actor, at)));
+    // A gift card sold on a credited line (PK04): at most its unspent balance; the balance drops with it.
+    queries.push(...(await giftCardCreditQueries(ctx, tenantId, items.map((p) => ({ lineId: p.line.id, creditPence: p.share.totalPence, lineLeftPence: p.line.totalPence - p.line.creditedPence })), actor, at)));
+  }
   queries.push(
     ctx.db
       .updateTable(INV)

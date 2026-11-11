@@ -94,6 +94,42 @@ course statement is added unless the invoice has course rows), the visits list k
 (+ `testing/courses-suite.ts`) and `src/server/pms/billing/courses-service.test.ts` on node:sqlite and PGlite with the
 tenant-scope guard; parity, ranges, offboarding batch and Set-up navigation as before.
 
+**Review fixes (11/11/2026)** – regression tests in `src/server/pms/billing/courses-giftcards-review.test.ts` (node:sqlite
+and PGlite, a fresh database per test; each fails on the code before the fix) and `courses.test.ts`:
+- **A voided / fully credited sale no longer strands its used visits.** `reverseCourseUse` now works on a cancelled
+  course too: the course stays closed (no session comes back), the use is kept and marked reversed (never deleted), and
+  the visit is billable again like any other. Patient → Invoices → the course shows **Reverse to invoice** on each used
+  visit, with a note, when the sale was voided or its line credited in full (`saleCreditedInFull` on the view); on a
+  course cancelled with a pro-rata credit the button stays **Reverse** (the used sessions were paid for – reversing
+  would bill them twice, so it is the member's call). Audit `pms.course.use_reverse` carries `courseCancelled`.
+- **Pro rata after a part credit:** `proRataCredit` = (line total − already credited) × unused ÷ total, capped at what is
+  left (£600 for 6, £300 credited, 3 used → £150, was £300).
+- **What a draft sells is fixed with the draft:** `pms_invoice_line_refs.snapshot_json` (sessions, services, validity –
+  taken by `createDraftInvoice` from the course type) and `pms_patient_courses.service_ids_json` (the services sold;
+  NULL = the type's, for rows made before). Editing the course type between draft and issue changes nothing sold.
+  Both columns were added to the **unapplied** migrations 0232/0238 (SQLite and Postgres twins) rather than new files.
+- **Invoicing a visit and using it from a course can no longer both win.** The invoice-line insert of a visit is
+  conditional in the same batch: its `invoice_id` is `(select … where not exists (an active course use))`, NULL – the
+  whole draft refused, "already on another invoice or used from a course" – when a use landed meanwhile; the separate
+  pre-read is gone (no extra request per invoice). Same for replacing a draft's lines (`updateDraftInvoice`, which had no
+  course check at all). The use's insert already reads invoice lines in its batch. On Postgres both batches first take a
+  transaction advisory lock per appointment (`visitLockQueries`, sorted) so READ COMMITTED cannot let each pass the
+  other's check; SQLite/D1 run one write batch at a time. Only once the course tables exist (`coursesInstalledCached`,
+  remembered per database once true).
+- **Gateway requests:** issuing makes the course / gift-card / product reads only when the invoice has an `item` line,
+  once before the retry loop (each attempt builds its statements with its own token); credit notes likewise only for
+  credited item lines. A plain service invoice issues with exactly the requests it made before PK02.
+- **Screens:** the use buttons' accessible names start with their visible text ("Reverse – put back the visit on …",
+  "Reverse to invoice – the visit on …", WCAG 2.5.3); the Courses intro reads "1 active course. Visits a course covers…".
+- **Demo seed resume (pre-existing, not changed):** `workers/data-gateway/test/pms-demo-seed-stack.test.ts` stops billing
+  at 6 fixed request counts. Stopped at other counts (3,000 / 6,000 / 18,000 / 24,000 requests) the resumed seed ends
+  with ±1 payment allocation against an uninterrupted run – **on `main` too** (checked 11/11/2026), so it is the seed's
+  resume, not PK02–PK05. The branch's 6 fixed points pass now that ordinary invoices make the same requests as on
+  `main`. Left for a seed fix of its own.
+- **Known behaviour (no change):** a session used for a visit stays used if the appointment later becomes DNA or
+  cancelled – Reverse puts it back (it never looks at the appointment's status); `recordCourseUse` accepts a visit dated
+  before the sale.
+
 ## 7. Built – PK04 gift cards (11/11/2026, branch `feat/courses`, not merged, migrations not applied anywhere)
 
 | What | Where (screen) | Code |
@@ -117,7 +153,32 @@ tenant-scope guard; parity, ranges, offboarding batch and Set-up navigation as b
 - Line VAT code `exempt` when the clinic is VAT-registered (`none` otherwise) – the line carries no VAT either way.
 - Codes: 12 characters from `ACDEFGHJKMNPQRTUVWXYZ234679` (no 0/O, 1/I/L, 5/S, 8/B), `XXXX-XXXX-XXXX`.
 
-**Audit:** `pms.gift_card.sell|start|redeem|refund|cancel` (ids and amounts, never the code). **Before the migrations:**
+**Review fixes (11/11/2026)** – tests in `src/server/pms/billing/courses-giftcards-review.test.ts` and `gift-cards.test.ts`:
+- **Gift-card value never becomes cash.** (a) A gift-card payment must be allocated in full to invoices: Take payment
+  refuses "nothing is kept on account", and the database refuses it too (the redeem move's card id is NULL unless the
+  payment's `allocated_pence = amount_pence` in its batch). Taking a gift-card payment off its invoice (Take off /
+  `removeAllocation`) is refused – reverse it instead. (b) **Refunds: the simpler safe option – refuse.** `refundFor`
+  never pays out the gift-card-funded part as cash, card or bank transfer: "£X of what was paid on this invoice came
+  from a gift card … reverse that payment: the amount goes back on the card" (at most the money paid another way can be
+  refunded). The Refund dialog says so and defaults to that amount (`giftCardPaidPence` on the invoice view). No
+  "back to the gift card" refund kind was added: reversing the gift-card payment already restores the card.
+- **Takings exclude redemptions.** Billing → "Taken today" (and the dashboard tile, which reads the same figures) and the
+  reports' money **received** leave out payments that have a gift-card `redeem` move – identified by the move linked to
+  the payment, never by the method or reference text (`notGiftCardSpend`, only once the tables exist). The money was
+  counted when the card itself was sold. There is no separate cash-up report; account statements still list the
+  gift-card payment against the invoice it paid (reference "Gift card •••• …").
+- **The code is never lost.** If the draft (and card) is made but issuing fails (refused or an error), `sellGiftCardFor`
+  still returns ok with the one-time code, `issued: false` and `issueProblem`; the card stays pending on its draft and
+  the screen shows the code with "issue the invoice from the invoice page".
+- **Crediting a sale:** at most the card's **unspent** balance can be credited (a partly spent card included); the
+  balance drops by the credit in the same batch (an "adjust" move, optimistic on the balance read); credited down to
+  nothing, the card is cancelled. Audit `pms.gift_card.credit` (part) / `pms.gift_card.cancel` (to nothing).
+- **Reversing a gift-card payment on a cancelled card is refused** (its value was credited on the sale – putting it back
+  would give it twice); before, the reversal went through and the amount was silently lost.
+- **VAT on the sale line:** `VAT_CODES` has no "outside the scope of VAT" code, so the line stays `exempt` (VAT-registered)
+  / `none` – it carries no VAT either way. Adding such a code would touch the invoice line CHECKs; left for later.
+
+**Audit:** `pms.gift_card.sell|start|redeem|refund|cancel|credit` (ids and amounts, never the code). **Before the migrations:**
 reads answer "no gift cards"; invoices, credit notes and payments get no gift-card statement unless they have card rows.
 **Tests:** `src/server/pms/billing/gift-cards.test.ts` (pure code rules + the whole flow on node:sqlite and PGlite, offboarding,
 tenant-scope guard).
@@ -136,6 +197,9 @@ product (not per site); a negative on-hand is allowed (sold before it was receiv
 reservation on drafts. **Audit:** `pms.product.create|update`, `pms.stock.receive|adjust|sell` (ids and quantities; never
 the reason). **Before the migrations:** reads answer "no products", invoices issue and credit as before.
 **Tests:** `src/server/pms/billing/products.test.ts` on node:sqlite and PGlite with offboarding and the tenant-scope guard.
+**Review fixes (11/11/2026):** the −sold moves are prepared once per issue (reads before the retry loop, only for an
+invoice with an item line) and +returned only looked up for credited item lines – no extra gateway requests for other
+invoices and credit notes.
 
 **Still to do (PK06/PK07):** liability report (course value unused, gift-card balances – `giftCardsOutstanding` exists),
 product sales and stock-value report, an expiry sweep for courses and gift cards, the public website copy.

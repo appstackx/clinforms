@@ -397,6 +397,8 @@ export interface PmsPatientCoursesTable {
   sale_invoice_id: string;
   sale_line_id: string;
   sessions_total: number;
+  /** The services sold (JSON array), fixed at the sale; NULL = the course type's. */
+  service_ids_json: string | null;
   sold_on: IsoDate;
   expires_on: IsoDate | null;
   /** "active" | "used_up" | "expired" | "cancelled" */
@@ -429,6 +431,8 @@ export interface PmsInvoiceLineRefsTable {
   /** "course" | "gift_card" | "product" */
   ref_type: string;
   ref_id: string;
+  /** Courses: the sessions, services and validity sold (JSON), taken with the draft. NULL = read the course type. */
+  snapshot_json: string | null;
   created_at: IsoTimestamp;
 }
 

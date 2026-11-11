@@ -13,6 +13,7 @@ create table if not exists public.pms_patient_courses (
   sale_invoice_id text not null,
   sale_line_id text not null,
   sessions_total integer not null check (sessions_total between 1 and 100),
+  service_ids_json text,
   sold_on text not null check (sold_on ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'),
   expires_on text check (expires_on is null or expires_on ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'),
   status text not null default 'active' check (status in ('active', 'used_up', 'expired', 'cancelled')),

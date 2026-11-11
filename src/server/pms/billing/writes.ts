@@ -46,7 +46,7 @@ import { billableVisitSource } from "./visit-source";
 import { priceVisits, referrerNames } from "./views";
 import { useCoursesForVisits } from "./courses";
 import { maskedCode, normaliseGiftCardCode } from "../../../modules/pms/billing/gift-cards";
-import { findGiftCardByCode, giftCardRedeemQueries, giftCardRefusal } from "../../repos/pms/billing/gift-cards";
+import { findGiftCardByCode, giftCardPaidOnInvoice, giftCardRedeemQueries, giftCardRefusal } from "../../repos/pms/billing/gift-cards";
 import type { BatchQuery } from "../../db/batch";
 import { pmsNow, pmsNowMs } from "../../../modules/pms/core/clock";
 
@@ -248,6 +248,17 @@ export async function refundFor(
     if (!Number.isInteger(amount) || amount <= 0) return fail("invalid", "Enter the amount to refund.");
     if (amount > inv.paidPence) return fail("invalid", `At most ${formatPence(inv.paidPence)} was paid on this invoice.`);
     if (!input.reason || input.reason.trim().length < 3) return fail("invalid", "Say why the money is refunded.");
+    // Gift-card value is never paid out as money (cash, card or bank): only what was paid some other way can be.
+    // The gift-card part is given back by reversing that payment, which puts the amount back on the card.
+    const fromGiftCards = await giftCardPaidOnInvoice(ctx, t, inv.id);
+    if (fromGiftCards > 0 && amount > inv.paidPence - fromGiftCards) {
+      const cashPaid = Math.max(0, inv.paidPence - fromGiftCards);
+      return fail(
+        "invalid",
+        `${formatPence(fromGiftCards)} of what was paid on this invoice came from a gift card, and gift-card value is never paid out as money. ${cashPaid > 0 ? `Refund at most ${formatPence(cashPaid)} here; to` : "To"} give the gift-card part back, reverse that payment (Payments on this invoice → Reverse): the amount goes back on the card.`,
+        { fieldErrors: { amountPence: cashPaid > 0 ? `At most ${formatPence(cashPaid)}` : "Paid by gift card – reverse that payment instead" } },
+      );
+    }
     const owedBack = Math.max(0, -inv.balancePence);
     if (amount > owedBack) {
       const toCredit = amount - owedBack;
@@ -385,11 +396,22 @@ export async function takePaymentFor(actor: BillingActor, input: TakePaymentInpu
       if (!card) return fail("invalid", "No gift card has that code in this clinic. Check the code and try again.", { fieldErrors: { giftCardCode: "No gift card has that code" } });
       const refusal = giftCardRefusal(card, d.amountPence, today);
       if (refusal) return fail("invalid", refusal, { fieldErrors: { giftCardCode: refusal } });
+      // Gift-card value only pays invoices: nothing of it may stay on account (it could then be refunded as money).
+      const allocated = allocations.reduce((a, x) => a + x.amountPence, 0);
+      if (allocated !== d.amountPence) {
+        const message =
+          allocated === 0
+            ? "A gift card pays invoices only – nothing is kept on account – and nothing is owed on this patient's invoices."
+            : allocated < d.amountPence
+              ? `A gift card pays invoices only – nothing is kept on account. Take at most ${formatPence(allocated)} (what the invoices owe).`
+              : "Check the amounts on the invoices.";
+        return fail("invalid", message, { fieldErrors: { amountPence: message } });
+      }
       method = "other";
       reference = `Gift card ${maskedCode(card.codeLast4)}`;
       providerOpts = {
         extra: (paymentId, at) => giftCardRedeemQueries(ctx, t, card, d.amountPence, paymentId, actor.actor, at),
-        extraRefusal: "The gift card was used meanwhile. Check its balance and try again.",
+        extraRefusal: "The gift card was used meanwhile, or the payment was not used in full on invoices. Check its balance and try again.",
       };
     } else if (d.method === "card_on_file") {
       const card = d.savedCardId ? await getSavedCard(ctx, t, d.savedCardId) : null;

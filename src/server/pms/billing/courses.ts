@@ -163,6 +163,7 @@ export async function patientCoursesFor(actor: BillingActor, patientId: string):
     const out: PatientCoursesView["courses"] = [];
     for (const c of courses) {
       const inv = await getInvoice(ctx, t, c.saleInvoiceId);
+      const saleLine = inv?.lines.find((l) => l.id === c.saleLineId);
       const state = courseState(c, today);
       out.push({
         id: c.id,
@@ -179,6 +180,7 @@ export async function patientCoursesFor(actor: BillingActor, patientId: string):
         saleInvoiceId: c.saleInvoiceId,
         saleInvoiceNumber: inv?.number ?? null,
         uses: uses.filter((u) => u.patientCourseId === c.id).map((u) => ({ id: u.id, usedOn: u.usedOn, reversed: u.reversedAt !== null })),
+        saleCreditedInFull: Boolean(inv && (inv.voidedAt || (saleLine && saleLine.creditedPence >= saleLine.totalPence && saleLine.totalPence > 0))),
         cancelQuote: c.status === "cancelled" ? null : await courseCancelQuote(ctx, t, c.id),
       });
     }

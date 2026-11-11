@@ -69,7 +69,7 @@ export function InvoiceDetail({ invoice: inv, clinic, howToPay, printedBy, print
   const open = (d: Dialog) => {
     setError(null);
     setReason("");
-    setAmount(d === "refund" ? poundsText(Math.max(0, Math.min(inv.paidPence, -inv.balancePence > 0 ? -inv.balancePence : inv.paidPence))) : d === "credit" ? poundsText(inv.totalPence - inv.creditedPence) : "");
+    setAmount(d === "refund" ? poundsText(Math.max(0, Math.min(inv.paidPence - inv.giftCardPaidPence, -inv.balancePence > 0 ? -inv.balancePence : inv.paidPence))) : d === "credit" ? poundsText(inv.totalPence - inv.creditedPence) : "");
     setDialog(d);
   };
 
@@ -402,6 +402,12 @@ export function InvoiceDetail({ invoice: inv, clinic, howToPay, printedBy, print
           void run("refund", () => refundAction(inv.id, pence, refundMethod, reason), "Refund recorded");
         }}
       >
+        {inv.giftCardPaidPence > 0 ? (
+          <p className="rounded-lg bg-[#F8FAFC] px-3 py-2 text-sm text-[#334155]" data-testid="refund-gift-card-note">
+            {money(inv.giftCardPaidPence)} of this invoice was paid by gift card. Gift-card value is never paid out as money: to give it back, reverse that payment instead – the amount goes back on the card.
+            {inv.paidPence - inv.giftCardPaidPence > 0 ? ` At most ${money(inv.paidPence - inv.giftCardPaidPence)} can be refunded here.` : " Nothing can be refunded here."}
+          </p>
+        ) : null}
         <MoneyAndReason amount={amount} setAmount={setAmount} reason={reason} setReason={setReason} error={error} />
         <label className="flex flex-col gap-1 text-sm font-medium">
           How it goes back

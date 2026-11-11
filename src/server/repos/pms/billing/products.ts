@@ -211,10 +211,15 @@ async function productLines(ctx: RepoContext, tenantId: string, invoiceId: strin
  * For the ISSUE batch: a −sold move per product line, at the invoice's site – read in the statement, so NULL (the
  * whole issue refused) unless this very issue applied. Refused at once when the invoice has no site.
  */
-export async function stockSaleQueries(ctx: RepoContext, tenantId: string, inv: { id: string; siteId: string | null; lines: { id: string; quantity: number }[] }, token: string, actor: PmsActor, at: string): Promise<BatchQuery[]> {
+export async function stockSaleQueries(ctx: RepoContext, tenantId: string, inv: { id: string; siteId: string | null; lines: { id: string; quantity: number }[] }, actor: PmsActor, at: string): Promise<(token: string) => BatchQuery[]> {
+  // Read once; the statements are built per issue attempt (each carries that attempt's token).
   const refs = await productLines(ctx, tenantId, inv.id);
-  if (refs.length === 0) return [];
+  if (refs.length === 0) return () => [];
   if (!inv.siteId) throw new RepoInputError("This invoice sells a product, so it needs a site (the stock it comes from).");
+  return (token) => stockSaleStatements(ctx, tenantId, inv, refs, token, actor, at);
+}
+
+function stockSaleStatements(ctx: RepoContext, tenantId: string, inv: { id: string; lines: { id: string; quantity: number }[] }, refs: { invoiceLineId: string; refId: string }[], token: string, actor: PmsActor, at: string): BatchQuery[] {
   const queries: BatchQuery[] = [];
   for (const r of refs) {
     const line = inv.lines.find((l) => l.id === r.invoiceLineId);

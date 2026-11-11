@@ -50,6 +50,7 @@ export const BILLING_AUDIT_LABELS: Readonly<Record<string, string>> = {
   "pms.gift_card.redeem": "Gift card spent on a payment",
   "pms.gift_card.refund": "Gift card amount put back (payment reversed)",
   "pms.gift_card.cancel": "Gift card cancelled",
+  "pms.gift_card.credit": "Gift card's unspent value partly credited",
   "pms.product.create": "Product added",
   "pms.product.update": "Product changed",
   "pms.stock.receive": "Stock received",

@@ -139,7 +139,7 @@ export function PatientGiftCards({ patientId, rows, canSell, sites, siteRequired
   const [siteId, setSiteId] = React.useState(siteRequired && sites.length === 1 ? sites[0].id : "");
   const [busy, setBusy] = React.useState<"draft" | "issue" | null>(null);
   const [error, setError] = React.useState<string | null>(null);
-  const [sold, setSold] = React.useState<{ code: string; invoiceId: string; issued: boolean; expiresOn: string | null } | null>(null);
+  const [sold, setSold] = React.useState<{ code: string; invoiceId: string; issued: boolean; expiresOn: string | null; issueProblem: string | null } | null>(null);
 
   async function sell(issue: boolean) {
     const pence = parsePounds(amount);
@@ -149,9 +149,10 @@ export function PatientGiftCards({ patientId, rows, canSell, sites, siteRequired
     const r = await sellGiftCardAction(patientId, { amountPence: pence, recipientName: recipient.trim() || null, siteId: siteId || null, issue });
     setBusy(null);
     if (!r.ok) return setError(r.error);
-    setSold({ code: r.code, invoiceId: r.invoiceId, issued: r.issued, expiresOn: r.expiresOn });
+    setSold({ code: r.code, invoiceId: r.invoiceId, issued: r.issued, expiresOn: r.expiresOn, issueProblem: r.issueProblem });
     setOpen(false);
-    toast.success(r.issued ? "Gift card sold – write the code on the card" : "Draft invoice made – the card can be spent once it is issued");
+    if (r.issueProblem) toast.error("The invoice could not be issued – write the code on the card, then issue the invoice");
+    else toast.success(r.issued ? "Gift card sold – write the code on the card" : "Draft invoice made – the card can be spent once it is issued");
     router.refresh();
   }
 
@@ -177,6 +178,11 @@ export function PatientGiftCards({ patientId, rows, canSell, sites, siteRequired
           </span>
           It is shown only this once – the clinic keeps no readable copy.
           {sold.issued && sold.expiresOn ? ` Valid until ${date(sold.expiresOn)}.` : " The card can be spent once its invoice is issued."}{" "}
+          {sold.issueProblem ? (
+            <span className="block font-medium text-destructive-strong" role="alert" data-testid="gift-card-issue-problem">
+              {sold.issueProblem}
+            </span>
+          ) : null}
           <Link href={`${BILLING_PATH}/invoices/${sold.invoiceId}`} className={cn("text-primary-strong underline underline-offset-2", focusRing)}>
             Open the invoice
           </Link>

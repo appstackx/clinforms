@@ -56,6 +56,14 @@ describe("courses (pure)", () => {
     assert.equal(proRataCredit({ totalPence: 27000, creditedPence: 0 }, 6, 6), 0);
   });
 
+  it("pro rata after a part credit: (line total − already credited) × unused ÷ total, capped at what is left", () => {
+    // Review finding 3: £600 for 6, £300 credited (half price agreed), 3 used → the fair refund is £150, not £300.
+    assert.equal(proRataCredit({ totalPence: 60000, creditedPence: 30000 }, 6, 3), 15000);
+    assert.equal(proRataCredit({ totalPence: 60000, creditedPence: 30000 }, 6, 0), 30000, "nothing used: everything left");
+    assert.equal(proRataCredit({ totalPence: 60000, creditedPence: 60000 }, 6, 1), 0, "nothing left to credit");
+    assert.equal(proRataCredit({ totalPence: 10000, creditedPence: 1 }, 3, 1), 6666);
+  });
+
   it("covers: the service, the case, the date, a session left, active only", () => {
     assert.equal(courseCovers(course(), visit(1)), true);
     assert.equal(courseCovers(course(), visit(1, { serviceId: "svc_ia" })), false);

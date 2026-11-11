@@ -144,14 +144,16 @@ export function courseTypeSummary(t: Pick<CourseType, "sessions" | "validDays">,
 }
 
 /**
- * What cancelling credits by default: the sale line's total × unused ÷ total sessions, never more than is left to
- * credit on the line (whole pence, halves away from zero).
+ * What cancelling credits by default: what is left on the sale line (its total less what was already credited, e.g.
+ * a discount given after the sale) × unused ÷ total sessions – so the patient gets back the unused share of what
+ * they were actually charged – never more than is left to credit (whole pence, halves away from zero).
  */
 export function proRataCredit(line: { totalPence: number; creditedPence: number }, sessionsTotal: number, sessionsUsed: number): number {
   const unused = Math.max(0, sessionsTotal - sessionsUsed);
-  if (sessionsTotal <= 0 || unused === 0) return 0;
-  const share = roundHalfAway((line.totalPence * unused) / sessionsTotal);
-  return Math.max(0, Math.min(share, line.totalPence - line.creditedPence));
+  const creditable = Math.max(0, line.totalPence - line.creditedPence);
+  if (sessionsTotal <= 0 || unused === 0 || creditable === 0) return 0;
+  const share = roundHalfAway((creditable * Math.min(unused, sessionsTotal)) / sessionsTotal);
+  return Math.max(0, Math.min(share, creditable));
 }
 
 /** Whether a course covers a visit: active, not cancelled, a session left, the service covered, the case agrees, in date. */
@@ -245,6 +247,11 @@ export interface PatientCourseView {
   saleInvoiceId: string;
   saleInvoiceNumber: string | null;
   uses: { id: string; usedOn: string; reversed: boolean }[];
+  /**
+   * The sale was voided or its line credited in full: the visits used from it are no longer paid for, so each can be
+   * reversed and invoiced on its own (Reverse to invoice).
+   */
+  saleCreditedInFull: boolean;
   /** What cancelling credits by default and at most (pence); null once cancelled. */
   cancelQuote: { defaultPence: number; maxPence: number } | null;
 }

@@ -15,7 +15,7 @@
  * invoice's or payment's batch unless it has gift-card rows.
  */
 import { createHash } from "node:crypto";
-import { sql } from "kysely";
+import { sql, type Expression, type RawBuilder } from "kysely";
 import { formatGiftCardCode, giftCardExpiry, type GiftCard, type GiftCardMove, type GiftCardMoveKind, type GiftCardStatus } from "../../../../modules/pms/billing/gift-cards";
 import { BILLING_ID_PREFIXES as P } from "../../../../modules/pms/billing/ids";
 import type { PmsActor } from "../../../../modules/pms/core/types";
@@ -128,7 +128,8 @@ async function cardsOnLines(ctx: RepoContext, tenantId: string, lineIds: string[
  * For the ISSUE batch: the invoice's pending cards become active with their value, sale date and expiry, and a
  * "sale" move – whose card id is read in the statement (NULL, the whole issue refused, unless this issue applied).
  */
-export async function giftCardStartQueries(ctx: RepoContext, tenantId: string, inv: { id: string; lines: { id: string }[] }, issuedOn: string, token: string, actor: PmsActor, at: string): Promise<BatchQuery[]> {
+export async function giftCardStartQueries(ctx: RepoContext, tenantId: string, inv: { id: string; lines: { id: string }[] }, issuedOn: string, actor: PmsActor, at: string): Promise<(token: string) => BatchQuery[]> {
+  // Read once; the statements are built per issue attempt (each carries that attempt's token).
   const cards = (
     await cardsOnLines(
       ctx,
@@ -136,6 +137,12 @@ export async function giftCardStartQueries(ctx: RepoContext, tenantId: string, i
       inv.lines.map((l) => l.id),
     )
   ).filter((c) => c.status === "pending");
+  if (cards.length === 0) return () => [];
+  return (token) => giftCardStartStatements(ctx, tenantId, inv.id, cards, issuedOn, token, actor, at);
+}
+
+function giftCardStartStatements(ctx: RepoContext, tenantId: string, invoiceId: string, cards: GiftCard[], issuedOn: string, token: string, actor: PmsActor, at: string): BatchQuery[] {
+  const inv = { id: invoiceId };
   const queries: BatchQuery[] = [];
   const issuedNow = sql<boolean>`exists (select 1 from pms_invoices where tenant_id = ${tenantId} and id = ${inv.id} and edit_token = ${token} and status = 'issued')`;
   for (const c of cards) {
@@ -182,8 +189,10 @@ export async function giftCardCancelDraftQueries(ctx: RepoContext, tenantId: str
 }
 
 /**
- * For a credit note: a card sold on a credited line must be credited in full and unspent; the card is then cancelled
- * (its balance to 0, an "adjust" move). Throws a plain refusal otherwise. [] when no line sold a card.
+ * For a credit note: a card sold on a credited line gives up as much of its UNSPENT balance as is credited (never
+ * more – what was spent paid for treatment, credit that instead). The balance drops in the same batch ("adjust" move);
+ * a card left with nothing is cancelled. Optimistic on the balance read (a spend meanwhile refuses the credit note).
+ * Throws a plain refusal when the credit is more than is left on the card. [] when no line sold a card.
  */
 export async function giftCardCreditQueries(ctx: RepoContext, tenantId: string, parts: { lineId: string; creditPence: number; lineLeftPence: number }[], actor: PmsActor, at: string): Promise<BatchQuery[]> {
   const cards = await cardsOnLines(
@@ -193,15 +202,22 @@ export async function giftCardCreditQueries(ctx: RepoContext, tenantId: string, 
   );
   const queries: BatchQuery[] = [];
   for (const c of cards) {
-    if (c.status === "cancelled") continue;
     const part = parts.find((p) => p.lineId === c.saleLineId);
-    if (!part) continue;
-    if (c.balancePence < c.initialPence && c.status !== "pending") throw new RepoInputError("This gift card has been spent from, so its sale cannot be credited. Credit what it paid for instead.");
-    if (part.creditPence < part.lineLeftPence) throw new RepoInputError("A gift card's sale is credited in full or not at all.");
+    if (!part || part.creditPence <= 0) continue;
+    if (c.status === "cancelled" || c.status === "pending") throw new RepoInputError("This gift card has been cancelled, so nothing is left on it to credit.");
+    if (part.creditPence > c.balancePence) {
+      throw new RepoInputError(
+        c.balancePence === 0
+          ? "This gift card has been spent in full, so its sale cannot be credited. Credit what it paid for instead."
+          : `Only £${(c.balancePence / 100).toFixed(2)} of this gift card is unspent, so at most that can be credited on its sale. Credit what the rest paid for instead.`,
+      );
+    }
+    const after = c.balancePence - part.creditPence;
+    const status = after === 0 ? "cancelled" : c.status;
     queries.push(
       ctx.db
         .updateTable(CARDS)
-        .set((eb) => ({ status: "cancelled", balance_pence: 0, rev: eb("rev", "+", 1), updated_at: at }))
+        .set((eb) => ({ status, balance_pence: after, rev: eb("rev", "+", 1), updated_at: at }))
         .where("tenant_id", "=", tenantId)
         .where("id", "=", c.id)
         .where("balance_pence", "=", c.balancePence)
@@ -209,15 +225,21 @@ export async function giftCardCreditQueries(ctx: RepoContext, tenantId: string, 
       ctx.db.insertInto(MOVES).values({
         tenant_id: tenantId,
         id: pmsId(GIFT_CARD_MOVE_PREFIX, ctx),
-        gift_card_id: sql<string>`(select id from pms_gift_cards where tenant_id = ${tenantId} and id = ${c.id} and status = 'cancelled' and updated_at = ${at})`,
+        // NULL (refused, the credit note rolled back) unless THIS credit changed the card.
+        gift_card_id: sql<string>`(select id from pms_gift_cards where tenant_id = ${tenantId} and id = ${c.id} and status = ${status} and balance_pence = ${after} and updated_at = ${at})`,
         kind: "adjust",
-        amount_pence: -c.balancePence,
+        amount_pence: -part.creditPence,
         payment_id: null,
-        balance_after: 0,
+        balance_after: after,
         created_by: actor.userId,
         created_at: at,
       }),
-      pmsAuditQuery(ctx, tenantId, actor, { action: "pms.gift_card.cancel", targetType: "pms_gift_card", targetId: c.id, detail: { balancePence: c.balancePence } }),
+      pmsAuditQuery(ctx, tenantId, actor, {
+        action: after === 0 ? "pms.gift_card.cancel" : "pms.gift_card.credit",
+        targetType: "pms_gift_card",
+        targetId: c.id,
+        detail: { creditPence: part.creditPence, balancePence: after },
+      }),
     );
   }
   return queries;
@@ -250,6 +272,9 @@ export function giftCardRefusal(c: GiftCard, amountPence: number, today: string)
 export function giftCardRedeemQueries(ctx: RepoContext, tenantId: string, c: GiftCard, amountPence: number, paymentId: string, actor: PmsActor, at: string): BatchQuery[] {
   const after = c.balancePence - amountPence;
   if (after < 0) throw new RepoInputError("More than is left on the gift card.");
+  // Gift-card value never becomes money on account (which could then be refunded as cash): the payment must be
+  // allocated in full to invoices in its own batch – else the move's card id is NULL and the payment is refused.
+  const fullyAllocated = sql<boolean>`exists (select 1 from pms_payments where tenant_id = ${tenantId} and id = ${paymentId} and kind = 'payment' and allocated_pence = amount_pence)`;
   return [
     ctx.db
       .updateTable(CARDS)
@@ -262,7 +287,7 @@ export function giftCardRedeemQueries(ctx: RepoContext, tenantId: string, c: Gif
       tenant_id: tenantId,
       id: pmsId(GIFT_CARD_MOVE_PREFIX, ctx),
       // NULL (refused) unless THIS spend changed the card (someone else's spend meanwhile → try again).
-      gift_card_id: sql<string>`(select id from pms_gift_cards where tenant_id = ${tenantId} and id = ${c.id} and balance_pence = ${after} and updated_at = ${at})`,
+      gift_card_id: sql<string>`(select id from pms_gift_cards where tenant_id = ${tenantId} and id = ${c.id} and balance_pence = ${after} and updated_at = ${at} and ${fullyAllocated})`,
       kind: "redeem",
       amount_pence: -amountPence,
       payment_id: paymentId,
@@ -286,7 +311,10 @@ export async function giftCardRestoreQueries(ctx: RepoContext, tenantId: string,
   for (const [cardId, amount] of Array.from(spent.entries())) {
     if (amount <= 0) continue;
     const card = await ctx.db.selectFrom(CARDS).select(["balance_pence", "status"]).where("tenant_id", "=", tenantId).where("id", "=", cardId).executeTakeFirst();
-    if (!card || card.status === "cancelled") continue;
+    if (!card) continue;
+    // A cancelled card's value was credited on its sale: putting the amount back would give it twice. Refused, so the
+    // reversal never silently loses (or doubles) the value – credit the invoice the payment paid instead.
+    if (card.status === "cancelled") throw new RepoInputError("This payment came from a gift card that has since been cancelled (its sale was credited), so it cannot be put back on the card. Credit the invoice it paid instead.");
     const after = num(card.balance_pence) + amount;
     queries.push(
       ctx.db
@@ -312,6 +340,58 @@ export async function giftCardRestoreQueries(ctx: RepoContext, tenantId: string,
     );
   }
   return queries;
+}
+
+/** Whether a payment was a gift-card spend (it has a "redeem" move). False before the migration. */
+export async function isGiftCardPayment(ctx: RepoContext, tenantId: string, paymentId: string): Promise<boolean> {
+  return readOrEmpty(MOVES, false, async () => {
+    const r = await ctx.db.selectFrom(MOVES).select("id").where("tenant_id", "=", tenantId).where("payment_id", "=", paymentId).where("kind", "=", "redeem").limit(1).executeTakeFirst();
+    return r !== undefined;
+  });
+}
+
+/**
+ * What gift cards paid on an invoice (allocations of recorded gift-card payments, not taken off): money that must
+ * never be paid out as cash, card or bank transfer. 0 before the migration.
+ */
+export async function giftCardPaidOnInvoice(ctx: RepoContext, tenantId: string, invoiceId: string): Promise<number> {
+  assertTenantId(tenantId);
+  return readOrEmpty(MOVES, 0, async () => {
+    const r = await ctx.db
+      .selectFrom("pms_payment_allocations as a")
+      .innerJoin("pms_payments as p", (j) => j.onRef("p.tenant_id", "=", "a.tenant_id").onRef("p.id", "=", "a.payment_id"))
+      .select(sql<number>`coalesce(sum(a.amount_pence), 0)`.as("n"))
+      .where("a.tenant_id", "=", tenantId)
+      .where("p.tenant_id", "=", tenantId)
+      .where("a.invoice_id", "=", invoiceId)
+      .where("a.reversed", "=", 0)
+      .where("p.kind", "=", "payment")
+      .where("p.status", "=", "recorded")
+      .where(sql<boolean>`exists (select 1 from pms_gift_card_moves m where m.tenant_id = ${tenantId} and m.payment_id = p.id and m.kind = 'redeem')`)
+      .executeTakeFirst();
+    return num(r?.n ?? 0);
+  });
+}
+
+/**
+ * "This payment is not a gift-card spend" for a query over pms_payments (alias `p`): takings and money-received
+ * figures leave redemptions out – the money came in when the card was sold. Only once the gift-card tables exist.
+ */
+export function notGiftCardSpend(tenantId: string, paymentId: Expression<string>): RawBuilder<boolean> {
+  return sql<boolean>`not exists (select 1 from pms_gift_card_moves gm where gm.tenant_id = ${tenantId} and gm.payment_id = ${paymentId} and gm.kind = 'redeem')`;
+}
+
+const GC_INSTALLED = new WeakMap<object, true>();
+
+/** Whether the gift-card tables exist, remembered per database once true (false before migration 0235). */
+export async function giftCardsInstalled(ctx: RepoContext, tenantId: string): Promise<boolean> {
+  if (GC_INSTALLED.has(ctx.db)) return true;
+  const yes = await readOrEmpty(MOVES, false, async () => {
+    await ctx.db.selectFrom(MOVES).select("id").where("tenant_id", "=", tenantId).limit(1).execute();
+    return true;
+  });
+  if (yes) GC_INSTALLED.set(ctx.db, true);
+  return yes;
 }
 
 /* ------------------------------------------------------------------------------------------------

@@ -16,7 +16,7 @@ import { BILLING_ID_PREFIXES as P } from "../../../../modules/pms/billing/ids";
 import { AllocationsInputSchema, PaymentInputSchema, ReversePaymentInputSchema, type AllocationInput, type PaymentInput } from "../../../../modules/pms/billing/schemas";
 import type { Allocation, InvoiceSummary, PayerKind, Payment, PaymentKind, PaymentMethod, PaymentStatus } from "../../../../modules/pms/billing/types";
 import type { PmsActor } from "../../../../modules/pms/core/types";
-import { giftCardRestoreQueries } from "./gift-cards";
+import { giftCardRestoreQueries, isGiftCardPayment } from "./gift-cards";
 import { runBatch, type BatchQuery } from "../../../db/batch";
 import { classifyDbError } from "../../../db/errors";
 import { RepoInputError, assertId, assertTenantId, decryptField, encryptField, nowIso, num, parseInput, pmsAudit, pmsAuditQuery, pmsId, translateDbError, type RepoContext } from "../context";
@@ -179,6 +179,9 @@ export async function removeAllocation(ctx: RepoContext, tenantId: string, alloc
   assertId(allocationId, "allocation id");
   const a = await ctx.db.selectFrom(ALLOC).select(["payment_id", "invoice_id", "reversed"]).where("tenant_id", "=", tenantId).where("id", "=", allocationId).executeTakeFirst();
   if (!a || num(a.reversed) === 1) return false;
+  // A gift-card payment stays on the invoices it paid (its value never sits on account, where it could be refunded
+  // as money): reversing it puts the amount back on the card.
+  if (await isGiftCardPayment(ctx, tenantId, a.payment_id)) throw new RepoInputError("A gift-card payment stays on the invoice it paid. Reverse the payment instead – that puts the amount back on the gift card.");
   const at = nowIso(ctx);
   const live = sql<boolean>`exists (select 1 from pms_payment_allocations where tenant_id = ${tenantId} and id = ${allocationId} and reversed = 0)`;
   const results = await run(ctx, [

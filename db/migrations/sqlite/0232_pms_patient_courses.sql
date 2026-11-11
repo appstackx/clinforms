@@ -1,6 +1,7 @@
 -- ClinForms 0232 (SQLite / Cloudflare D1): clinic system, billing - courses (PK02).
 -- pms_patient_courses: a course sold to a patient. Made when the invoice that sells it is issued (sold = issued),
--- from the invoice line (sale_line_id, one course per line). sessions_total and expires_on are fixed at the sale.
+-- from the invoice line (sale_line_id, one course per line). sessions_total, service_ids_json (the services sold, NULL
+-- = the course type's) and expires_on are fixed at the sale.
 -- status: active, used_up (every session used), expired (kept for a later sweep - the screens work it out from
 -- expires_on), cancelled (closed, the unused part credited). Never deleted. Every foreign key goes with its
 -- parent (ON DELETE CASCADE) for offboarding only - nothing in the app deletes those parents.
@@ -17,6 +18,7 @@ CREATE TABLE IF NOT EXISTS pms_patient_courses (
   sale_invoice_id TEXT NOT NULL,
   sale_line_id TEXT NOT NULL,
   sessions_total INTEGER NOT NULL CHECK (sessions_total BETWEEN 1 AND 100),
+  service_ids_json TEXT,
   sold_on TEXT NOT NULL CHECK (sold_on GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
   expires_on TEXT CHECK (expires_on IS NULL OR expires_on GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'used_up', 'expired', 'cancelled')),

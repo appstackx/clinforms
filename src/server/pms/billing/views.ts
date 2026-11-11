@@ -4,6 +4,7 @@
  * remittances, aged debt, statements and the print views. Every function checks billing.view first and applies
  * the member's site scope; lists never decrypt anything.
  */
+import { giftCardPaidOnInvoice } from "../../repos/pms/billing/gift-cards";
 import "server-only";
 import { AGE_BUCKETS, agedDebt, ageBucket, type AgeBucket } from "../../../modules/pms/billing/aging";
 import { CREDIT_NOTE_KIND_LABELS, PAYMENT_METHOD_LABELS } from "../../../modules/pms/billing/copy";
@@ -489,6 +490,7 @@ async function detailOf(actor: BillingActor, inv: Invoice): Promise<InvoiceDetai
     vatPence: inv.vatPence,
     totalPence: inv.totalPence,
     paidPence: inv.paidPence,
+    giftCardPaidPence: inv.paidPence > 0 ? await giftCardPaidOnInvoice(ctx, t, inv.id) : 0,
     creditedPence: inv.creditedPence,
     balancePence: inv.balancePence,
     lines,

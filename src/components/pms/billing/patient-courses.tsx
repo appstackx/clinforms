@@ -33,7 +33,7 @@ export function PatientCourses({ patientId, view }: { patientId: string; view: P
             Courses
           </h2>
           <p className="text-sm text-[#475569]">
-            {view.courses.length === 0 ? "No courses yet." : `${active.length} active course${active.length === 1 ? "" : "s"}`} Visits a course covers can be used from it when they are invoiced.
+            {view.courses.length === 0 ? "No courses yet." : `${active.length} active course${active.length === 1 ? "" : "s"}.`} Visits a course covers can be used from it when they are invoiced.
           </p>
         </div>
         {view.canSell && view.types.length > 0 && !selling ? (
@@ -168,7 +168,7 @@ function CourseCard({ patientId, course: c, view }: { patientId: string; course:
     setBusy(null);
     if (!r.ok) setError(r.error);
     else {
-      toast.success("Visit put back on the course – it can be invoiced now");
+      toast.success(c.state === "cancelled" ? "Visit taken off the cancelled course – it can be invoiced now" : "Visit put back on the course – it can be invoiced now");
       router.refresh();
     }
   }
@@ -220,15 +220,27 @@ function CourseCard({ patientId, course: c, view }: { patientId: string; course:
         </Link>
         {c.caseTitle ? ` · for the case ${c.caseTitle}` : ""}
       </p>
+      {c.state === "cancelled" && c.saleCreditedInFull && used.length > 0 && view.canSell ? (
+        <p className="text-sm text-[#475569]" data-testid="course-cancelled-uses">
+          This course&apos;s sale was voided or credited in full, so the visits used from it are no longer paid for. Use Reverse to invoice to bill each one on its own.
+        </p>
+      ) : null}
       {c.uses.length > 0 ? (
         <ul className="flex flex-col divide-y divide-border rounded-lg border border-border text-sm" aria-label={`Visits used from ${c.name}`}>
           {c.uses.map((u) => (
             <li key={u.id} className="flex items-center gap-2 px-3 py-1.5">
               <span className={cn("tabular-nums", u.reversed && "text-[#64748B] line-through")}>Visit on {date(u.usedOn)}</span>
               {u.reversed ? <span className="text-xs text-[#475569]">put back</span> : null}
-              {!u.reversed && view.canSell && c.state !== "cancelled" ? (
-                <PmsButton size="sm" variant="secondary" className="ml-auto" loading={busy === `reverse-${u.id}`} onClick={() => void reverse(u.id)} aria-label={`Put back the visit on ${date(u.usedOn)}`}>
-                  Reverse
+              {!u.reversed && view.canSell ? (
+                <PmsButton
+                  size="sm"
+                  variant="secondary"
+                  className="ml-auto"
+                  loading={busy === `reverse-${u.id}`}
+                  onClick={() => void reverse(u.id)}
+                  aria-label={c.state === "cancelled" && c.saleCreditedInFull ? `Reverse to invoice – the visit on ${date(u.usedOn)}` : `Reverse – put back the visit on ${date(u.usedOn)}`}
+                >
+                  {c.state === "cancelled" && c.saleCreditedInFull ? "Reverse to invoice" : "Reverse"}
                 </PmsButton>
               ) : null}
             </li>

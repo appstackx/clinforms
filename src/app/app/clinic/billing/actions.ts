@@ -263,7 +263,7 @@ export async function setCourseExpiryAction(patientId: string, courseId: string,
 }
 
 /* Gift cards (PK04, src/server/pms/billing/gift-cards.ts). The code comes back once, here. */
-export async function sellGiftCardAction(patientId: string, input: { amountPence: number; recipientName?: string | null; siteId?: string | null; issue?: boolean }): Promise<BillingActionResult<{ code: string; invoiceId: string; number: string | null; issued: boolean; expiresOn: string | null }>> {
+export async function sellGiftCardAction(patientId: string, input: { amountPence: number; recipientName?: string | null; siteId?: string | null; issue?: boolean }): Promise<BillingActionResult<{ code: string; invoiceId: string; number: string | null; issued: boolean; expiresOn: string | null; issueProblem: string | null }>> {
   const actor = await clinicActionActor({ permission: "billing.edit" });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
   const r = await sellGiftCardFor(actor, String(patientId), {
@@ -274,7 +274,7 @@ export async function sellGiftCardAction(patientId: string, input: { amountPence
   });
   if (!r.ok) return { ok: false, error: r.error };
   refresh([patientPath(patientId), `${BILLING}/gift-cards`]);
-  return { ok: true, code: r.value.code, invoiceId: r.value.invoiceId, number: r.value.number, issued: r.value.issued, expiresOn: r.value.expiresOn };
+  return { ok: true, code: r.value.code, invoiceId: r.value.invoiceId, number: r.value.number, issued: r.value.issued, expiresOn: r.value.expiresOn, issueProblem: r.value.issueProblem };
 }
 
 /** Looks a gift card up by its code (billing.view): the card's id, so the page opens it without the code in the URL. */

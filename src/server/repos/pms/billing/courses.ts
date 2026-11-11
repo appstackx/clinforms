@@ -14,7 +14,8 @@
  * (readOrEmpty), and nothing is added to an invoice's batches unless the invoice has course rows; only course
  * saves fail until the migration is applied.
  */
-import { sql, type Expression, type SqlBool } from "kysely";
+import { sql, type Expression, type RawBuilder, type SqlBool } from "kysely";
+import { isPostgresDb } from "../../../db/dialect-kind";
 import {
   CourseTypeInputSchema,
   courseExpiry,
@@ -169,15 +170,39 @@ export async function updateCourseType(ctx: RepoContext, tenantId: string, id: s
  * What invoice lines sell (pms_invoice_line_refs)
  * ----------------------------------------------------------------------------------------------*/
 
+/** What a course line sells, fixed when the draft is made (a later change to the course type never changes it). */
+export interface CourseSnapshot {
+  sessions: number;
+  serviceIds: string[];
+  validDays: number | null;
+}
+
 export interface LineRef {
   invoiceLineId: string;
   refType: LineRefType;
   refId: string;
+  /** Courses: what was sold (null on rows made before the snapshot existed – the course type is read then). */
+  snapshot?: CourseSnapshot | null;
+}
+
+export function courseSnapshotOf(t: Pick<CourseType, "sessions" | "serviceIds" | "validDays">): CourseSnapshot {
+  return { sessions: t.sessions, serviceIds: t.serviceIds.slice(), validDays: t.validDays };
+}
+
+function parseSnapshot(json: string | null | undefined): CourseSnapshot | null {
+  if (!json) return null;
+  try {
+    const v = JSON.parse(json) as Partial<CourseSnapshot>;
+    if (typeof v.sessions !== "number" || !Number.isInteger(v.sessions) || v.sessions < 1) return null;
+    return { sessions: v.sessions, serviceIds: parseServiceIds(JSON.stringify(v.serviceIds ?? [])), validDays: typeof v.validDays === "number" ? v.validDays : null };
+  } catch {
+    return null;
+  }
 }
 
 /** The insert of a line's reference (createDraftInvoice puts it in the draft's batch). */
 export function lineRefInsert(ctx: RepoContext, tenantId: string, ref: LineRef, at: string): BatchQuery {
-  return ctx.db.insertInto(REFS).values({ tenant_id: tenantId, invoice_line_id: ref.invoiceLineId, ref_type: ref.refType, ref_id: ref.refId, created_at: at });
+  return ctx.db.insertInto(REFS).values({ tenant_id: tenantId, invoice_line_id: ref.invoiceLineId, ref_type: ref.refType, ref_id: ref.refId, snapshot_json: ref.snapshot ? JSON.stringify(ref.snapshot) : null, created_at: at });
 }
 
 /** The references of an invoice's lines (none when the table does not exist yet). */
@@ -187,13 +212,13 @@ export async function invoiceLineRefs(ctx: RepoContext, tenantId: string, invoic
     const rows = await ctx.db
       .selectFrom(`${REFS} as r`)
       .innerJoin("pms_invoice_lines as l", (j) => j.onRef("l.tenant_id", "=", "r.tenant_id").onRef("l.id", "=", "r.invoice_line_id"))
-      .select(["r.invoice_line_id", "r.ref_type", "r.ref_id"])
+      .select(["r.invoice_line_id", "r.ref_type", "r.ref_id", "r.snapshot_json"])
       .where("r.tenant_id", "=", tenantId)
       .where("l.tenant_id", "=", tenantId)
       .where("l.invoice_id", "=", invoiceId)
       .limit(100)
       .execute();
-    return rows.map((r) => ({ invoiceLineId: r.invoice_line_id, refType: r.ref_type as LineRefType, refId: r.ref_id }));
+    return rows.map((r) => ({ invoiceLineId: r.invoice_line_id, refType: r.ref_type as LineRefType, refId: r.ref_id, snapshot: parseSnapshot(r.snapshot_json) }));
   });
 }
 
@@ -212,43 +237,51 @@ export async function courseStartQueries(
   tenantId: string,
   inv: { id: string; patientId: string; caseId: string | null; lines: { id: string; kind: string; quantity: number }[] },
   issuedOn: string,
-  token: string,
   actor: PmsActor,
   at: string,
-): Promise<BatchQuery[]> {
+): Promise<(token: string) => BatchQuery[]> {
+  // The reads happen once, here; the statements are built per issue attempt (each carries that attempt's token).
   const refs = (await invoiceLineRefs(ctx, tenantId, inv.id)).filter((r) => r.refType === "course");
-  if (refs.length === 0) return [];
-  const queries: BatchQuery[] = [];
+  if (refs.length === 0) return () => [];
+  const sales: { line: { id: string }; type: CourseType; sold: CourseSnapshot }[] = [];
   for (const ref of refs) {
     const line = inv.lines.find((l) => l.id === ref.invoiceLineId);
     if (!line) continue;
     if (line.kind !== "item" || line.quantity !== 1) throw new RepoInputError("A course is sold on a line of its own, one course per line.");
     const type = await getCourseType(ctx, tenantId, ref.refId);
     if (!type) throw new RepoInputError("A course on this invoice no longer exists in this clinic.");
-    const id = pmsId(P.patientCourse, ctx);
-    const soldOn = sql<string>`(select issued_on from pms_invoices where tenant_id = ${tenantId} and id = ${inv.id} and edit_token = ${token} and status = 'issued')`;
-    queries.push(
-      ctx.db.insertInto(COURSES).values({
-        tenant_id: tenantId,
-        id,
-        rev: 1,
-        patient_id: inv.patientId,
-        course_type_id: type.id,
-        case_id: inv.caseId,
-        sale_invoice_id: inv.id,
-        sale_line_id: line.id,
-        sessions_total: type.sessions,
-        sold_on: soldOn,
-        expires_on: courseExpiry(issuedOn, type.validDays),
-        status: "active",
-        created_by: actor.userId,
-        created_at: at,
-        updated_at: at,
-      }),
-      pmsAuditQuery(ctx, tenantId, actor, { action: "pms.course.start", targetType: "pms_patient_course", targetId: id, detail: { invoiceId: inv.id, courseTypeId: type.id, sessions: type.sessions } }),
-    );
+    // What the draft sold (its snapshot), not what the course type says now.
+    sales.push({ line, type, sold: ref.snapshot ?? courseSnapshotOf(type) });
   }
-  return queries;
+  return (token) => {
+    const queries: BatchQuery[] = [];
+    const soldOn = sql<string>`(select issued_on from pms_invoices where tenant_id = ${tenantId} and id = ${inv.id} and edit_token = ${token} and status = 'issued')`;
+    for (const { line, type, sold } of sales) {
+      const id = pmsId(P.patientCourse, ctx);
+      queries.push(
+        ctx.db.insertInto(COURSES).values({
+          tenant_id: tenantId,
+          id,
+          rev: 1,
+          patient_id: inv.patientId,
+          course_type_id: type.id,
+          case_id: inv.caseId,
+          sale_invoice_id: inv.id,
+          sale_line_id: line.id,
+          sessions_total: sold.sessions,
+          service_ids_json: JSON.stringify(sold.serviceIds),
+          sold_on: soldOn,
+          expires_on: courseExpiry(issuedOn, sold.validDays),
+          status: "active",
+          created_by: actor.userId,
+          created_at: at,
+          updated_at: at,
+        }),
+        pmsAuditQuery(ctx, tenantId, actor, { action: "pms.course.start", targetType: "pms_patient_course", targetId: id, detail: { invoiceId: inv.id, courseTypeId: type.id, sessions: sold.sessions } }),
+      );
+    }
+    return queries;
+  };
 }
 
 /**
@@ -293,6 +326,7 @@ const COURSE_COLUMNS = [
   "c.status",
   "c.cancelled_at",
   "c.cancel_credit_note_id",
+  "c.service_ids_json as sold_service_ids_json",
   "t.name",
   "t.service_ids_json",
 ] as const;
@@ -311,6 +345,7 @@ type CourseRow = {
   status: string;
   cancelled_at: unknown;
   cancel_credit_note_id: string | null;
+  sold_service_ids_json: string | null;
   name: string;
   service_ids_json: string;
 };
@@ -339,7 +374,8 @@ function toCourse(r: CourseRow, used: number): PatientCourse {
     patientId: r.patient_id,
     courseTypeId: r.course_type_id,
     name: r.name,
-    serviceIds: parseServiceIds(r.service_ids_json),
+    // The services sold with the course (fixed at the sale); older rows fall back to the course type's.
+    serviceIds: parseServiceIds(r.sold_service_ids_json ?? r.service_ids_json),
     caseId: r.case_id,
     saleInvoiceId: r.sale_invoice_id,
     saleLineId: r.sale_line_id,
@@ -435,6 +471,20 @@ export async function courseUsedAppointmentIds(ctx: RepoContext, tenantId: strin
   });
 }
 
+const INSTALLED = new WeakMap<object, true>();
+
+/**
+ * coursesInstalled, remembered per database once true (a table, once made, is never dropped by the app): the invoice
+ * paths ask on every draft, and an invoice must not cost an extra request each time. False is never remembered (the
+ * migration can arrive while the process runs).
+ */
+export async function coursesInstalledCached(ctx: RepoContext, tenantId: string): Promise<boolean> {
+  if (INSTALLED.has(ctx.db)) return true;
+  const yes = await coursesInstalled(ctx, tenantId);
+  if (yes) INSTALLED.set(ctx.db, true);
+  return yes;
+}
+
 /** Whether the course tables exist (a one-row probe; false before migration 0233). */
 export async function coursesInstalled(ctx: RepoContext, tenantId: string): Promise<boolean> {
   return readOrEmpty(USES, false, async () => {
@@ -450,6 +500,29 @@ export async function coursesInstalled(ctx: RepoContext, tenantId: string): Prom
 export function notBilledNorUsed(notOnAnInvoice: (a: { tenantId: Expression<string>; id: Expression<string> }) => Expression<SqlBool>) {
   return (appointment: { tenantId: Expression<string>; id: Expression<string> }): Expression<SqlBool> =>
     sql<SqlBool>`(${notOnAnInvoice(appointment)} and not exists (select 1 from pms_course_uses as used where used.tenant_id = ${appointment.tenantId} and used.appointment_id = ${appointment.id} and used.reversed_at is null))`;
+}
+
+/**
+ * Postgres only: one transaction-scoped advisory lock per appointment, taken FIRST in a batch that invoices visits or
+ * uses one from a course, so the two queue up (READ COMMITTED would otherwise let each pass its NOT EXISTS check on the
+ * other's uncommitted row). SQLite and D1 run one write batch at a time: [] there. Sorted, so two batches never
+ * deadlock. The statement touches no clinic table.
+ */
+export function visitLockQueries(ctx: RepoContext, tenantId: string, appointmentIds: readonly string[]): BatchQuery[] {
+  if (!isPostgresDb(ctx.db)) return [];
+  return Array.from(new Set(appointmentIds))
+    .sort()
+    .map((a) => sql`select pg_advisory_xact_lock(hashtext(${`pms-visit:${tenantId}:${a}`}))`.compile(ctx.db));
+}
+
+/**
+ * The invoice id for an invoice line that holds a visit: NULL (refused – NOT NULL – and the whole batch rolled back)
+ * when the visit is used from a course (not reversed) at the moment the statement runs. Closes the race between
+ * invoicing a visit and using it from a course (recordCourseUse checks invoice lines the same way). Only once the
+ * course tables exist (coursesInstalled).
+ */
+export function invoiceIdUnlessCourseUsed(tenantId: string, invoiceId: string | Expression<string>, appointmentId: string): RawBuilder<string> {
+  return sql<string>`(select gi.id from pms_invoices gi where gi.tenant_id = ${tenantId} and gi.id = ${invoiceId} and not exists (select 1 from pms_course_uses cu where cu.tenant_id = ${tenantId} and cu.appointment_id = ${appointmentId} and cu.reversed_at is null))`;
 }
 
 /** Draft invoices of these patients that sell a course (not started until issued). */
@@ -513,6 +586,8 @@ export async function recordCourseUse(ctx: RepoContext, tenantId: string, input:
   await billingBatch(
     ctx,
     [
+      // Postgres: the visit's lock first (an invoice of the same visit waits, then sees this use – and vice versa).
+      ...visitLockQueries(ctx, t, [input.appointmentId]),
       // Postgres: lock the course first (a second use of its last session waits, then sees this one).
       ctx.db.updateTable(COURSES).set({ updated_at: at }).where("tenant_id", "=", t).where("id", "=", c),
       ctx.db.insertInto(USES).values({ tenant_id: t, id, patient_course_id: allowed, appointment_id: input.appointmentId, used_on: input.usedOn, created_by: actor.userId, created_at: at, updated_at: at }),
@@ -530,7 +605,12 @@ export async function recordCourseUse(ctx: RepoContext, tenantId: string, input:
   return { id, patientCourseId: c, appointmentId: input.appointmentId, usedOn: input.usedOn, reversedAt: null, createdAt: at };
 }
 
-/** Puts a used visit back on its course (the visit can then be invoiced). False when there was nothing to reverse. */
+/**
+ * Puts a used visit back on its course (the visit can then be invoiced). False when there was nothing to reverse.
+ * Also on a CANCELLED course (voided, credited in full, or cancelled): the session does not come back – the course
+ * stays closed – but the visit is no longer "used from a course", so it can be invoiced on its own. That is how a
+ * visit used before the course's sale was voided is billed (the use is never deleted, only marked reversed).
+ */
 export async function reverseCourseUse(ctx: RepoContext, tenantId: string, useId: string, actor: PmsActor): Promise<{ reversed: boolean; patientCourseId: string | null }> {
   assertTenantId(tenantId);
   assertId(useId, "use id");
@@ -538,7 +618,6 @@ export async function reverseCourseUse(ctx: RepoContext, tenantId: string, useId
   if (!use) return { reversed: false, patientCourseId: null };
   if (use.reversed_at !== null) return { reversed: false, patientCourseId: use.patient_course_id };
   const course = await getPatientCourse(ctx, tenantId, use.patient_course_id);
-  if (course?.status === "cancelled") throw new RepoInputError("That course has been cancelled: its uses stay as they are.");
   const at = nowIso(ctx);
   const t = tenantId;
   const mine = ctx.db.selectFrom(USES).select("id").where("tenant_id", "=", t).where("id", "=", useId).where("reversed_at", "=", at);
@@ -551,7 +630,7 @@ export async function reverseCourseUse(ctx: RepoContext, tenantId: string, useId
       .where("id", "=", use.patient_course_id)
       .where("status", "=", "used_up")
       .where(sql<boolean>`exists (select 1 from pms_course_uses where tenant_id = ${t} and id = ${useId} and reversed_at = ${at})`),
-    billingAuditWhen(ctx, t, actor, { action: "pms.course.use_reverse", targetType: "pms_patient_course", targetId: use.patient_course_id, detail: { useId } }, mine),
+    billingAuditWhen(ctx, t, actor, { action: "pms.course.use_reverse", targetType: "pms_patient_course", targetId: use.patient_course_id, detail: { useId, courseCancelled: course?.status === "cancelled" } }, mine),
   ]);
   return { reversed: affected(results[0]) > 0, patientCourseId: use.patient_course_id };
 }

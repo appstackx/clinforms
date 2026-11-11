@@ -8,6 +8,7 @@ create table if not exists public.pms_invoice_line_refs (
   invoice_line_id text not null,
   ref_type text not null check (ref_type in ('course', 'gift_card', 'product')),
   ref_id text not null,
+  snapshot_json text,
   created_at timestamptz not null,
   primary key (tenant_id, invoice_line_id),
   foreign key (tenant_id, invoice_line_id) references public.pms_invoice_lines (tenant_id, id) on delete cascade

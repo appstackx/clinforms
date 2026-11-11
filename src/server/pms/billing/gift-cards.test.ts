@@ -126,14 +126,15 @@ function suite(label: string, factory: () => Promise<GuardedDb>) {
       assert.ok(!JSON.stringify(await listAudit(ctx, A, { limit: 200 })).includes(sold.code), "never the code in the audit trail");
     });
 
-    it("crediting a sale: a spent card cannot be; an unspent one is cancelled with it", async () => {
+    it("crediting a sale: never more than the card's unspent balance; a part credit lowers it; credited to nothing, it is cancelled", async () => {
       const card = (await getGiftCard(ctx, A, id.card))!;
       const inv = (await getInvoice(ctx, A, card.saleInvoiceId as string))!;
-      await assert.rejects(createCreditNote(ctx, A, { invoiceId: inv.id, lines: [{ invoiceLineId: inv.lines[0].id, totalPence: 5000 }], reason: "Refund" }, SEED), /spent from/);
+      await assert.rejects(createCreditNote(ctx, A, { invoiceId: inv.id, lines: [{ invoiceLineId: inv.lines[0].id, totalPence: 5000 }], reason: "Refund" }, SEED), /Only £15\.00 of this gift card is unspent/);
       const fresh = ok(await sellGiftCardFor(owner(), id.patient, { amountPence: 3000, issue: true }));
       const inv2 = (await getInvoice(ctx, A, fresh.invoiceId))!;
-      await assert.rejects(createCreditNote(ctx, A, { invoiceId: inv2.id, lines: [{ invoiceLineId: inv2.lines[0].id, totalPence: 1000 }], reason: "Part" }, SEED), /in full/);
-      await createCreditNote(ctx, A, { invoiceId: inv2.id, lines: [{ invoiceLineId: inv2.lines[0].id, totalPence: 3000 }], reason: "Changed their mind" }, SEED);
+      await createCreditNote(ctx, A, { invoiceId: inv2.id, lines: [{ invoiceLineId: inv2.lines[0].id, totalPence: 1000 }], reason: "Part" }, SEED);
+      assert.deepEqual([(await getGiftCard(ctx, A, fresh.giftCardId))?.status, (await getGiftCard(ctx, A, fresh.giftCardId))?.balancePence], ["active", 2000]);
+      await createCreditNote(ctx, A, { invoiceId: inv2.id, lines: [{ invoiceLineId: inv2.lines[0].id, totalPence: 2000 }], reason: "Changed their mind" }, SEED);
       const c = await getGiftCard(ctx, A, fresh.giftCardId);
       assert.deepEqual([c?.status, c?.balancePence], ["cancelled", 0]);
       const r = await pay(fresh.code, 100, id.treatment);

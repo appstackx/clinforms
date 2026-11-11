@@ -128,6 +128,8 @@ export interface InvoiceDetailView {
   vatPence: number;
   totalPence: number;
   paidPence: number;
+  /** Of what was paid: by gift card (never refunded as money – reverse that payment to put it back on the card). */
+  giftCardPaidPence: number;
   creditedPence: number;
   balancePence: number;
   lines: InvoiceLineView[];

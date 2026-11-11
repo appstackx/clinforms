@@ -24,7 +24,7 @@ import {
 import { ukToday } from "../../../modules/pms/core/text";
 import { pmsNow } from "../../../modules/pms/core/clock";
 import { isPlausibleRecordId } from "../../../modules/pms/records/form-values";
-import type { RepoContext } from "../../repos/context";
+import { RepoInputError, type RepoContext } from "../../repos/context";
 import { createDraftInvoice, issueInvoice } from "../../repos/pms/billing/invoices";
 import { findGiftCardByCode, getGiftCard, giftCardDraftQueries, giftCardsOutstanding, listGiftCardMoves, listGiftCards } from "../../repos/pms/billing/gift-cards";
 import { getPatientSummaries } from "../../repos/pms/patients";
@@ -107,11 +107,28 @@ export interface SellGiftCardFields {
  * Sells a gift card to a patient: a draft invoice with the card's line (no VAT), the card made with it (pending) –
  * issued too when asked. Returns the CODE once: it is never shown again.
  */
-export async function sellGiftCardFor(actor: BillingActor, patientId: string, f: SellGiftCardFields): Promise<Result<{ code: string; giftCardId: string; invoiceId: string; number: string | null; issued: boolean; expiresOn: string | null }>> {
+export interface SoldGiftCard {
+  code: string;
+  giftCardId: string;
+  invoiceId: string;
+  number: string | null;
+  issued: boolean;
+  expiresOn: string | null;
+  /** Set when "issue" was asked for but the invoice could not be issued: the card stays pending on its draft. */
+  issueProblem: string | null;
+}
+
+export async function sellGiftCardFor(
+  actor: BillingActor,
+  patientId: string,
+  f: SellGiftCardFields,
+  /** Tests only: stands in for issueInvoice. */
+  deps: { issue?: typeof issueInvoice } = {},
+): Promise<Result<SoldGiftCard>> {
   if (!actor.can("billing.view") || !actor.can("billing.edit")) return forbidden();
   const parsed = SellGiftCardInputSchema.safeParse({ amountPence: f.amountPence, recipientName: f.recipientName ?? null });
   if (!parsed.success) return fail("invalid", parsed.error.issues[0]?.message ?? "Check the amount.");
-  return attempt("billing.sell_gift_card", async (): Promise<Result<{ code: string; giftCardId: string; invoiceId: string; number: string | null; issued: boolean; expiresOn: string | null }>> => {
+  return attempt("billing.sell_gift_card", async (): Promise<Result<SoldGiftCard>> => {
     const patient = await patientInClinic(actor, patientId);
     if (!patient) return notFound();
     const ctx = actor.repo();
@@ -127,16 +144,30 @@ export async function sellGiftCardFor(actor: BillingActor, patientId: string, f:
       lineRefs: [{ lineIndex: 0, refType: "gift_card", refId: made.card.id }],
       extra: made.queries,
     });
+    // From here the card exists: whatever happens, the one-time code goes back to the member (a card must never exist
+    // with a code nobody has). A failed issue leaves the card pending on its draft – issue it from the invoice page.
     let number: string | null = null;
     let issued = false;
+    let issueProblem: string | null = null;
     if (f.issue) {
-      const r = await issueInvoice(ctx, t, invoice.id, invoice.rev, {}, actor.actor);
-      if (!r.ok) return fail("invalid", "The invoice could not be issued. It is kept as a draft: issue it from the invoice page before the card is spent.");
-      number = r.invoice.number;
-      issued = true;
+      const NOT_ISSUED = "The invoice could not be issued. It is kept as a draft with the card on it: write the code on the card now, then issue the invoice from the invoice page before the card is spent.";
+      try {
+        const r = await (deps.issue ?? issueInvoice)(ctx, t, invoice.id, invoice.rev, {}, actor.actor);
+        if (r.ok) {
+          number = r.invoice.number;
+          issued = true;
+        } else issueProblem = r.reason === "authorisation" ? `${NOT_ISSUED} (${r.message})` : NOT_ISSUED;
+      } catch (err) {
+        issueProblem = err instanceof RepoInputError ? `${NOT_ISSUED} (${err.message})` : NOT_ISSUED;
+      }
     }
-    const card = await getGiftCard(ctx, t, made.card.id);
-    return ok({ code: made.card.code, giftCardId: made.card.id, invoiceId: invoice.id, number, issued, expiresOn: card?.expiresOn ?? null });
+    let expiresOn: string | null = null;
+    try {
+      expiresOn = (await getGiftCard(ctx, t, made.card.id))?.expiresOn ?? null;
+    } catch {
+      // The code still goes back (the expiry shows on the card's page).
+    }
+    return ok({ code: made.card.code, giftCardId: made.card.id, invoiceId: invoice.id, number, issued, expiresOn, issueProblem });
   });
 }
 
