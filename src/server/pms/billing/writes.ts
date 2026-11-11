@@ -44,6 +44,7 @@ import { checkInvoicePaymentLinks, createInvoicePaymentLink } from "./payment-li
 import { paymentLinkProvider, PaymentProviderError, type PaymentLinkProvider } from "./payments";
 import { billableVisitSource } from "./visit-source";
 import { priceVisits, referrerNames } from "./views";
+import { useCoursesForVisits } from "./courses";
 import { pmsNow, pmsNowMs } from "../../../modules/pms/core/clock";
 
 const CONFLICT = "Someone else changed this invoice. Reload the page and try again.";
@@ -60,6 +61,8 @@ function draftFailure(r: { ok: false; reason: string }): { ok: false; code: "con
 
 export interface InvoiceVisitsResult {
   invoices: { id: string; number: string | null; billTo: "patient" | "payer"; totalPence: number }[];
+  /** PK02: visits used from a patient's course instead of invoiced. */
+  courseUses: number;
   /** Visits left out: already invoiced meanwhile, no price, or a 0 % fee. */
   skipped: number;
 }
@@ -84,7 +87,11 @@ export async function invoiceVisitsFor(actor: BillingActor, input: InvoiceVisits
     for (let i = 0; i < ids.length; i += 90) {
       visits.push(...(await source.listClinicVisits(ctx, t, { from: "2000-01-01", until: today, siteIds: actor.siteIds ?? null, appointmentIds: ids.slice(i, i + 90) })));
     }
-    const priced = await priceVisits(ctx, t, visits);
+    const allPriced = await priceVisits(ctx, t, visits);
+    // Visits the member chose to use from a course (PK02): used first, then left out of the invoices.
+    const wanted = new Set(parsed.data.useCourse ?? []);
+    const used = wanted.size ? await useCoursesForVisits(ctx, t, allPriced.filter((p) => wanted.has(p.visit.appointmentId)), actor.actor) : new Set<string>();
+    const priced = allPriced.filter((p) => !used.has(p.visit.appointmentId));
     const settings = await getBillingSettings(ctx, t);
     const groups = new Map<string, typeof priced>();
     let skipped = ids.length - visits.length;
@@ -144,8 +151,8 @@ export async function invoiceVisitsFor(actor: BillingActor, input: InvoiceVisits
         throw err;
       }
     }
-    if (out.length === 0) return fail("invalid", "None of the chosen visits could be invoiced: they are invoiced already, or have no price.");
-    return ok({ invoices: out, skipped });
+    if (out.length === 0 && used.size === 0) return fail("invalid", "None of the chosen visits could be invoiced: they are invoiced already, or have no price.");
+    return ok({ invoices: out, skipped, courseUses: used.size });
   });
 }
 

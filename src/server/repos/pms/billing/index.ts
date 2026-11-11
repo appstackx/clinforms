@@ -13,3 +13,5 @@ export * from "./saved-cards";
 export * from "./settings";
 export * from "./contribution-terms";
 export * from "./healthcode";
+export * from "./courses";
+export * from "./course-cancel";

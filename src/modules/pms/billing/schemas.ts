@@ -381,5 +381,7 @@ export const InvoiceVisitsInputSchema = z.object({
   appointmentIds: z.array(PmsIdSchema).min(1, "Choose at least one visit").max(200),
   /** Issue the drafts straight away (step 3), or keep them as drafts. */
   issue: z.boolean().optional(),
+  /** PK02: of the chosen visits, those to use from the patient's course instead of invoicing (when one covers them). */
+  useCourse: z.array(PmsIdSchema).max(200).optional(),
 });
 export type InvoiceVisitsInput = z.input<typeof InvoiceVisitsInputSchema>;

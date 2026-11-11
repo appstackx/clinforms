@@ -31,6 +31,7 @@ import {
   type RemittanceResult,
   type TakePaymentResult,
 } from "@/server/pms/billing/writes";
+import { cancelCourseFor, reverseCourseUseFor, sellCourseFor, setCourseExpiryFor } from "@/server/pms/billing/courses";
 
 export type BillingActionResult<T = unknown> = ({ ok: true } & T) | { ok: false; error: string; fieldErrors?: Record<string, string> };
 
@@ -62,10 +63,14 @@ export async function takePaymentAction(input: TakePaymentInput): Promise<Billin
   return { ok: true, result: r.value };
 }
 
-export async function invoiceVisitsAction(appointmentIds: string[], issue: boolean): Promise<BillingActionResult<{ result: InvoiceVisitsResult }>> {
+export async function invoiceVisitsAction(appointmentIds: string[], issue: boolean, useCourse: string[] = []): Promise<BillingActionResult<{ result: InvoiceVisitsResult }>> {
   const actor = await clinicActionActor({ permission: "billing.edit" });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
-  const r = await invoiceVisitsFor(actor, { appointmentIds: Array.isArray(appointmentIds) ? appointmentIds.map(String) : [], issue: Boolean(issue) });
+  const r = await invoiceVisitsFor(actor, {
+    appointmentIds: Array.isArray(appointmentIds) ? appointmentIds.map(String) : [],
+    issue: Boolean(issue),
+    useCourse: Array.isArray(useCourse) ? useCourse.map(String).slice(0, 200) : [],
+  });
   if (!r.ok) return { ok: false, error: r.error };
   refresh([`${BILLING}/visits`]);
   return { ok: true, result: r.value };
@@ -206,4 +211,51 @@ export async function setBillStatusAction(invoiceId: string, status: string): Pr
   if (!r.ok) return { ok: false, error: r.error };
   refresh([invoicePath(invoiceId), `${BILLING}/claims`]);
   return { ok: true, status: r.value.status };
+}
+
+/* Courses (PK02, src/server/pms/billing/courses.ts): each checks the permission and the member's sites again. */
+
+function patientPath(id: string) {
+  return `${CLINIC_BASE_PATH}/patients/${id}`;
+}
+
+export async function sellCourseAction(patientId: string, input: { courseTypeId: string; caseId?: string | null; siteId?: string | null; issue?: boolean }): Promise<BillingActionResult<{ invoiceId: string; number: string | null; issued: boolean }>> {
+  const actor = await clinicActionActor({ permission: "billing.edit" });
+  if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
+  const r = await sellCourseFor(actor, String(patientId), {
+    courseTypeId: String(input?.courseTypeId ?? ""),
+    caseId: input?.caseId ? String(input.caseId) : null,
+    siteId: input?.siteId ? String(input.siteId) : null,
+    issue: Boolean(input?.issue),
+  });
+  if (!r.ok) return { ok: false, error: r.error };
+  refresh([patientPath(patientId)]);
+  return { ok: true, ...r.value };
+}
+
+export async function reverseCourseUseAction(patientId: string, courseId: string, useId: string): Promise<BillingActionResult> {
+  const actor = await clinicActionActor({ permission: "billing.edit" });
+  if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
+  const r = await reverseCourseUseFor(actor, String(courseId), String(useId));
+  if (!r.ok) return { ok: false, error: r.error };
+  refresh([patientPath(patientId), `${BILLING}/visits`]);
+  return { ok: true };
+}
+
+export async function cancelCourseAction(patientId: string, courseId: string, creditPence: number | null, reason: string): Promise<BillingActionResult<{ creditNumber: string | null; creditPence: number }>> {
+  const actor = await clinicActionActor({ permission: "billing.refund" });
+  if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
+  const r = await cancelCourseFor(actor, String(courseId), { creditPence: creditPence === null ? undefined : Number(creditPence), reason: String(reason ?? "") });
+  if (!r.ok) return { ok: false, error: r.error };
+  refresh([patientPath(patientId)]);
+  return { ok: true, ...r.value };
+}
+
+export async function setCourseExpiryAction(patientId: string, courseId: string, rev: number, expiresOn: string | null): Promise<BillingActionResult> {
+  const actor = await clinicActionActor({ permission: "billing.edit" });
+  if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
+  const r = await setCourseExpiryFor(actor, String(courseId), Number(rev), typeof expiresOn === "string" ? expiresOn.slice(0, 10) : null);
+  if (!r.ok) return { ok: false, error: r.error };
+  refresh([patientPath(patientId)]);
+  return { ok: true };
 }

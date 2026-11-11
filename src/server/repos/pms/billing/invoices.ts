@@ -34,10 +34,12 @@ import { VAT_RATES_BP, lineAmounts, sumTotals, type VatCode } from "../../../../
 import { formatUkDate } from "../../../../modules/pms/core/text";
 import type { PayerType, PmsActor } from "../../../../modules/pms/core/types";
 import { runBatch, type BatchQuery } from "../../../db/batch";
+import { classifyDbError } from "../../../db/errors";
 import type { PmsInvoicesTable } from "../../../db/pms-schema/billing";
 import { recordAuthorisationUsage } from "../cases";
 import { RepoInputError, assertId, assertTenantId, decryptField, encryptField, nowIso, num, numOrNull, parseInput, parseLines, pmsAudit, pmsAuditQuery, pmsId, translateDbError, type RepoContext } from "../context";
 import { contributionModeForCase } from "./contribution-terms";
+import { courseStartQueries, courseUsedAppointmentIds, invoiceLineRefs, lineRefInsert, type LineRefType } from "./courses";
 import { ensureSettingsQuery, getBillingSettings } from "./settings";
 import { INV, LINES, OPEN_INVOICE, PAY, SUMMARY_COLUMNS, affected, billingAuditWhen, billingBatch, chunks, editToken, isUniqueRefusal, todayOf, toInvoiceLine, toInvoiceSummary } from "./shared";
 
@@ -263,6 +265,11 @@ export interface CreateDraftOptions {
    * (excess per case or contribution per visit – ./contribution-terms.ts).
    */
   applyExcess?: boolean;
+  /**
+   * What item lines sell (PK02 courses; gift cards and products later): a pms_invoice_line_refs row per line, in the
+   * draft's own batch. `lineIndex` is the line's place in `input.lines` (0-based). Not with applyExcess.
+   */
+  lineRefs?: { lineIndex: number; refType: LineRefType; refId: string }[];
 }
 
 export interface CreateDraftResult {
@@ -355,6 +362,18 @@ export async function createDraftInvoice(ctx: RepoContext, tenantId: string, inp
   }
   const appts = d.lines.map((l) => l.appointmentId).filter((a): a is string => typeof a === "string");
   if (appts.length && (await billedAppointmentIds(ctx, tenantId, appts)).size > 0) throw new RepoInputError("An appointment on this invoice is already on another invoice.");
+  if (appts.length && (await courseUsedAppointmentIds(ctx, tenantId, appts)).size > 0) throw new RepoInputError("An appointment on this invoice is already on another invoice or used from a course.");
+  const refs = options.lineRefs ?? [];
+  if (refs.length) {
+    if (options.applyExcess) throw new RepoInputError("A course, gift card or product is sold on an invoice to the patient.");
+    for (const r of refs) {
+      const l = d.lines[r.lineIndex];
+      if (!l || (l.kind ?? "service") !== "item") throw new RepoInputError("A course, gift card or product is sold on an item line.");
+      if ((l.quantity ?? 1) !== 1) throw new RepoInputError("A course, gift card or product is sold one to a line.");
+      assertId(r.refId, "reference id");
+    }
+    if (new Set(refs.map((r) => r.lineIndex)).size !== refs.length) throw new RepoInputError("A line sells one thing only.");
+  }
 
   const lines = await prepareLines(ctx, tenantId, d.lines, settings, theCase?.priceListId ?? null);
   const at = nowIso(ctx);
@@ -471,6 +490,11 @@ export async function createDraftInvoice(ctx: RepoContext, tenantId: string, inp
       ),
       ...payerLines.map((l) => lineInsert(ctx, tenantId, id, l, at)),
     );
+    // No split here (refused above): the lines are input.lines in order.
+    for (const r of refs) {
+      queries.push(lineRefInsert(ctx, tenantId, { invoiceLineId: payerLines[r.lineIndex].id, refType: r.refType, refId: r.refId }, at));
+      if (r.refType === "course") queries.push(pmsAuditQuery(ctx, tenantId, actor, { action: "pms.course.sell", targetType: "pms_invoice", targetId: id, detail: { courseTypeId: r.refId } }));
+    }
     if (split) queries.push(ctx.db.updateTable(INV).set({ related_invoice_id: id }).where("tenant_id", "=", tenantId).where("id", "=", split.id));
     queries.push(pmsAuditQuery(ctx, tenantId, actor, { action: "pms.invoice.create", targetType: "pms_invoice", targetId: id, detail: { billTo, lines: payerLines.length, ...(split ? { excessInvoiceId: split.id } : {}) } }));
   }
@@ -533,6 +557,7 @@ export async function updateDraftInvoice(ctx: RepoContext, tenantId: string, id:
   let lines: PreparedLine[] | null = null;
   if (d.lines) {
     if (current.bill_to === "payer" && d.lines.some((l) => l.kind === "excess")) throw new RepoInputError("An excess line goes on the patient's invoice.");
+    if ((await invoiceLineRefs(ctx, tenantId, id)).length > 0) throw new RepoInputError("This draft sells a course, gift card or product, so its lines cannot be changed. Cancel the draft and sell it again.");
     const appts = d.lines.map((l) => l.appointmentId).filter((a): a is string => typeof a === "string");
     if (appts.length) {
       const mine = new Set((await ctx.db.selectFrom(LINES).select("appointment_id").where("tenant_id", "=", tenantId).where("invoice_id", "=", id).execute()).map((r) => r.appointment_id));
@@ -712,6 +737,8 @@ export async function issueInvoice(ctx: RepoContext, tenantId: string, id: strin
   try {
     for (let attempt = 0; attempt < 4 && !issued; attempt++) {
       const token = editToken();
+      // Courses sold on it start now (PK02) – each insert reads the issue's own token, so a stale issue starts none.
+      const starts = await courseStartQueries(ctx, tenantId, inv, issuedOn, token, actor, at);
       const queries = [
         ensureSettingsQuery(ctx, tenantId, at),
         ctx.db
@@ -743,6 +770,7 @@ export async function issueInvoice(ctx: RepoContext, tenantId: string, id: strin
           { action: "pms.invoice.issue", targetType: "pms_invoice", targetId: id, detail: { rev: expectedRev + 1, ...(usageTaken ? { authorisationId: inv.authorisationId, sessions, valuePence: value } : {}) } },
           ctx.db.selectFrom(INV).select("id").where("tenant_id", "=", tenantId).where("id", "=", id).where("edit_token", "=", token).where("status", "=", "issued"),
         ),
+        ...starts,
       ];
       try {
         const results = await runBatch(ctx.db, queries);
@@ -751,6 +779,8 @@ export async function issueInvoice(ctx: RepoContext, tenantId: string, id: strin
       } catch (err) {
         // Two issues at the same moment on Postgres can pick the same number: the unique index refuses one; try again.
         if (isUniqueRefusal(err) && attempt < 3) continue;
+        // A course start found the issue had not applied (someone else changed the draft): nothing was written.
+        if (starts.length && classifyDbError(err) === "CONSTRAINT_NOT_NULL") break;
         throw translateDbError(err, { check: "The clinic has used every invoice number its prefix allows (999999). Change the prefix in the billing settings." });
       }
     }

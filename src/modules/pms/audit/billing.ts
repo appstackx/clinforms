@@ -37,6 +37,14 @@ export const BILLING_AUDIT_LABELS: Readonly<Record<string, string>> = {
   "pms.case_diagnosis.set": "Diagnosis code of a case changed",
   "pms.invoice.diagnosis_set": "Diagnosis code of an insurer invoice changed",
   "pms.invoice.bill_status": "Healthcode bill status of an invoice changed",
+  "pms.course_type.create": "Course added",
+  "pms.course_type.update": "Course changed",
+  "pms.course.sell": "Course sold (draft invoice)",
+  "pms.course.start": "Course started (its invoice issued)",
+  "pms.course.use": "Visit used from a course",
+  "pms.course.use_reverse": "Visit put back on a course",
+  "pms.course.cancel": "Course cancelled",
+  "pms.course.expiry": "Course expiry changed",
 };
 
 /** Names of the record types its audit rows point at (target_type → label). */
@@ -48,4 +56,6 @@ export const BILLING_AUDIT_TARGETS: Readonly<Record<string, string>> = {
   pms_patient: "Patient",
   pms_referrer: "Payer account",
   pms_case: "Case",
+  pms_course_type: "Course",
+  pms_patient_course: "Patient's course",
 };

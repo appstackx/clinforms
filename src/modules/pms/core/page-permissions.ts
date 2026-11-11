@@ -69,6 +69,7 @@ export const PAGE_PERMISSIONS: readonly (readonly [string, PmsPermission])[] = [
   ["/patients/unsigned-notes", "clinical.view"],
   ["/setup/audit", "settings.members"],
   ["/setup/billing", "settings.setup"],
+  ["/setup/courses", "settings.setup"],
   ["/setup/import/[batchId]", "settings.import"],
   ["/setup/import", "settings.import"],
   ["/setup/insurer-codes", "settings.setup"],

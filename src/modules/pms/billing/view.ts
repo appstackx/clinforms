@@ -63,6 +63,8 @@ export interface UninvoicedVisitView {
   caseId: string | null;
   /** A did-not-attend / late-cancellation fee can be waived. */
   waivable: boolean;
+  /** PK02: the patient's course that covers this visit ("Use course (3 of 6 left)", ticked by default), or null. */
+  course?: { patientCourseId: string; label: string } | null;
 }
 
 export interface InvoiceLineView {

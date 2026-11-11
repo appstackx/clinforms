@@ -49,6 +49,8 @@ import { priceFor } from "../../repos/pms/price-lists";
 import { patientVisibleInScope } from "../access";
 import { BILLING_NOT_FOUND, attempt, fail, forbidden, invoiceInScope, invoiceSiteVisible, notFound, ok, patientInClinic, type BillingActor, type Result } from "./access";
 import { paymentLinkProvider } from "./payments";
+import { coursesInstalled, notBilledNorUsed } from "../../repos/pms/billing/courses";
+import { courseOffersFor } from "./courses";
 import { billableVisitSource } from "./visit-source";
 import { pmsNow, pmsNowMs } from "../../../modules/pms/core/clock";
 
@@ -241,7 +243,8 @@ async function uninvoicedVisits(actor: BillingActor, options: { limit?: number }
     from: addDaysIso(today, -90),
     until: today,
     siteIds: actor.siteIds ?? null,
-    notBilled: notOnAnInvoice,
+    // Not on an invoice – nor used from a course (PK02), once the course tables exist.
+    notBilled: (await coursesInstalled(ctx, actor.tenantId)) ? notBilledNorUsed(notOnAnInvoice) : notOnAnInvoice,
     limit: Math.min(UNINVOICED_LIST_MAX, options.limit ?? UNINVOICED_LIST_MAX),
   });
   return { visits: r.visits.slice().reverse(), total: r.total };
@@ -308,6 +311,7 @@ export async function uninvoicedVisitsFor(
       ),
     ]);
     const pracNames = new Map(practitioners.map((p) => [p.id, p.displayName]));
+    const offers = await courseOffersFor(ctx, actor.tenantId, priced);
     const rows: UninvoicedVisitView[] = priced.map((p) => {
       const pat = patients.get(p.visit.patientId);
       const charge = p.chargePence;
@@ -330,10 +334,15 @@ export async function uninvoicedVisitsFor(
         contributionMode: p.contributionMode,
         caseId: p.visit.caseId,
         waivable: p.visit.status !== "attended",
+        course: courseOf(offers.get(p.visit.appointmentId)),
       };
     });
     return ok({ visits: rows, total, connected: billableVisitSource().connected, from: addDaysIso(today, -90), until: today });
   });
+}
+
+function courseOf(o: { patientCourseId: string; label: string } | undefined): UninvoicedVisitView["course"] {
+  return o ? { patientCourseId: o.patientCourseId, label: o.label } : null;
 }
 
 /* ------------------------------------------------------------------------------------------------

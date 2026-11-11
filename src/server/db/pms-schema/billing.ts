@@ -1,5 +1,6 @@
 /**
- * Tables of the billing module (migrations 0130–0139, 0212 and the Healthcode groundwork 0220–0229): billing settings, VAT per appointment
+ * Tables of the billing module (migrations 0130–0139, 0212, the Healthcode groundwork 0220–0229 and courses, gift
+ * cards and products 0231–0239): billing settings, VAT per appointment
  * type, invoices and their lines, credit notes and their lines, payments and refunds, their allocations to
  * invoices, card payment links (test mode) and the e-billing export log. Conventions: docs/clinic-system/contract.md
  * §4 and docs/clinic-system/billing.md.
@@ -365,6 +366,72 @@ export interface PmsInvoiceBillStatusTable {
   updated_at: IsoTimestamp;
 }
 
+/** 0231 (courses, PK02): a course the clinic sells – sessions, the services it covers, price, days valid. */
+export interface PmsCourseTypesTable {
+  tenant_id: string;
+  id: string;
+  rev: number;
+  name: string;
+  /** JSON array of pms_services ids the course covers. */
+  service_ids_json: string;
+  sessions: number;
+  price_pence: number;
+  /** "exempt" | "standard" | "reduced" | "zero" */
+  vat_code: string;
+  /** Days valid from the sale; NULL = no expiry. */
+  valid_days: number | null;
+  active: WithDefault<number>;
+  updated_by: string | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
+/** 0232 (courses, PK02): a course sold to a patient (made when the invoice selling it is issued). */
+export interface PmsPatientCoursesTable {
+  tenant_id: string;
+  id: string;
+  rev: number;
+  patient_id: string;
+  course_type_id: string;
+  case_id: string | null;
+  sale_invoice_id: string;
+  sale_line_id: string;
+  sessions_total: number;
+  sold_on: IsoDate;
+  expires_on: IsoDate | null;
+  /** "active" | "used_up" | "expired" | "cancelled" */
+  status: WithDefault<string>;
+  cancelled_at: IsoTimestamp | null;
+  cancel_credit_note_id: string | null;
+  created_by: string | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
+/** 0233 (courses, PK02): a visit used from a course (one per appointment while not reversed). */
+export interface PmsCourseUsesTable {
+  tenant_id: string;
+  id: string;
+  patient_course_id: string;
+  appointment_id: string;
+  used_on: IsoDate;
+  reversed_at: IsoTimestamp | null;
+  reversed_by: string | null;
+  created_by: string | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
+/** 0238 (PK02): what an item line sells – a course (ref_id = the course type), a gift card or a product. */
+export interface PmsInvoiceLineRefsTable {
+  tenant_id: string;
+  invoice_line_id: string;
+  /** "course" | "gift_card" | "product" */
+  ref_type: string;
+  ref_id: string;
+  created_at: IsoTimestamp;
+}
+
 export interface BillingTables {
   pms_billing_settings: PmsBillingSettingsTable;
   pms_service_vat: PmsServiceVatTable;
@@ -387,6 +454,10 @@ export interface BillingTables {
   pms_service_insurer_codes: PmsServiceInsurerCodesTable;
   pms_case_diagnosis: PmsCaseDiagnosisTable;
   pms_invoice_bill_status: PmsInvoiceBillStatusTable;
+  pms_course_types: PmsCourseTypesTable;
+  pms_patient_courses: PmsPatientCoursesTable;
+  pms_course_uses: PmsCourseUsesTable;
+  pms_invoice_line_refs: PmsInvoiceLineRefsTable;
 }
 
 /** Foreign-key order (parents first). */
@@ -412,6 +483,10 @@ export const BILLING_TABLES = [
   "pms_service_insurer_codes",
   "pms_case_diagnosis",
   "pms_invoice_bill_status",
+  "pms_course_types",
+  "pms_patient_courses",
+  "pms_course_uses",
+  "pms_invoice_line_refs",
 ] as const satisfies readonly (keyof BillingTables)[];
 
 export const BILLING_PRIMARY_KEYS: { readonly [T in (typeof BILLING_TABLES)[number]]: readonly (keyof BillingTables[T] & string)[] } = {
@@ -436,6 +511,10 @@ export const BILLING_PRIMARY_KEYS: { readonly [T in (typeof BILLING_TABLES)[numb
   pms_service_insurer_codes: ["tenant_id", "service_id", "referrer_id"],
   pms_case_diagnosis: ["tenant_id", "id"],
   pms_invoice_bill_status: ["tenant_id", "invoice_id"],
+  pms_course_types: ["tenant_id", "id"],
+  pms_patient_courses: ["tenant_id", "id"],
+  pms_course_uses: ["tenant_id", "id"],
+  pms_invoice_line_refs: ["tenant_id", "invoice_line_id"],
 };
 
 /** Timestamp columns beyond created_at/updated_at (TEXT in SQLite, timestamptz in Postgres) – the D1 → Postgres copy. */
@@ -447,7 +526,7 @@ export const BILLING_TIMESTAMP_COLUMNS: readonly string[] = ["issued_at", "cance
  * and does not name them in its batch (the gateway's statement limit – src/server/auth/offboard-batch.test.ts). They
  * are still exported and counted like every other table.
  */
-export const BILLING_CASCADE_DELETED_TABLES: readonly (typeof BILLING_TABLES)[number][] = [
+export const HEALTHCODE_CASCADE_DELETED_TABLES: readonly (typeof BILLING_TABLES)[number][] = [
   "pms_payer_healthcode",
   "pms_healthcode_settings",
   "pms_site_healthcode",
@@ -457,6 +536,15 @@ export const BILLING_CASCADE_DELETED_TABLES: readonly (typeof BILLING_TABLES)[nu
   "pms_case_diagnosis",
   "pms_invoice_bill_status",
 ];
+
+/**
+ * Courses (0231–0233, 0238): course types go with the clinic's billing settings row (written in the same batch as
+ * each type); a patient's courses with their patient, course type, case, invoice and sale line; their uses with the
+ * course; a line's reference with the line.
+ */
+export const COURSE_CASCADE_DELETED_TABLES: readonly (typeof BILLING_TABLES)[number][] = ["pms_course_types", "pms_patient_courses", "pms_course_uses", "pms_invoice_line_refs"];
+
+export const BILLING_CASCADE_DELETED_TABLES: readonly (typeof BILLING_TABLES)[number][] = [...HEALTHCODE_CASCADE_DELETED_TABLES, ...COURSE_CASCADE_DELETED_TABLES];
 
 /** Every billing table holds one clinic's data (offboarding exports them decrypted, then deletes them). */
 export const BILLING_TENANT_TABLES: readonly (typeof BILLING_TABLES)[number][] = BILLING_TABLES;

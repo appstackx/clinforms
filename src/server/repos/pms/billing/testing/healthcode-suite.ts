@@ -13,7 +13,7 @@ import { createPatient } from "../../patients";
 import { createDraftInvoice, getInvoice } from "../invoices";
 import { unscopedStatements, type GuardedDb } from "../../testing/guarded-db";
 import { runBatch } from "../../../../db/batch";
-import { BILLING_CASCADE_DELETED_TABLES } from "../../../../db/pms-schema/billing";
+import { BILLING_CASCADE_DELETED_TABLES, HEALTHCODE_CASCADE_DELETED_TABLES } from "../../../../db/pms-schema/billing";
 import { countPmsRows, deletePmsQueries } from "../../../../pms/offboard";
 import { healthcodeForSite } from "../../../../../modules/pms/billing/healthcode";
 import { createPractitioner, createService, createSite } from "../../directory";
@@ -173,7 +173,7 @@ export function defineHealthcodeRepoSuite(label: string, factory: () => Promise<
       await setCaseDiagnosis(ctx, A, id.case, "M75.1", ACTOR);
       await setBillStatus(ctx, A, id.invoice, "paid", ACTOR);
       const before = await countPmsRows(suite.db, A);
-      for (const t of BILLING_CASCADE_DELETED_TABLES) assert.ok((before[t] ?? 0) > 0, `${t} has rows to begin with`);
+      for (const t of HEALTHCODE_CASCADE_DELETED_TABLES) assert.ok((before[t] ?? 0) > 0, `${t} has rows to begin with`);
       const queries = deletePmsQueries(suite.db, A, { only: Object.keys(before) });
       const named = queries.map((q) => ("compile" in q && typeof q.compile === "function" ? q.compile().sql : ""));
       for (const t of BILLING_CASCADE_DELETED_TABLES) assert.ok(!named.some((sql) => sql.includes(`"${t}"`)), `${t} is not named`);

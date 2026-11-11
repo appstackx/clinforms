@@ -9,6 +9,7 @@ import { visitLine, type BillableVisit } from "../../../modules/pms/billing/visi
 import type { InvoiceLineInput } from "../../../modules/pms/billing/schemas";
 import type { RepoContext } from "../../repos/context";
 import { billedAppointmentIds } from "../../repos/pms/billing/invoices";
+import { courseUsedAppointmentIds } from "../../repos/pms/billing/courses";
 import { getBillingSettings } from "../../repos/pms/billing/settings";
 import { priceFor } from "../../repos/pms/price-lists";
 import { billableVisitSource, type VisitQuery } from "./visit-source";
@@ -34,6 +35,8 @@ export async function suggestVisitLines(ctx: RepoContext, tenantId: string, quer
     tenantId,
     visits.map((v) => v.appointmentId),
   );
+  // Visits used from a course (PK02) are not invoiced either.
+  for (const a of Array.from(await courseUsedAppointmentIds(ctx, tenantId, visits.map((v) => v.appointmentId)))) billed.add(a);
   const settings = await getBillingSettings(ctx, tenantId);
   const names = new Map<string, string>();
   const codes = new Map<string, string | null>();

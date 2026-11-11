@@ -121,6 +121,7 @@ export const SETUP_ORDER: readonly string[] = [
   "portal.setup",
   "portal.forms",
   "reporting.billing",
+  "billing.courses",
   "comms.settings",
   "comms.credits",
   "reporting.targets",

@@ -57,3 +57,39 @@ admin. Audit actions `pms.course.*`, `pms.gift_card.*` (never the code), `pms.pr
 
 PK02 courses (types, sell, use from visits, cancel/credit) → PK04 gift cards → PK05 products and stock → PK06 tests
 and liability/stock reports → PK07 website. PK03 memberships after card payments (cp04).
+
+## 6. Built – PK02 courses (11/11/2026, branch `feat/courses`, not merged, migrations not applied anywhere)
+
+| What | Where (screen) | Code |
+|---|---|---|
+| Course types: name, services covered, sessions, price, VAT code (VAT-registered clinics), valid N days from the sale (blank = no expiry), on sale / switched off | Set-up → **Courses** (`/app/clinic/setup/courses`, settings.setup; changes by the owner or an admin with every site) | `pms_course_types` (0231); `src/components/pms/billing/courses-setup.tsx` |
+| Sell a course: a draft invoice to the patient with an `item` line "Course: <name>" + its `pms_invoice_line_refs` row (one batch), or "Sell and issue invoice". The course is made in the **issue** batch (sold = issued; expiry = sale date + N − 1 days). Draft courses show as "on a draft invoice"; a cancelled draft starts nothing; a draft that sells something cannot have its lines replaced (cancel and sell again) | Patient → **Invoices** tab → Courses → **Sell a course** | `pms_patient_courses` (0232), `pms_invoice_line_refs` (0238); `createDraftInvoice(…, { lineRefs })`, `courseStartQueries` in `issueInvoice` |
+| Progress: "3 of 6 used · expires 12/03/2027", state Active / Used up / Expired (worked out from the date) / Cancelled, the visits used | same | `src/modules/pms/billing/courses.ts` |
+| Visit suggestions: a completed self-pay visit a patient's active course covers (service, case if the course has one, visit date ≤ expiry, a session left – counted down in date order, the course running out first used first) shows **"Use course (3 of 6 left)"**, ticked by default; ticked visits are used from the course (`pms_course_uses`, unique per appointment while not reversed) and get no line. Used visits leave "Invoice visits", the Billing figure and the dashboard (the uninvoiced test is `not on an invoice AND not used from a course` once the tables exist) | Billing → Invoice visits / Attended, not invoiced | `offerCourses`, `courseOffersFor`, `useCoursesForVisits`, `notBilledNorUsed` |
+| Reverse a use (the visit can be invoiced again) | Patient → Invoices → the course → **Reverse** | `reverseCourseUse` |
+| Cancel a course: credit note on the sale line for the unused sessions (pro rata by default, any amount up to what is left on the line), the course closed – one batch. Voiding the sale invoice, or crediting the line in full, closes the course too | Patient → Invoices → **Cancel course** | `cancelPatientCourse` (`course-cancel.ts`), `courseCloseOnCreditQueries` in `issueCreditNote` |
+| Move or remove the expiry (owner or admin), audited with the old and new date | Patient → Invoices → **Change expiry** | `setCourseExpiry` |
+
+**Decisions taken while building (differ from §1–§4):**
+- `pms_invoice_line_refs.ref_id` for a course is the **course type** (the patient's course only exists once the invoice is
+  issued, found by `sale_line_id`). A draft therefore never leaves a half-made course behind.
+- Cancelling a course needs **billing.edit and billing.refund** (it issues a credit note, which is billing.refund
+  everywhere else), not billing.edit alone.
+- Only **completed, self-pay** visits are offered a course (an insured visit bills its payer; a missed visit is
+  charged or waived as before).
+- `pms_course_types` hangs off the clinic's `pms_billing_settings` row (ON DELETE CASCADE, written in the same batch)
+  like the Healthcode settings, so offboarding's one-batch delete stays within the gateway limit (450 member accounts
+  still fit); the other course tables go with their parents.
+- Selling from the patient's record, not a "New invoice" screen (there is none yet).
+
+**Permissions** as §4, plus the cancel rule above. **Audit actions**: `pms.course_type.create|update`, `pms.course.sell`,
+`pms.course.start`, `pms.course.use`, `pms.course.use_reverse`, `pms.course.cancel`, `pms.course.expiry` (ids,
+counts and amounts only).
+
+**Before the migrations:** every course read answers "none" (`readOrEmpty`), invoices issue and credit as before (no
+course statement is added unless the invoice has course rows), the visits list keeps the old test until
+`pms_course_uses` exists; only course saves fail.
+
+**Tests:** `src/modules/pms/billing/courses.test.ts` (pure), `src/server/repos/pms/billing/courses-repos.test.ts`
+(+ `testing/courses-suite.ts`) and `src/server/pms/billing/courses-service.test.ts` on node:sqlite and PGlite with the
+tenant-scope guard; parity, ranges, offboarding batch and Set-up navigation as before.
