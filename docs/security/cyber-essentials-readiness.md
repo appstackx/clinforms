@@ -23,7 +23,7 @@ Status key: **✓** looks met from the repo/docs/the Mac check · **?** Khuram m
 | Passwords | One of: MFA · 12+ characters · 8+ characters with a deny list. No maximum length, no forced expiry, no complexity rules. Brute-force protection: throttling (≤ 10 guesses in 5 minutes) or lock after 10 attempts | [Danzell booklet][danzell] |
 | Backups | v3.3 moves backup guidance to the front of the document. It is guidance, not one of the five marked controls | [IASME April 2026 update][iasme-2026] |
 | Free cyber insurance | Opt-in, at no extra cost, with a **whole-organisation** CE certificate when the head office is in the UK (or Crown Dependencies) and gross turnover is **under £20m** (A3.1–A3.3). Cover is **£25,000**. Third-party sources give the excess (about £1,000) and the underwriter differently, so confirm both with the certification body | [Danzell booklet][danzell], [IASME insurance][iasme-ins] |
-| Price (micro, 0–9 staff) | **£320 + VAT** (£384 incl. VAT). Small 10–49: £440; medium 50–249: £500; large 250+: £600 (+ VAT). One-off per year; the certificate lasts 12 months | [IASME][iasme-ce], [NCSC overview][ncsc], [G-Cloud 15 price doc (Jan 2026)][gcloud] |
+| Price (micro, 0–9 staff) | **About £80 + VAT with the First Step Fund** (75% off, live since 03/11/2026, until 31/03/2027 or until the £2.4m runs out, first come first served; for organisations with < 250 staff and no CE certificate in the last 4 years – we qualify; apply at firststep.iasme.co.uk BEFORE buying, basic CE only, not Plus – [GOV.UK][gov-fund]). Full list price **£320 + VAT** (£384 incl. VAT). Small 10–49: £440; medium 50–249: £500; large 250+: £600 (+ VAT). One-off per year; the certificate lasts 12 months | [IASME][iasme-ce], [NCSC overview][ncsc], [G-Cloud 15 price doc (Jan 2026)][gcloud] |
 | Cyber Essentials **Plus** | Same five controls, plus a **hands-on technical audit** by an assessor: external vulnerability scan, sampled devices tested (patches, malware, MFA on cloud services, …). It must be done **within 3 months of the basic CE certificate**. Under Danzell, a Plus test that fails on missing patches means the assessor tests an **extra sample** of devices, and the self-assessment must be final and unchanged before testing starts. Price: quoted by the certification body on size and complexity. Third-party guides put a micro firm at about **£1,500+ VAT** (estimate) | [IASME Plus][iasme-plus], [LRQA][lrqa], [NCSC overview][ncsc] |
 
 Your answers must be approved by a board-level person (Khuram, as director). The certificate names **one legal entity**,
@@ -137,13 +137,14 @@ can be added as "trading as".
 1. **Fix the ✗ items and the to-do above** (estimate: 1–2 evenings, plus waiting for macOS to install). Re-run the
    checks: `sw_vers`, `softwareupdate -l` (nothing "Recommended" outstanding), `fdesetup status`,
    `dscl . -read /Groups/admin GroupMembership` (the daily user must not be listed).
-2. **Choose a certification body.** Any IASME-licensed CB (finder on [iasme.co.uk][iasme-ce]). The price is the same
+2. **Apply for the First Step Fund first** (firststep.iasme.co.uk, 75% off: about £80 + VAT instead of £320 + VAT),
+   then **choose a certification body.** Any IASME-licensed CB (finder on [iasme.co.uk][iasme-ce]). The list price is the same everywhere
    (£320 + VAT for micro). Choose one that also does Plus and answers questions quickly. A local one is handy if we do
    Plus on site. Optional: a session with an NCSC-assured **Cyber Advisor** (A1.12) if a question is unclear.
 3. **Read** the Requirements for IT Infrastructure v3.3 (A1.11 asks) and fill in the **Danzell** booklet offline
    first (notes per question). Then enter the answers on the IASME portal. Name = APPSTACK X LTD, 16287309;
    whole-organisation scope; opt **in** to the insurance (A3.1–A3.3, contact khuram@appstackx.co.uk).
-4. **Director sign-off**, submit, and pay **£384 incl. VAT** (£320 + VAT).
+4. **Director sign-off**, submit, and pay (about **£80 + VAT** with the fund; £320 + VAT without).
 5. **Marking:** usually a few working days. If the assessor raises points, fix them and answer within the window the
    CB gives. The account must be completed within **6 months** of creation.
 6. **On pass:** certificate valid **12 months** (renew by about **11/2027**). Change `security.certifications` in
@@ -164,6 +165,7 @@ can be added as "trading as".
 [ncsc-res]: https://www.ncsc.gov.uk/cyberessentials/resources
 [iasme-ce]: https://iasme.co.uk/cyber-essentials/
 [iasme-ins]: https://iasme.co.uk/cyber-essentials/cyber-liability-insurance
+[gov-fund]: https://www.gov.uk/government/publications/cyber-essentials-funding-package/cyber-essentials-funding-package
 [iasme-plus]: https://www.iasme.co.uk/cyberessentials/cyber-essentials-plus/
 [gcloud]: https://assets.applytosupply.digitalmarketplace.service.gov.uk/g-cloud-15/documents/720344/785037226262462-pricing-document-2026-01-30-1039.pdf
 
