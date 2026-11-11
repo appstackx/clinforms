@@ -404,6 +404,7 @@ function Billing() {
           </p>
           <ul className="fx-points">
             <li><span className="tb" aria-hidden="true" />Authorisations tracked: sessions approved, used and left.</li>
+            <li><span className="tb tb--sun" aria-hidden="true" />Insurer bills checked before they go to Healthcode, with what’s missing and where to fix it.</li>
             <li><span className="tb tb--teal" aria-hidden="true" />Card payments at the desk or in the patient portal.</li>
           </ul>
         </div>
