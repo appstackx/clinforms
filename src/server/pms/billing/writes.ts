@@ -44,6 +44,10 @@ import { checkInvoicePaymentLinks, createInvoicePaymentLink } from "./payment-li
 import { paymentLinkProvider, PaymentProviderError, type PaymentLinkProvider } from "./payments";
 import { billableVisitSource } from "./visit-source";
 import { priceVisits, referrerNames } from "./views";
+import { useCoursesForVisits } from "./courses";
+import { maskedCode, normaliseGiftCardCode } from "../../../modules/pms/billing/gift-cards";
+import { findGiftCardByCode, giftCardPaidOnInvoice, giftCardRedeemQueries, giftCardRefusal } from "../../repos/pms/billing/gift-cards";
+import type { BatchQuery } from "../../db/batch";
 import { pmsNow, pmsNowMs } from "../../../modules/pms/core/clock";
 
 const CONFLICT = "Someone else changed this invoice. Reload the page and try again.";
@@ -60,6 +64,8 @@ function draftFailure(r: { ok: false; reason: string }): { ok: false; code: "con
 
 export interface InvoiceVisitsResult {
   invoices: { id: string; number: string | null; billTo: "patient" | "payer"; totalPence: number }[];
+  /** PK02: visits used from a patient's course instead of invoiced. */
+  courseUses: number;
   /** Visits left out: already invoiced meanwhile, no price, or a 0 % fee. */
   skipped: number;
 }
@@ -84,7 +90,11 @@ export async function invoiceVisitsFor(actor: BillingActor, input: InvoiceVisits
     for (let i = 0; i < ids.length; i += 90) {
       visits.push(...(await source.listClinicVisits(ctx, t, { from: "2000-01-01", until: today, siteIds: actor.siteIds ?? null, appointmentIds: ids.slice(i, i + 90) })));
     }
-    const priced = await priceVisits(ctx, t, visits);
+    const allPriced = await priceVisits(ctx, t, visits);
+    // Visits the member chose to use from a course (PK02): used first, then left out of the invoices.
+    const wanted = new Set(parsed.data.useCourse ?? []);
+    const used = wanted.size ? await useCoursesForVisits(ctx, t, allPriced.filter((p) => wanted.has(p.visit.appointmentId)), actor.actor) : new Set<string>();
+    const priced = allPriced.filter((p) => !used.has(p.visit.appointmentId));
     const settings = await getBillingSettings(ctx, t);
     const groups = new Map<string, typeof priced>();
     let skipped = ids.length - visits.length;
@@ -144,8 +154,8 @@ export async function invoiceVisitsFor(actor: BillingActor, input: InvoiceVisits
         throw err;
       }
     }
-    if (out.length === 0) return fail("invalid", "None of the chosen visits could be invoiced: they are invoiced already, or have no price.");
-    return ok({ invoices: out, skipped });
+    if (out.length === 0 && used.size === 0) return fail("invalid", "None of the chosen visits could be invoiced: they are invoiced already, or have no price.");
+    return ok({ invoices: out, skipped, courseUses: used.size });
   });
 }
 
@@ -238,6 +248,17 @@ export async function refundFor(
     if (!Number.isInteger(amount) || amount <= 0) return fail("invalid", "Enter the amount to refund.");
     if (amount > inv.paidPence) return fail("invalid", `At most ${formatPence(inv.paidPence)} was paid on this invoice.`);
     if (!input.reason || input.reason.trim().length < 3) return fail("invalid", "Say why the money is refunded.");
+    // Gift-card value is never paid out as money (cash, card or bank): only what was paid some other way can be.
+    // The gift-card part is given back by reversing that payment, which puts the amount back on the card.
+    const fromGiftCards = await giftCardPaidOnInvoice(ctx, t, inv.id);
+    if (fromGiftCards > 0 && amount > inv.paidPence - fromGiftCards) {
+      const cashPaid = Math.max(0, inv.paidPence - fromGiftCards);
+      return fail(
+        "invalid",
+        `${formatPence(fromGiftCards)} of what was paid on this invoice came from a gift card, and gift-card value is never paid out as money. ${cashPaid > 0 ? `Refund at most ${formatPence(cashPaid)} here; to` : "To"} give the gift-card part back, reverse that payment (Payments on this invoice → Reverse): the amount goes back on the card.`,
+        { fieldErrors: { amountPence: cashPaid > 0 ? `At most ${formatPence(cashPaid)}` : "Paid by gift card – reverse that payment instead" } },
+      );
+    }
     const owedBack = Math.max(0, -inv.balancePence);
     if (amount > owedBack) {
       const toCredit = amount - owedBack;
@@ -367,8 +388,32 @@ export async function takePaymentFor(actor: BillingActor, input: TakePaymentInpu
 
     let method: PaymentMethod;
     let reference: string | null = d.reference ?? null;
-    let providerOpts: { provider?: string; providerRef?: string } = {};
-    if (d.method === "card_on_file") {
+    let providerOpts: { provider?: string; providerRef?: string; extra?: (paymentId: string, at: string) => BatchQuery[]; extraRefusal?: string } = {};
+    if (d.method === "gift_card") {
+      // PK04: the payment is method "other" with the card in its reference; the card's balance drops in its batch.
+      const code = normaliseGiftCardCode(d.giftCardCode ?? "");
+      const card = code ? await findGiftCardByCode(ctx, t, code) : null;
+      if (!card) return fail("invalid", "No gift card has that code in this clinic. Check the code and try again.", { fieldErrors: { giftCardCode: "No gift card has that code" } });
+      const refusal = giftCardRefusal(card, d.amountPence, today);
+      if (refusal) return fail("invalid", refusal, { fieldErrors: { giftCardCode: refusal } });
+      // Gift-card value only pays invoices: nothing of it may stay on account (it could then be refunded as money).
+      const allocated = allocations.reduce((a, x) => a + x.amountPence, 0);
+      if (allocated !== d.amountPence) {
+        const message =
+          allocated === 0
+            ? "A gift card pays invoices only – nothing is kept on account – and nothing is owed on this patient's invoices."
+            : allocated < d.amountPence
+              ? `A gift card pays invoices only – nothing is kept on account. Take at most ${formatPence(allocated)} (what the invoices owe).`
+              : "Check the amounts on the invoices.";
+        return fail("invalid", message, { fieldErrors: { amountPence: message } });
+      }
+      method = "other";
+      reference = `Gift card ${maskedCode(card.codeLast4)}`;
+      providerOpts = {
+        extra: (paymentId, at) => giftCardRedeemQueries(ctx, t, card, d.amountPence, paymentId, actor.actor, at),
+        extraRefusal: "The gift card was used meanwhile, or the payment was not used in full on invoices. Check its balance and try again.",
+      };
+    } else if (d.method === "card_on_file") {
       const card = d.savedCardId ? await getSavedCard(ctx, t, d.savedCardId) : null;
       if (!card || card.patientId !== patient.id || card.status !== "active") return fail("invalid", "That saved card is not this patient's.");
       if (!provider.configured) return fail("invalid", provider.unavailableReason ?? "Saved cards are not set up.");

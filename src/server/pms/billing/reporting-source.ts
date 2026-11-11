@@ -6,7 +6,8 @@
  *   invoiced – issued invoices by issue date; VOID invoices are left out (a void is not revenue)
  *   credited – credit notes by issue date (credits, write-offs, transfers); the void kind and anything on a void
  *              invoice left out, so invoiced − credited is the clinic's net
- *   received – recorded payments by the date received; refunds negative; reversed payments left out
+ *   received – recorded payments by the date received; refunds negative; reversed payments and gift-card spends left
+ *              out (the money came in when the card was sold)
  *   debt     – what is still owed NOW on issued invoices, by payer, site and due date (the issue date when none) –
  *              the same invoices and age bands as billing's aged debt (src/modules/pms/billing/aging.ts)
  *
@@ -17,6 +18,7 @@ import { sql, type RawBuilder } from "kysely";
 import type { PayerType } from "../../../modules/pms/core/types";
 import type { DebtFact, RevenueFact } from "../../../modules/pms/reporting/facts";
 import { assertTenantId, num, type RepoContext } from "../../repos/pms/context";
+import { giftCardsInstalled, notGiftCardSpend } from "../../repos/pms/billing/gift-cards";
 import type { BillingReportingSource, ReportingQuery } from "../reporting/sources";
 
 const PAYER_KINDS = new Set<string>(["insurer", "mlc", "solicitor", "employer"]);
@@ -34,6 +36,9 @@ function payerTypeOf(value: string | null): PayerType {
 
 async function revenueFacts(ctx: RepoContext, tenantId: string, q: ReportingQuery): Promise<RevenueFact[]> {
   assertTenantId(tenantId);
+  // Money received leaves gift-card spends out (the money came in when the card was sold) – the same rule as Billing's
+  // "Taken today": the payment's "redeem" move, never its method text. Only once the gift-card tables exist.
+  const notSpend = (await giftCardsInstalled(ctx, tenantId)) ? sql` and ${notGiftCardSpend(tenantId, sql.ref("p.id"))}` : sql``;
   const [invoiced, credited, received] = await Promise.all([
     sql<{ d: string; site_id: string | null; payer: string; n: number | string; total: number | string | null }>`
       select i.issued_on as d, i.site_id, case when i.bill_to = 'patient' then 'self_pay' else i.payer_type end as payer, count(*) as n, sum(i.total_pence) as total
@@ -52,7 +57,7 @@ async function revenueFacts(ctx: RepoContext, tenantId: string, q: ReportingQuer
       select p.received_on as d, p.site_id, p.payer_kind, r.kind as kind, count(*) as n, sum(case when p.kind = 'refund' then -p.amount_pence else p.amount_pence end) as total
       from pms_payments p
       left join pms_referrers r on r.tenant_id = p.tenant_id and r.id = p.payer_referrer_id
-      where p.tenant_id = ${tenantId} and p.status = 'recorded' and p.received_on >= ${q.from} and p.received_on <= ${q.to}${siteIn("p.site_id", q.siteIds)}
+      where p.tenant_id = ${tenantId} and p.status = 'recorded' and p.received_on >= ${q.from} and p.received_on <= ${q.to}${siteIn("p.site_id", q.siteIds)}${notSpend}
       group by 1, 2, 3, 4
     `.execute(ctx.db),
   ]);

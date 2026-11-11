@@ -19,7 +19,8 @@ import { createPatient, getPatient, setPatientLegalHold, touchPatientLastSeen } 
 import type { QueryLog } from "../../testing/guarded-db";
 import { unscopedStatements } from "../../testing/guarded-db";
 import { anonymiseEligibility, anonymisePatient, getAnonymisation } from "../anonymise";
-import { ATTACHMENT_CHUNK_BYTES, getAttachmentFile, getPatientAttachments, listAttachmentsForPatient, putAttachment, recordAttachmentDownload, withdrawAttachment } from "../attachments";
+import { MemoryFileStore, setFileStoreForTests } from "../../../../storage/file-store";
+import { ATTACHMENT_CHUNK_BYTES, attachmentObjectKeysForPatient, getAttachmentFile, getPatientAttachments, listAttachmentsForPatient, putAttachment, recordAttachmentDownload, withdrawAttachment } from "../attachments";
 import { listPatientHistory } from "../history";
 import { findPossibleDuplicates } from "../duplicates";
 import {
@@ -312,6 +313,51 @@ export function defineRecordsRepoSuite(label: string, factory: () => Promise<Rec
       assert.ok(await getAttachmentFile(ctx, A, pic.id), "a withdrawn file is still stored");
       await recordAttachmentDownload(ctx, A, meta.id, TOM);
       assert.equal(createHash("sha256").update(big).digest("hex"), meta.sha256);
+    });
+
+    it("files in the file store (B07): one encrypted object, no database pieces, verified, cleaned up on a failed row", async () => {
+      const store = new MemoryFileStore();
+      setFileStoreForTests(store);
+      try {
+        tick();
+        const big = pdfBytes(ATTACHMENT_CHUNK_BYTES * 3 + 99);
+        const meta = await putAttachment(ctx, A, { patientId: ids.megan, bytes: big, fileName: "Megan Hart X-ray.pdf" }, SARAH);
+        assert.equal(meta.chunkCount, 1);
+        const key = `${A}/attachment/${meta.id}`;
+        const body = store.objects.get(key);
+        assert.ok(body?.startsWith("v1."), "the store holds ciphertext only");
+        assert.ok(!Buffer.from(body ?? "").includes(Buffer.from("%PDF")), "no plaintext in the object");
+        const pieces = await ctx.db.selectFrom("pms_attachment_chunks").select("id").where("tenant_id", "=", A).where("attachment_id", "=", meta.id).execute();
+        assert.equal(pieces.length, 0, "no pieces in the database");
+        const row = await ctx.db.selectFrom("pms_attachments").select("object_key").where("tenant_id", "=", A).where("id", "=", meta.id).executeTakeFirstOrThrow();
+        assert.equal(row.object_key, key);
+        assert.ok((await getAttachmentFile(ctx, A, meta.id))?.bytes.equals(big), "the same bytes come back");
+        assert.equal(await getAttachmentFile(ctx, B, meta.id), null, "another clinic cannot read it");
+        assert.deepEqual(await attachmentObjectKeysForPatient(ctx, A, ids.megan), [key]);
+        assert.deepEqual(await attachmentObjectKeysForPatient(ctx, B, ids.megan), []);
+        // An object copied under another id no longer decrypts (AAD binds clinic, table and id).
+        const other = await putAttachment(ctx, A, { patientId: ids.megan, bytes: pdfBytes(500), fileName: "other.pdf" }, SARAH);
+        const otherKey = `${A}/attachment/${other.id}`;
+        const keep = store.objects.get(otherKey) as string;
+        store.objects.set(otherKey, body as string);
+        await assert.rejects(getAttachmentFile(ctx, A, other.id), /Decryption failed/);
+        store.objects.set(otherKey, keep);
+        // A row pointing at a missing object, or at a key outside its own place, is refused.
+        store.objects.delete(otherKey);
+        await assert.rejects(getAttachmentFile(ctx, A, other.id), /missing/);
+        await ctx.db.updateTable("pms_attachments").set({ object_key: key }).where("tenant_id", "=", A).where("id", "=", other.id).execute();
+        await assert.rejects(getAttachmentFile(ctx, A, other.id), /storage key/);
+        // A row that cannot be written leaves no object behind.
+        const before = store.objects.size;
+        await rejects(putAttachment(ctx, A, { patientId: ids.daniel, noteId: ids.note, bytes: pdfBytes(100), fileName: "x.pdf" }, SARAH), /same patient/);
+        assert.equal(store.objects.size, before, "the orphan object was removed");
+        // Files stored in the database before the switch still read.
+        assert.ok(await getAttachmentFile(ctx, A, ids.file));
+        // Test-only clean-up, so the later tests count this patient's files as before.
+        await ctx.db.deleteFrom("pms_attachments").where("tenant_id", "=", A).where("id", "in", [meta.id, other.id]).execute();
+      } finally {
+        setFileStoreForTests(null);
+      }
     });
 
     it("history: the audit rows about this patient's record only, newest first", async () => {

@@ -85,4 +85,5 @@ export const TAKE_PAYMENT_METHOD_LABELS: Readonly<Record<TakePaymentMethod, { la
   cash: { label: "Cash", hint: "Work out change" },
   bank_transfer: { label: "Bank transfer", hint: "Record a transfer received" },
   payment_link: { label: "Payment link", hint: "Patient pays by text or email" },
+  gift_card: { label: "Gift card", hint: "Type the code on the card" },
 };

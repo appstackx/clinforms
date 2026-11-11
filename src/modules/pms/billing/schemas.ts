@@ -311,7 +311,7 @@ export const ReversePaymentInputSchema = z.object({ reason: z.string().trim().mi
  * ----------------------------------------------------------------------------------------------*/
 
 /** The take-payment dialog's methods (design round 3). Card on file and payment links go through the provider (TEST MODE ONLY). */
-export const TAKE_PAYMENT_METHODS = ["card_on_file", "card_now", "cash", "bank_transfer", "payment_link"] as const;
+export const TAKE_PAYMENT_METHODS = ["card_on_file", "card_now", "cash", "bank_transfer", "payment_link", "gift_card"] as const;
 export const TakePaymentMethodSchema = z.enum(TAKE_PAYMENT_METHODS);
 export type TakePaymentMethod = (typeof TAKE_PAYMENT_METHODS)[number];
 
@@ -329,8 +329,11 @@ export const TakePaymentInputSchema = z
     /** Bank transfer / card terminal reference. Not clinical. */
     reference: optionalText(80),
     siteId: z.union([PmsIdSchema, z.null()]).optional(),
+    /** Gift card (PK04): the code on the card, as typed. */
+    giftCardCode: z.string().max(40).optional(),
   })
   .superRefine((v, ctx) => {
+    if (v.method === "gift_card" && !v.giftCardCode?.trim()) ctx.addIssue({ code: "custom", path: ["giftCardCode"], message: "Type the code on the gift card" });
     const sum = (v.allocations ?? []).reduce((a, x) => a + x.amountPence, 0);
     if (sum > v.amountPence) ctx.addIssue({ code: "custom", path: ["allocations"], message: "More is allocated than is being taken" });
     const ids = (v.allocations ?? []).map((a) => a.invoiceId);
@@ -381,5 +384,7 @@ export const InvoiceVisitsInputSchema = z.object({
   appointmentIds: z.array(PmsIdSchema).min(1, "Choose at least one visit").max(200),
   /** Issue the drafts straight away (step 3), or keep them as drafts. */
   issue: z.boolean().optional(),
+  /** PK02: of the chosen visits, those to use from the patient's course instead of invoicing (when one covers them). */
+  useCourse: z.array(PmsIdSchema).max(200).optional(),
 });
 export type InvoiceVisitsInput = z.input<typeof InvoiceVisitsInputSchema>;

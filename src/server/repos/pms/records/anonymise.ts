@@ -17,6 +17,8 @@ import { RECORDS_ID_PREFIXES as P } from "../../../../modules/pms/records/ids";
 import { ukToday } from "../../../../modules/pms/core/text";
 import type { PmsActor } from "../../../../modules/pms/core/types";
 import { runBatch } from "../../../db/batch";
+import { getFileStore } from "../../../storage/file-store";
+import { attachmentObjectKeysForPatient } from "./attachments";
 import { getAuthorisation, getCase, listAuthorisations, listCasesForPatient, updateAuthorisation, updateCase } from "../cases";
 import { getPatient, setPatientStatus, updatePatient } from "../patients";
 import { getPmsSettings } from "../settings";
@@ -105,6 +107,15 @@ export async function anonymisePatient(ctx: RepoContext, tenantId: string, patie
       .execute();
   }
 
+  // The files held in the file store (B07): removed before the rows forget their keys.
+  const objectKeys = await attachmentObjectKeysForPatient(ctx, tenantId, patientId);
+  // Removed FIRST: a rerun after an interruption still finds the keys (missing objects are ignored).
+  if (objectKeys.length) {
+    const store = getFileStore();
+    if (!store) throw new RepoInputError("This record has files in the file store, which is not configured here. Run it again where it is.");
+    await store.remove(objectKeys);
+  }
+
   // 1. The records module's own tables: one atomic batch.
   const db = ctx.db;
   const results = await runBatch(db, [
@@ -134,6 +145,7 @@ export async function anonymisePatient(ctx: RepoContext, tenantId: string, patie
         file_name_enc: null,
         description_enc: null,
         withdrawn_reason_enc: null,
+        object_key: null,
         status: "withdrawn",
         withdrawn_at: eb.fn.coalesce("withdrawn_at", eb.val(at)),
         anonymised_at: at,

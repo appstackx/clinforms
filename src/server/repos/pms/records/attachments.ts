@@ -11,6 +11,12 @@
  *   unfinished or altered file is never returned;
  * - the type comes from the file's own bytes (src/modules/pms/records/attachments.ts), never from its name;
  * - never deleted: a file is withdrawn (hidden, kept) – attachments are part of the clinical record.
+ *
+ * With a file store configured (src/server/storage/file-store.ts, B07) a NEW file is instead ONE encrypted object
+ * there (the whole file, AES-GCM, AAD "<tenant>:pms_attachments.object_enc:<id>"), keyed "<tenant>/attachment/<id>"
+ * in object_key, and chunk_count is 1. The object is written BEFORE the row, so a row never points at nothing; an
+ * object whose row write failed is removed again. Reads verify the size and SHA-256 the same way. Files stored
+ * before keep their database pieces and are read as before.
  */
 import { createHash } from "node:crypto";
 import type { Selectable } from "kysely";
@@ -22,8 +28,10 @@ import { runBatch, type BatchQuery } from "../../../db/batch";
 import type { PmsAttachmentsTable } from "../../../db/pms-schema/records";
 import { RepoInputError, assertId, assertTenantId, decryptField, encryptField, nowIso, num, pmsAudit, pmsAuditQuery, pmsId, translateDbError, type RepoContext } from "../context";
 import { updateWithAudit } from "./write";
+import { fileKey, getFileStore, type FileStore } from "../../../storage/file-store";
 
 const T = "pms_attachments";
+const OBJECT_COLUMN = "object_enc";
 const CH = "pms_attachment_chunks";
 export const ATTACHMENT_CHUNK_BYTES = 256 * 1024;
 export const CHUNKS_PER_BATCH = 3;
@@ -107,7 +115,13 @@ export async function putAttachment(ctx: RepoContext, tenantId: string, input: P
   const id = pmsId(P.attachment, ctx);
   const at = nowIso(ctx);
   const sha256 = createHash("sha256").update(bytes).digest("hex");
-  const chunkCount = Math.ceil(bytes.length / ATTACHMENT_CHUNK_BYTES);
+  const store = getFileStore();
+  const objectKey = store ? fileKey(tenantId, "attachment", id) : null;
+  const chunkCount = store ? 1 : Math.ceil(bytes.length / ATTACHMENT_CHUNK_BYTES);
+  if (store && objectKey) {
+    // The whole file as one ciphertext, bound to this clinic, table and id.
+    await store.put(objectKey, ctx.cipher.encrypt(bytes, { tenantId, table: `${T}.${OBJECT_COLUMN}`, rowId: id }));
+  }
   const chunkQuery = (idx: number): BatchQuery => {
     const cid = chunkId(id, idx);
     const piece = bytes.subarray(idx * ATTACHMENT_CHUNK_BYTES, Math.min(bytes.length, (idx + 1) * ATTACHMENT_CHUNK_BYTES));
@@ -131,20 +145,22 @@ export async function putAttachment(ctx: RepoContext, tenantId: string, input: P
       withdrawn_at: null,
       withdrawn_by: null,
       withdrawn_reason_enc: null,
+      object_key: objectKey,
       uploaded_by: actor.userId,
       anonymised_at: null,
       created_at: at,
       updated_at: at,
     }),
   ];
-  for (let idx = 0; idx < Math.min(CHUNKS_PER_BATCH, chunkCount); idx++) first.push(chunkQuery(idx));
+  if (!store) for (let idx = 0; idx < Math.min(CHUNKS_PER_BATCH, chunkCount); idx++) first.push(chunkQuery(idx));
   first.push(pmsAuditQuery(ctx, tenantId, actor, { action: "pms.attachment.upload", targetType: "pms_attachment", targetId: id, detail: { patientId: input.patientId, type: check.type, sizeBytes: bytes.length } }));
   try {
     await runBatch(ctx.db, first);
   } catch (err) {
+    if (store && objectKey) await store.remove([objectKey]).catch(() => undefined);
     throw translateDbError(err, MESSAGES);
   }
-  try {
+  if (!store) try {
     for (let start = CHUNKS_PER_BATCH; start < chunkCount; start += CHUNKS_PER_BATCH) {
       const batch: BatchQuery[] = [];
       for (let idx = start; idx < Math.min(start + CHUNKS_PER_BATCH, chunkCount); idx++) batch.push(chunkQuery(idx));
@@ -198,6 +214,8 @@ export class AttachmentIntegrityError extends Error {
 export async function getAttachmentFile(ctx: RepoContext, tenantId: string, id: string): Promise<{ details: AttachmentDetails; bytes: Buffer } | null> {
   const details = await getAttachment(ctx, tenantId, id);
   if (!details) return null;
+  const objectKey = await objectKeyOf(ctx, tenantId, id);
+  if (objectKey) return { details, bytes: await readObject(ctx, tenantId, details, objectKey) };
   const parts: Buffer[] = [];
   for (let start = 0; start < details.chunkCount; start += CHUNKS_PER_BATCH) {
     const rows = await ctx.db
@@ -223,6 +241,36 @@ export async function getAttachmentFile(ctx: RepoContext, tenantId: string, id: 
   if (bytes.length !== details.sizeBytes) throw new AttachmentIntegrityError("The stored file's size does not match its record.");
   if (createHash("sha256").update(bytes).digest("hex") !== details.sha256) throw new AttachmentIntegrityError("The stored file does not match its fingerprint.");
   return { details, bytes };
+}
+
+async function objectKeyOf(ctx: RepoContext, tenantId: string, id: string): Promise<string | null> {
+  const row = await ctx.db.selectFrom(T).select("object_key").where("tenant_id", "=", tenantId).where("id", "=", id).executeTakeFirst();
+  return row?.object_key ?? null;
+}
+
+async function readObject(ctx: RepoContext, tenantId: string, details: AttachmentDetails, objectKey: string, store: FileStore | null = getFileStore()): Promise<Buffer> {
+  if (!store) throw new AttachmentIntegrityError("This file is in the file store, which is not configured here.");
+  if (objectKey !== fileKey(tenantId, "attachment", details.id)) throw new AttachmentIntegrityError("The file's storage key does not match its record.");
+  const body = await store.get(objectKey);
+  if (body === null) throw new AttachmentIntegrityError("The stored file is missing.");
+  const bytes = ctx.cipher.decryptBytes(body, { tenantId, table: `${T}.${OBJECT_COLUMN}`, rowId: details.id });
+  if (bytes.length !== details.sizeBytes) throw new AttachmentIntegrityError("The stored file's size does not match its record.");
+  if (createHash("sha256").update(bytes).digest("hex") !== details.sha256) throw new AttachmentIntegrityError("The stored file does not match its fingerprint.");
+  return bytes;
+}
+
+/** The file-store keys of a patient's files (anonymisation removes the objects after clearing the rows). */
+export async function attachmentObjectKeysForPatient(ctx: Pick<RepoContext, "db">, tenantId: string, patientId: string): Promise<string[]> {
+  assertTenantId(tenantId);
+  const rows = await ctx.db.selectFrom(T).select("object_key").where("tenant_id", "=", tenantId).where("patient_id", "=", patientId).where("object_key", "is not", null).execute();
+  return rows.map((r) => r.object_key).filter((k): k is string => !!k);
+}
+
+/** The file-store keys of every file of a clinic (offboarding exports, then removes them). */
+export async function attachmentObjectKeysForClinic(ctx: Pick<RepoContext, "db">, tenantId: string): Promise<{ id: string; objectKey: string }[]> {
+  assertTenantId(tenantId);
+  const rows = await ctx.db.selectFrom(T).select(["id", "object_key"]).where("tenant_id", "=", tenantId).where("object_key", "is not", null).orderBy("id").execute();
+  return rows.filter((r) => !!r.object_key).map((r) => ({ id: r.id, objectKey: r.object_key as string }));
 }
 
 /** Records a download in the patient's history. */

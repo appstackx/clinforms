@@ -59,13 +59,18 @@ export function VisitsTable({ visits, mode, today, from, until }: { visits: Unin
   const day = today ?? new Date().toISOString().slice(0, 10);
   const [include, setInclude] = React.useState<Record<VisitStatus, boolean>>({ attended: true, did_not_attend: true, late_cancellation: true });
   const [off, setOff] = React.useState<Record<string, boolean>>({});
+  // Visits a patient's course covers are used from it by default ("Use course (3 of 6 left)", ticked).
+  const [courseOff, setCourseOff] = React.useState<Record<string, boolean>>({});
   const [step, setStep] = React.useState<1 | 2 | 3>(1);
   const [busy, setBusy] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [made, setMade] = React.useState<{ id: string; number: string | null; billTo: string; totalPence: number }[]>([]);
+  const [usedFromCourses, setUsedFromCourses] = React.useState(0);
 
   const shown = visits.filter((v) => include[v.status]);
-  const chosen = shown.filter((v) => !off[v.appointmentId] && v.chargePence !== null);
+  const picked = shown.filter((v) => !off[v.appointmentId] && v.chargePence !== null);
+  const fromCourse = picked.filter((v) => v.course && !courseOff[v.appointmentId]);
+  const chosen = picked.filter((v) => !(v.course && !courseOff[v.appointmentId]));
   const preview = previewInvoices(chosen);
   const patientsTotal = preview.filter((p) => p.billTo === "patient").reduce((a, p) => a + p.total, 0);
   const payersTotal = preview.filter((p) => p.billTo === "payer").reduce((a, p) => a + p.total, 0);
@@ -76,8 +81,9 @@ export function VisitsTable({ visits, mode, today, from, until }: { visits: Unin
     setBusy(issue ? "issue" : "draft");
     setError(null);
     const r = await invoiceVisitsAction(
-      chosen.map((v) => v.appointmentId),
+      picked.map((v) => v.appointmentId),
       issue,
+      fromCourse.map((v) => v.appointmentId),
     );
     setBusy(null);
     if (!r.ok) {
@@ -85,7 +91,9 @@ export function VisitsTable({ visits, mode, today, from, until }: { visits: Unin
       return;
     }
     setMade(r.result.invoices);
-    toast.success(`${r.result.invoices.length} invoice${r.result.invoices.length === 1 ? "" : "s"} ${issue ? "issued" : "drafted"}`);
+    setUsedFromCourses(r.result.courseUses);
+    const uses = r.result.courseUses > 0 ? ` · ${r.result.courseUses} visit${r.result.courseUses === 1 ? "" : "s"} used from courses` : "";
+    toast.success(`${r.result.invoices.length} invoice${r.result.invoices.length === 1 ? "" : "s"} ${issue ? "issued" : "drafted"}${uses}`);
     if (mode === "stepper") setStep(3);
     router.refresh();
   }
@@ -208,8 +216,21 @@ export function VisitsTable({ visits, mode, today, from, until }: { visits: Unin
                               Waive fee
                             </PmsButton>
                           ) : null}
-                          {v.chargePence === null ? <span className="text-[#475569]">No price</span> : money(v.chargePence)}
+                          {v.chargePence === null ? <span className="text-[#475569]">No price</span> : v.course && !courseOff[v.appointmentId] ? <span className="text-[#475569] line-through">{money(v.chargePence)}</span> : money(v.chargePence)}
                         </span>
+                        {v.course && v.chargePence !== null ? (
+                          <label className="mt-1 flex items-center justify-end gap-2 text-xs font-normal text-[#334155]">
+                            <input
+                              type="checkbox"
+                              className="h-4 w-4 accent-[#0B7970]"
+                              checked={!courseOff[v.appointmentId]}
+                              disabled={Boolean(off[v.appointmentId])}
+                              onChange={(e) => setCourseOff({ ...courseOff, [v.appointmentId]: !e.target.checked })}
+                              data-testid="use-course"
+                            />
+                            {v.course.label}
+                          </label>
+                        ) : null}
                       </td>
                     </tr>
                   ))}
@@ -219,19 +240,20 @@ export function VisitsTable({ visits, mode, today, from, until }: { visits: Unin
           )}
           <div className="flex flex-wrap items-center gap-3 border-t border-border px-4 py-3">
             <span className="text-sm text-[#334155]" role="status" data-testid="visits-summary">
-              {chosen.length} visit{chosen.length === 1 ? "" : "s"} selected → {preview.length} invoice{preview.length === 1 ? "" : "s"} · patients {money(patientsTotal)} · insurers {money(payersTotal)}
+              {picked.length} visit{picked.length === 1 ? "" : "s"} selected → {preview.length} invoice{preview.length === 1 ? "" : "s"}
+              {fromCourse.length > 0 ? ` · ${fromCourse.length} from courses` : ""} · patients {money(patientsTotal)} · insurers {money(payersTotal)}
             </span>
             <span className="ml-auto flex flex-wrap gap-2">
               {mode === "stepper" ? (
-                <PmsButton disabled={chosen.length === 0} onClick={() => setStep(2)}>
+                <PmsButton disabled={picked.length === 0} onClick={() => setStep(2)}>
                   Preview drafts
                 </PmsButton>
               ) : (
                 <>
-                  <PmsButton variant="secondary" disabled={chosen.length === 0} loading={busy === "draft"} onClick={() => void create(false)}>
+                  <PmsButton variant="secondary" disabled={picked.length === 0} loading={busy === "draft"} onClick={() => void create(false)}>
                     Create as drafts
                   </PmsButton>
-                  <PmsButton disabled={chosen.length === 0} loading={busy === "issue"} onClick={() => void create(true)}>
+                  <PmsButton disabled={picked.length === 0} loading={busy === "issue"} onClick={() => void create(true)}>
                     Create and issue
                   </PmsButton>
                 </>
@@ -244,6 +266,11 @@ export function VisitsTable({ visits, mode, today, from, until }: { visits: Unin
       {step === 2 ? (
         <div className="flex flex-col gap-3 rounded-xl border border-border bg-white p-4">
           <h2 className="text-base font-semibold">These invoices will be made</h2>
+          {fromCourse.length > 0 ? (
+            <p className="text-sm text-[#334155]" data-testid="course-preview">
+              {fromCourse.length} visit{fromCourse.length === 1 ? "" : "s"} will be used from the patient&apos;s course{fromCourse.length === 1 ? "" : "s"} – no invoice for {fromCourse.length === 1 ? "it" : "them"}.
+            </p>
+          ) : null}
           <ul className="flex flex-col divide-y divide-border" data-testid="draft-preview">
             {preview.map((p, i) => (
               <li key={i} className="flex flex-wrap items-center gap-2 py-2 text-sm">
@@ -275,6 +302,7 @@ export function VisitsTable({ visits, mode, today, from, until }: { visits: Unin
           <h2 className="flex items-center gap-2 text-base font-semibold">
             <CheckCircle2 className="h-5 w-5 text-primary-strong" aria-hidden />
             {made.length} invoice{made.length === 1 ? "" : "s"} made
+            {usedFromCourses > 0 ? ` · ${usedFromCourses} visit${usedFromCourses === 1 ? "" : "s"} used from courses` : ""}
           </h2>
           <ul className="flex flex-col divide-y divide-border">
             {made.map((m) => (
@@ -294,6 +322,7 @@ export function VisitsTable({ visits, mode, today, from, until }: { visits: Unin
             <PmsButton
               onClick={() => {
                 setMade([]);
+                setUsedFromCourses(0);
                 setStep(1);
               }}
             >

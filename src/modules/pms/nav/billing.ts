@@ -11,5 +11,9 @@ export const BILLING_BASE_PATH = `${CLINIC_BASE_PATH}/billing`;
 export const BILLING_NAV: readonly PmsNavEntry[] = [
   { id: "billing.home", module: "billing", label: "Billing", href: BILLING_BASE_PATH, order: 30, permission: "billing.view", group: "main" },
   // Healthcode groundwork (HC09): each insurer's treatment code per service – a Set-up page.
+  // Courses (PK02): the blocks of sessions the clinic sells – a Set-up page.
+  { id: "billing.courses", module: "billing", label: "Courses", href: `${CLINIC_BASE_PATH}/setup/courses`, order: 32, permission: "settings.setup", group: "manage" },
+  // Products (PK05): what the clinic sells over the counter – a Set-up page (stock is under Billing → Stock).
+  { id: "billing.products", module: "billing", label: "Products", href: `${CLINIC_BASE_PATH}/setup/products`, order: 33, permission: "settings.setup", group: "manage" },
   { id: "billing.insurer-codes", module: "billing", label: "Insurer codes", href: `${CLINIC_BASE_PATH}/setup/insurer-codes`, order: 31, permission: "settings.setup", group: "manage" },
 ];

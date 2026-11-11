@@ -32,6 +32,8 @@ import {
   type SetupResult,
   type SiteFields,
 } from "@/server/pms/reporting/setup";
+import { saveCourseTypeFor, type CourseTypeFields } from "@/server/pms/billing/courses";
+import { saveProductFor, type ProductFields } from "@/server/pms/billing/products";
 import { saveHealthcodeSettingsFor, saveInsurerCodesFor, savePayerHealthcodeFor, savePractitionerInsurerNumbersFor, type HealthcodeSettingsFields, type PayerHealthcodeFields } from "@/server/pms/billing/healthcode-setup";
 
 export type SetupActionResult = { ok: true; id?: string; message?: string } | { ok: false; error: string; fieldErrors?: Record<string, string> };
@@ -148,4 +150,18 @@ export async function saveInsurerCodesAction(insurerId: string, rows: { serviceI
   const actor = await clinicActionActor({ permission: "settings.setup" });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) } as SetupActionResult;
   return done(actor, "insurer-codes", (a) => saveInsurerCodesFor(a, String(insurerId), rows), (v) => v.id);
+}
+
+/* Courses (PK02, src/server/pms/billing/courses.ts). */
+export async function saveCourseTypeAction(fields: CourseTypeFields) {
+  const actor = await clinicActionActor({ permission: "settings.setup" });
+  if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) } as SetupActionResult;
+  return done(actor, "courses", (a) => saveCourseTypeFor(a, fields), (v) => v.id);
+}
+
+/* Products (PK05, src/server/pms/billing/products.ts). */
+export async function saveProductAction(fields: ProductFields) {
+  const actor = await clinicActionActor({ permission: "settings.setup" });
+  if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) } as SetupActionResult;
+  return done(actor, "products", (a) => saveProductFor(a, fields), (v) => v.id);
 }
