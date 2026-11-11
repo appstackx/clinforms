@@ -468,6 +468,38 @@ export interface PmsGiftCardMovesTable {
   created_at: IsoTimestamp;
 }
 
+/** 0236 (products, PK05): what the clinic sells over the counter. */
+export interface PmsProductsTable {
+  tenant_id: string;
+  id: string;
+  rev: number;
+  name: string;
+  sku: string | null;
+  price_pence: number;
+  /** "exempt" | "standard" | "reduced" | "zero" */
+  vat_code: string;
+  low_stock_at: number | null;
+  active: WithDefault<number>;
+  updated_by: string | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
+/** 0237 (stock, PK05): append-only stock changes per product and site. */
+export interface PmsStockMovesTable {
+  tenant_id: string;
+  id: string;
+  product_id: string;
+  site_id: string;
+  /** "received" | "sold" | "returned" | "adjusted" */
+  kind: string;
+  quantity: number;
+  invoice_line_id: string | null;
+  reason_enc: string | null;
+  created_by: string | null;
+  created_at: IsoTimestamp;
+}
+
 export interface BillingTables {
   pms_billing_settings: PmsBillingSettingsTable;
   pms_service_vat: PmsServiceVatTable;
@@ -496,6 +528,8 @@ export interface BillingTables {
   pms_invoice_line_refs: PmsInvoiceLineRefsTable;
   pms_gift_cards: PmsGiftCardsTable;
   pms_gift_card_moves: PmsGiftCardMovesTable;
+  pms_products: PmsProductsTable;
+  pms_stock_moves: PmsStockMovesTable;
 }
 
 /** Foreign-key order (parents first). */
@@ -527,6 +561,8 @@ export const BILLING_TABLES = [
   "pms_invoice_line_refs",
   "pms_gift_cards",
   "pms_gift_card_moves",
+  "pms_products",
+  "pms_stock_moves",
 ] as const satisfies readonly (keyof BillingTables)[];
 
 export const BILLING_PRIMARY_KEYS: { readonly [T in (typeof BILLING_TABLES)[number]]: readonly (keyof BillingTables[T] & string)[] } = {
@@ -557,6 +593,8 @@ export const BILLING_PRIMARY_KEYS: { readonly [T in (typeof BILLING_TABLES)[numb
   pms_invoice_line_refs: ["tenant_id", "invoice_line_id"],
   pms_gift_cards: ["tenant_id", "id"],
   pms_gift_card_moves: ["tenant_id", "id"],
+  pms_products: ["tenant_id", "id"],
+  pms_stock_moves: ["tenant_id", "id"],
 };
 
 /** Timestamp columns beyond created_at/updated_at (TEXT in SQLite, timestamptz in Postgres) – the D1 → Postgres copy. */
@@ -589,7 +627,15 @@ export const COURSE_CASCADE_DELETED_TABLES: readonly (typeof BILLING_TABLES)[num
 /** Gift cards (0234–0235): cards go with the clinic's billing settings row (and buyer, invoice, line); moves with their card. */
 export const GIFT_CARD_CASCADE_DELETED_TABLES: readonly (typeof BILLING_TABLES)[number][] = ["pms_gift_cards", "pms_gift_card_moves"];
 
-export const BILLING_CASCADE_DELETED_TABLES: readonly (typeof BILLING_TABLES)[number][] = [...HEALTHCODE_CASCADE_DELETED_TABLES, ...COURSE_CASCADE_DELETED_TABLES, ...GIFT_CARD_CASCADE_DELETED_TABLES];
+/** Products and stock (0236–0237): products go with the clinic's billing settings row; moves with product, site and line. */
+export const PRODUCT_CASCADE_DELETED_TABLES: readonly (typeof BILLING_TABLES)[number][] = ["pms_products", "pms_stock_moves"];
+
+export const BILLING_CASCADE_DELETED_TABLES: readonly (typeof BILLING_TABLES)[number][] = [
+  ...HEALTHCODE_CASCADE_DELETED_TABLES,
+  ...COURSE_CASCADE_DELETED_TABLES,
+  ...GIFT_CARD_CASCADE_DELETED_TABLES,
+  ...PRODUCT_CASCADE_DELETED_TABLES,
+];
 
 /** Every billing table holds one clinic's data (offboarding exports them decrypted, then deletes them). */
 export const BILLING_TENANT_TABLES: readonly (typeof BILLING_TABLES)[number][] = BILLING_TABLES;

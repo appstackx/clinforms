@@ -40,6 +40,7 @@ import { recordAuthorisationUsage } from "../cases";
 import { RepoInputError, assertId, assertTenantId, decryptField, encryptField, nowIso, num, numOrNull, parseInput, parseLines, pmsAudit, pmsAuditQuery, pmsId, translateDbError, type RepoContext } from "../context";
 import { contributionModeForCase } from "./contribution-terms";
 import { giftCardCancelDraftQueries, giftCardStartQueries } from "./gift-cards";
+import { stockSaleQueries } from "./products";
 import { courseStartQueries, courseUsedAppointmentIds, invoiceLineRefs, lineRefInsert, type LineRefType } from "./courses";
 import { ensureSettingsQuery, getBillingSettings } from "./settings";
 import { INV, LINES, OPEN_INVOICE, PAY, SUMMARY_COLUMNS, affected, billingAuditWhen, billingBatch, chunks, editToken, isUniqueRefusal, todayOf, toInvoiceLine, toInvoiceSummary } from "./shared";
@@ -372,7 +373,7 @@ export async function createDraftInvoice(ctx: RepoContext, tenantId: string, inp
     for (const r of refs) {
       const l = d.lines[r.lineIndex];
       if (!l || (l.kind ?? "service") !== "item") throw new RepoInputError("A course, gift card or product is sold on an item line.");
-      if ((l.quantity ?? 1) !== 1) throw new RepoInputError("A course, gift card or product is sold one to a line.");
+      if (r.refType !== "product" && (l.quantity ?? 1) !== 1) throw new RepoInputError("A course or gift card is sold one to a line.");
       assertId(r.refId, "reference id");
     }
     if (new Set(refs.map((r) => r.lineIndex)).size !== refs.length) throw new RepoInputError("A line sells one thing only.");
@@ -747,7 +748,12 @@ export async function issueInvoice(ctx: RepoContext, tenantId: string, id: strin
     for (let attempt = 0; attempt < 4 && !issued; attempt++) {
       const token = editToken();
       // Courses sold on it start now (PK02) – each insert reads the issue's own token, so a stale issue starts none.
-      const starts = [...(await courseStartQueries(ctx, tenantId, inv, issuedOn, token, actor, at)), ...(await giftCardStartQueries(ctx, tenantId, inv, issuedOn, token, actor, at))];
+      const starts = [
+        ...(await courseStartQueries(ctx, tenantId, inv, issuedOn, token, actor, at)),
+        ...(await giftCardStartQueries(ctx, tenantId, inv, issuedOn, token, actor, at)),
+        // Products sold on it leave the stock of the invoice's site (PK05).
+        ...(await stockSaleQueries(ctx, tenantId, inv, token, actor, at)),
+      ];
       const queries = [
         ensureSettingsQuery(ctx, tenantId, at),
         ctx.db

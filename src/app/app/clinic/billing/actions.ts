@@ -32,6 +32,7 @@ import {
   type TakePaymentResult,
 } from "@/server/pms/billing/writes";
 import { giftCardsFor, sellGiftCardFor } from "@/server/pms/billing/gift-cards";
+import { recordStockChangeFor, sellProductFor } from "@/server/pms/billing/products";
 import { cancelCourseFor, reverseCourseUseFor, sellCourseFor, setCourseExpiryFor } from "@/server/pms/billing/courses";
 
 export type BillingActionResult<T = unknown> = ({ ok: true } & T) | { ok: false; error: string; fieldErrors?: Record<string, string> };
@@ -284,4 +285,24 @@ export async function lookUpGiftCardAction(code: string): Promise<BillingActionR
   if (!r.ok) return { ok: false, error: r.error };
   if (!r.value.card) return { ok: false, error: r.value.lookupError ?? "No gift card has that code in this clinic." };
   return { ok: true, cardId: r.value.card.id };
+}
+
+/* Products and stock (PK05, src/server/pms/billing/products.ts). */
+export async function sellProductAction(patientId: string, input: { productId: string; quantity: number; siteId?: string | null; issue?: boolean }): Promise<BillingActionResult<{ invoiceId: string; number: string | null; issued: boolean }>> {
+  const actor = await clinicActionActor({ permission: "billing.edit" });
+  if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
+  const r = await sellProductFor(actor, String(patientId), { productId: String(input?.productId ?? ""), quantity: Number(input?.quantity), siteId: input?.siteId ? String(input.siteId) : null, issue: Boolean(input?.issue) });
+  if (!r.ok) return { ok: false, error: r.error };
+  refresh([patientPath(patientId), `${BILLING}/stock`]);
+  return { ok: true, ...r.value };
+}
+
+export async function recordStockChangeAction(input: { productId: string; siteId: string; kind: "received" | "adjusted"; quantity: number; reason?: string | null }): Promise<BillingActionResult> {
+  const actor = await clinicActionActor({ permission: "billing.edit" });
+  if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
+  const kind = input?.kind === "adjusted" ? "adjusted" : "received";
+  const r = await recordStockChangeFor(actor, { productId: String(input?.productId ?? ""), siteId: String(input?.siteId ?? ""), kind, quantity: Number(input?.quantity), reason: typeof input?.reason === "string" ? input.reason.slice(0, 200) : null });
+  if (!r.ok) return { ok: false, error: r.error };
+  refresh([`${BILLING}/stock`]);
+  return { ok: true };
 }

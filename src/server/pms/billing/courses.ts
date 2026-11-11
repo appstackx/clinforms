@@ -107,7 +107,7 @@ export async function saveCourseTypeFor(actor: SetupActor, f: CourseTypeFields):
     sessions: whole(f.sessions),
     pricePence: poundsToPence(f.price),
     vatCode: (f.vatCode === "standard" || f.vatCode === "reduced" || f.vatCode === "zero" ? f.vatCode : "exempt") as CourseVatCode,
-    validDays: typeof f.validDays === "string" && f.validDays.trim() === "" ? null : whole(f.validDays),
+    validDays: f.validDays === undefined || f.validDays === null || String(f.validDays).trim() === "" ? null : whole(f.validDays),
     active: f.active !== false,
   };
   const parsed = CourseTypeInputSchema.safeParse(input);

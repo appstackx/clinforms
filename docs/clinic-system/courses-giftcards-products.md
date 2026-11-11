@@ -121,3 +121,21 @@ tenant-scope guard; parity, ranges, offboarding batch and Set-up navigation as b
 reads answer "no gift cards"; invoices, credit notes and payments get no gift-card statement unless they have card rows.
 **Tests:** `src/server/pms/billing/gift-cards.test.ts` (pure code rules + the whole flow on node:sqlite and PGlite, offboarding,
 tenant-scope guard).
+
+## 8. Built – PK05 products and stock (11/11/2026, branch `feat/courses`, not merged, migrations not applied anywhere)
+
+| What | Where (screen) | Code |
+|---|---|---|
+| Products: name, SKU (optional, once per clinic), price, VAT code (default standard rate; the field shows for VAT-registered clinics), "warn when stock is at or below", on sale / switched off | Set-up → **Products** (`/app/clinic/setup/products`, settings.setup; owner or admin with every site) | `pms_products` (0236), hangs off `pms_billing_settings` |
+| Stock per site as append-only moves: **received** (+), **sold** (−), **returned** (+), **adjusted** (±, reason required, encrypted). On hand = the sum; value = on hand × price; low-stock flag | Billing → **Stock** (`/app/clinic/billing/stock?site=`; billing.view, receive/adjust billing.edit at the member's sites) | `pms_stock_moves` (0237) |
+| Sell a product: product, quantity 1–99, the site it is sold from (required – its stock goes down there) → draft invoice with an `item` line + line reference, or "Sell and issue invoice" | Patient → **Invoices** → Products → **Sell a product** | `sellProductFor`; `createDraftInvoice(…, { lineRefs })` |
+| The −sold move is written in the **issue** batch at the invoice's site (an invoice selling a product without a site is refused at issue); a product line credited in **full** (credit note or void) writes +returned once (unique per line and kind); a part credit or a write-off leaves the stock as it is | – | `stockSaleQueries` in `issueInvoice`, `stockReturnQueries` in `issueCreditNote` |
+
+**Decisions taken while building:** selling from the patient's record (no "New invoice" screen yet); low-stock level is per
+product (not per site); a negative on-hand is allowed (sold before it was received) and shows as such – no stock
+reservation on drafts. **Audit:** `pms.product.create|update`, `pms.stock.receive|adjust|sell` (ids and quantities; never
+the reason). **Before the migrations:** reads answer "no products", invoices issue and credit as before.
+**Tests:** `src/server/pms/billing/products.test.ts` on node:sqlite and PGlite with offboarding and the tenant-scope guard.
+
+**Still to do (PK06/PK07):** liability report (course value unused, gift-card balances – `giftCardsOutstanding` exists),
+product sales and stock-value report, an expiry sweep for courses and gift cards, the public website copy.

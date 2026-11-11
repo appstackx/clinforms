@@ -22,6 +22,7 @@ import { recordAuthorisationUsage } from "../cases";
 import { RepoInputError, assertId, assertTenantId, encryptField, nowIso, num, parseInput, pmsAuditQuery, pmsId, translateDbError, type RepoContext } from "../context";
 import { courseCloseOnCreditQueries } from "./courses";
 import { giftCardCreditQueries } from "./gift-cards";
+import { stockReturnQueries } from "./products";
 import { getInvoice } from "./invoices";
 import { ensureSettingsQuery } from "./settings";
 import { CRN, CRN_LINES, INV, LINES, chunks, isUniqueRefusal, todayOf, toCreditNote } from "./shared";
@@ -167,6 +168,8 @@ export async function issueCreditNote(ctx: RepoContext, tenantId: string, inv: I
   // A course sold on a line credited in full closes with it (PK02).
   if (releases) queries.push(...(await courseCloseOnCreditQueries(ctx, tenantId, inv.id, parts.map((p) => p.line.id), at)));
   // A gift card sold on a credited line (PK04): credited in full and unspent only; the card is cancelled with it.
+  // A product line credited in full puts its stock back (PK05).
+  if (releases) queries.push(...(await stockReturnQueries(ctx, tenantId, parts.map((p) => p.line.id), actor, at)));
   if (releases) queries.push(...(await giftCardCreditQueries(ctx, tenantId, parts.map((p) => ({ lineId: p.line.id, creditPence: p.share.totalPence, lineLeftPence: p.line.totalPence - p.line.creditedPence })), actor, at)));
   queries.push(
     ctx.db
