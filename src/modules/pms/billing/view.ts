@@ -63,6 +63,8 @@ export interface UninvoicedVisitView {
   caseId: string | null;
   /** A did-not-attend / late-cancellation fee can be waived. */
   waivable: boolean;
+  /** PK02: the patient's course that covers this visit ("Use course (3 of 6 left)", ticked by default), or null. */
+  course?: { patientCourseId: string; label: string } | null;
 }
 
 export interface InvoiceLineView {
@@ -126,6 +128,8 @@ export interface InvoiceDetailView {
   vatPence: number;
   totalPence: number;
   paidPence: number;
+  /** Of what was paid: by gift card (never refunded as money – reverse that payment to put it back on the card). */
+  giftCardPaidPence: number;
   creditedPence: number;
   balancePence: number;
   lines: InvoiceLineView[];

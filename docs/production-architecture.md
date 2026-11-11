@@ -210,6 +210,15 @@ Existing `MEDREPORT_*`, `TM3_SIM_*`, `ANTHROPIC_API_KEY`, plus: `CLINFORMS_DB`, 
 `CLINFORMS_PLATFORM_ADMINS`, `CLINFORMS_PUBLIC_DEMO`, `CRON_SECRET`,
 `NEXT_PUBLIC_POSTHOG_KEY`, `NEXT_PUBLIC_POSTHOG_HOST` (default `/ingest`).
 
+**Patient files in the file store (B07, built 11/11/2026, off until set):** `CLINFORMS_FILE_STORE=supabase`,
+`SUPABASE_URL` (the London project), `SUPABASE_SERVICE_ROLE_KEY` (server only), `CLINFORMS_FILE_BUCKET` (default
+`clinic-files`). With these set, a NEW patient file (Files tab) is one AES-GCM object in that private bucket
+(`<tenant>/attachment/<id>`, `pms_attachments.object_key`, migration 0230) instead of 256 KiB pieces in
+`pms_attachment_chunks`; older files keep their pieces. Anonymising a patient removes their objects first;
+offboarding writes each one to `files/attachments/<id>` in the export, verifies size + SHA-256, and removes them
+after the rows. Switch-on: create the PRIVATE bucket `clinic-files` (no public access, 5 MB limit), set the four
+env vars in Vercel production, apply 0230, deploy, upload a test file to a test clinic and download it.
+
 ## 8. Notes import (wave 3, branch `prod/w3-notes`)
 A clinic's notes come in as its own system prints them. `POST /api/reports/v1/connectors/file-import/read` tries our
 documented import format first (JSON / CSV / text, or a PDF or Word document in that layout → the bundle at once);

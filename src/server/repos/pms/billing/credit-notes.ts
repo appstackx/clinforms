@@ -20,6 +20,9 @@ import { runBatch, type BatchQuery } from "../../../db/batch";
 import { classifyDbError } from "../../../db/errors";
 import { recordAuthorisationUsage } from "../cases";
 import { RepoInputError, assertId, assertTenantId, encryptField, nowIso, num, parseInput, pmsAuditQuery, pmsId, translateDbError, type RepoContext } from "../context";
+import { courseCloseOnCreditQueries } from "./courses";
+import { giftCardCreditQueries } from "./gift-cards";
+import { stockReturnQueries } from "./products";
 import { getInvoice } from "./invoices";
 import { ensureSettingsQuery } from "./settings";
 import { CRN, CRN_LINES, INV, LINES, chunks, isUniqueRefusal, todayOf, toCreditNote } from "./shared";
@@ -61,6 +64,10 @@ interface CreditOptions {
   issuedOn?: string;
   /** Audit detail extras (ids, codes – never text). */
   detail?: Record<string, unknown>;
+  /** More statements for the same batch, after the lines are credited (e.g. closing the course a line sold). */
+  extra?: (creditNoteId: string, at: string) => BatchQuery[];
+  /** The message when a statement of `extra` refuses the batch with a NULL. */
+  extraRefusal?: string;
 }
 
 /**
@@ -69,7 +76,7 @@ interface CreditOptions {
  * used back to its authorisation. A write-off or a transfer to the patient does neither: the visit happened and
  * stays billed – only the amount is no longer collected from this payer.
  */
-async function issueCreditNote(ctx: RepoContext, tenantId: string, inv: Invoice, requested: readonly { invoiceLineId: string; totalPence: number }[], options: CreditOptions, actor: PmsActor): Promise<CreditNote> {
+export async function issueCreditNote(ctx: RepoContext, tenantId: string, inv: Invoice, requested: readonly { invoiceLineId: string; totalPence: number }[], options: CreditOptions, actor: PmsActor): Promise<CreditNote> {
   if (inv.status !== "issued") throw new RepoInputError("Only an issued invoice can be credited (cancel a draft instead).");
   if (inv.voidedAt) throw new RepoInputError("This invoice is void.");
   const today = todayOf(ctx);
@@ -157,6 +164,17 @@ async function issueCreditNote(ctx: RepoContext, tenantId: string, inv: Invoice,
         .where("invoice_id", "=", inv.id),
     );
   }
+  if (options.extra) queries.push(...options.extra(id, at));
+  // Only item lines sell a course, gift card or product: a credit note on other lines makes no extra reads.
+  const items = releases ? parts.filter((p) => p.line.kind === "item") : [];
+  if (items.length) {
+    // A course sold on a line credited in full closes with it (PK02).
+    queries.push(...(await courseCloseOnCreditQueries(ctx, tenantId, inv.id, items.map((p) => p.line.id), at)));
+    // A product line credited in full puts its stock back (PK05).
+    queries.push(...(await stockReturnQueries(ctx, tenantId, items.map((p) => p.line.id), actor, at)));
+    // A gift card sold on a credited line (PK04): at most its unspent balance; the balance drops with it.
+    queries.push(...(await giftCardCreditQueries(ctx, tenantId, items.map((p) => ({ lineId: p.line.id, creditPence: p.share.totalPence, lineLeftPence: p.line.totalPence - p.line.creditedPence })), actor, at)));
+  }
   queries.push(
     ctx.db
       .updateTable(INV)
@@ -201,6 +219,7 @@ async function issueCreditNote(ctx: RepoContext, tenantId: string, inv: Invoice,
     } catch (err) {
       if (isUniqueRefusal(err) && attempt < 3) continue; // two credit notes numbered at the same moment (Postgres)
       if (classifyDbError(err) === "CONSTRAINT_NOT_NULL") {
+        if (options.extraRefusal) throw new RepoInputError(options.extraRefusal);
         throw new RepoInputError(options.kind === "void" ? "That invoice cannot be voided: it has payments on it, or it changed. Take the payments off or refund them first." : "That invoice can no longer be credited (it changed). Reload the page.");
       }
       throw translateDbError(err, MESSAGES);

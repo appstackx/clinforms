@@ -34,12 +34,18 @@ import { VAT_RATES_BP, lineAmounts, sumTotals, type VatCode } from "../../../../
 import { formatUkDate } from "../../../../modules/pms/core/text";
 import type { PayerType, PmsActor } from "../../../../modules/pms/core/types";
 import { runBatch, type BatchQuery } from "../../../db/batch";
+import { classifyDbError } from "../../../db/errors";
 import type { PmsInvoicesTable } from "../../../db/pms-schema/billing";
 import { recordAuthorisationUsage } from "../cases";
 import { RepoInputError, assertId, assertTenantId, decryptField, encryptField, nowIso, num, numOrNull, parseInput, parseLines, pmsAudit, pmsAuditQuery, pmsId, translateDbError, type RepoContext } from "../context";
 import { contributionModeForCase } from "./contribution-terms";
+import { giftCardCancelDraftQueries, giftCardStartQueries, giftCardsInstalled, notGiftCardSpend } from "./gift-cards";
+import { stockSaleQueries } from "./products";
+import { courseSnapshotOf, courseStartQueries, courseUsedAppointmentIds, coursesInstalledCached, getCourseType, invoiceIdUnlessCourseUsed, invoiceLineRefs, lineRefInsert, visitLockQueries, type CourseSnapshot, type LineRefType } from "./courses";
 import { ensureSettingsQuery, getBillingSettings } from "./settings";
 import { INV, LINES, OPEN_INVOICE, PAY, SUMMARY_COLUMNS, affected, billingAuditWhen, billingBatch, chunks, editToken, isUniqueRefusal, todayOf, toInvoiceLine, toInvoiceSummary } from "./shared";
+
+const COURSE_USED = "An appointment on this invoice is already on another invoice or used from a course.";
 
 const MESSAGES = {
   unique: "An appointment on this invoice is already on another invoice (or the import reference is taken).",
@@ -173,11 +179,15 @@ function serviceDates(lines: PreparedLine[]): { first: string | null; last: stri
   return { first: dates[0] ?? null, last: dates[dates.length - 1] ?? null };
 }
 
-function lineInsert(ctx: RepoContext, tenantId: string, invoiceId: string | RawBuilder<string>, l: PreparedLine, at: string) {
+/**
+ * An invoice line's insert. `guardCourseUses` (once the course tables exist): a line holding a visit gets a NULL
+ * invoice id – the batch refused – when that visit is used from a course at the moment the insert runs.
+ */
+function lineInsert(ctx: RepoContext, tenantId: string, invoiceId: string | RawBuilder<string>, l: PreparedLine, at: string, guardCourseUses = false) {
   return ctx.db.insertInto(LINES).values({
     tenant_id: tenantId,
     id: l.id,
-    invoice_id: invoiceId,
+    invoice_id: guardCourseUses && l.appointmentId ? invoiceIdUnlessCourseUsed(tenantId, invoiceId, l.appointmentId) : invoiceId,
     line_no: l.lineNo,
     kind: l.kind,
     service_id: l.serviceId,
@@ -263,6 +273,13 @@ export interface CreateDraftOptions {
    * (excess per case or contribution per visit – ./contribution-terms.ts).
    */
   applyExcess?: boolean;
+  /**
+   * What item lines sell (PK02 courses; gift cards and products later): a pms_invoice_line_refs row per line, in the
+   * draft's own batch. `lineIndex` is the line's place in `input.lines` (0-based). Not with applyExcess.
+   */
+  lineRefs?: { lineIndex: number; refType: LineRefType; refId: string }[];
+  /** More statements for the draft's own batch, given its lines in input order (e.g. a gift card's row – PK04). */
+  extra?: (lines: { id: string }[], invoiceId: string, at: string) => BatchQuery[];
 }
 
 export interface CreateDraftResult {
@@ -355,6 +372,29 @@ export async function createDraftInvoice(ctx: RepoContext, tenantId: string, inp
   }
   const appts = d.lines.map((l) => l.appointmentId).filter((a): a is string => typeof a === "string");
   if (appts.length && (await billedAppointmentIds(ctx, tenantId, appts)).size > 0) throw new RepoInputError("An appointment on this invoice is already on another invoice.");
+  // A visit used from a course is refused inside the batch (lineInsert's guard: NULL invoice id), so a use recorded
+  // at the same moment cannot slip through and an ordinary invoice costs no extra read.
+  const guard = appts.length > 0 && (await coursesInstalledCached(ctx, tenantId));
+  const refs = options.lineRefs ?? [];
+  if (refs.length) {
+    if (options.applyExcess) throw new RepoInputError("A course, gift card or product is sold on an invoice to the patient.");
+    for (const r of refs) {
+      const l = d.lines[r.lineIndex];
+      if (!l || (l.kind ?? "service") !== "item") throw new RepoInputError("A course, gift card or product is sold on an item line.");
+      if (r.refType !== "product" && (l.quantity ?? 1) !== 1) throw new RepoInputError("A course or gift card is sold one to a line.");
+      assertId(r.refId, "reference id");
+    }
+    if (new Set(refs.map((r) => r.lineIndex)).size !== refs.length) throw new RepoInputError("A line sells one thing only.");
+  }
+  // A course line keeps what was sold (sessions, services, validity) from now on: editing the course type before the
+  // invoice is issued never changes it.
+  const snapshots = new Map<number, CourseSnapshot>();
+  for (const r of refs) {
+    if (r.refType !== "course") continue;
+    const type = await getCourseType(ctx, tenantId, r.refId);
+    if (!type) throw new RepoInputError("That course does not exist in this clinic.");
+    snapshots.set(r.lineIndex, courseSnapshotOf(type));
+  }
 
   const lines = await prepareLines(ctx, tenantId, d.lines, settings, theCase?.priceListId ?? null);
   const at = nowIso(ctx);
@@ -443,7 +483,7 @@ export async function createDraftInvoice(ctx: RepoContext, tenantId: string, inp
           at,
         ),
       ),
-      ...split.lines.map((l) => lineInsert(ctx, tenantId, split.id, l, at)),
+      ...split.lines.map((l) => lineInsert(ctx, tenantId, split.id, l, at, guard)),
     );
   }
   if (payerInvoice) {
@@ -469,8 +509,17 @@ export async function createDraftInvoice(ctx: RepoContext, tenantId: string, inp
           at,
         ),
       ),
-      ...payerLines.map((l) => lineInsert(ctx, tenantId, id, l, at)),
+      ...payerLines.map((l) => lineInsert(ctx, tenantId, id, l, at, guard)),
     );
+    // No split here (refused above): the lines are input.lines in order.
+    for (const r of refs) {
+      queries.push(lineRefInsert(ctx, tenantId, { invoiceLineId: payerLines[r.lineIndex].id, refType: r.refType, refId: r.refId, snapshot: snapshots.get(r.lineIndex) ?? null }, at));
+      if (r.refType === "course") queries.push(pmsAuditQuery(ctx, tenantId, actor, { action: "pms.course.sell", targetType: "pms_invoice", targetId: id, detail: { courseTypeId: r.refId } }));
+    }
+    if (options.extra) {
+      if (split) throw new RepoInputError("A course, gift card or product is sold on an invoice to the patient.");
+      queries.push(...options.extra(payerLines, id, at));
+    }
     if (split) queries.push(ctx.db.updateTable(INV).set({ related_invoice_id: id }).where("tenant_id", "=", tenantId).where("id", "=", split.id));
     queries.push(pmsAuditQuery(ctx, tenantId, actor, { action: "pms.invoice.create", targetType: "pms_invoice", targetId: id, detail: { billTo, lines: payerLines.length, ...(split ? { excessInvoiceId: split.id } : {}) } }));
   }
@@ -485,7 +534,7 @@ export async function createDraftInvoice(ctx: RepoContext, tenantId: string, inp
       }),
     );
   }
-  await billingBatch(ctx, queries, MESSAGES);
+  await billingBatch(ctx, guard ? [...visitLockQueries(ctx, tenantId, appts), ...queries] : queries, { ...MESSAGES, notNull: COURSE_USED });
   if (!payerInvoice && split) return { invoice: (await getInvoice(ctx, tenantId, split.id)) as Invoice, excessInvoice: null };
   return { invoice: (await getInvoice(ctx, tenantId, id)) as Invoice, excessInvoice: split ? await getInvoice(ctx, tenantId, split.id) : null };
 }
@@ -531,13 +580,16 @@ export async function updateDraftInvoice(ctx: RepoContext, tenantId: string, id:
     fields.push("notes");
   }
   let lines: PreparedLine[] | null = null;
+  let guardUses = false;
   if (d.lines) {
     if (current.bill_to === "payer" && d.lines.some((l) => l.kind === "excess")) throw new RepoInputError("An excess line goes on the patient's invoice.");
+    if ((await invoiceLineRefs(ctx, tenantId, id)).length > 0) throw new RepoInputError("This draft sells a course, gift card or product, so its lines cannot be changed. Cancel the draft and sell it again.");
     const appts = d.lines.map((l) => l.appointmentId).filter((a): a is string => typeof a === "string");
     if (appts.length) {
       const mine = new Set((await ctx.db.selectFrom(LINES).select("appointment_id").where("tenant_id", "=", tenantId).where("invoice_id", "=", id).execute()).map((r) => r.appointment_id));
       const taken = Array.from(await billedAppointmentIds(ctx, tenantId, appts)).filter((a) => !mine.has(a));
       if (taken.length) throw new RepoInputError("An appointment on this invoice is already on another invoice.");
+      guardUses = await coursesInstalledCached(ctx, tenantId);
     }
     const settings = await getBillingSettings(ctx, tenantId);
     const theCase = caseId ? await caseFacts(ctx, tenantId, caseId) : null;
@@ -562,14 +614,21 @@ export async function updateDraftInvoice(ctx: RepoContext, tenantId: string, id:
         .where("invoice_id", "=", id)
         .where(sql<boolean>`exists ${mineNow}`),
     );
-    for (const l of lines) queries.push(lineInsert(ctx, tenantId, mineNow, l, at));
+    for (const l of lines) queries.push(lineInsert(ctx, tenantId, mineNow, l, at, guardUses));
   }
+  const lockFirst = guardUses && lines ? visitLockQueries(ctx, tenantId, lines.map((l) => l.appointmentId).filter((a): a is string => typeof a === "string")) : [];
   queries.push(pmsAuditQuery(ctx, tenantId, actor, { action: "pms.invoice.update", targetType: "pms_invoice", targetId: id, detail: { fields, rev: expectedRev + 1 } }));
   try {
-    const results = await billingBatch(ctx, queries, { ...MESSAGES, notNull: "stale" });
-    if (affected(results[0]) === 0) return (await draftState(ctx, tenantId, id)) ?? { ok: false, reason: "not_found" };
+    const results = await billingBatch(ctx, [...lockFirst, ...queries], { ...MESSAGES, notNull: "stale" });
+    if (affected(results[lockFirst.length]) === 0) return (await draftState(ctx, tenantId, id)) ?? { ok: false, reason: "not_found" };
   } catch (err) {
-    if (err instanceof RepoInputError && err.message === "stale") return (await draftState(ctx, tenantId, id)) ?? { ok: false, reason: "not_found" };
+    if (err instanceof RepoInputError && err.message === "stale") {
+      // A visit used from a course meanwhile refuses the lines the same way as a stale edit: when the draft is still
+      // at the expected revision, nobody else changed it – it was the course use.
+      const state = (await draftState(ctx, tenantId, id)) ?? { ok: false, reason: "not_found" };
+      if (guardUses && !state.ok && state.reason === "conflict" && state.currentRev === expectedRev) throw new RepoInputError(COURSE_USED);
+      return state;
+    }
     throw err;
   }
   return { ok: true, rev: expectedRev + 1 };
@@ -607,6 +666,8 @@ export async function cancelDraftInvoice(ctx: RepoContext, tenantId: string, id:
       .where("invoice_id", "in", ids)
       .where(sql<boolean>`exists (select 1 from pms_invoices i where i.tenant_id = ${tenantId} and i.id = pms_invoice_lines.invoice_id and i.status = 'cancelled')`),
     pmsAuditQuery(ctx, tenantId, actor, { action: "pms.invoice.cancel", targetType: "pms_invoice", targetId: id, detail: { rev: expectedRev + 1 } }),
+    // Gift cards sold on the draft (PK04) are cancelled with it.
+    ...(await giftCardCancelDraftQueries(ctx, tenantId, ids, at)),
   );
   const results = await billingBatch(ctx, queries, MESSAGES);
   if (affected(results[0]) === 0) return (await draftState(ctx, tenantId, id)) ?? { ok: false, reason: "not_found" };
@@ -710,8 +771,20 @@ export async function issueInvoice(ctx: RepoContext, tenantId: string, id: strin
   const prefix = sql<string>`(select invoice_prefix from pms_billing_settings where tenant_id = ${tenantId})`;
   let issued = false;
   try {
+    // Only an item line can sell a course, gift card or product: an invoice without one issues with exactly the reads
+    // it always did. The reads are made once (not per attempt); each attempt builds the statements with its token.
+    const builders = inv.lines.some((l) => l.kind === "item")
+      ? [
+          // Courses sold on it start now (PK02) – each insert reads the issue's own token, so a stale issue starts none.
+          await courseStartQueries(ctx, tenantId, inv, issuedOn, actor, at),
+          await giftCardStartQueries(ctx, tenantId, inv, issuedOn, actor, at),
+          // Products sold on it leave the stock of the invoice's site (PK05).
+          await stockSaleQueries(ctx, tenantId, inv, actor, at),
+        ]
+      : [];
     for (let attempt = 0; attempt < 4 && !issued; attempt++) {
       const token = editToken();
+      const starts = builders.flatMap((b) => b(token));
       const queries = [
         ensureSettingsQuery(ctx, tenantId, at),
         ctx.db
@@ -743,6 +816,7 @@ export async function issueInvoice(ctx: RepoContext, tenantId: string, id: strin
           { action: "pms.invoice.issue", targetType: "pms_invoice", targetId: id, detail: { rev: expectedRev + 1, ...(usageTaken ? { authorisationId: inv.authorisationId, sessions, valuePence: value } : {}) } },
           ctx.db.selectFrom(INV).select("id").where("tenant_id", "=", tenantId).where("id", "=", id).where("edit_token", "=", token).where("status", "=", "issued"),
         ),
+        ...starts,
       ];
       try {
         const results = await runBatch(ctx.db, queries);
@@ -751,6 +825,8 @@ export async function issueInvoice(ctx: RepoContext, tenantId: string, id: strin
       } catch (err) {
         // Two issues at the same moment on Postgres can pick the same number: the unique index refuses one; try again.
         if (isUniqueRefusal(err) && attempt < 3) continue;
+        // A course start found the issue had not applied (someone else changed the draft): nothing was written.
+        if (starts.length && classifyDbError(err) === "CONSTRAINT_NOT_NULL") break;
         throw translateDbError(err, { check: "The clinic has used every invoice number its prefix allows (999999). Change the prefix in the billing settings." });
       }
     }
@@ -982,7 +1058,7 @@ export interface BillingFigures {
   overdueCount: number;
   refundsDuePence: number;
   invoicedThisMonthPence: number;
-  /** Payments taken today (refunds and reversed payments left out), by method. */
+  /** Payments taken today (refunds, reversed payments and gift-card spends left out), by method. */
   takenTodayPence: number;
   takenTodayByMethod: Record<string, number>;
 }
@@ -1032,15 +1108,18 @@ export async function billingFigures(ctx: RepoContext, tenantId: string, scope: 
     monthQ = monthQ.where("site_id", "=", scope.siteId);
   }
   let pq = ctx.db
-    .selectFrom(PAY)
-    .select(["method", (eb) => eb.fn.sum<number>("amount_pence").as("n")])
-    .where("tenant_id", "=", tenantId)
-    .where("kind", "=", "payment")
-    .where("status", "=", "recorded")
-    .where("received_on", "=", today);
-  if (sites) pq = sites.length ? pq.where("site_id", "in", sites) : pq.where(sql<boolean>`1 = 0`);
-  if (scope.siteId) pq = pq.where("site_id", "=", scope.siteId);
-  const [draftRow, openRow, monthRow, taken] = await Promise.all([draftQ.executeTakeFirst(), openQ.executeTakeFirst(), monthQ.executeTakeFirst(), pq.groupBy("method").execute()]);
+    .selectFrom(`${PAY} as p`)
+    .select(["p.method", (eb) => eb.fn.sum<number>("p.amount_pence").as("n")])
+    .where("p.tenant_id", "=", tenantId)
+    .where("p.kind", "=", "payment")
+    .where("p.status", "=", "recorded")
+    .where("p.received_on", "=", today);
+  // A gift-card spend is not money taken: it came in when the card was sold. Told by its "redeem" move (never by the
+  // payment's method or reference text). Only once the gift-card tables exist.
+  if (await giftCardsInstalled(ctx, tenantId)) pq = pq.where(notGiftCardSpend(tenantId, sql.ref("p.id")));
+  if (sites) pq = sites.length ? pq.where("p.site_id", "in", sites) : pq.where(sql<boolean>`1 = 0`);
+  if (scope.siteId) pq = pq.where("p.site_id", "=", scope.siteId);
+  const [draftRow, openRow, monthRow, taken] = await Promise.all([draftQ.executeTakeFirst(), openQ.executeTakeFirst(), monthQ.executeTakeFirst(), pq.groupBy("p.method").execute()]);
   const row = { drafts: draftRow?.drafts, ...openRow, month: monthRow?.month };
   const byMethod: Record<string, number> = {};
   for (const t of taken) byMethod[t.method] = num(t.n);

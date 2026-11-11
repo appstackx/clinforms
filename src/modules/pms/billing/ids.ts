@@ -12,6 +12,13 @@ export const BILLING_ID_PREFIXES = {
   paymentLink: "plnk",
   export: "ebex",
   savedCard: "scard",
+  courseType: "crst",
+  patientCourse: "pcrs",
+  courseUse: "cruse",
+  giftCard: "gcard",
+  giftCardMove: "gcmv",
+  product: "prod",
+  stockMove: "stkm",
 } as const;
 
 export type BillingIdKind = keyof typeof BILLING_ID_PREFIXES;
