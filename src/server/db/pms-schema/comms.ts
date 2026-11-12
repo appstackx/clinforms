@@ -13,6 +13,8 @@
  * - pms_letters: letters to the patient, GP, referrer or payer; subject and body encrypted.
  * - pms_sms_credit_accounts / pms_sms_credit_entries (0143): prepaid text credits – the cached balance and settings
  *   per clinic, and the append-only ledger (a payment, a reversal and a webhook event each applied once).
+ * - pms_bulk_email_settings / pms_email_campaigns / pms_email_campaign_recipients (0146): bulk email to groups of
+ *   patients (behind CLINFORMS_BULK_EMAIL and a per-clinic setting, off by default – docs/clinic-system/comms.md).
  */
 import type { ColumnType } from "kysely";
 import type { IsoTimestamp } from "../schema";
@@ -266,6 +268,60 @@ export interface PmsSmsCreditEntriesTable {
   created_at: IsoTimestamp;
 }
 
+/** 0146: bulk email (campaigns) – one row per clinic; no row = off. */
+export interface PmsBulkEmailSettingsTable {
+  tenant_id: string;
+  rev: WithDefault<number>;
+  enabled: WithDefault<number>;
+  daily_cap: WithDefault<number>;
+  updated_by: string | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
+/** 0146: a bulk email (subject and body encrypted). */
+export interface PmsEmailCampaignsTable {
+  tenant_id: string;
+  id: string;
+  rev: number;
+  name: string;
+  /** marketing | service */
+  purpose: string;
+  service_reason: string | null;
+  subject_enc: string;
+  body_enc: string;
+  /** JSON: the audience filters (ids, numbers, yes/no). */
+  audience_json: string;
+  /** draft | scheduled | sending | sent | cancelled */
+  status: WithDefault<string>;
+  scheduled_for: IsoTimestamp | null;
+  started_at: IsoTimestamp | null;
+  finished_at: IsoTimestamp | null;
+  cancelled_at: IsoTimestamp | null;
+  recipients_total: WithDefault<number>;
+  created_by: string | null;
+  scheduled_by: string | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
+/** 0146: one recipient (address) of a campaign. */
+export interface PmsEmailCampaignRecipientsTable {
+  tenant_id: string;
+  id: string;
+  campaign_id: string;
+  patient_id: string;
+  address_key: string;
+  /** pending | processing | sent | outbox | failed | skipped */
+  status: WithDefault<string>;
+  message_id: string | null;
+  skip_reason: string | null;
+  claim_token: string | null;
+  claimed_at: IsoTimestamp | null;
+  sent_on: IsoDate | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
 
 export interface CommsTables {
   pms_comms_settings: PmsCommsSettingsTable;
@@ -278,6 +334,9 @@ export interface CommsTables {
   pms_letters: PmsLettersTable;
   pms_sms_credit_accounts: PmsSmsCreditAccountsTable;
   pms_sms_credit_entries: PmsSmsCreditEntriesTable;
+  pms_bulk_email_settings: PmsBulkEmailSettingsTable;
+  pms_email_campaigns: PmsEmailCampaignsTable;
+  pms_email_campaign_recipients: PmsEmailCampaignRecipientsTable;
 }
 
 /** Foreign-key order (parents first). */
@@ -292,6 +351,9 @@ export const COMMS_TABLES = [
   "pms_letters",
   "pms_sms_credit_accounts",
   "pms_sms_credit_entries",
+  "pms_bulk_email_settings",
+  "pms_email_campaigns",
+  "pms_email_campaign_recipients",
 ] as const satisfies readonly (keyof CommsTables)[];
 
 export const COMMS_PRIMARY_KEYS: { readonly [T in (typeof COMMS_TABLES)[number]]: readonly (keyof CommsTables[T] & string)[] } = {
@@ -305,6 +367,9 @@ export const COMMS_PRIMARY_KEYS: { readonly [T in (typeof COMMS_TABLES)[number]]
   pms_letters: ["tenant_id", "id"],
   pms_sms_credit_accounts: ["tenant_id"],
   pms_sms_credit_entries: ["tenant_id", "id"],
+  pms_bulk_email_settings: ["tenant_id"],
+  pms_email_campaigns: ["tenant_id", "id"],
+  pms_email_campaign_recipients: ["tenant_id", "id"],
 };
 
 /** Timestamp columns (TEXT in SQLite, timestamptz in Postgres) besides created_at / updated_at. */
@@ -322,7 +387,14 @@ export const COMMS_TIMESTAMP_COLUMNS: readonly string[] = [
   "hold_until",
   "auto_topup_paused_at",
   "topup_claimed_at",
+  "scheduled_for",
+  "started_at",
+  "finished_at",
+  "cancelled_at",
 ];
 
 /** Every comms table is per clinic (offboarding exports them decrypted, then deletes them in reverse order). */
 export const COMMS_TENANT_TABLES: readonly (typeof COMMS_TABLES)[number][] = COMMS_TABLES;
+
+/** Bulk email (0146): campaigns go with the clinic's bulk email settings row, recipients with their campaign (cascade). */
+export const COMMS_CASCADE_DELETED_TABLES: readonly (typeof COMMS_TABLES)[number][] = ["pms_email_campaigns", "pms_email_campaign_recipients"];

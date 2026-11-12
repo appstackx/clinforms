@@ -46,6 +46,10 @@ export const PAGE_PERMISSIONS: readonly (readonly [string, PmsPermission])[] = [
   ["/messages/credits/done", "messages.send"],
   ["/messages/patient-view", "messages.send"],
   ["/messages/settings", "messages.templates"],
+  // Bulk email (xt02): also behind CLINFORMS_BULK_EMAIL=on and never reception – the clinic layout checks both.
+  ["/messages/campaigns", "messages.templates"],
+  ["/messages/campaigns/new", "messages.templates"],
+  ["/messages/campaigns/[campaignId]", "messages.templates"],
   ["/online-booking", "settings.setup"],
   ["/patients/[patientId]/anonymise", "patients.merge"],
   ["/patients/[patientId]/appointments", "diary.view"],

@@ -37,7 +37,7 @@ import { claimDueMessages, closeScheduleQuery, hasEmailCounterpart } from "../..
 import { getCommsSettings } from "../../repos/pms/comms/settings";
 import { getMessageTemplate, resolveTemplate } from "../../repos/pms/comms/templates";
 import { incrementUsage } from "../../repos/pms/entitlements";
-import { commsLinkOrigin, commsLinkSecret, signStopToken, stopLinkUrl } from "./links";
+import { commsLinkOrigin, commsLinkSecret, signStopToken, stopLinkUrl, unsubscribeHeadersFromText } from "./links";
 import { resolveCommsProviders, type CommsProviders, type OutboundEmail, type OutboundSms } from "./providers";
 import {
   appointmentValues,
@@ -517,7 +517,8 @@ export async function retryMessage(ctx: RepoContext, tenantId: string, id: strin
     text: before.body,
     html: before.channel === "email" ? htmlFromStoredText(clinic.name, before.body) : null,
     segments: before.segments,
-    headers: {},
+    // An email sent again keeps its one-click unsubscribe (the stop link in its stored footer).
+    headers: before.channel === "email" ? unsubscribeHeadersFromText(before.body) : {},
   };
   let outcome: SendOutcome | null = null;
   try {
@@ -838,7 +839,13 @@ export async function releaseHeldMessages(
         out.outbox++;
         continue;
       }
-      const composed: Composed = { subject: m.subject, text: m.body, html: m.channel === "email" ? htmlFromStoredText(clinic.name, m.body) : null, segments: m.segments, headers: {} };
+      const composed: Composed = {
+        subject: m.subject,
+        text: m.body,
+        html: m.channel === "email" ? htmlFromStoredText(clinic.name, m.body) : null,
+        segments: m.segments,
+        headers: m.channel === "email" ? unsubscribeHeadersFromText(m.body) : {},
+      };
       calling.add(id);
       const outcome = await callProvider(deps, tenantId, m.channel, id, m.toAddress, composed, clinic, settings.smsSender);
       outcomes.push({ id, outcome });

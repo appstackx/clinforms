@@ -23,6 +23,13 @@ export interface StopLink {
   purpose: MessagePurpose;
   /** Expiry, seconds since 1970. */
   exp: number;
+  /**
+   * Bulk email (0146): the message the link came in, so the unsubscribe is recorded against it (per-campaign
+   * counts); and "announce" when it came in a service announcement (the page's wording only). Both optional – older
+   * links carry neither.
+   */
+  messageId?: string;
+  announce?: boolean;
 }
 
 /** The signing key for stop links (null when BETTER_AUTH_SECRET is missing or short – links are then left out). */
@@ -59,7 +66,10 @@ function sign(secret: string, body: string): string {
 
 export function signStopToken(link: Omit<StopLink, "exp">, secret: string, nowMs: number = pmsNowMs()): string {
   const payload: StopLink = { ...link, exp: Math.floor(nowMs / 1000) + STOP_LINK_DAYS * 86_400 };
-  const body = Buffer.from(JSON.stringify({ t: payload.tenantId, p: payload.patientId, c: payload.channel, u: payload.purpose, e: payload.exp }), "utf8").toString("base64url");
+  const fields: Record<string, unknown> = { t: payload.tenantId, p: payload.patientId, c: payload.channel, u: payload.purpose, e: payload.exp };
+  if (link.messageId) fields.m = link.messageId;
+  if (link.announce) fields.k = "a";
+  const body = Buffer.from(JSON.stringify(fields), "utf8").toString("base64url");
   return `v1.${body}.${sign(secret, body)}`;
 }
 
@@ -77,6 +87,11 @@ export function verifyStopToken(token: string | null | undefined, secret: string
     if (!["sms", "email"].includes(link.channel) || !["service", "marketing"].includes(link.purpose)) return null;
     if (!Number.isFinite(link.exp) || link.exp * 1000 < nowMs) return null;
     if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(link.tenantId) || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(link.patientId)) return null;
+    if (v.m !== undefined) {
+      if (typeof v.m !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(v.m)) return null;
+      link.messageId = v.m;
+    }
+    if (v.k === "a") link.announce = true;
     return link;
   } catch {
     return null;
@@ -85,4 +100,13 @@ export function verifyStopToken(token: string | null | undefined, secret: string
 
 export function stopLinkUrl(origin: string, token: string): string {
   return `${origin}${STOP_LINK_PATH}?t=${encodeURIComponent(token)}`;
+}
+
+/**
+ * The List-Unsubscribe headers (RFC 8058) for an email sent again from its stored copy (Retry): the stop link its
+ * footer carries, when it has one (review 12/11/2026 – a retried email keeps its one-click unsubscribe).
+ */
+export function unsubscribeHeadersFromText(text: string | null | undefined): Record<string, string> {
+  const m = /https?:\/\/[^\s<>"']+\/api\/clinic-messages\/unsubscribe\?t=[A-Za-z0-9._%~-]+/.exec(text ?? "");
+  return m ? { "List-Unsubscribe": `<${m[0]}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" } : {};
 }

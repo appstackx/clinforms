@@ -43,6 +43,16 @@ export const COMMS_AUDIT_LABELS: Readonly<Record<string, string>> = {
   "pms.sms_credit.topup_failed": "Automatic top-up failed (paused)",
   "pms.sms_credit.warning": "Low text credit warning sent",
   "pms.sms_credit.test_customer_cleared": "Test card payment details removed (live payments switched on)",
+  "pms.bulk_email_settings.update": "Bulk email settings changed",
+  "pms.email_campaign.create": "Bulk email drafted",
+  "pms.email_campaign.update": "Bulk email draft changed",
+  "pms.email_campaign.schedule": "Bulk email scheduled to send",
+  "pms.email_campaign.cancel": "Bulk email cancelled before sending",
+  "pms.email_campaign.start": "Bulk email started sending (recipients chosen)",
+  "pms.email_campaign.send": "Bulk emails sent",
+  "pms.email_campaign.finish": "Bulk email finished sending",
+  "pms.email_campaign.test_send": "Test copy of a bulk email sent to a member",
+  "pms.email_campaign.unschedule": "Scheduled bulk email back to draft (its time passed while bulk email was off)",
 };
 
 /** Names of the record types its audit rows point at (target_type → label). */
@@ -57,4 +67,6 @@ export const COMMS_AUDIT_TARGETS: Readonly<Record<string, string>> = {
   pms_letter: "Letter",
   pms_sms_credit_entry: "Text credit entry",
   pms_sms_credit_account: "Text credits",
+  pms_bulk_email_settings: "Bulk email settings",
+  pms_email_campaign: "Bulk email",
 };

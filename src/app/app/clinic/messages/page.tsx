@@ -4,6 +4,7 @@ import { requireClinicActor } from "@/server/pms/actor";
 import { lettersFor, messagesHomeFor, outboxFor, repliesFor, sendFormFor, templatesFor } from "@/server/pms/comms/views";
 import { creditBalanceFor } from "@/server/pms/comms/credits/views";
 import { nowIso } from "@/server/repos/pms/context";
+import { bulkEmailAvailable, mayUseBulkEmail } from "@/server/pms/comms/campaigns/service";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Messages" };
@@ -50,6 +51,7 @@ export default async function MessagesRoute({ searchParams }: { searchParams: Re
       send={send && send.ok ? send.value : null}
       failed={failed}
       credits={credits}
+      bulkEmail={bulkEmailAvailable() && mayUseBulkEmail(actor)}
     />
   );
 }
