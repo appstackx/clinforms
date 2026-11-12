@@ -18,6 +18,8 @@
  *   ClinDesk's site on the clinic brand's hosts (the same path lists as src/middleware.ts; google-ads.test.ts holds
  *   them equal). Every other route (the app, the demo, sign-in, patient pages, APIs) keeps the site-wide policy,
  *   unchanged. Later header entries win for the same key, so these entries come after the site-wide one.
+ * - The installable staff app (ClinDesk's hosts only, src/lib/pwa): manifest-src 'self' for its manifest; its service
+ *   worker (/clindesk-sw.js, scope /app) is same-origin, already allowed by worker-src 'self'.
  * - skipTrailingSlashRedirect: the analytics API paths end in "/" and must not be redirected.
  */
 
@@ -88,6 +90,9 @@ function contentSecurityPolicy({ googleAds = false } = {}) {
     "media-src": ["'self'", MEDIA_ORIGIN],
     "font-src": ["'self'", "data:"],
     "worker-src": ["'self'", "blob:"],
+    // The installable staff app's manifest (/clindesk.webmanifest, src/lib/pwa/manifest.ts); its service worker is
+    // covered by worker-src 'self' above.
+    "manifest-src": ["'self'"],
     "connect-src": ["'self'", ...(extra ? [extra] : []), ...google("connect-src")],
     "frame-src": [...(TURNSTILE_ORIGIN ? [TURNSTILE_ORIGIN] : []), ...google("frame-src")].length
       ? [...(TURNSTILE_ORIGIN ? [TURNSTILE_ORIGIN] : []), ...google("frame-src")]
