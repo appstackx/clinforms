@@ -41,6 +41,37 @@ export interface WebAppManifest {
   icons: { src: string; sizes: string; type: string; purpose: string }[];
 }
 
+/** The environment switch that withdraws the installable app everywhere (rollback without a code change). */
+export const PWA_ENV = "CLINFORMS_PWA";
+
+/**
+ * The brands whose hosts have EVER served the app's service worker. On these hosts /clindesk-sw.js never answers 404:
+ * with the app switched off it serves the self-removing worker (src/lib/pwa/service-worker.ts serviceWorkerKillSource),
+ * so phones that installed it lose it on their next visit. ClinForms' hosts never had it and stay 404.
+ */
+export const PWA_HOST_BRANDS: readonly Brand["id"][] = ["clinic"];
+
+/**
+ * The host brand's installable app, or null when it has none OR it is switched off (CLINFORMS_PWA=off). Pure: the server
+ * passes process.env (src/server/pwa.ts).
+ */
+export function installableAppFor(
+  brand: Pick<Brand, "installableApp">,
+  env: Readonly<Record<string, string | undefined>>,
+): Brand["installableApp"] {
+  if ((env[PWA_ENV] ?? "").trim().toLowerCase() === "off") return null;
+  return brand.installableApp;
+}
+
+/**
+ * What /clindesk-sw.js serves for a request: "app" (the worker), "remove" (the self-removing worker – the app is off on a
+ * host that once had it), or "none" (404 – ClinForms' hosts).
+ */
+export function serviceWorkerKind(brand: Pick<Brand, "id" | "installableApp">, env: Readonly<Record<string, string | undefined>>): "app" | "remove" | "none" {
+  if (installableAppFor(brand, env)) return "app";
+  return PWA_HOST_BRANDS.includes(brand.id) ? "remove" : "none";
+}
+
 /** The manifest for a brand's hosts, or null when the brand has no installable app (ClinForms). */
 export function webAppManifest(brand: Pick<Brand, "installableApp" | "themeColor">): WebAppManifest | null {
   const app = brand.installableApp;

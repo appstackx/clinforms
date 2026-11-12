@@ -10,6 +10,9 @@
  *      sign-in page link no manifest either
  *   O  offline: a page inside /app shows the offline page; a VISITED patient record is never served from a cache –
  *      offline it is the offline page, not the record; static build files are the only things cached
+ *   K  kill switch: the server restarted with CLINFORMS_PWA=off – the manifest 404s, /clindesk-sw.js serves the
+ *      self-removing worker on ClinDesk's host (still 404 on ClinForms'), and the device that had the worker loses it
+ *      and its caches after one page load
  *   I  "Install the app" in the account menu when the browser offers to install (simulated beforeinstallprompt);
  *      "Don't show this again" is remembered; iOS Safari gets the Share → Add to Home Screen steps
  *
@@ -64,6 +67,7 @@ async function check(id, what, fn) {
   }
 }
 
+let EXTRA_ENV = {};
 function appEnv() {
   return {
     PATH: process.env.PATH,
@@ -84,6 +88,7 @@ function appEnv() {
     CLINFORMS_PLATFORM_ADMINS: OWNER,
     CLINIC_SMS_PROVIDER: "test",
     CLINIC_EMAIL_PROVIDER: "test",
+    ...EXTRA_ENV,
   };
 }
 let server = null;
@@ -475,6 +480,34 @@ async function openMenu(page) {
       const css = fs.readdirSync(dir).map((f) => fs.readFileSync(path.join(dir, f), "utf8")).join("\n");
       for (const needle of ["env(safe-area-inset-top)", "env(safe-area-inset-left)", "env(safe-area-inset-bottom)"]) assert.ok(css.includes(needle), needle);
       assert.ok(/calc\(\.625rem \+ env\(safe-area-inset-top\)\)/.test(css), "header padding calc");
+    });
+
+    await check("K1", "kill switch (CLINFORMS_PWA=off): the worker removes itself and its caches from the device", async () => {
+      const before = await owner.evaluate(async () => ({ regs: (await navigator.serviceWorker.getRegistrations()).length, caches: (await caches.keys()).length }));
+      assert.ok(before.regs >= 1 && before.caches >= 1, JSON.stringify(before));
+      stopChild(server);
+      await new Promise((r) => setTimeout(r, 1000));
+      EXTRA_ENV = { CLINFORMS_PWA: "off" };
+      await startServer();
+      assert.equal((await get(`${DESK}/clindesk.webmanifest`)).status, 404);
+      const sw = await get(`${DESK}/clindesk-sw.js`);
+      assert.equal(sw.status, 200);
+      assert.match(sw.text, /self\.registration\.unregister\(\)/);
+      assert.ok(!sw.text.includes("decideFetch"), "not the app's worker");
+      assert.equal((await get(`${FORMS}/clindesk-sw.js`)).status, 404, "ClinForms' host stays 404");
+      // One page load inside /app OUTSIDE the clinic shell (the account area – its code never touches the worker), so
+      // the removal below is the self-removing worker's own doing: the browser's update check fetches it.
+      await owner.goto(`${DESK}/app/settings/members`);
+      await owner.waitForFunction(async () => (await navigator.serviceWorker.getRegistrations()).length === 0, null, { timeout: 30000, polling: 500 });
+      await owner.waitForFunction(async () => (await caches.keys()).filter((k) => k.startsWith("clindesk-static-")).length === 0, null, { timeout: 15000, polling: 500 });
+      await owner.goto(`${DESK}/app/clinic`);
+      await owner.waitForLoadState("networkidle");
+      assert.equal((await headFacts(owner)).manifest, null, "no manifest link while off");
+      await fakeInstallPrompt(owner);
+      const menu = await openMenu(owner);
+      assert.equal(await menu.locator("[data-testid=menu-install-app]").count(), 0, "no install offer while off");
+      await owner.keyboard.press("Escape");
+      return `before: ${JSON.stringify(before)} → no registration, no app cache`;
     });
 
     await check("Z", "no page errors", async () => {

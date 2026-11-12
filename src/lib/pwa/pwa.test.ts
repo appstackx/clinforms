@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import vm from "node:vm";
 import { BRANDS, brandForHost } from "../brand";
-import { APP_ICONS, APP_SCOPE, APP_START_URL, MANIFEST_PATH, installabilityProblems, webAppManifest } from "./manifest";
+import { APP_ICONS, APP_SCOPE, APP_START_URL, MANIFEST_PATH, installabilityProblems, installableAppFor, serviceWorkerKind, webAppManifest } from "./manifest";
 import {
   CACHE_PREFIX,
   SERVICE_WORKER_PATH,
@@ -16,6 +16,7 @@ import {
   offlineHeading,
   offlinePageHtml,
   serviceWorkerConfig,
+  serviceWorkerKillSource,
   serviceWorkerSource,
   type SwConfig,
   type SwDecision,
@@ -74,13 +75,18 @@ describe("web app manifest per brand host", () => {
   });
   it("wired only through the brand: the clinic layout links the manifest when the brand has an app; CSP allows it", () => {
     const layout = read("src/app/app/clinic/layout.tsx");
-    assert.match(layout, /currentBrand\(\)\.installableApp/);
+    assert.match(layout, /const app = currentInstallableApp\(\)/);
     assert.match(layout, /manifest: MANIFEST_PATH/);
     assert.match(layout, /viewportFit: "cover"/);
-    assert.match(layout, /installableApp=\{brand\.installableApp !== null\}/);
+    assert.match(layout, /installableApp=\{currentInstallableApp\(\) !== null\}/);
     assert.equal(MANIFEST_PATH, "/clindesk.webmanifest");
-    assert.match(read("src/app/clindesk.webmanifest/route.ts"), /webAppManifest\(currentBrand\(\)\)/);
-    assert.match(read("src/app/clindesk-sw.js/route.ts"), /if \(!brand\.installableApp\) return new Response\("Not found", \{ status: 404/);
+    assert.match(read("src/app/clindesk.webmanifest/route.ts"), /installableApp: currentInstallableApp\(\)/);
+    const swRoute = read("src/app/clindesk-sw.js/route.ts");
+    assert.match(swRoute, /if \(kind === "none"\) return new Response\("Not found", \{ status: 404/);
+    assert.match(swRoute, /if \(kind === "remove" \|\| !app\) return js\(serviceWorkerKillSource\(\)\)/);
+    assert.match(read("src/server/pwa.ts"), /installableAppFor\(currentBrand\(\), process\.env\)/);
+    // Registered from production builds only.
+    assert.match(read("src/components/pwa/clinic-app.ts"), /const WORKER_ALLOWED = process\.env\.NODE_ENV === "production";/);
     const config = read("next.config.mjs");
     assert.match(config, /"manifest-src": \["'self'"\]/);
     assert.match(config, /"worker-src": \["'self'", "blob:"\]/);
@@ -88,6 +94,27 @@ describe("web app manifest per brand host", () => {
     const mw = read("src/middleware.ts");
     assert.ok(!mw.includes(MANIFEST_PATH) && !mw.includes(SERVICE_WORKER_PATH));
     assert.ok(!MANIFEST_PATH.startsWith("/app/") && !SERVICE_WORKER_PATH.startsWith("/app/"));
+  });
+});
+
+describe("the kill switch (CLINFORMS_PWA=off, or the brand's app removed)", () => {
+  it("installableAppFor: the brand's app unless switched off", () => {
+    assert.deepEqual(installableAppFor(BRANDS.clinic, {}), BRANDS.clinic.installableApp);
+    assert.deepEqual(installableAppFor(BRANDS.clinic, { CLINFORMS_PWA: "on" }), BRANDS.clinic.installableApp);
+    assert.equal(installableAppFor(BRANDS.clinic, { CLINFORMS_PWA: "off" }), null);
+    assert.equal(installableAppFor(BRANDS.clinic, { CLINFORMS_PWA: " OFF " }), null);
+    assert.equal(installableAppFor(BRANDS.clinforms, {}), null);
+  });
+  it("what /clindesk-sw.js serves: the worker, the self-removing worker on ClinDesk's hosts when off, 404 on ClinForms'", () => {
+    assert.equal(serviceWorkerKind(BRANDS.clinic, {}), "app");
+    assert.equal(serviceWorkerKind(BRANDS.clinic, { CLINFORMS_PWA: "off" }), "remove");
+    assert.equal(serviceWorkerKind({ ...BRANDS.clinic, installableApp: null }, {}), "remove");
+    assert.equal(serviceWorkerKind(BRANDS.clinforms, {}), "none");
+    assert.equal(serviceWorkerKind(BRANDS.clinforms, { CLINFORMS_PWA: "off" }), "none");
+    for (const host of ["clinforms.co.uk", "localhost:3000", "preview.vercel.app"]) assert.equal(serviceWorkerKind(brandForHost(host), {}), "none", host);
+  });
+  it("switched off, the manifest is gone too (the route builds it from installableAppFor)", () => {
+    assert.equal(webAppManifest({ themeColor: BRANDS.clinic.themeColor, installableApp: installableAppFor(BRANDS.clinic, { CLINFORMS_PWA: "off" }) }), null);
   });
 });
 
@@ -174,8 +201,9 @@ interface FakeRequest {
   mode: string;
   headers: Headers;
 }
-function sandbox() {
+function sandbox(workerSource?: string) {
   const listeners: Record<string, Listener[]> = {};
+  const log: string[] = [];
   const stores = new Map<string, Map<string, Response>>();
   let online = true;
   const network: string[] = [];
@@ -199,18 +227,24 @@ function sandbox() {
     if (path.startsWith("/app")) return new Response("<h1>Megan Hart (fictional) – patient record</h1>", { headers: { "content-type": "text/html", "cache-control": "private, no-store" } });
     const res = new Response(`body of ${path}`, { status: 200 });
     Object.defineProperty(res, "type", { value: "basic" });
+    // A followed redirect (e.g. a build file answered by a redirect to another path): ok, 200, basic – but redirected.
+    if (path.includes("redirected")) Object.defineProperty(res, "redirected", { value: true });
     return res;
   }
   const self = {
     location: { origin: ORIGIN },
     addEventListener: (type: string, fn: Listener) => (listeners[type] ??= []).push(fn),
-    skipWaiting: async () => undefined,
-    clients: { claim: async () => undefined },
+    skipWaiting: async () => void log.push("skipWaiting"),
+    registration: { unregister: async () => (log.push("unregister"), true) },
+    clients: {
+      claim: async () => void log.push("claim"),
+      matchAll: async () => [`${ORIGIN}/app/clinic`, `${ORIGIN}/app/clinic/patients/sim-pat-001`].map((url) => ({ url, navigate: async (to: string) => void log.push(`navigate ${to}`) })),
+    },
   };
   const caches = {
     open: async (name: string) => cacheFor(name),
     keys: async () => Array.from(stores.keys()),
-    delete: async (name: string) => stores.delete(name),
+    delete: async (name: string) => (log.push(`delete ${name}`), stores.delete(name)),
   };
   // A worker resolves relative URLs against its own location; Node's Request does not, so the sandbox's does.
   const SwRequest = class extends Request {
@@ -219,7 +253,7 @@ function sandbox() {
     }
   };
   const context = vm.createContext({ self, caches, fetch: fakeFetch, Response, Request: SwRequest, URL, Headers, Promise, console });
-  const source = serviceWorkerSource({ version: "abc123", app: { name: "ClinDesk", themeColor: "#C4432B", backgroundColor: "#FBF4E8" }, icons: CFG.staticFiles });
+  const source = workerSource ?? serviceWorkerSource({ version: "abc123", app: { name: "ClinDesk", themeColor: "#C4432B", backgroundColor: "#FBF4E8" }, icons: CFG.staticFiles });
   vm.runInContext(source, context);
   const dispatch = async (type: string) => {
     const waits: Promise<unknown>[] = [];
@@ -232,10 +266,20 @@ function sandbox() {
     for (const fn of listeners.fetch ?? []) fn({ request: req, respondWith: (p: Promise<Response>) => (answered = p) });
     return answered ? await answered : null; // null = passthrough (the browser fetches it itself)
   };
-  return { source, stores, network, dispatch, request, setOnline: (v: boolean) => (online = v) };
+  return { source, stores, network, log, listeners, dispatch, request, setOnline: (v: boolean) => (online = v) };
 }
 
 describe("the generated service worker (sandboxed)", () => {
+  it("never keeps a redirected answer (only a direct 200 from the same origin)", async () => {
+    const sw = sandbox();
+    await sw.dispatch("install");
+    const res = await sw.request("GET", "/_next/static/chunks/redirected-1.js", "no-cors");
+    assert.equal(await res!.text(), "body of /_next/static/chunks/redirected-1.js");
+    const stored = Array.from(sw.stores.values()).flatMap((m) => Array.from(m.keys()));
+    assert.ok(!stored.some((u) => u.includes("redirected")), stored.join(", "));
+    await sw.request("GET", "/_next/static/chunks/redirected-1.js", "no-cors");
+    assert.equal(sw.network.filter((u) => u.includes("redirected")).length, 2, "asked the network again");
+  });
   it("install keeps the icons only; activate deletes older ClinDesk caches and nothing else", async () => {
     const sw = sandbox();
     sw.stores.set(`${CACHE_PREFIX}old`, new Map());
@@ -330,5 +374,29 @@ describe("install hint", () => {
       false,
     );
     assert.equal(writeDismissed(null), false);
+  });
+});
+
+describe("the self-removing worker (kill switch, sandboxed)", () => {
+  it("activates at once, deletes the app's caches (only those), unregisters, then reloads the open pages; answers no request", async () => {
+    const sw = sandbox(serviceWorkerKillSource());
+    sw.stores.set(`${CACHE_PREFIX}abc123`, new Map([[`${ORIGIN}/_next/static/x.js`, new Response("x")]]));
+    sw.stores.set(`${CACHE_PREFIX}older`, new Map());
+    sw.stores.set("someone-else", new Map());
+    await sw.dispatch("install");
+    await sw.dispatch("activate");
+    assert.deepEqual(Array.from(sw.stores.keys()), ["someone-else"]);
+    assert.deepEqual(sw.log, [
+      "skipWaiting",
+      "claim",
+      `delete ${CACHE_PREFIX}abc123`,
+      `delete ${CACHE_PREFIX}older`,
+      "unregister",
+      `navigate ${ORIGIN}/app/clinic`,
+      `navigate ${ORIGIN}/app/clinic/patients/sim-pat-001`,
+    ]);
+    assert.equal((sw.listeners.fetch ?? []).length, 0, "no fetch handler");
+    assert.equal(await sw.request("GET", "/app/clinic", "navigate"), null);
+    assert.ok(!/clin\s*forms/i.test(sw.source));
   });
 });

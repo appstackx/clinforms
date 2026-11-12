@@ -16,6 +16,7 @@ import { PMS_NAV } from "@/modules/pms/nav";
 import { pagePermissionFor } from "@/modules/pms/core/page-permissions";
 import { REPORTS_PATH, isReportId, reportAccess } from "@/modules/pms/reporting/catalogue";
 import { currentBrand } from "@/server/brand";
+import { currentInstallableApp } from "@/server/pwa";
 import { activeClinicPackages, notFoundTitle, requireClinicOnItsHost } from "@/server/brand-home";
 import { requireClinicActor } from "@/server/pms/actor";
 import { requireAppContext } from "@/server/auth/session";
@@ -51,7 +52,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const robots = { index: false, follow: false };
   const packages = await activeClinicPackages();
   if (packages && !packages.clinic) return { title: { default: notFoundTitle(), template: notFoundTitle() }, robots };
-  const app = currentBrand().installableApp;
+  const app = currentInstallableApp(); // the host brand's app, unless switched off (CLINFORMS_PWA=off)
   return {
     title: { default: CLINIC_SYSTEM_NAME, template: `%s · ${CLINIC_SYSTEM_NAME}` },
     robots,
@@ -119,7 +120,7 @@ export default async function ClinicSystemLayout({ children }: { children: React
       clinForms={reports ? { href: "/app/studio", label: brand.id === "clinic" ? REPORTS_ADDON_NAME : CLINFORMS_NAME } : null}
       accountHref="/app/clinic/account"
       adminLinks={menu}
-      installableApp={brand.installableApp !== null}
+      installableApp={currentInstallableApp() !== null}
     >
       <BillingBannerBar banner={billing} className="mb-4 rounded-md border" />
       {children}

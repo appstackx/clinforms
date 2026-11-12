@@ -9,7 +9,7 @@
  */
 import * as React from "react";
 import { APP_SCOPE } from "@/lib/pwa/manifest";
-import { SERVICE_WORKER_PATH } from "@/lib/pwa/service-worker";
+import { CACHE_PREFIX, SERVICE_WORKER_PATH } from "@/lib/pwa/service-worker";
 import { installHintFor, readDismissed, writeDismissed, type InstallHint } from "@/lib/pwa/install-hint";
 
 /** Chrome's install prompt event (not in the DOM typings). */
@@ -56,9 +56,15 @@ function isStandalone(): boolean {
   }
 }
 
+/**
+ * Production builds only (`next start`, Vercel): in `next dev` a worker would get in the way of hot reloading. Next
+ * inlines NODE_ENV at build time.
+ */
+const WORKER_ALLOWED = process.env.NODE_ENV === "production";
+
 /** Registers the worker once the page has loaded (never in the way of the first paint). */
 function registerServiceWorker() {
-  if (!("serviceWorker" in navigator) || !window.isSecureContext) return;
+  if (!WORKER_ALLOWED || !("serviceWorker" in navigator) || !window.isSecureContext) return;
   const register = () => {
     navigator.serviceWorker.register(SERVICE_WORKER_PATH, { scope: APP_SCOPE }).catch(() => {
       // No worker = the app still works online; nothing to tell the member.
@@ -66,6 +72,32 @@ function registerServiceWorker() {
   };
   if (document.readyState === "complete") register();
   else window.addEventListener("load", register, { once: true });
+}
+
+/**
+ * The app is off on this host (switched off, or a brand without it): removes a registration of the app's worker left
+ * from before, at once – the server's self-removing worker (the kill switch) does the same on the browser's next update
+ * check; this is the quicker path for a page that is open.
+ */
+function unregisterServiceWorker() {
+  if (!WORKER_ALLOWED || !("serviceWorker" in navigator)) return;
+  navigator.serviceWorker
+    .getRegistrations()
+    .then((regs) =>
+      Promise.all(
+        regs
+          .filter((r) => [r.active, r.waiting, r.installing].some((w) => w && new URL(w.scriptURL).pathname === SERVICE_WORKER_PATH))
+          .map((r) => r.unregister()),
+      ),
+    )
+    .catch(() => {});
+  // And the worker's caches (static build files and icons only – still, nothing of the app is left behind).
+  if (typeof caches !== "undefined") {
+    caches
+      .keys()
+      .then((keys) => Promise.all(keys.filter((k) => k.startsWith(CACHE_PREFIX)).map((k) => caches.delete(k))))
+      .catch(() => {});
+  }
 }
 
 export interface ClinicAppInstall {
@@ -82,7 +114,10 @@ export function useClinicApp(enabled: boolean): ClinicAppInstall {
   const [env, setEnv] = React.useState<{ ua: string; touch: number; standalone: boolean } | null>(null);
 
   React.useEffect(() => {
-    if (!enabled) return;
+    if (!enabled) {
+      unregisterServiceWorker();
+      return;
+    }
     registerServiceWorker();
     setDismissed(readDismissed(storage));
     setEnv({ ua: navigator.userAgent, touch: navigator.maxTouchPoints ?? 0, standalone: isStandalone() });

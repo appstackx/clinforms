@@ -1,7 +1,7 @@
 /**
  * The installable staff app's service worker (12/11/2026, tracker xt05): the routing rules as a PURE function, and the
  * worker's source built around that same function (src/app/clindesk-sw.js/route.ts serves it on the clinic brand's
- * hosts only). Tests: src/lib/pwa/service-worker.test.ts runs the rules table and the generated worker in a sandbox.
+ * hosts only). Tests: src/lib/pwa/pwa.test.ts runs the rules table and the generated workers in a sandbox.
  *
  * The one rule that matters: the worker NEVER stores a page, an API answer or anything else that can carry patient
  * data. It only keeps the app's static files (/_next/static – content-hashed, the same for every clinic – and the app
@@ -131,8 +131,8 @@ async function fromCacheOrNetwork(request) {
   const hit = await cache.match(request);
   if (hit) return hit;
   const response = await fetch(request);
-  // Only a complete, same-origin answer is kept (never an error, a redirect or an opaque answer).
-  if (response.ok && response.status === 200 && response.type === "basic") {
+  // Only a complete, same-origin answer is kept (never an error, a redirect – followed or not – or an opaque answer).
+  if (response.ok && response.status === 200 && response.type === "basic" && !response.redirected) {
     await cache.put(request, response.clone()).catch(() => {});
   }
   return response;
@@ -173,6 +173,35 @@ self.addEventListener("fetch", (event) => {
   if (decision === "static") event.respondWith(fromCacheOrNetwork(request));
   else if (decision === "navigate") event.respondWith(networkOrOffline(request));
   // "passthrough": no respondWith – the browser handles the request exactly as without a worker.
+});
+`;
+}
+
+/**
+ * The self-removing worker (the kill switch – docs/production-architecture.md §9): served at the worker's URL on a host
+ * that once had the app when the app is switched off (CLINFORMS_PWA=off, or the brand's installableApp removed). A
+ * browser checks the worker's URL on every visit inside /app (and at least daily), installs this one in place of the
+ * app's, and on activation it takes over the open pages, deletes every cache the app's worker made, unregisters itself
+ * and reloads those pages from the network. It answers no request (no fetch handler).
+ */
+export function serviceWorkerKillSource(): string {
+  return `/* Removes the installed app's service worker and its caches from this device. */
+"use strict";
+const CACHE_PREFIX = ${JSON.stringify(CACHE_PREFIX)};
+self.addEventListener("install", (event) => {
+  event.waitUntil(self.skipWaiting());
+});
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    (async () => {
+      await self.clients.claim().catch(() => {});
+      const keys = await caches.keys();
+      await Promise.all(keys.filter((k) => k.startsWith(CACHE_PREFIX)).map((k) => caches.delete(k)));
+      await self.registration.unregister();
+      const windows = await self.clients.matchAll({ type: "window" });
+      await Promise.all(windows.map((client) => client.navigate(client.url).catch(() => {})));
+    })(),
+  );
 });
 `;
 }

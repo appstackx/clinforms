@@ -224,7 +224,7 @@ export function AppointmentDrawer({ id, version, can, initialPanel = null, onClo
       aria-describedby={titleId}
       data-appointment-drawer
       tabIndex={-1}
-      className="fixed inset-y-0 right-0 z-40 flex w-full max-w-[400px] flex-col border-l border-border bg-white text-sm shadow-[-12px_0_32px_rgba(15,23,42,0.14)] focus:outline-none"
+      className="fixed inset-y-0 right-0 z-40 flex w-full max-w-[400px] flex-col border-l border-border bg-white pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] text-sm shadow-[-12px_0_32px_rgba(15,23,42,0.14)] focus:outline-none"
     >
       <div className="flex items-start gap-3 border-b border-border px-5 py-4">
         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
