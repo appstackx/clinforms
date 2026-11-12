@@ -26,6 +26,7 @@ import { getAnonymisation } from "../../repos/pms/records/anonymise";
 import {
   createLibraryExercise,
   createProgramme,
+  draftReplacing,
   endProgramme,
   getExerciseSettings,
   getLibraryExercise,
@@ -264,6 +265,7 @@ export async function saveProgrammeFor(actor: RecordsActor, patientId: string, p
     if (!(await onOrNotFound(actor, env))) return notFound();
     const found = await programmeOfPatient(actor, patientId, programmeId);
     if (!found) return notFound();
+    if (found.patient.status !== "active") return fail("invalid", "Programmes are only changed for active patients.");
     const saved = await saveProgrammeDraft(actor.repo(), actor.tenantId, found.programme.id, expectedRev, input, actor.actor);
     return saved.ok ? ok({ rev: saved.rev }) : saveFailure(saved);
   });
@@ -310,6 +312,11 @@ export async function newVersionFor(actor: RecordsActor, patientId: string, prog
     if (patient.status !== "active") return fail("invalid", "Programmes are only started for active patients.");
     if (programme.status === "draft") return fail("invalid", "This programme is still a draft: change it directly.");
     if (programme.title === null) return fail("invalid", "This programme was anonymised.");
+    // One new version at a time (review fix): a draft already replacing this programme is opened instead of a second.
+    if (programme.status === "shared") {
+      const existing = await draftReplacing(actor.repo(), actor.tenantId, programme.id);
+      if (existing) return ok({ id: existing });
+    }
     const copy = await createProgramme(
       actor.repo(),
       actor.tenantId,
@@ -388,6 +395,9 @@ export interface PortalProgrammeRow {
 /** The patient's SHARED programmes for the portal's home ([] when off). */
 export async function portalProgrammesFor(ctx: RepoContext, clinic: PortalClinicLike, patientId: string, env: Env = process.env): Promise<PortalProgrammeRow[]> {
   if (!(await portalExercisesOn(ctx, clinic, env))) return [];
+  // An archived or deceased patient's programmes are not offered (the programme page refuses them too).
+  const patient = await getPatient(ctx, clinic.tenantId, patientId);
+  if (!patient || patient.status !== "active") return [];
   const day = today(ctx);
   const [list, checkins] = await Promise.all([listProgrammesForPatient(ctx, clinic.tenantId, patientId, { status: "shared" }), listCheckinsForPatient(ctx, clinic.tenantId, patientId, day)]);
   return list.map((p) => ({ id: p.id, title: p.title ?? "Exercise programme", sharedAt: p.sharedAt, itemCount: p.itemCount, checkedInToday: checkins.some((c) => c.programmeId === p.id && c.doneOn === day) }));

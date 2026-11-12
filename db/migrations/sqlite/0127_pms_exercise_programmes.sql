@@ -8,6 +8,8 @@
 --     item_count plain (lists). case_id and replaces_id are plain ids checked by the app (no foreign key, so the
 --     offboarding's delete order is unchanged). shared_by_name = who prescribed it, as printed.
 --     patient_viewed_at = the first time the patient opened it in the portal.
+--   At most ONE shared successor per programme (review fix): a partial unique index on replaces_id over the rows
+--     ever shared - two new versions of the same programme can never both be shared (also under concurrent shares).
 --   Hangs off pms_patients (ON DELETE CASCADE): offboarding names no new table. Nothing else deletes a patient.
 -- Kept in step with supabase/migrations/20261024000127_pms_exercise_programmes.sql (db/parity.test.ts).
 -- Idempotent. No BEGIN/COMMIT. Keep semicolons out of comments.
@@ -41,3 +43,4 @@ CREATE TABLE IF NOT EXISTS pms_exercise_programmes (
   FOREIGN KEY (tenant_id, patient_id) REFERENCES pms_patients (tenant_id, id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS pms_exercise_programmes_patient ON pms_exercise_programmes (tenant_id, patient_id, status);
+CREATE UNIQUE INDEX IF NOT EXISTS pms_exercise_programmes_one_successor ON pms_exercise_programmes (tenant_id, replaces_id) WHERE replaces_id IS NOT NULL AND shared_at IS NOT NULL;

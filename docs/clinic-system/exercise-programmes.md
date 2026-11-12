@@ -87,3 +87,13 @@ are recorded like opening a clinical note.
 4. Picture/video upload instead of links (A4)?
 5. The PDF/portal safety line (A12) – keep, change or remove?
 6. Reminder emails (A10) – wanted for the pilot?
+
+## 7. Review fixes (12/11/2026)
+
+| # | Finding | Fix | Regression test (`testing/exercises-suite.ts`, all four databases) |
+|---|---|---|---|
+| 1 | Two new versions of one shared programme could both end up shared (two "Make a new version" clicks, or concurrent shares) | "Make a new version" opens the draft that already replaces the programme instead of making a second; sharing refuses when another version of the same programme was already shared ("Another new version … has already been shared"); and the database guarantees it: partial unique index `pms_exercise_programmes_one_successor` on `(tenant_id, replaces_id)` where `replaces_id` and `shared_at` are set (added to the **unapplied** 0127, both twins) | "review fix 1" |
+| 2 | A check-in read the status, then wrote separately – it could land after End or anonymisation | The insert is `INSERT … SELECT … WHERE EXISTS (programme shared, this patient's, not anonymised)` and the update carries the same `EXISTS`; their audit rows are conditional on the written row; 0 rows = "This programme is no longer available." | "review fix 2" |
+| 3 | The subject-access copy silently capped 200 programmes / 400 check-ins | The SAR path reads every programme and every check-in (`all: true`); screens keep their caps | the SAR test counts all 6 programmes |
+| 4 | Archived/deceased patients: the portal list linked to pages that refuse; drafts could still be saved | The portal list is empty for a patient who is not active; saving a draft needs an active patient (sharing and starting already did). Archiving does not end programmes: they stay on the record, invisible to the patient, and come back if the patient is made active again | "review fix 4" |
+| 5 | Anonymisation did not move the revision | Programmes and check-ins get `rev + 1` in the anonymisation batch | the anonymisation test |

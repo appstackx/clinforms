@@ -32,6 +32,8 @@ create table if not exists public.pms_exercise_programmes (
   foreign key (tenant_id, patient_id) references public.pms_patients (tenant_id, id) on delete cascade
 );
 create index if not exists pms_exercise_programmes_patient on public.pms_exercise_programmes (tenant_id, patient_id, status);
+-- At most one shared successor per programme (two new versions of one programme never both shared).
+create unique index if not exists pms_exercise_programmes_one_successor on public.pms_exercise_programmes (tenant_id, replaces_id) where replaces_id is not null and shared_at is not null;
 
 alter table public.pms_exercise_programmes enable row level security;
 

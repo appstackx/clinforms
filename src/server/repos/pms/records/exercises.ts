@@ -37,6 +37,7 @@ import { runBatch, type BatchQuery } from "../../../db/batch";
 import { auditInsertWhenExists } from "../../audit";
 import { RepoInputError, assertActor, assertId, assertTenantId, decryptField, encryptField, nowIso, num, parseInput, pmsAuditQuery, pmsId, translateDbError, writeWithAudit, type DbContext, type RepoContext } from "../context";
 import { updateWithAudit } from "./write";
+import { sql } from "kysely";
 
 const S = "pms_exercise_settings";
 const L = "pms_exercises";
@@ -285,12 +286,13 @@ function parseItems(json: string | null): ProgrammeItem[] {
 }
 
 /** One patient's programmes (newest first) – titles decrypted, the exercises not. */
-export async function listProgrammesForPatient(ctx: RepoContext, tenantId: string, patientId: string, options: { status?: ProgrammeStatus } = {}): Promise<ProgrammeSummary[]> {
+export async function listProgrammesForPatient(ctx: RepoContext, tenantId: string, patientId: string, options: { status?: ProgrammeStatus; all?: boolean } = {}): Promise<ProgrammeSummary[]> {
   assertTenantId(tenantId);
   if (!(await exerciseTablesInstalled(ctx, tenantId))) return [];
   let q = ctx.db.selectFrom(PR).select(SUMMARY_COLUMNS).where("tenant_id", "=", tenantId).where("patient_id", "=", patientId);
   if (options.status) q = q.where("status", "=", options.status);
-  const rows = await q.orderBy("id", "desc").limit(200).execute();
+  // Screens show the latest 200; the subject-access copy (`all`) has no cap – one patient's rows.
+  const rows = await (options.all ? q.orderBy("id", "desc") : q.orderBy("id", "desc").limit(200)).execute();
   return rows.map((r) => toSummary(ctx, r as SummaryRow));
 }
 
@@ -422,6 +424,15 @@ export async function saveProgrammeDraft(ctx: RepoContext, tenantId: string, id:
   return failureOf(ctx, tenantId, id, ["draft"]);
 }
 
+export const NEWER_SHARED = "Another new version of this programme has already been shared. Open the programme the patient has now and make a new version of that one.";
+
+/** A draft that already replaces `replacesId` (one new version at a time), or null. */
+export async function draftReplacing(ctx: DbContext, tenantId: string, replacesId: string): Promise<string | null> {
+  assertTenantId(tenantId);
+  const row = await ctx.db.selectFrom(PR).select("id").where("tenant_id", "=", tenantId).where("replaces_id", "=", replacesId).where("status", "=", "draft").orderBy("id").limit(1).executeTakeFirst();
+  return row?.id ?? null;
+}
+
 /**
  * Shares a draft with the patient (portal + printable) and locks it. A new version ends the programme it replaces
  * (if that one is still shared) in the SAME batch, so the patient never sees both.
@@ -436,6 +447,10 @@ export async function shareProgramme(ctx: RepoContext, tenantId: string, id: str
   if (row.status !== "draft") return failureOf(ctx, tenantId, id, ["draft"]);
   if (num(row.item_count) < 1) throw new RepoInputError("Add at least one exercise before sharing.");
   await patientWritable(ctx, tenantId, row.patient_id);
+  if (row.replaces_id) {
+    const sibling = await ctx.db.selectFrom(PR).select("id").where("tenant_id", "=", tenantId).where("replaces_id", "=", row.replaces_id).where("shared_at", "is not", null).where("id", "!=", id).executeTakeFirst();
+    if (sibling) throw new RepoInputError(NEWER_SHARED);
+  }
   const at = nowIso(ctx);
   const name = String(prescriber.name ?? "").replace(/\s+/g, " ").trim().slice(0, 200) || null;
   const queries: BatchQuery[] = [
@@ -469,7 +484,8 @@ export async function shareProgramme(ctx: RepoContext, tenantId: string, id: str
   try {
     results = await runBatch(ctx.db, queries);
   } catch (err) {
-    throw translateDbError(err);
+    // pms_exercise_programmes_one_successor: another new version of the same programme was shared first.
+    throw translateDbError(err, { unique: NEWER_SHARED });
   }
   if (Number((results[0] as { numAffectedRows?: bigint | number } | undefined)?.numAffectedRows ?? 0) > 0) return { ok: true, rev: expectedRev + 1, updatedAt: at };
   return failureOf(ctx, tenantId, id, ["draft"]);
@@ -546,10 +562,12 @@ function toCheckin(ctx: RepoContext, r: CkRow, decrypt: boolean): ExerciseChecki
 }
 
 /** A programme's check-ins, newest first (comments decrypted: one programme, opened by a clinician or its patient). */
-export async function listCheckins(ctx: RepoContext, tenantId: string, programmeId: string, options: { limit?: number } = {}): Promise<ExerciseCheckin[]> {
+export async function listCheckins(ctx: RepoContext, tenantId: string, programmeId: string, options: { limit?: number; all?: boolean } = {}): Promise<ExerciseCheckin[]> {
   assertTenantId(tenantId);
   const limit = Math.min(Math.max(1, Math.floor(options.limit ?? 120)), 400);
-  const rows = await ctx.db.selectFrom(CK).select(CK_COLUMNS).where("tenant_id", "=", tenantId).where("programme_id", "=", programmeId).orderBy("done_on", "desc").limit(limit).execute();
+  const q = ctx.db.selectFrom(CK).select(CK_COLUMNS).where("tenant_id", "=", tenantId).where("programme_id", "=", programmeId).orderBy("done_on", "desc");
+  // `all`: the subject-access copy – every check-in (at most one a day per programme), no cap.
+  const rows = await (options.all ? q : q.limit(limit)).execute();
   return rows.map((r) => toCheckin(ctx, r as CkRow, true));
 }
 
@@ -572,6 +590,11 @@ export async function listCheckinsForPatient(ctx: RepoContext, tenantId: string,
 /**
  * The patient's check-in for `doneOn` (their UK today) on a SHARED programme of theirs: a new row, or that day's row
  * changed (revision-checked). Audited against the programme (ids only – never the pain score or the comment).
+ *
+ * Both writes are conditional IN THE DATABASE on the programme still being shared and this patient's (review fix
+ * 12/11/2026): an INSERT … SELECT … WHERE EXISTS and an UPDATE … WHERE EXISTS, with their audit rows conditional on
+ * the written row. A programme ended or anonymised between the read and the write takes nothing ("no longer
+ * available") – no comment can land on an anonymised record.
  */
 export async function saveCheckin(ctx: RepoContext, tenantId: string, programmeId: string, patientId: string, doneOn: string, input: CheckinInput, actor: PmsActor): Promise<ExerciseCheckin> {
   assertTenantId(tenantId);
@@ -580,40 +603,58 @@ export async function saveCheckin(ctx: RepoContext, tenantId: string, programmeI
   const who = assertActor(actor);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(doneOn)) throw new RepoInputError("A check-in needs its date.");
   const d = parseInput(CheckinInputSchema, input, "Check-in");
+  const GONE = "This programme is no longer available.";
   const programme = await ctx.db.selectFrom(PR).select(["status"]).where("tenant_id", "=", tenantId).where("id", "=", programmeId).where("patient_id", "=", patientId).executeTakeFirst();
-  if (!programme) throw new RepoInputError("This programme is no longer available.");
+  if (!programme) throw new RepoInputError(GONE);
   if (programme.status !== "shared") throw new RepoInputError("This programme has ended, so it no longer takes check-ins.");
+  const stillShared = () =>
+    ctx.db
+      .selectFrom(PR)
+      .select("id")
+      .where("tenant_id", "=", tenantId)
+      .where("id", "=", programmeId)
+      .where("patient_id", "=", patientId)
+      .where("status", "=", "shared")
+      .where("anonymised_at", "is", null);
   const at = nowIso(ctx);
+  const completed = d.completed ? 1 : 0;
   for (let attempt = 0; attempt < 2; attempt++) {
     const existing = await ctx.db.selectFrom(CK).select(["id", "rev"]).where("tenant_id", "=", tenantId).where("programme_id", "=", programmeId).where("done_on", "=", doneOn).executeTakeFirst();
     if (!existing) {
       const id = pmsId(P.exerciseCheckin, ctx);
+      const comment = encryptField(ctx, tenantId, CK, "comment_enc", id, d.comment);
+      const written = ctx.db.selectFrom(CK).select("id").where("tenant_id", "=", tenantId).where("id", "=", id);
+      let results;
       try {
-        await writeWithAudit(
-          ctx,
-          [
-            ctx.db.insertInto(CK).values({
-              tenant_id: tenantId,
-              id,
-              rev: 1,
-              programme_id: programmeId,
-              patient_id: patientId,
-              done_on: doneOn,
-              completed: d.completed ? 1 : 0,
-              pain_score: d.painScore,
-              comment_enc: encryptField(ctx, tenantId, CK, "comment_enc", id, d.comment),
-              anonymised_at: null,
-              created_at: at,
-              updated_at: at,
-            }),
-            pmsAuditQuery(ctx, tenantId, who, { action: "pms.exercise_checkin.record", targetType: "pms_exercise_programme", targetId: programmeId, detail: { checkinId: id } }),
-          ],
-          { unique: "taken", foreignKey: "This programme is no longer available." },
-        );
+        results = await runBatch(ctx.db, [
+          ctx.db
+            .insertInto(CK)
+            .columns(["tenant_id", "id", "rev", "programme_id", "patient_id", "done_on", "completed", "pain_score", "comment_enc", "created_at", "updated_at"])
+            .expression(
+              ctx.db
+                .selectNoFrom((eb) => [
+                  eb.val(tenantId).as("tenant_id"),
+                  eb.val(id).as("id"),
+                  sql<number>`cast(${1} as integer)`.as("rev"),
+                  eb.val(programmeId).as("programme_id"),
+                  eb.val(patientId).as("patient_id"),
+                  eb.val(doneOn).as("done_on"),
+                  sql<number>`cast(${completed} as integer)`.as("completed"),
+                  sql<number | null>`cast(${d.painScore} as integer)`.as("pain_score"),
+                  eb.val(comment).as("comment_enc"),
+                  eb.val(at).as("created_at"),
+                  eb.val(at).as("updated_at"),
+                ])
+                .where((eb) => eb.exists(stillShared())),
+            ),
+          auditInsertWhenExists(ctx, tenantId, { action: "pms.exercise_checkin.record", targetType: "pms_exercise_programme", targetId: programmeId, detail: { checkinId: id }, userId: who.userId, sessionId: who.sessionId }, written).query,
+        ]);
       } catch (err) {
-        if (err instanceof RepoInputError && err.message === "taken") continue;
-        throw err;
+        const e = translateDbError(err, { unique: "taken", foreignKey: GONE });
+        if (e instanceof RepoInputError && e.message === "taken") continue;
+        throw e;
       }
+      if (Number((results[0] as { numAffectedRows?: bigint | number } | undefined)?.numAffectedRows ?? 0) === 0) throw new RepoInputError(GONE);
       return (await getCheckin(ctx, tenantId, id)) as ExerciseCheckin;
     }
     const rev = num(existing.rev);
@@ -624,15 +665,17 @@ export async function saveCheckin(ctx: RepoContext, tenantId: string, programmeI
       who,
       ctx.db
         .updateTable(CK)
-        .set({ completed: d.completed ? 1 : 0, pain_score: d.painScore, comment_enc: comment, rev: rev + 1, updated_at: at })
+        .set({ completed, pain_score: d.painScore, comment_enc: comment, rev: rev + 1, updated_at: at })
         .where("tenant_id", "=", tenantId)
         .where("id", "=", existing.id)
         .where("patient_id", "=", patientId)
-        .where("rev", "=", rev),
+        .where("rev", "=", rev)
+        .where((eb) => eb.exists(stillShared())),
       { action: "pms.exercise_checkin.record", targetType: "pms_exercise_programme", targetId: programmeId, detail: { checkinId: existing.id, changed: true } },
       ctx.db.selectFrom(CK).select("id").where("tenant_id", "=", tenantId).where("id", "=", existing.id).where("rev", "=", rev + 1).where("updated_at", "=", at),
     );
     if (changed) return (await getCheckin(ctx, tenantId, existing.id)) as ExerciseCheckin;
+    if (!(await stillShared().executeTakeFirst())) throw new RepoInputError(GONE);
   }
   throw new RepoInputError("Your check-in changed in the meantime. Please try again.");
 }
@@ -652,20 +695,24 @@ export function anonymiseExerciseQueries(ctx: DbContext, tenantId: string, patie
   return [
     ctx.db
       .updateTable(PR)
-      .set((eb) => ({ title_enc: null, notes_enc: null, items_enc: null, status: "ended", ended_at: eb.fn.coalesce("ended_at", eb.val(at)), anonymised_at: at, updated_at: at }))
+      .set((eb) => ({ title_enc: null, notes_enc: null, items_enc: null, status: "ended", ended_at: eb.fn.coalesce("ended_at", eb.val(at)), rev: eb("rev", "+", 1), anonymised_at: at, updated_at: at }))
       .where("tenant_id", "=", tenantId)
       .where("patient_id", "=", patientId),
-    ctx.db.updateTable(CK).set({ comment_enc: null, anonymised_at: at, updated_at: at }).where("tenant_id", "=", tenantId).where("patient_id", "=", patientId),
+    ctx.db
+      .updateTable(CK)
+      .set((eb) => ({ comment_enc: null, rev: eb("rev", "+", 1), anonymised_at: at, updated_at: at }))
+      .where("tenant_id", "=", tenantId)
+      .where("patient_id", "=", patientId),
   ];
 }
 
 /** A patient's programmes with their check-ins, decrypted (the subject-access copy). [] before the migrations. */
 export async function exerciseDataForPatient(ctx: RepoContext, tenantId: string, patientId: string): Promise<{ programme: ExerciseProgramme; checkins: ExerciseCheckin[] }[]> {
-  const list = await listProgrammesForPatient(ctx, tenantId, patientId);
+  const list = await listProgrammesForPatient(ctx, tenantId, patientId, { all: true });
   const out: { programme: ExerciseProgramme; checkins: ExerciseCheckin[] }[] = [];
   for (const s of list.slice().reverse()) {
     const programme = await getProgramme(ctx, tenantId, s.id);
-    if (programme) out.push({ programme, checkins: await listCheckins(ctx, tenantId, s.id, { limit: 400 }) });
+    if (programme) out.push({ programme, checkins: await listCheckins(ctx, tenantId, s.id, { all: true }) });
   }
   return out;
 }

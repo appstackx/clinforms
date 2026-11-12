@@ -20,7 +20,7 @@ import { setPmsDemoFlag } from "../../../repos/pms/settings";
 import { updateBookingSettings, getBookingSettings } from "../../../repos/pms/portal/settings";
 import { listPatientHistory } from "../../../repos/pms/records/history";
 import { collectSubjectAccess } from "../../../repos/pms/records/subject-access";
-import { anonymiseExerciseQueries, exerciseTablesInstalled, getProgramme } from "../../../repos/pms/records/exercises";
+import { NEWER_SHARED, anonymiseExerciseQueries, createProgramme, exerciseTablesInstalled, getProgramme, saveCheckin, shareProgramme } from "../../../repos/pms/records/exercises";
 import { unscopedStatements, type QueryLog } from "../../../repos/pms/testing/guarded-db";
 import { countPmsRows, deletePmsQueries } from "../../offboard";
 import { testActor } from "../access";
@@ -234,21 +234,79 @@ export function defineExerciseSuite(label: string, factory: () => Promise<Exerci
       id.prog2 = v2;
     });
 
+    it("review fix 1: one new version at a time; two versions of the same programme can never both be shared", async () => {
+      // v2 (id.prog2) is shared and replaced id.prog. Two "Make a new version" clicks open ONE draft.
+      const a = ok(await newVersionFor(clinician(), id.patient, id.prog2, ON)).id;
+      const b = ok(await newVersionFor(clinician(), id.patient, id.prog2, ON)).id;
+      assert.equal(a, b, "the second click opens the same draft");
+      // A second sibling made anyway (e.g. two members at once): the first share wins, the second is refused.
+      const sibling = await createProgramme(ctx, A, id.patient, { title: "Sibling (fictional)", items: [items[1]] }, SEED, { replacesId: id.prog2 });
+      const first = (await getProgramme(ctx, A, a))!;
+      ok(await shareProgrammeFor(clinician(), id.patient, a, first.rev, ON));
+      const second = await shareProgrammeFor(clinician(), id.patient, sibling.id, sibling.rev, ON);
+      assert.ok(!second.ok && second.error === NEWER_SHARED, JSON.stringify(second));
+      assert.equal((await getProgramme(ctx, A, sibling.id))!.status, "draft", "nothing shared");
+      // The database refuses it too, even past the service's check (concurrent shares).
+      await assert.rejects(shareProgramme(ctx, A, sibling.id, sibling.rev, { name: "x" }, SEED), (e: Error) => e.message === NEWER_SHARED);
+      await assert.rejects(
+        ctx.db.updateTable("pms_exercise_programmes").set({ shared_at: "2026-11-12T10:00:00.000Z", status: "shared" }).where("tenant_id", "=", A).where("id", "=", sibling.id).execute(),
+        "the partial unique index refuses a second shared successor",
+      );
+      assert.deepEqual((await portalProgrammesFor(ctx, clinic(), id.patient, ON)).map((r) => r.id), [a], "the patient sees one");
+      assert.equal((await getProgramme(ctx, A, id.prog2))!.status, "ended");
+      id.prog3 = a;
+    });
+
+    it("review fix 2: a check-in never lands on a programme ended or anonymised after it was read (checked in the write)", async () => {
+      // The pre-read sees "shared"; the row then changes underneath (anonymised_at set, status left) – both writes refuse.
+      assert.ok((await portalCheckinFor(ctx, clinic(), viewer(id.patient), id.prog3, { completed: true, comment: "First (fictional)" }, ON)).ok);
+      await ctx.db.updateTable("pms_exercise_programmes").set({ anonymised_at: "2026-11-12T10:30:00.000Z" }).where("tenant_id", "=", A).where("id", "=", id.prog3).execute();
+      await assert.rejects(saveCheckin(ctx, A, id.prog3, id.patient, "2026-11-12", { completed: false, comment: "Changed (fictional)" }, viewer(id.patient).actor), /no longer available/);
+      await assert.rejects(saveCheckin(ctx, A, id.prog3, id.patient, "2026-11-13", { completed: true, comment: "New day (fictional)" }, viewer(id.patient).actor), /no longer available/);
+      const rows = await ctx.db.selectFrom("pms_exercise_checkins").select(["done_on", "comment_enc"]).where("tenant_id", "=", A).where("programme_id", "=", id.prog3).execute();
+      assert.equal(rows.length, 1, "no new row");
+      const kept = (await ctx.db.selectFrom("pms_exercise_checkins").select("id").where("tenant_id", "=", A).where("programme_id", "=", id.prog3).executeTakeFirstOrThrow()).id;
+      const audits = (await listAudit(ctx, A, { limit: 500 })).filter((e) => e.action === "pms.exercise_checkin.record" && e.targetId === id.prog3);
+      assert.equal(audits.length, 1, "no audit row for a refused write");
+      assert.ok(kept);
+      await ctx.db.updateTable("pms_exercise_programmes").set({ anonymised_at: null }).where("tenant_id", "=", A).where("id", "=", id.prog3).execute();
+    });
+
+    it("review fix 4: an archived patient – nothing in the portal, drafts not changed; back to active, back again", async () => {
+      const draft = ok(await createProgrammeFor(clinician(), id.patient, { title: "Draft (fictional)", items: [] }, ON)).id;
+      await ctx.db.updateTable("pms_patients").set({ status: "archived" }).where("tenant_id", "=", A).where("id", "=", id.patient).execute();
+      try {
+        assert.deepEqual(await portalProgrammesFor(ctx, clinic(), id.patient, ON), []);
+        assert.equal(await portalProgrammeFor(ctx, clinic(), viewer(id.patient), id.prog3, ON), null);
+        const r = await saveProgrammeFor(clinician(), id.patient, draft, 1, { title: "x", items: [] }, ON);
+        assert.ok(!r.ok && /active/.test(r.error), JSON.stringify(r));
+      } finally {
+        await ctx.db.updateTable("pms_patients").set({ status: "active" }).where("tenant_id", "=", A).where("id", "=", id.patient).execute();
+      }
+      assert.equal((await portalProgrammesFor(ctx, clinic(), id.patient, ON)).length, 1);
+      ok(await endProgrammeFor(clinician(), id.patient, draft, 1, ON));
+    });
+
     it("the clinic switch off hides everything again (data kept); subject access includes it either way", async () => {
       ok(await setExercisesEnabledFor(owner(), false, ON));
       assert.equal((await programmesFor(clinician(), id.patient, ON)).ok, false);
       assert.deepEqual(await portalProgrammesFor(ctx, clinic(), id.patient, ON), []);
       const data = (await collectSubjectAccess(ctx, A, id.patient))!;
-      assert.equal(data.exercises.length, 3);
+      assert.equal(data.exercises.length, 6, "every programme, uncapped");
       const section = subjectAccessSections(data, []).find((s) => s.id === "exercises")!;
       assert.ok(JSON.stringify(section).includes("Did them in the evening (fictional)"));
       ok(await setExercisesEnabledFor(owner(), true, ON));
     });
 
     it("anonymisation clears the text (kept: dates and statuses)", async () => {
+      const revBefore = (await getProgramme(ctx, A, id.prog2))!.rev;
+      const ckBefore = await ctx.db.selectFrom("pms_exercise_checkins").select(["id", "rev"]).where("tenant_id", "=", A).execute();
       await runBatch(ctx.db, anonymiseExerciseQueries(ctx, A, id.patient, "2026-11-12T11:00:00.000Z"));
       const p = (await getProgramme(ctx, A, id.prog2))!;
       assert.deepEqual([p.title, p.notes, p.items.length, p.status], [null, null, 0, "ended"]);
+      assert.equal(p.rev, revBefore + 1, "review fix 5: the revision moves on (a stale form cannot overwrite)");
+      const ckAfter = new Map((await ctx.db.selectFrom("pms_exercise_checkins").select(["id", "rev"]).where("tenant_id", "=", A).execute()).map((r) => [r.id, Number(r.rev)]));
+      for (const c of ckBefore) assert.equal(ckAfter.get(c.id), Number(c.rev) + 1);
       const ck = await ctx.db.selectFrom("pms_exercise_checkins").select(["comment_enc", "anonymised_at"]).where("tenant_id", "=", A).execute();
       assert.ok(ck.every((c) => c.comment_enc === null && c.anonymised_at));
     });
