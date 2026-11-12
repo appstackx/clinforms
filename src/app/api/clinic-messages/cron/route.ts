@@ -16,6 +16,7 @@ import { handleCommsCron } from "@/server/pms/comms/cron";
 import { dispatchDepsFromEnv } from "@/server/pms/comms/dispatch";
 import { appointmentStatuses } from "@/server/pms/diary/message-sync";
 import { pmsNow } from "@/modules/pms/core/clock";
+import { bulkEmailSwitchOn } from "@/modules/pms/comms/campaigns";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,5 +27,6 @@ export async function GET(req: Request): Promise<Response> {
     secret: process.env.CRON_SECRET,
     ctx: () => ({ db: getDb(), cipher: getDataCipher(), now: pmsNow }),
     dispatch: () => dispatchDepsFromEnv(process.env, appointmentStatuses),
+    bulkEmail: bulkEmailSwitchOn(process.env),
   });
 }

@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { PatientMessages } from "@/components/pms/comms/patient-messages";
 import { requireClinicActor } from "@/server/pms/actor";
 import { patientMessagesFor, sendFormFor } from "@/server/pms/comms/views";
+import { MarketingConsentPanel } from "@/components/pms/comms/campaigns/marketing-consent";
+import { bulkEmailAvailable, marketingConsentFor } from "@/server/pms/comms/campaigns/service";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Messages" };
@@ -13,7 +15,17 @@ export const metadata: Metadata = { title: "Messages" };
  */
 export default async function PatientMessagesPage({ params, searchParams }: { params: { patientId: string }; searchParams: { send?: string } }) {
   const actor = await requireClinicActor({ permission: "messages.send" });
-  const [r, send] = await Promise.all([patientMessagesFor(actor, params.patientId), sendFormFor(actor, params.patientId)]);
+  const [r, send, consent] = await Promise.all([
+    patientMessagesFor(actor, params.patientId),
+    sendFormFor(actor, params.patientId),
+    // Bulk email (CLINFORMS_BULK_EMAIL=on only): the marketing-email consent with when, how and when withdrawn.
+    bulkEmailAvailable() ? marketingConsentFor(actor, params.patientId) : Promise.resolve(null),
+  ]);
   if (!r.ok) return <p role="alert">{r.error}</p>;
-  return <PatientMessages view={r.value} send={send.ok ? send.value : null} openSend={searchParams.send === "1"} />;
+  return (
+    <div className="flex flex-col gap-4">
+      {consent && consent.ok ? <MarketingConsentPanel view={consent.value} /> : null}
+      <PatientMessages view={r.value} send={send.ok ? send.value : null} openSend={searchParams.send === "1"} />
+    </div>
+  );
 }

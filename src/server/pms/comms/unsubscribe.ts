@@ -56,6 +56,19 @@ function page(status: number, title: string, body: string): Response {
 }
 
 const WHAT: Record<StopLink["purpose"], string> = { service: "appointment emails", marketing: "news and offers by email" };
+/** A service announcement's link (bulk email, 0146) stops the same emails – named for what the patient just read. */
+const ANNOUNCE_WHAT = "reminder and announcement emails";
+const what = (link: StopLink) => (link.announce && link.purpose === "service" ? ANNOUNCE_WHAT : WHAT[link.purpose]);
+
+/**
+ * The message the link came in (bulk email links carry it), when it is that patient's: the opt-out is then recorded
+ * against it (a campaign's unsubscribe count). Anything else – no id, another patient's, gone – records none.
+ */
+async function messageOfLink(ctx: RepoContext, link: StopLink): Promise<string | null> {
+  if (!link.messageId) return null;
+  const row = await ctx.db.selectFrom("pms_messages").select("id").where("tenant_id", "=", link.tenantId).where("id", "=", link.messageId).where("patient_id", "=", link.patientId).executeTakeFirst();
+  return row?.id ?? null;
+}
 
 async function clinicName(deps: UnsubscribeDeps, tenantId: string): Promise<string> {
   try {
@@ -79,7 +92,7 @@ export async function handleUnsubscribe(req: Request, deps: UnsubscribeDeps): Pr
     return page(
       200,
       "Stop these emails",
-      `<h1>Stop ${WHAT[link.purpose]} from ${name}?</h1><p>You will no longer receive ${WHAT[link.purpose]} from ${name}. You can ask the clinic to start them again at any time.</p><form method="post" action="${escapeHtml(action)}"><input type="hidden" name="confirm" value="1"><button type="submit">Stop these emails</button></form>`,
+      `<h1>Stop ${what(link)} from ${name}?</h1><p>You will no longer receive ${what(link)} from ${name}. You can ask the clinic to start them again at any time.</p><form method="post" action="${escapeHtml(action)}"><input type="hidden" name="confirm" value="1"><button type="submit">Stop these emails</button></form>`,
     );
   }
   if (req.method !== "POST") return page(405, "Not allowed", "<h1>Not allowed</h1>");
@@ -91,7 +104,8 @@ export async function handleUnsubscribe(req: Request, deps: UnsubscribeDeps): Pr
     const ctx = deps.ctx();
     const hit = await hitRateLimit(ctx, `comms-stop:${link.tenantId}:${link.patientId}`.slice(0, 200), 3_600_000);
     if (hit.count > 20) return page(429, "Please try later", "<h1>Please try again later</h1>");
-    await changeConsent(ctx, link.tenantId, { patientId: link.patientId, channel: link.channel, purpose: link.purpose, value: false, source: "email_link" }, SYSTEM_ACTOR);
+    const messageId = await messageOfLink(ctx, link);
+    await changeConsent(ctx, link.tenantId, { patientId: link.patientId, channel: link.channel, purpose: link.purpose, value: false, source: "email_link", ...(messageId ? { messageId } : {}) }, SYSTEM_ACTOR);
   } catch (err) {
     // A record that no longer exists answers the same as one that does.
     if (!(err instanceof RepoInputError)) {
@@ -100,5 +114,5 @@ export async function handleUnsubscribe(req: Request, deps: UnsubscribeDeps): Pr
     }
   }
   if (oneClick) return new Response("Unsubscribed.", { status: 200, headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" } });
-  return page(200, "Emails stopped", `<h1>Done</h1><p>You will no longer receive ${WHAT[link.purpose]} from ${name}.</p>`);
+  return page(200, "Emails stopped", `<h1>Done</h1><p>You will no longer receive ${what(link)} from ${name}.</p>`);
 }

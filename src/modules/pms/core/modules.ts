@@ -23,7 +23,8 @@ export interface PmsModuleInfo {
    * module exactly as its own range is. Numbered in the order the follow-ups were built. M10 performance (0210–0219,
    * handover §20.4, indexes only): diary 0210, records 0211, billing 0212, foundation 0213. Healthcode e-billing
    * groundwork (11/2026, docs/clinic-system/healthcode.md): billing 0220–0229. File store (B07): records 0230.
-   * Courses, gift cards and products (PK, 11/2026): billing 0231–0239.
+   * Courses, gift cards and products (PK, 11/2026): billing 0231–0239. Bulk email to patient groups (xt02, 11/2026):
+   * comms 0146 (inside comms' own range – reserved here so no other comms branch takes it; 0147–0149 stay free).
    */
   extra?: readonly (readonly [number, number])[];
 }

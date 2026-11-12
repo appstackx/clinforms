@@ -4,7 +4,7 @@
  * TABLES_IN_FK_ORDER and PRIMARY_KEYS, so the parity test, the D1 → Postgres copy and offboarding see every table.
  */
 import { BILLING_CASCADE_DELETED_TABLES, BILLING_PRIMARY_KEYS, BILLING_TABLES, BILLING_TENANT_TABLES, BILLING_TIMESTAMP_COLUMNS, type BillingTables } from "./billing";
-import { COMMS_PRIMARY_KEYS, COMMS_TABLES, COMMS_TENANT_TABLES, COMMS_TIMESTAMP_COLUMNS, type CommsTables } from "./comms";
+import { COMMS_CASCADE_DELETED_TABLES, COMMS_PRIMARY_KEYS, COMMS_TABLES, COMMS_TENANT_TABLES, COMMS_TIMESTAMP_COLUMNS, type CommsTables } from "./comms";
 import { DIARY_PRIMARY_KEYS, DIARY_TABLES, DIARY_TENANT_TABLES, DIARY_TIMESTAMP_COLUMNS, type DiaryTables } from "./diary";
 import { FOUNDATION_PRIMARY_KEYS, FOUNDATION_TABLES, FOUNDATION_TENANT_TABLES, FOUNDATION_TIMESTAMP_COLUMNS, type FoundationTables } from "./foundation";
 import {
@@ -82,4 +82,4 @@ export const PMS_TENANT_TABLES: readonly PmsTableName[] = [
  * Per-clinic tables deleted by their parents' ON DELETE CASCADE: offboarding does not name them in its delete batch
  * (one statement fewer each against the gateway's limit). Exported and counted like the others.
  */
-export const PMS_CASCADE_DELETED_TABLES: ReadonlySet<PmsTableName> = new Set<PmsTableName>([...BILLING_CASCADE_DELETED_TABLES]);
+export const PMS_CASCADE_DELETED_TABLES: ReadonlySet<PmsTableName> = new Set<PmsTableName>([...BILLING_CASCADE_DELETED_TABLES, ...COMMS_CASCADE_DELETED_TABLES]);

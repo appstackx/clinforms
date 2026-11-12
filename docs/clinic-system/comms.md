@@ -61,6 +61,78 @@ written by hand is refused. Owner/admin warnings at 20 % and zero; optional auto
 Migration `0143_pms_sms_credits`; screens Messages → Text credits; platform page Text credits. Runbook, env vars,
 webhook and go-live: [`SMS-CREDITS.md`](SMS-CREDITS.md).
 
+## Bulk email to patient groups (tracker xt02, 12/11/2026) – OFF until switched on twice
+
+**Two switches, both off by default.** The platform's `CLINFORMS_BULK_EMAIL=on` (anything else = the feature does not
+exist: `/app/clinic/messages/campaigns/**` answers 404, no "Bulk email" link, no consent panel, the message run ignores
+campaigns) AND the clinic's own setting (Messages → Bulk email → Settings: "Use bulk email in this clinic", the daily
+cap; owners and admins only; no row = off). Rules: `src/modules/pms/comms/campaigns.ts` (pure), data
+`src/server/repos/pms/comms/campaigns.ts`, sending `src/server/pms/comms/campaigns/send.ts`, screens' service
+`src/server/pms/comms/campaigns/service.ts`, pages `src/app/app/clinic/messages/campaigns/**`, components
+`src/components/pms/comms/campaigns/*`.
+
+- **Who may:** `messages.templates` (owners and admins by default) and **never reception** (ClinForms role `staff` –
+  refused in the pages and the service even if a clinic grants it the permission). No new permission was added.
+  A member limited to some sites can only email one of their sites.
+- **Marketing vs service.** *Marketing* (news, offers, events) goes ONLY to patients with the recorded marketing-email
+  opt-in (`pms_patients.marketing_email` + when + how) and never to patients known to be under 18; the soft opt-in is
+  NOT used. A *service announcement* (closure, new address, opening hours) needs a reason in words (stored), goes to
+  patients who have not stopped reminder emails and must not promote anything.
+- **Never** to deceased, archived, merged or anonymised records or records without an email address; **one email per
+  address** (two patients sharing one address get one copy – recipients are unique per campaign by lower-case address).
+- **The email:** subject + plain-text body (blank line = paragraph, "- " = list, https links clickable; HTML refused),
+  merge fields `{first_name}` (preferred name; "there" when empty), `{clinic_name}`, `{clinic_address}`, `{clinic_phone}`;
+  footer with the clinic's name, **postal address** (Settings → Clinic, else the first site with an address – no address
+  = cannot send), phone, why the patient gets it and the unsubscribe link; headers `List-Unsubscribe` +
+  `List-Unsubscribe-Post: List-Unsubscribe=One-Click` (RFC 8058). Sender name = the clinic, reply-to = its email.
+- **Screens:** list with counts; editor with filters (site = any non-cancelled appointment there, last seen within N
+  months, has / has no upcoming booked appointment, age from–to), a live count (the send's own query), a preview
+  rendered by the sending code, a test copy to the member's OWN address (max 10 an hour, "[Test]", not logged as a
+  message), Send now (confirm) or Schedule (UK time), Cancel while draft or scheduled. After sending: recipients, sent,
+  delivered (when the provider reports it), kept in the outbox, failed, not sent (with reasons), waiting, unsubscribed.
+- **Sending** (the message run's second pass `GET /api/clinic-messages/cron` when the switch is on, and Send now /
+  "Send more now"): the campaign is claimed (scheduled → sending), its recipients written once (the audience at that moment), then
+  rounds of ≤ 40: claim → re-check every rule for each patient at that moment (consent withdrawn since = skipped) →
+  write each `pms_messages` row (kind `marketing` / `general`) with its recipient row and one audit row in one batch →
+  provider → record answers. **Rate limits:** ≤ 200 campaign emails per clinic per run and the clinic's **daily cap**
+  (default 500, max 5,000 per UK day); the rest waits for the next run/day. Stale claims (15 min) are taken back. The
+  emails appear in the outbox like any other; the email providers are unchanged (outbox / test / mailpit – there is
+  still NO live patient-email provider, so nothing reaches a patient in this build).
+- **Review fixes (12/11/2026, before release):** campaigns run in a **second pass** of the message run, after every
+  clinic's planned messages, with their own time (default 10 s, at most a third of the run) – reminders always go
+  first; a bulk email is **never sent without an unsubscribe link** (no signing key → each recipient "failed: no
+  unsubscribe link", nothing written); members limited to some sites see, test, send, "send more" and cancel only
+  campaigns aimed at one of their sites; "Send more now" is owners/admins only; merged values (a patient's name) are
+  escaped and never turned into links; Retry of a failed email keeps its `List-Unsubscribe` headers (read from the
+  stop link in its stored footer); switching the clinic's setting back ON puts every scheduled campaign whose time
+  passed while it was off back to **draft** (audited `pms.email_campaign.unschedule`, the screen says how many) –
+  nothing goes out late.
+- **Daily cap – not atomic (documented):** each run counts today's campaign emails, then claims at most what is left,
+  in rounds of ≤ 40. Two runs at the same moment (the cron and a "Send now") can together go over the cap by at most one
+  round (40). Make it a ledger row with a conditional claim if a clinic ever needs a hard limit.
+- **Unsubscribe:** the existing stop-emails link (`/api/clinic-messages/unsubscribe`), now signed with the message id
+  (and "announcement" for service links – wording only): GET shows a button and changes nothing, POST / one-click
+  withdraws (marketing link → marketing emails off; announcement link → reminder and announcement emails off, booking
+  confirmations still go), recorded in `pms_consent_events` with the message id (per-campaign count), idempotent
+  (a second click records nothing), no sign-in, never reveals the patient. Older links keep working.
+- **The patient record** (Messages tab, while the switch is on): marketing-email consent yes/no, recorded when and
+  how, last withdrawn when and how; staff with `patients.edit` record (how is required) or withdraw it – audited
+  (`pms.consent.change` + the event). The patient portal has no preferences page yet (nothing added there).
+- **Data:** migration `0146_pms_email_campaigns` (+ Postgres twin; number reserved in `src/modules/pms/core/modules.ts`):
+  `pms_bulk_email_settings`, `pms_email_campaigns` (subject/body encrypted), `pms_email_campaign_recipients`. Campaigns
+  hang off the settings row (written with a clinic's first draft) and recipients off their campaign, patient and message,
+  all `ON DELETE CASCADE`: offboarding names only the settings table (`PMS_CASCADE_DELETED_TABLES`; 360 member accounts
+  still fit one offboarding batch). Audit codes
+  `pms.bulk_email_settings.update`, `pms.email_campaign.{create,update,schedule,cancel,start,send,finish,test_send}`.
+- **Before switching it on for a real clinic:** a live patient-email provider (K2-COMMS-005) that passes our
+  `List-Unsubscribe` headers through and reports bounces / complaints (then record them – today only send failures are
+  recorded), the sending domain's SPF/DKIM/DMARC, legal review of the footer wording and the service-announcement rule,
+  the clinic's postal address on its profile, its consent records checked (imported consent = "import"), and a
+  scheduled message run (see "Scheduling the message run").
+- **Tests:** `src/modules/pms/comms/campaigns.test.ts`, the suite `src/server/repos/pms/comms/testing/campaigns-suite.ts`
+  on SQLite + PGlite (`campaigns-repos.test.ts`) and D1 (`workers/data-gateway/test/pms-comms-campaigns-stack.test.ts`),
+  browser check `scripts/e2e/pms-comms-bulk-email.cjs` (own server + fake Mailpit; switch off → 404, then on).
+
 ## Providers – nothing reaches a patient in this build
 
 `CLINIC_SMS_PROVIDER` / `CLINIC_EMAIL_PROVIDER` = `outbox` (default: kept, shown, never sent) or `test` (a test service
@@ -106,8 +178,9 @@ now" does the run by hand.
 ## Data
 
 Migrations `0140_pms_comms` (settings, templates, reminder rules, messages, planned messages, consent events),
-`0141_pms_letters` (letter templates, letters), `0142_pms_messages_hold` and `0143_pms_sms_credits` (text credit
-accounts and the append-only ledger), each with its Postgres twin. Message and letter text is encrypted
+`0141_pms_letters` (letter templates, letters), `0142_pms_messages_hold`, `0143_pms_sms_credits` (text credit
+accounts and the append-only ledger, + `0144`/`0145`) and `0146_pms_email_campaigns` (bulk email), each with its
+Postgres twin. Message and letter text is encrypted
 (`*_enc`); lists never decrypt – an outbox row says what a message is for from plain fields. Nothing is deleted
 (messages and letters belong to the patient's record; a letter written in error is withdrawn). Every change and its
 audit row are one batch (conditional audit INSERT – `src/server/repos/pms/comms/shared.ts`).
