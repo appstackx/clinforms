@@ -110,6 +110,13 @@ export const PUBLIC_PAGES = [
 export const AUTH_PATHS = ["/login", "/two-factor", "/accept-invite", "/reset-password"] as const;
 
 /**
+ * Self-serve sign-up and its DPA page (12/11/2026, docs/auth.md §1b; 404 unless CLINFORMS_SELF_SIGNUP is on): treated
+ * as sign-in pages for the cookie banner and analytics (never a banner over the form, never a page view), but kept out
+ * of robots.txt so the public files stay byte-for-byte as before while the switch is off (the pages are noindex).
+ */
+export const SIGNUP_AUTH_PATHS = ["/start-trial", "/data-processing-agreement"] as const;
+
+/**
  * Areas that are never indexed and never show the cookie banner: the signed-in app, the public demo
  * (Studio and simulated clinic system), the APIs and a clinic's own patient pages (/clinics – booking and portal). They still respect a consent given elsewhere.
  */
@@ -125,7 +132,7 @@ export function isAppAreaPath(pathname: string): boolean {
 }
 
 export function isAuthPath(pathname: string): boolean {
-  return AUTH_PATHS.some((prefix) => isUnder(pathname, prefix));
+  return [...AUTH_PATHS, ...SIGNUP_AUTH_PATHS].some((prefix) => isUnder(pathname, prefix));
 }
 
 /** Pages that may ask for cookie choices: everything except the app area, the demo, the APIs and sign-in pages. */

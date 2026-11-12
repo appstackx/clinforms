@@ -22,7 +22,16 @@ import type { DeliveryResult, EmailMessage, EmailProvider, EmailProviderName } f
 
 export type { DeliveryResult, EmailKind, EmailMessage, EmailProviderName, EmailRecipient } from "./types";
 export { EmailConfigError, resolveEmailProviderName } from "./providers";
-export { billingNoticeEmail, invitationEmail, passwordResetEmail, paymentAlertEmail, textCreditNoticeEmail, twoFactorEnabledEmail } from "./templates";
+export {
+  billingNoticeEmail,
+  invitationEmail,
+  passwordResetEmail,
+  paymentAlertEmail,
+  signupConfirmEmail,
+  signupExistingAccountEmail,
+  textCreditNoticeEmail,
+  twoFactorEnabledEmail,
+} from "./templates";
 export type { BillingNotice } from "./templates";
 export type { TextCreditNotice } from "./templates";
 

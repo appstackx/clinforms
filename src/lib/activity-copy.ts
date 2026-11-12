@@ -44,6 +44,7 @@ export const ACTIVITY_GROUPS: readonly ActivityGroup[] = [
     label: "Clinic account",
     actions: [
       "clinic.create",
+      "clinic.self_signup",
       "clinic.update",
       "clinic.offboard",
       "clinic.trial_set",
@@ -118,6 +119,7 @@ export const ACTIVITY_LABELS: Readonly<Record<string, string>> = {
   "member.profile_update": "Signing details updated",
   "member.remove": "Member removed",
   "clinic.create": "Clinic account opened",
+  "clinic.self_signup": "Signed up online – terms and data processing agreement accepted",
   "clinic.update": "Clinic details updated",
   "clinic.offboard": "Clinic account closed",
   "clinic.trial_set": "Trial set up by our support team",
@@ -175,6 +177,7 @@ export const ACTIVITY_LABELS: Readonly<Record<string, string>> = {
   "platform.package_set": "Package set",
   "platform.package_removed": "Package removed",
   "platform.usage_export": "Usage downloaded (CSV)",
+  "platform.signup_global_cap": "Online sign-ups passed today's alert level",
   "platform.owner_reset_link": "Owner password reset link created",
   "platform.demo_on": "Demo clinic switched on",
   "platform.demo_off": "Demo clinic switched off",
@@ -280,6 +283,8 @@ export function describeActivityDetail(action: string, detail: Record<string, un
       const fields = Array.isArray(detail.fields) ? detail.fields.map((f) => CLINIC_FIELDS[String(f)] ?? String(f)) : [];
       return fields.length ? `Changed: ${fields.join(", ")}` : null;
     }
+    case "clinic.self_signup":
+      return typeof detail.termsVersion === "string" && typeof detail.dpaVersion === "string" ? `Terms ${detail.termsVersion} · agreement ${detail.dpaVersion}` : null;
     case "clinic.create":
       return typeof detail.retentionDays === "number" ? `Reports kept for ${detail.retentionDays} days` : null;
     case "auth.sign_in":
@@ -398,6 +403,8 @@ export function describeActivityDetail(action: string, detail: Record<string, un
     case "clinic.package_removed":
     case "platform.package_removed":
       return withClinic(action, detail, null);
+    case "platform.signup_global_cap":
+      return typeof detail.threshold === "number" ? `More than ${detail.threshold} today` : null;
     case "platform.usage_export":
       return typeof detail.rows === "number" ? `${detail.rows} ${detail.rows === 1 ? "clinic" : "clinics"}` : null;
     default:
