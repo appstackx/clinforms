@@ -21,7 +21,15 @@ export const metadata: Metadata = { title: "Exercise programme" };
  * ended: the exercises as given (locked), the patient's check-ins, the PDF and "Make a new version". Opening it is
  * recorded in the patient's history.
  */
-export default async function ProgrammePage({ params }: { params: { patientId: string; programmeId: string } }) {
+const DONE: Record<string, string> = {
+  shared: "Shared. The patient sees it in their portal under “Your exercises”.",
+  emailed: "Shared. The patient gets an email with a link to their portal.",
+  noemail: "Shared in the portal, but no email was sent (no email address on the record, or portal access switched off). Check Messages → Outbox.",
+  noportal: "Shared. The patient portal is switched off, so print the PDF for the patient.",
+  ended: "Ended. It is kept on the record and no longer shows in the portal.",
+};
+
+export default async function ProgrammePage({ params, searchParams }: { params: { patientId: string; programmeId: string }; searchParams: { done?: string } }) {
   const actor = await requireClinicActor({ permission: "clinical.view" });
   const r = await programmeFor(actor, params.patientId, params.programmeId, { recordView: true });
   if (!r.ok) {
@@ -56,6 +64,11 @@ export default async function ProgrammePage({ params }: { params: { patientId: s
           </a>
         }
       />
+      {searchParams.done && DONE[searchParams.done] ? (
+        <div role="status" className="rounded-xl border border-[#A7E8BE] bg-[#F0FDF4] px-3.5 py-2.5 text-sm text-[#166534]">
+          {DONE[searchParams.done]}
+        </div>
+      ) : null}
       {p.replacesId ? <p className="text-sm text-[#475569]">A new version of an earlier programme{p.status === "draft" ? " – sharing it ends the earlier one." : "."}</p> : null}
 
       {p.status === "draft" && canWrite ? (

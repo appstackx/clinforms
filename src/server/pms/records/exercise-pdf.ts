@@ -3,7 +3,8 @@ import "server-only";
 /**
  * A home exercise programme as a printable PDF (A4, ex04) – the same document for the clinician (record → Exercises →
  * the programme → "Print (PDF)") and the patient (portal → the programme → "Download as PDF"). @react-pdf/renderer
- * with the bundled DejaVu Sans, as the letters (src/server/pms/comms/letter-output.tsx). Nothing is fetched: picture
+ * with the bundled DejaVu Sans, as the letters (src/server/pms/comms/letter-output.tsx). Plain .ts with
+ * React.createElement (no JSX), so the gateway's test typecheck can import the records service. Nothing is fetched: picture
  * and video links are printed as addresses, never loaded.
  */
 import React from "react";
@@ -49,73 +50,54 @@ function createProgrammePdf(rp: typeof ReactPdf) {
     box: { width: 14, height: 14, borderWidth: 0.75, borderColor: "#94A3B8", marginRight: 4 },
     footer: { position: "absolute", bottom: 26, left: 50, right: 50, fontSize: 7.5, color: "#64748B", flexDirection: "row", justifyContent: "space-between" },
   });
+  const h = React.createElement;
   return function ProgrammePdf({ d }: { d: ProgrammeDocument }) {
     const m = mark(d);
-    return (
-      <Document title={d.title} language="en-GB">
-        <Page size="A4" style={s.page}>
-          {m ? (
-            <Text style={s.mark} fixed>
-              {m.toUpperCase()}
-            </Text>
-          ) : null}
-          <View style={s.head}>
-            <View>
-              <Text style={s.clinic}>{d.clinic.name}</Text>
-              {d.clinic.phone ? <Text style={s.small}>{d.clinic.phone}</Text> : null}
-            </View>
-            <Text style={s.small}>{d.sharedAt ? `Given ${formatUkDate(d.sharedAt.slice(0, 10))}` : "Not shared yet"}</Text>
-          </View>
-          <Text style={s.title}>{d.title}</Text>
-          <Text style={s.for}>
-            Home exercise programme for {d.patientName}
-            {d.prescribedBy ? ` · from ${d.prescribedBy}` : ""}
-          </Text>
-          {d.notes ? (
-            <View style={s.note}>
-              <Text>{d.notes}</Text>
-            </View>
-          ) : null}
-          {d.items.map((it, i) => {
-            const dose = doseLine(it);
-            return (
-              <View key={i} style={s.item} wrap={false}>
-                <Text style={s.name}>
-                  {i + 1}. {it.name}
-                </Text>
-                {dose ? <Text style={s.dose}>{dose}</Text> : null}
-                {it.instructions ? <Text style={s.p}>{it.instructions}</Text> : null}
-                {it.cautions ? (
-                  <Text style={s.p}>
-                    <Text style={s.label}>Take care: </Text>
-                    {it.cautions}
-                  </Text>
-                ) : null}
-                {it.notes ? (
-                  <Text style={s.p}>
-                    <Text style={s.label}>Note: </Text>
-                    {it.notes}
-                  </Text>
-                ) : null}
-                {it.videoUrl ? <Text style={s.link}>Video: {it.videoUrl}</Text> : null}
-                {it.imageUrl ? <Text style={s.link}>Picture: {it.imageUrl}</Text> : null}
-                <View style={s.tick}>
-                  {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day) => (
-                    <View key={day} style={{ flexDirection: "row", alignItems: "center", marginRight: 8 }}>
-                      <View style={s.box} />
-                      <Text style={s.small}>{day}</Text>
-                    </View>
-                  ))}
-                </View>
-              </View>
-            );
-          })}
-          <View style={s.footer} fixed>
-            <Text>Stop and contact the clinic if an exercise causes sharp or worsening pain.</Text>
-            <Text render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`} />
-          </View>
-        </Page>
-      </Document>
+    const items = d.items.map((it, i) => {
+      const dose = doseLine(it);
+      return h(
+        View,
+        { key: i, style: s.item, wrap: false },
+        h(Text, { style: s.name }, `${i + 1}. ${it.name}`),
+        dose ? h(Text, { style: s.dose }, dose) : null,
+        it.instructions ? h(Text, { style: s.p }, it.instructions) : null,
+        it.cautions ? h(Text, { style: s.p }, h(Text, { style: s.label }, "Take care: "), it.cautions) : null,
+        it.notes ? h(Text, { style: s.p }, h(Text, { style: s.label }, "Note: "), it.notes) : null,
+        it.videoUrl ? h(Text, { style: s.link }, `Video: ${it.videoUrl}`) : null,
+        it.imageUrl ? h(Text, { style: s.link }, `Picture: ${it.imageUrl}`) : null,
+        h(
+          View,
+          { style: s.tick },
+          ...["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day) =>
+            h(View, { key: day, style: { flexDirection: "row", alignItems: "center", marginRight: 8 } }, h(View, { style: s.box }), h(Text, { style: s.small }, day)),
+          ),
+        ),
+      );
+    });
+    return h(
+      Document,
+      { title: d.title, language: "en-GB" },
+      h(
+        Page,
+        { size: "A4", style: s.page },
+        m ? h(Text, { style: s.mark, fixed: true }, m.toUpperCase()) : null,
+        h(
+          View,
+          { style: s.head },
+          h(View, null, h(Text, { style: s.clinic }, d.clinic.name), d.clinic.phone ? h(Text, { style: s.small }, d.clinic.phone) : null),
+          h(Text, { style: s.small }, d.sharedAt ? `Given ${formatUkDate(d.sharedAt.slice(0, 10))}` : "Not shared yet"),
+        ),
+        h(Text, { style: s.title }, d.title),
+        h(Text, { style: s.for }, `Home exercise programme for ${d.patientName}${d.prescribedBy ? ` · from ${d.prescribedBy}` : ""}`),
+        d.notes ? h(View, { style: s.note }, h(Text, null, d.notes)) : null,
+        ...items,
+        h(
+          View,
+          { style: s.footer, fixed: true },
+          h(Text, null, "Stop and contact the clinic if an exercise causes sharp or worsening pain."),
+          h(Text, { render: ({ pageNumber, totalPages }: { pageNumber: number; totalPages: number }) => `Page ${pageNumber} of ${totalPages}` }),
+        ),
+      ),
     );
   };
 }

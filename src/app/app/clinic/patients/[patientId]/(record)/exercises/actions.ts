@@ -59,12 +59,14 @@ export async function shareProgramme(_prev: RecordsActionState, form: FormData):
   const result = await shareProgrammeFor(actor, patientId, programmeId, intField(form, "rev"));
   if (!result.ok) return actionState(result, () => ({ ok: true }));
   revalidatePath(patientPath(patientId, "exercises"));
-  revalidatePath(patientPath(patientId, `exercises/${programmeId}`));
-  if (!result.value.portal) return { ok: true, message: "Shared. The patient portal is switched off, so print the PDF for the patient." };
-  if (!checked(form, "notify")) return { ok: true, message: "Shared. The patient sees it in their portal under “Your exercises”." };
+  // The share form leaves the page once shared: the answer goes in the address (a fixed key, never patient data).
+  const done = (key: string) => redirect(patientPath(patientId, `exercises/${encodeURIComponent(programmeId)}?done=${key}`));
+  if (!result.value.portal) done("noportal");
+  if (!checked(form, "notify")) done("shared");
   // The email never names the programme: a one-time sign-in link that opens it.
   const mailed = await emailPortalLink(actor, patientId, `${clinicPublicPaths(actor.tenantId).portal}/exercises/${encodeURIComponent(programmeId)}`);
-  return mailed.ok ? { ok: true, message: "Shared. The patient gets an email with a link to their portal." } : { ok: true, message: `Shared in the portal, but no email was sent: ${mailed.error}` };
+  done(mailed.ok ? "emailed" : "noemail");
+  return { ok: true };
 }
 
 export async function endProgramme(_prev: RecordsActionState, form: FormData): Promise<RecordsActionState> {
@@ -73,11 +75,9 @@ export async function endProgramme(_prev: RecordsActionState, form: FormData): P
   const patientId = text(form, "patientId");
   const programmeId = text(form, "programmeId");
   const result = await endProgrammeFor(actor, patientId, programmeId, intField(form, "rev"));
-  if (result.ok) {
-    revalidatePath(patientPath(patientId, "exercises"));
-    revalidatePath(patientPath(patientId, `exercises/${programmeId}`));
-  }
-  return actionState(result, () => ({ ok: true, message: "Ended. It is kept on the record and no longer shows in the portal." }));
+  if (!result.ok) return actionState(result, () => ({ ok: true }));
+  revalidatePath(patientPath(patientId, "exercises"));
+  redirect(patientPath(patientId, `exercises/${encodeURIComponent(programmeId)}?done=ended`));
 }
 
 export async function newVersion(_prev: RecordsActionState, form: FormData): Promise<RecordsActionState> {

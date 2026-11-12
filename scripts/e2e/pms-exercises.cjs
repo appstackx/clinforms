@@ -297,7 +297,7 @@ async function acceptInvite(page, link, name) {
       owner.once("dialog", (d) => d.accept());
       await owner.check("input[name=notify]");
       await owner.click("button:has-text('Share with the patient')");
-      await owner.waitForSelector("text=/Shared\\./");
+      await owner.waitForSelector("[role=status]:has-text('The patient gets an email with a link to their portal.')");
       assert.equal(one("SELECT status FROM pms_exercise_programmes WHERE tenant_id = ? AND id = ?", CLINIC, programmeId).status, "shared");
     });
 

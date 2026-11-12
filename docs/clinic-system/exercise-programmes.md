@@ -27,7 +27,7 @@ reserved in `src/modules/pms/core/modules.ts`; **0129 stays free**).
 | A9 | **Clinician view of check-ins:** on the programme (table) and in the Exercises list ("did the exercises on N of the last 14 days", latest pain, average pain over 14 days). Not shown in clinical notes yet | `adherenceSummary` | Yes |
 | A10 | **No reminders.** Sharing can email a one-time portal sign-in link (the existing `portal_link` email – it never names the programme). No daily reminder emails | `emailPortalLink` | Reminders would be a comms job |
 | A11 | **Permissions** as notes: read `clinical.view`, write/share `clinical.write` (reception never; admins see but do not write by default); the patient must be in the member's sites | records service | Yes, with configurable permissions |
-| A12 | **PDF**: the same A4 document for clinician and patient (title, for whom, by whom, note, each exercise with dose / instructions / take care / note / links printed as text, a Mon–Sun tick row), file name `home-exercises-<date>.pdf` (no name in the file name). A draft is marked "Draft – not shared". Footer line: "Stop and contact the clinic if an exercise causes sharp or worsening pain." (our only wording – **please confirm**) | `exercise-pdf.tsx` | Yes |
+| A12 | **PDF**: the same A4 document for clinician and patient (title, for whom, by whom, note, each exercise with dose / instructions / take care / note / links printed as text, a Mon–Sun tick row), file name `home-exercises-<date>.pdf` (no name in the file name). A draft is marked "Draft – not shared". Footer line: "Stop and contact the clinic if an exercise causes sharp or worsening pain." (our only wording – **please confirm**) | `exercise-pdf.ts` | Yes |
 | A13 | **Switching the clinic setting off hides everything** (staff tab, portal) but keeps the data; anonymisation and the subject-access copy include it regardless | – | – |
 | A14 | **Website:** nothing changed on clindesk.co.uk | – | – |
 
@@ -68,8 +68,11 @@ are recorded like opening a clinical note.
 
 ## 5. Tests
 
-- `src/server/pms/records/exercises.test.ts` (test:pms + test:db): pure rules (switch, links, dose, check-in input,
-  adherence, labels) and the whole flow on **node:sqlite and PGlite**: both switches, settings.setup / clinical.view /
+- `src/server/pms/records/exercises.test.ts` (test:pms + test:db) with the shared suite
+  `src/server/pms/records/testing/exercises-suite.ts`; the same suite runs on D1 through the gateway in
+  `workers/data-gateway/test/pms-exercises-stack.test.ts` (test:gateway: in-process Worker + REAL local workerd D1 with
+  wrangler-applied migrations). Pure rules (switch, links, dose, check-in input,
+  adherence, labels) and the whole flow on **node:sqlite, PGlite, gateway/D1 stand-in and local workerd D1**: both switches, settings.setup / clinical.view /
   clinical.write by role (reception and admin refused), another clinic, another site, wrong patient in the URL,
   encryption at rest, drafts invisible to the patient, locked after sharing, new version ends the old in one batch,
   one check-in per day, PDFs, history, subject access, anonymisation, offboarding by cascade, tenant-scope guard.
