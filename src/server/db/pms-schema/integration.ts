@@ -15,6 +15,14 @@
  *   pms_api_keys           API keys: SHA-256 of the key + its lookup id and last 4 characters, scopes, sites, expiry
  *   pms_api_key_days       calls and patient reads per key per UK day (the use counter)
  *   pms_api_idempotency    one row per Idempotency-Key that booked an appointment (same batch as the booking)
+ *
+ * Migration 0172 / 20261024000172 – Xero sync groundwork (trackers xe03–xe06, behind CLINFORMS_XERO=on and a per-clinic
+ * setting, docs/clinic-system/decisions/xero-sync-scope.md):
+ *
+ *   pms_xero_connections   one row per clinic: on/off, the connected Xero organisation, tokens (encrypted, sealed)
+ *   pms_xero_mappings      ClinDesk thing → Xero account code / tax type / tracking option
+ *   pms_xero_links         ClinDesk record → Xero id (never created twice)
+ *   pms_xero_sync_items    the send list with retry state (id = "<type>:<op>:<local id>")
  */
 import type { ColumnType } from "kysely";
 import type { IsoTimestamp } from "../schema";
@@ -209,6 +217,83 @@ export interface PmsApiIdempotencyTable {
   created_at: IsoTimestamp;
 }
 
+export interface PmsXeroConnectionsTable {
+  tenant_id: string;
+  rev: WithDefault<number>;
+  enabled: WithDefault<number>;
+  /** "not_connected" | "connected" | "paused" | "disconnected" */
+  status: WithDefault<string>;
+  xero_tenant_id: string | null;
+  connection_id: string | null;
+  org_name: string | null;
+  base_currency: string | null;
+  /** {access, refresh} encrypted with the data envelope (AAD "<tenant>:pms_xero_connections.tokens_sealed:<tenant>"). */
+  tokens_sealed: string | null;
+  access_expires_at: IsoTimestamp | null;
+  /** While one worker refreshes the tokens (a refresh token works once). */
+  refresh_lock_until: IsoTimestamp | null;
+  scopes: string | null;
+  send_from: IsoDate | null;
+  send_contact_details: WithDefault<number>;
+  /** SHA-256 (hex) of the pending OAuth state, its session, member and end. */
+  state_hash: string | null;
+  state_session: string | null;
+  state_user: string | null;
+  state_expires_at: IsoTimestamp | null;
+  last_error: string | null;
+  connected_by: string | null;
+  connected_at: IsoTimestamp | null;
+  updated_by: string | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
+export interface PmsXeroMappingsTable {
+  tenant_id: string;
+  /** src/modules/pms/integration/xero.ts XERO_MAP_KINDS */
+  map_kind: string;
+  local_key: string;
+  xero_value: string;
+  xero_label: string | null;
+  updated_by: string | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
+export interface PmsXeroLinksTable {
+  tenant_id: string;
+  /** "patient" | "referrer" | "invoice" | "credit_note" | "allocation" */
+  local_type: string;
+  local_id: string;
+  xero_id: string;
+  xero_number: string | null;
+  sent_hash: string | null;
+  pushed_at: IsoTimestamp;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
+export interface PmsXeroSyncItemsTable {
+  tenant_id: string;
+  /** "<local_type>:<op>:<local_id>" – queuing the same record twice is a no-op. */
+  id: string;
+  local_type: string;
+  local_id: string;
+  op: string;
+  status: WithDefault<string>;
+  attempts: WithDefault<number>;
+  payload_version: WithDefault<number>;
+  next_attempt_at: IsoTimestamp;
+  lease_until: IsoTimestamp | null;
+  error_class: string | null;
+  error_message: string | null;
+  xero_id: string | null;
+  done_at: IsoTimestamp | null;
+  resolved_by: string | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
 export interface IntegrationTables {
   pms_import_batches: PmsImportBatchesTable;
   pms_import_rows: PmsImportRowsTable;
@@ -219,6 +304,10 @@ export interface IntegrationTables {
   pms_api_keys: PmsApiKeysTable;
   pms_api_key_days: PmsApiKeyDaysTable;
   pms_api_idempotency: PmsApiIdempotencyTable;
+  pms_xero_connections: PmsXeroConnectionsTable;
+  pms_xero_mappings: PmsXeroMappingsTable;
+  pms_xero_links: PmsXeroLinksTable;
+  pms_xero_sync_items: PmsXeroSyncItemsTable;
 }
 
 /** Foreign-key order (parents first). */
@@ -232,6 +321,10 @@ export const INTEGRATION_TABLES = [
   "pms_api_keys",
   "pms_api_key_days",
   "pms_api_idempotency",
+  "pms_xero_connections",
+  "pms_xero_mappings",
+  "pms_xero_links",
+  "pms_xero_sync_items",
 ] as const satisfies readonly (keyof IntegrationTables)[];
 
 export const INTEGRATION_PRIMARY_KEYS: { readonly [T in (typeof INTEGRATION_TABLES)[number]]: readonly (keyof IntegrationTables[T] & string)[] } = {
@@ -244,10 +337,14 @@ export const INTEGRATION_PRIMARY_KEYS: { readonly [T in (typeof INTEGRATION_TABL
   pms_api_keys: ["tenant_id", "id"],
   pms_api_key_days: ["tenant_id", "key_id", "day"],
   pms_api_idempotency: ["tenant_id", "id"],
+  pms_xero_connections: ["tenant_id"],
+  pms_xero_mappings: ["tenant_id", "map_kind", "local_key"],
+  pms_xero_links: ["tenant_id", "local_type", "local_id"],
+  pms_xero_sync_items: ["tenant_id", "id"],
 };
 
 /** Timestamp columns beyond created_at/updated_at (TEXT in SQLite, timestamptz in Postgres) – for the D1 → Postgres copy. */
-export const INTEGRATION_TIMESTAMP_COLUMNS: readonly string[] = ["lease_until", "checked_at", "approved_at", "imported_at", "undone_at", "cancelled_at", "closed_at", "signed_at", "filed_at", "expires_at", "last_used_at", "revoked_at"];
+export const INTEGRATION_TIMESTAMP_COLUMNS: readonly string[] = ["lease_until", "checked_at", "approved_at", "imported_at", "undone_at", "cancelled_at", "closed_at", "signed_at", "filed_at", "expires_at", "last_used_at", "revoked_at", "access_expires_at", "refresh_lock_until", "state_expires_at", "connected_at", "pushed_at", "next_attempt_at", "done_at"];
 
 /** Every integration table holds one clinic's data (offboarding exports them decrypted, then deletes them). */
 export const INTEGRATION_TENANT_TABLES: readonly (typeof INTEGRATION_TABLES)[number][] = INTEGRATION_TABLES;
@@ -256,4 +353,14 @@ export const INTEGRATION_TENANT_TABLES: readonly (typeof INTEGRATION_TABLES)[num
  * Deleted by their parents' ON DELETE CASCADE (0171): keys with the clinic's API settings row, day counters and
  * idempotency rows with their key – offboarding names only pms_api_settings.
  */
-export const INTEGRATION_CASCADE_DELETED_TABLES: readonly (typeof INTEGRATION_TABLES)[number][] = ["pms_api_keys", "pms_api_key_days", "pms_api_idempotency"];
+export const INTEGRATION_CASCADE_DELETED_TABLES: readonly (typeof INTEGRATION_TABLES)[number][] = [
+  "pms_api_keys",
+  "pms_api_key_days",
+  "pms_api_idempotency",
+  // 0172: the Xero connection hangs off the clinic's pms_billing_settings row, the rest off the connection – no new
+  // named table in the offboarding batch.
+  "pms_xero_connections",
+  "pms_xero_mappings",
+  "pms_xero_links",
+  "pms_xero_sync_items",
+];

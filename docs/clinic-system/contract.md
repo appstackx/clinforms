@@ -91,6 +91,7 @@ fixes (handover §20): portal `0190` (clinic-device pairing).
 M10 performance (handover §20.4, additive indexes only, 0210–0219): diary `0210`, records `0211`, billing `0212`,
 foundation `0213`. Healthcode e-billing groundwork (11/2026, `docs/clinic-system/healthcode.md`): billing `0220`–`0229`.
 Public clinic API v1 (xt03, 11/2026, `docs/clinic-system/api.md`): integration `0171` (reserved in `modules.ts`).
+Xero sync groundwork (xe03–xe06, 11/2026, `docs/clinic-system/xero.md`): integration `0172` (reserved in `modules.ts`).
 
 Postgres twin of `0NNN_name.sql` = `supabase/migrations/20261024000NNN_name.sql` (`2026102400` + the 4 digits + same
 name). Single source: `src/modules/pms/core/modules.ts`; `scripts/pms/contract.test.ts` fails on a number outside a
