@@ -73,6 +73,8 @@ export const PAGE_PERMISSIONS: readonly (readonly [string, PmsPermission])[] = [
   ["/patients/note-templates", "settings.setup"],
   ["/patients", "patients.view"],
   ["/patients/unsigned-notes", "clinical.view"],
+  // API keys (xt03): also behind CLINFORMS_CLINIC_API=on and the owner only – the clinic layout checks both.
+  ["/setup/api", "settings.owner"],
   ["/setup/audit", "settings.members"],
   ["/setup/billing", "settings.setup"],
   ["/setup/courses", "settings.setup"],

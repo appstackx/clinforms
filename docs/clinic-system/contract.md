@@ -90,6 +90,7 @@ Follow-up numbers (M9b polish, handover §19), owned exactly like the ranges abo
 fixes (handover §20): portal `0190` (clinic-device pairing).
 M10 performance (handover §20.4, additive indexes only, 0210–0219): diary `0210`, records `0211`, billing `0212`,
 foundation `0213`. Healthcode e-billing groundwork (11/2026, `docs/clinic-system/healthcode.md`): billing `0220`–`0229`.
+Public clinic API v1 (xt03, 11/2026, `docs/clinic-system/api.md`): integration `0171` (reserved in `modules.ts`).
 
 Postgres twin of `0NNN_name.sql` = `supabase/migrations/20261024000NNN_name.sql` (`2026102400` + the 4 digits + same
 name). Single source: `src/modules/pms/core/modules.ts`; `scripts/pms/contract.test.ts` fails on a number outside a
@@ -301,7 +302,7 @@ The batch names **only the tables that hold the clinic's rows** (a ClinForms-onl
 statement): the data gateway takes at most `GATEWAY_MAX_STATEMENTS` (100, `src/server/db/dialects/d1-http.ts`, equal to
 the Worker's `LIMITS.maxStatements` – cross-checked). Worst case today (every table, `--release-slug`): 92 statements +
 1 per 90 accounts – one atomic batch up to 720 accounts (`src/server/auth/offboard-batch.test.ts` fails when new
-tables eat the headroom below 450). Past the limit, `offboardBatches` sends ordered batches with the organization's
+tables eat the headroom below its threshold – 270 accounts since the clinic API's `pms_api_settings`, 0171). Past the limit, `offboardBatches` sends ordered batches with the organization's
 tombstone last (a stop part-way leaves the clinic open: keep the export, run again with a new `--export-dir`).
 
 ## 11. Providers (SMS, email, payments)
