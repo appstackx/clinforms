@@ -577,12 +577,16 @@ export async function recordCourseUse(ctx: RepoContext, tenantId: string, input:
   if (course.caseId !== null && course.caseId !== input.caseId) throw new RepoInputError("That course belongs to another case.");
   if (course.status !== "active") throw new RepoInputError(course.status === "cancelled" ? "That course has been cancelled." : "That course has no session left.");
   if (course.expiresOn !== null && input.usedOn > course.expiresOn) throw new RepoInputError("That course had expired by the date of the visit.");
+  // PK06: an expired course is used for nothing more, even before the nightly sweep has marked it (the expiry day itself
+  // still counts). A visit on the last day must be used from it that day – or the owner moves the expiry.
+  const today = todayOf(ctx);
+  if (course.expiresOn !== null && today > course.expiresOn) throw new RepoInputError("That course has expired. The owner or an administrator can move its expiry date.");
   const id = pmsId(P.courseUse, ctx);
   const at = nowIso(ctx);
   const t = tenantId;
   const c = course.id;
   // NULL (refused) unless the course is active, in date, has a session left, and no invoice line holds the visit.
-  const allowed = sql<string>`(select pc.id from pms_patient_courses pc where pc.tenant_id = ${t} and pc.id = ${c} and pc.status = 'active' and (pc.expires_on is null or pc.expires_on >= ${input.usedOn}) and (select count(*) from pms_course_uses u where u.tenant_id = ${t} and u.patient_course_id = ${c} and u.reversed_at is null) < pc.sessions_total and not exists (select 1 from pms_invoice_lines l where l.tenant_id = ${t} and l.appointment_id = ${input.appointmentId} and l.billing_lock = 1))`;
+  const allowed = sql<string>`(select pc.id from pms_patient_courses pc where pc.tenant_id = ${t} and pc.id = ${c} and pc.status = 'active' and (pc.expires_on is null or (pc.expires_on >= ${input.usedOn} and pc.expires_on >= ${today})) and (select count(*) from pms_course_uses u where u.tenant_id = ${t} and u.patient_course_id = ${c} and u.reversed_at is null) < pc.sessions_total and not exists (select 1 from pms_invoice_lines l where l.tenant_id = ${t} and l.appointment_id = ${input.appointmentId} and l.billing_lock = 1))`;
   await billingBatch(
     ctx,
     [
@@ -649,14 +653,22 @@ export async function setCourseExpiry(ctx: RepoContext, tenantId: string, id: st
   if (course.rev !== expectedRev) return { ok: false, reason: "conflict", currentRev: course.rev };
   if (course.status === "cancelled") throw new RepoInputError("That course has been cancelled.");
   if (expiresOn !== null && expiresOn < course.soldOn) throw new RepoInputError("Course: expiresOn: The expiry cannot be before the sale.");
+  const revive = course.status === "expired" && (expiresOn === null || expiresOn >= todayOf(ctx));
   const at = nowIso(ctx);
   const results = await billingBatch(ctx, [
-    ctx.db.updateTable(COURSES).set({ expires_on: expiresOn, rev: expectedRev + 1, updated_at: at }).where("tenant_id", "=", tenantId).where("id", "=", id).where("rev", "=", expectedRev).where("status", "<>", "cancelled"),
+    // An expired course (marked by the nightly sweep) whose expiry moves to today or later – or is removed – is active again.
+    ctx.db
+      .updateTable(COURSES)
+      .set({ expires_on: expiresOn, status: revive ? "active" : course.status, rev: expectedRev + 1, updated_at: at })
+      .where("tenant_id", "=", tenantId)
+      .where("id", "=", id)
+      .where("rev", "=", expectedRev)
+      .where("status", "<>", "cancelled"),
     billingAuditWhen(
       ctx,
       tenantId,
       actor,
-      { action: "pms.course.expiry", targetType: "pms_patient_course", targetId: id, detail: { from: course.expiresOn ?? "none", to: expiresOn ?? "none" } },
+      { action: "pms.course.expiry", targetType: "pms_patient_course", targetId: id, detail: { from: course.expiresOn ?? "none", to: expiresOn ?? "none", ...(revive ? { reactivated: true } : {}) } },
       ctx.db.selectFrom(COURSES).select("id").where("tenant_id", "=", tenantId).where("id", "=", id).where("rev", "=", expectedRev + 1).where("updated_at", "=", at),
     ),
   ]);

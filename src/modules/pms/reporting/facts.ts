@@ -110,3 +110,82 @@ export interface DebtFact {
   invoices: number;
   outstandingPence: number;
 }
+
+/* ------------------------------------------------------------------------------------------------
+ * PK06 – courses, gift cards, products and stock (billing's source; docs/clinic-system/courses-giftcards-products.md)
+ * ----------------------------------------------------------------------------------------------*/
+
+/**
+ * Courses still open on the "as at" date (sold on or before it, not cancelled by the end of it, not past their
+ * expiry on it), grouped by the site of the invoice that sold them, expiry, sessions sold and used (uses dated on or
+ * before the date and not reversed by its end) and the sale line's value net of credit notes issued by then.
+ */
+export interface CourseFact {
+  siteId: string | null;
+  /** null = no expiry. */
+  expiresOn: string | null;
+  sessionsTotal: number;
+  sessionsUsed: number;
+  /** The sale line's total (VAT included) less credit notes on it issued by the date, per course. */
+  netPence: number;
+  courses: number;
+}
+
+/** Courses sold (their invoice issued) on one UK date at one site – cancelled ones included (they were sold). */
+export interface CourseSaleFact {
+  date: string;
+  siteId: string | null;
+  courses: number;
+  amountPence: number;
+}
+
+export const GIFT_CARD_FACT_KINDS = ["sale", "redeem", "refund", "expire", "adjust"] as const;
+export type GiftCardFactKind = (typeof GIFT_CARD_FACT_KINDS)[number];
+
+/**
+ * Gift-card balance moves up to the end of the "as at" date, by the site of the invoice that sold the card, the
+ * card's expiry, the kind of move and whether it was before the period ("before") or in it ("in"). A sale counts on
+ * the card's sale date (the invoice's date); other moves on when they were recorded. Amounts are signed (a sale is
+ * +, a spend −), so the sum of a card's moves is its balance.
+ */
+export interface GiftCardFact {
+  siteId: string | null;
+  expiresOn: string | null;
+  kind: GiftCardFactKind;
+  when: "before" | "in";
+  moves: number;
+  amountPence: number;
+}
+
+/**
+ * Products sold on issued invoices (void ones left out) by issue date, or credited by credit notes (the void kind
+ * and anything on a void invoice left out) by the credit note's date – per site and product. `quantity` of a
+ * credit is the units given back (a line credited in full), 0 for a part credit.
+ */
+export interface ProductSaleFact {
+  date: string;
+  siteId: string | null;
+  productId: string;
+  kind: "sold" | "credited";
+  lines: number;
+  quantity: number;
+  netPence: number;
+  vatPence: number;
+}
+
+/** Stock on hand NOW of one product at one site (the sum of its moves; may be negative). */
+export interface StockFact {
+  siteId: string;
+  productId: string;
+  onHand: number;
+}
+
+/** A product as the reports name it (archived ones too: history points at them). */
+export interface ReportProduct {
+  id: string;
+  name: string;
+  sku: string | null;
+  pricePence: number;
+  lowStockAt: number | null;
+  active: boolean;
+}

@@ -307,10 +307,13 @@ export async function courseOffersFor(ctx: RepoContext, tenantId: string, priced
     eligible.map((p) => p.visit.patientId),
     { active: true },
   );
-  if (courses.length === 0) return new Map();
+  // PK06: past its expiry a course offers nothing, even before the nightly sweep marks it expired.
+  const today = todayOf(ctx);
+  const valid = courses.filter((c) => c.expiresOn === null || c.expiresOn >= today);
+  if (valid.length === 0) return new Map();
   return offerCourses(
     priced.map((p) => ({ ...p.visit, eligible: p.visit.status === "attended" && p.billTo === "patient" })),
-    courses,
+    valid,
   );
 }
 

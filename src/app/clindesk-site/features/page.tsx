@@ -406,6 +406,8 @@ function Billing() {
             <li><span className="tb" aria-hidden="true" />Authorisations tracked: sessions approved, used and left.</li>
             <li><span className="tb tb--sun" aria-hidden="true" />Insurer bills checked before they go to Healthcode, with what’s missing and where to fix it.</li>
             <li><span className="tb tb--teal" aria-hidden="true" />Card payments at the desk or in the patient portal.</li>
+            <li><span className="tb" aria-hidden="true" />Courses of sessions paid up front: each visit is used from the course, “3 of 6 used” at a glance, with an optional expiry date.</li>
+            <li><span className="tb tb--sun" aria-hidden="true" />Gift cards and products sold at the desk, stock kept per site with a low-stock warning, and reports of unused sessions and gift-card balances.</li>
           </ul>
         </div>
         <div className="fx-scene">
