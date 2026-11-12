@@ -9,7 +9,7 @@
  */
 import { CLINIC_BASE_PATH } from "../core/modules";
 
-export const REPORT_IDS = ["attendance", "utilisation", "patients", "caseload", "revenue", "debtors", "authorisations"] as const;
+export const REPORT_IDS = ["attendance", "utilisation", "patients", "caseload", "revenue", "debtors", "authorisations", "course-liability", "gift-card-liability", "products"] as const;
 export type ReportId = (typeof REPORT_IDS)[number];
 
 export const REPORT_GROUPS = ["Appointments", "Clinical", "Finance"] as const;
@@ -106,6 +106,33 @@ export const REPORTS: Readonly<Record<ReportId, ReportInfo>> = {
     group: "Finance",
     ownCaseload: false,
     filters: { period: false, practitioner: false, service: false },
+  },
+  "course-liability": {
+    id: "course-liability",
+    title: "Course liability",
+    description: "Sessions paid for and not used yet, and what they are worth, at the end of the period.",
+    href: `${REPORTS_PATH}/course-liability`,
+    group: "Finance",
+    ownCaseload: false,
+    filters: { period: true, practitioner: false, service: false },
+  },
+  "gift-card-liability": {
+    id: "gift-card-liability",
+    title: "Gift card liability",
+    description: "What gift cards still hold at the end of the period, and what was sold, spent and expired in it.",
+    href: `${REPORTS_PATH}/gift-card-liability`,
+    group: "Finance",
+    ownCaseload: false,
+    filters: { period: true, practitioner: false, service: false },
+  },
+  products: {
+    id: "products",
+    title: "Products and stock",
+    description: "Products sold in the period, and the stock on hand today with its value at sale price.",
+    href: `${REPORTS_PATH}/products`,
+    group: "Finance",
+    ownCaseload: false,
+    filters: { period: true, practitioner: false, service: false },
   },
 };
 

@@ -24,6 +24,7 @@ import { PERIOD_LABELS, REPORT_PERIOD_CHIPS, monthLabel, type PeriodPreset, week
 import { parseReportFilter, type QuerySource } from "../../../modules/pms/reporting/schemas";
 import type { ChartBar, ReportFilters, ReportPage, ReportTable, ReportView } from "../../../modules/pms/reporting/view";
 import { ukToday } from "../../../modules/pms/core/text";
+import { addDays as addDaysIso } from "../../../modules/pms/reporting/periods";
 import { pmsAudit } from "../../repos/pms/context";
 import { findPractitionerByUser } from "../../repos/pms/directory";
 import { authorisationSessionsLeft } from "../../repos/pms/reporting/record-figures";
@@ -34,6 +35,9 @@ import {
   loadAttendance,
   loadAuthorisations,
   loadCaseload,
+  loadCourseLiability,
+  loadGiftCardLiability,
+  loadProducts,
   loadDebtors,
   loadDirectory,
   loadNewReturning,
@@ -452,6 +456,152 @@ async function authorisationsView(b: Built, canSeePatients: boolean): Promise<Re
 }
 
 /* ------------------------------------------------------------------------------------------------
+ * PK06 – course and gift-card liability, products and stock
+ * ----------------------------------------------------------------------------------------------*/
+
+const siteOfKey = (b: Built, key: string) => b.dir.siteName(key || null);
+const byName = <T,>(rows: T[], name: (r: T) => string) => rows.slice().sort((a, x) => name(a).localeCompare(name(x), "en-GB"));
+const NO_COURSES_YET = "No course was sold by this date.";
+
+async function courseLiabilityView(b: Built, sources: ReportingSources): Promise<ReportView> {
+  const r = await loadCourseLiability(ctxOf(b), b.req, sources);
+  if (!r.available) return emptyView("course-liability", NO_BILLING);
+  const t = r.total;
+  const asAt = formatUkDate(r.asAt);
+  const rows = byName(r.rows, (x) => siteOfKey(b, x.key));
+  const values = rows.map((x) => x.unusedPence / 100);
+  const max = scaleMax(values, null, 100);
+  const bars = rows.map((x, i) => ({ label: siteOfKey(b, x.key), value: values[i], display: formatPence(x.unusedPence).replace(/\.\d\d$/, ""), strong: false }));
+  return {
+    id: "course-liability",
+    title: REPORTS["course-liability"].title,
+    description: REPORTS["course-liability"].description,
+    notice: null,
+    stats: [
+      { id: "unused-value", label: "Value of unused sessions", value: formatPence(t.unusedPence), sub: `As at ${asAt} · ${n(t.sessionsLeft)} session${t.sessionsLeft === 1 ? "" : "s"} left`, tone: "plain" },
+      { id: "open-courses", label: "Courses with sessions left", value: n(t.courses), sub: `${n(t.sessionsUsed)} of ${n(t.sessionsTotal)} sessions used`, tone: "plain" },
+      { id: "expiring", label: "Expiring in the next 30 days", value: formatPence(t.expiringPence), sub: `${n(t.expiringCourses)} course${t.expiringCourses === 1 ? "" : "s"} · ${n(t.expiringSessions)} session${t.expiringSessions === 1 ? "" : "s"} · by ${formatUkDate(r.expiringBy)}`, tone: t.expiringCourses > 0 ? "warn" : "plain" },
+    ],
+    chart: rows.length ? { title: "Value of unused sessions by site (£)", bars, max, maxLabel: `£${max.toLocaleString("en-GB")}`, note: null, description: describe("Value of unused sessions by site", bars) } : null,
+    tables: [
+      {
+        id: "sites",
+        title: `As at ${asAt}`,
+        columns: cols(["Site", "Courses sold in period", "Sold for", "Courses with sessions left", "Sessions sold", "Used", "Left", "Value unused", "Expiring in 30 days"]),
+        rows: rows.map((x) => ({ cells: [siteOfKey(b, x.key), n(x.soldCourses), formatPence(x.soldPence), n(x.courses), n(x.sessionsTotal), n(x.sessionsUsed), n(x.sessionsLeft), formatPence(x.unusedPence), formatPence(x.expiringPence)] })),
+        empty: NO_COURSES_YET,
+      },
+    ],
+    footnote: `Value unused = what was paid for each course (after any credit notes issued by ${asAt}) × sessions left ÷ sessions sold. A course counts until it is used up, cancelled or past its expiry date – the expiry date itself still counts. "Sold in period" = courses whose invoice was issued from ${formatUkDate(r.from)} to ${asAt}, cancelled ones included. A course belongs to the site of the invoice that sold it.`,
+    csv: {
+      header: ["group", "name", "as_at", "courses_sold_in_period", "sold_for_gbp", "courses_with_sessions_left", "sessions_sold", "sessions_used", "sessions_left", "value_unused_gbp", "courses_expiring_30_days", "sessions_expiring_30_days", "value_expiring_30_days_gbp"],
+      rows: [
+        ...rows.map((x) => ["site", siteOfKey(b, x.key), r.asAt, x.soldCourses, penceToPounds(x.soldPence), x.courses, x.sessionsTotal, x.sessionsUsed, x.sessionsLeft, penceToPounds(x.unusedPence), x.expiringCourses, x.expiringSessions, penceToPounds(x.expiringPence)] as CsvValue[]),
+        ["total", "All", r.asAt, t.soldCourses, penceToPounds(t.soldPence), t.courses, t.sessionsTotal, t.sessionsUsed, t.sessionsLeft, penceToPounds(t.unusedPence), t.expiringCourses, t.expiringSessions, penceToPounds(t.expiringPence)],
+      ],
+    },
+  };
+}
+
+async function giftCardLiabilityView(b: Built, sources: ReportingSources): Promise<ReportView> {
+  const r = await loadGiftCardLiability(ctxOf(b), b.req, sources);
+  if (!r.available) return emptyView("gift-card-liability", NO_BILLING);
+  const t = r.total;
+  const asAt = formatUkDate(r.asAt);
+  const from = formatUkDate(r.from);
+  const rows = byName(r.rows, (x) => siteOfKey(b, x.key));
+  const values = rows.map((x) => x.closingPence / 100);
+  const max = scaleMax(values, null, 100);
+  const bars = rows.map((x, i) => ({ label: siteOfKey(b, x.key), value: values[i], display: formatPence(x.closingPence).replace(/\.\d\d$/, ""), strong: false }));
+  const cells = (name: string, x: typeof t) => [name, formatPence(x.openingPence), formatPence(x.soldPence), formatPence(x.spentPence), formatPence(x.creditedPence), formatPence(x.expiredPence), formatPence(x.closingPence)];
+  return {
+    id: "gift-card-liability",
+    title: REPORTS["gift-card-liability"].title,
+    description: REPORTS["gift-card-liability"].description,
+    notice: null,
+    stats: [
+      { id: "outstanding", label: "Still to be spent", value: formatPence(t.closingPence), sub: `As at ${asAt}`, tone: "plain" },
+      { id: "sold", label: "Sold in period", value: formatPence(t.soldPence), sub: `${n(t.cardsSold)} gift card${t.cardsSold === 1 ? "" : "s"}`, tone: "plain" },
+      { id: "spent", label: "Spent in period", value: formatPence(t.spentPence), sub: t.expiredPence ? `${formatPence(t.expiredPence)} expired unspent` : "Nothing expired unspent", tone: "plain" },
+    ],
+    chart: rows.length ? { title: `Still to be spent by site at ${asAt} (£)`, bars, max, maxLabel: `£${max.toLocaleString("en-GB")}`, note: null, description: describe("Still to be spent by site", bars) } : null,
+    tables: [
+      {
+        id: "sites",
+        title: `${from} – ${asAt}`,
+        columns: cols(["Site", `Held on ${formatUkDate(addDaysIso(r.from, -1))}`, "Sold", "Spent", "Credited", "Expired", `Held on ${asAt}`]),
+        rows: [...rows.map((x) => ({ cells: cells(siteOfKey(b, x.key), x) })), ...(rows.length > 1 ? [{ cells: cells("Total", t) }] : [])],
+        empty: "No gift card was sold by this date.",
+      },
+    ],
+    footnote: `Held = what valid gift cards still hold at the end of that day; a card is valid up to and including its expiry date. Held at the start + sold − spent − credited − expired = held at the end. Spent is net of spends put back (a payment reversed); credited = taken off by a credit note on the card's sale; expired = what cards whose last valid day fell in the period still held. A card belongs to the site of the invoice that sold it; it is sold when that invoice is issued.`,
+    csv: {
+      header: ["group", "name", "from", "as_at", "held_at_start_gbp", "sold_gbp", "cards_sold", "spent_gbp", "credited_gbp", "expired_gbp", "held_at_end_gbp"],
+      rows: [
+        ...rows.map((x) => ["site", siteOfKey(b, x.key), r.from, r.asAt, penceToPounds(x.openingPence), penceToPounds(x.soldPence), x.cardsSold, penceToPounds(x.spentPence), penceToPounds(x.creditedPence), penceToPounds(x.expiredPence), penceToPounds(x.closingPence)] as CsvValue[]),
+        ["total", "All", r.from, r.asAt, penceToPounds(t.openingPence), penceToPounds(t.soldPence), t.cardsSold, penceToPounds(t.spentPence), penceToPounds(t.creditedPence), penceToPounds(t.expiredPence), penceToPounds(t.closingPence)],
+      ],
+    },
+  };
+}
+
+async function productsView(b: Built, sources: ReportingSources): Promise<ReportView> {
+  const r = await loadProducts(ctxOf(b), b.req, sources);
+  if (!r.available) return emptyView("products", NO_BILLING);
+  const names = new Map(r.products.map((p) => [p.id, p]));
+  const productName = (id: string) => names.get(id)?.name ?? "Unknown product";
+  const sku = (id: string) => names.get(id)?.sku ?? "";
+  const sales = r.sales.slice().sort((a, x) => productName(a.productId).localeCompare(productName(x.productId), "en-GB") || b.dir.siteName(a.siteId).localeCompare(b.dir.siteName(x.siteId), "en-GB"));
+  const stock = r.stock.slice().sort((a, x) => productName(a.productId).localeCompare(productName(x.productId), "en-GB") || b.dir.siteName(a.siteId).localeCompare(b.dir.siteName(x.siteId), "en-GB"));
+  const st = r.salesTotal;
+  const today = formatUkDate(b.req.today);
+  const byProduct = new Map<string, number>();
+  for (const x of sales) byProduct.set(x.productId, (byProduct.get(x.productId) ?? 0) + x.netPence);
+  const top = Array.from(byProduct.entries()).sort((a, x) => x[1] - a[1]).slice(0, 8);
+  const values = top.map(([, v]) => v / 100);
+  const max = scaleMax(values, null, 50);
+  const bars = top.map(([id, v], i) => ({ label: productName(id), value: values[i], display: formatPence(v).replace(/\.\d\d$/, ""), strong: false }));
+  return {
+    id: "products",
+    title: REPORTS.products.title,
+    description: REPORTS.products.description,
+    notice: null,
+    stats: [
+      { id: "net-sales", label: "Net sales", value: formatPence(st.netPence), sub: `${n(st.quantitySold - st.quantityReturned)} unit${st.quantitySold - st.quantityReturned === 1 ? "" : "s"} · VAT ${formatPence(st.vatPence)}`, tone: "plain" },
+      { id: "stock-value", label: "Stock value", value: formatPence(r.stockValuePence), sub: `At sale price, ${today}`, tone: "plain" },
+      { id: "low-stock", label: "Low stock", value: n(r.lowStock), sub: "At or below the warning level", tone: r.lowStock > 0 ? "warn" : "plain" },
+    ],
+    chart: bars.length ? { title: "Net sales by product (£)", bars, max, maxLabel: `£${max.toLocaleString("en-GB")}`, note: null, description: describe("Net sales by product", bars) } : null,
+    tables: [
+      {
+        id: "sales",
+        title: "Sold in the period",
+        columns: cols(["Product", "Site", "Sold", "Given back", "Net", "VAT", "Total"]),
+        rows: sales.map((x) => ({ cells: [productName(x.productId), b.dir.siteName(x.siteId), n(x.quantitySold), n(x.quantityReturned), formatPence(x.netPence), formatPence(x.vatPence), formatPence(x.netPence + x.vatPence)] })),
+        empty: "No product was sold in this period.",
+      },
+      {
+        id: "stock",
+        title: `Stock on hand, ${today}`,
+        columns: cols(["Product", "Site", "On hand", "Value at sale price", "Low stock"]),
+        rows: stock.map((x) => ({ cells: [productName(x.productId), b.dir.siteName(x.siteId), n(x.onHand), formatPence(x.valuePence), x.low ? "Low" : ""] })),
+        empty: "No stock has been recorded.",
+      },
+    ],
+    footnote: "Sold = products on invoices issued in the period (void invoices left out), less credit notes issued in the period; given back = units on lines credited in full. Net is before VAT. Stock on hand is today's, whatever the period: everything received, sold, given back and adjusted at that site. Value = units on hand × the product's price today (nothing for a count below zero). Low stock = at or below the product's warning level.",
+    csv: {
+      header: ["group", "product", "sku", "site", "sold", "given_back", "net_gbp", "vat_gbp", "total_gbp", "on_hand", "stock_value_gbp", "low_stock"],
+      rows: [
+        ...sales.map((x) => ["sales", productName(x.productId), sku(x.productId), b.dir.siteName(x.siteId), x.quantitySold, x.quantityReturned, penceToPounds(x.netPence), penceToPounds(x.vatPence), penceToPounds(x.netPence + x.vatPence), null, null, null] as CsvValue[]),
+        ["sales_total", "All", "", "", st.quantitySold, st.quantityReturned, penceToPounds(st.netPence), penceToPounds(st.vatPence), penceToPounds(st.netPence + st.vatPence), null, null, null],
+        ...stock.map((x) => ["stock", productName(x.productId), sku(x.productId), b.dir.siteName(x.siteId), null, null, null, null, null, x.onHand, penceToPounds(x.valuePence), x.low] as CsvValue[]),
+        ["stock_total", "All", "", "", null, null, null, null, null, null, penceToPounds(r.stockValuePence), r.lowStock > 0],
+      ],
+    },
+  };
+}
+
+/* ------------------------------------------------------------------------------------------------
  * Entry points
  * ----------------------------------------------------------------------------------------------*/
 
@@ -477,6 +627,9 @@ export async function reportPageFor(actor: ReportsActor, id: ReportId, params: Q
   else if (id === "caseload") view = await caseloadView(b);
   else if (id === "revenue") view = await revenueView(b, sources);
   else if (id === "debtors") view = await debtorsView(b, sources);
+  else if (id === "course-liability") view = await courseLiabilityView(b, sources);
+  else if (id === "gift-card-liability") view = await giftCardLiabilityView(b, sources);
+  else if (id === "products") view = await productsView(b, sources);
   else view = await authorisationsView(b, actor.can("patients.view"));
   return ok({ view, filters: b.filters, canExport: actor.can("reports.export"), query: queryOf(b.filters) });
 }

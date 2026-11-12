@@ -205,6 +205,7 @@ export async function giftCardCreditQueries(ctx: RepoContext, tenantId: string, 
     const part = parts.find((p) => p.lineId === c.saleLineId);
     if (!part || part.creditPence <= 0) continue;
     if (c.status === "cancelled" || c.status === "pending") throw new RepoInputError("This gift card has been cancelled, so nothing is left on it to credit.");
+    if (c.status === "expired" && c.balancePence === 0) throw new RepoInputError("This gift card has expired, so nothing is left on it to credit.");
     if (part.creditPence > c.balancePence) {
       throw new RepoInputError(
         c.balancePence === 0
@@ -282,7 +283,9 @@ export function giftCardRedeemQueries(ctx: RepoContext, tenantId: string, c: Gif
       .where("tenant_id", "=", tenantId)
       .where("id", "=", c.id)
       .where("status", "=", "active")
-      .where("balance_pence", "=", c.balancePence),
+      .where("balance_pence", "=", c.balancePence)
+      // PK06: never spent past its expiry (the expiry day itself still counts), even before the nightly sweep.
+      .where((eb) => eb.or([eb("expires_on", "is", null), eb("expires_on", ">=", todayOf(ctx))])),
     ctx.db.insertInto(MOVES).values({
       tenant_id: tenantId,
       id: pmsId(GIFT_CARD_MOVE_PREFIX, ctx),

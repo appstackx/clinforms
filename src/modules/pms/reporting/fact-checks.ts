@@ -6,7 +6,21 @@
  */
 import { PAYER_TYPES } from "../core/schemas";
 import { isIsoDate } from "../core/text";
-import { APPOINTMENT_OUTCOMES, REVENUE_KINDS, type AppointmentFact, type AvailabilityFact, type DebtFact, type RevenueFact, type VisitFact } from "./facts";
+import {
+  APPOINTMENT_OUTCOMES,
+  GIFT_CARD_FACT_KINDS,
+  REVENUE_KINDS,
+  type AppointmentFact,
+  type AvailabilityFact,
+  type CourseFact,
+  type CourseSaleFact,
+  type DebtFact,
+  type GiftCardFact,
+  type ProductSaleFact,
+  type RevenueFact,
+  type StockFact,
+  type VisitFact,
+} from "./facts";
 
 export interface FactFilter {
   from: string;
@@ -124,4 +138,68 @@ export function checkRevenueFacts(facts: readonly RevenueFact[] | null | undefin
 /** Debt is "now": the period does not apply, the sites do (payer accounts are checked by the report). */
 export function checkDebtFacts(facts: readonly DebtFact[] | null | undefined, f: Pick<FactFilter, "siteIds" | "known">): Checked<DebtFact> {
   return keep(facts, (d) => (PAYER_TYPES as readonly string[]).includes(d.payerType) && isIsoDate(d.dueOn) && count(d.invoices) && money(d.outstandingPence) && siteOk(d.siteId, f));
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * PK06 – courses, gift cards, products and stock
+ * ----------------------------------------------------------------------------------------------*/
+
+function whole(n: unknown): boolean {
+  return typeof n === "number" && Number.isInteger(n) && n >= 0;
+}
+
+function dateOrNull(v: unknown): boolean {
+  return v === null || (typeof v === "string" && isIsoDate(v));
+}
+
+/** Open courses on the "as at" date (`asAt`): none past its expiry on that date, used ≤ sold. */
+export function checkCourseFacts(facts: readonly CourseFact[] | null | undefined, f: Pick<FactFilter, "siteIds" | "known"> & { asAt: string }): Checked<CourseFact> {
+  return keep(
+    facts,
+    (c) =>
+      dateOrNull(c.expiresOn) &&
+      (c.expiresOn === null || c.expiresOn >= f.asAt) &&
+      whole(c.sessionsTotal) &&
+      c.sessionsTotal > 0 &&
+      whole(c.sessionsUsed) &&
+      c.sessionsUsed <= c.sessionsTotal &&
+      money(c.netPence) &&
+      whole(c.courses) &&
+      siteOk(c.siteId, f),
+  );
+}
+
+export function checkCourseSaleFacts(facts: readonly CourseSaleFact[] | null | undefined, f: Pick<FactFilter, "from" | "to" | "siteIds" | "known">): Checked<CourseSaleFact> {
+  return keep(facts, (c) => typeof c.date === "string" && isIsoDate(c.date) && c.date >= f.from && c.date <= f.to && whole(c.courses) && money(c.amountPence) && siteOk(c.siteId, f));
+}
+
+export function checkGiftCardFacts(facts: readonly GiftCardFact[] | null | undefined, f: Pick<FactFilter, "siteIds" | "known">): Checked<GiftCardFact> {
+  return keep(
+    facts,
+    (g) => (GIFT_CARD_FACT_KINDS as readonly string[]).includes(g.kind) && (g.when === "before" || g.when === "in") && dateOrNull(g.expiresOn) && whole(g.moves) && money(g.amountPence) && siteOk(g.siteId, f),
+  );
+}
+
+/** Product sales in the period, of the clinic's own products. */
+export function checkProductSaleFacts(facts: readonly ProductSaleFact[] | null | undefined, f: Pick<FactFilter, "from" | "to" | "siteIds" | "known"> & { productIds: readonly string[] }): Checked<ProductSaleFact> {
+  return keep(
+    facts,
+    (p) =>
+      typeof p.date === "string" &&
+      isIsoDate(p.date) &&
+      p.date >= f.from &&
+      p.date <= f.to &&
+      (p.kind === "sold" || p.kind === "credited") &&
+      f.productIds.includes(p.productId) &&
+      whole(p.lines) &&
+      whole(p.quantity) &&
+      money(p.netPence) &&
+      money(p.vatPence) &&
+      siteOk(p.siteId, f),
+  );
+}
+
+/** Stock is "now" and always at a site; the clinic's own products only. */
+export function checkStockFacts(facts: readonly StockFact[] | null | undefined, f: Pick<FactFilter, "siteIds" | "known"> & { productIds: readonly string[] }): Checked<StockFact> {
+  return keep(facts, (s) => typeof s.siteId === "string" && f.productIds.includes(s.productId) && Number.isInteger(s.onHand) && siteOk(s.siteId, f));
 }
