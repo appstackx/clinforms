@@ -68,6 +68,11 @@ describe("PK06 liability figures (pure)", () => {
     }
     // As at its expiry day the card still counts.
     assert.equal(giftCardLiability(before, "2026-11-01", "2026-11-11").rows.find((x) => x.key === "s2")?.closingPence, 3000);
+    // An "expire" move recorded before the period, on a card still valid the day before (the sweep's move landing just
+    // before the period's first instant): never counted in what was held at the start.
+    const early = [f("s3", "2026-10-31", "sale", "before", 2000), f("s3", "2026-10-31", "expire", "before", -2000)];
+    const s3 = giftCardLiability(early, "2026-11-01", "2026-11-12").rows.find((x) => x.key === "s3");
+    assert.deepEqual([s3?.openingPence, s3?.expiredPence, s3?.closingPence], [2000, 2000, 0]);
   });
 
   it("product sales: sold less credited; units given back; stock value at sale price, low-stock flags", () => {

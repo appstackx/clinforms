@@ -44,7 +44,8 @@ import { checkInvoicePaymentLinks, createInvoicePaymentLink } from "./payment-li
 import { paymentLinkProvider, PaymentProviderError, type PaymentLinkProvider } from "./payments";
 import { billableVisitSource } from "./visit-source";
 import { priceVisits, referrerNames } from "./views";
-import { useCoursesForVisits } from "./courses";
+import { courseRefusedText } from "../../../modules/pms/billing/courses";
+import { useCoursesForVisits, type CourseUseRefusal } from "./courses";
 import { maskedCode, normaliseGiftCardCode } from "../../../modules/pms/billing/gift-cards";
 import { findGiftCardByCode, giftCardPaidOnInvoice, giftCardRedeemQueries, giftCardRefusal } from "../../repos/pms/billing/gift-cards";
 import type { BatchQuery } from "../../db/batch";
@@ -66,6 +67,11 @@ export interface InvoiceVisitsResult {
   invoices: { id: string; number: string | null; billTo: "patient" | "payer"; totalPence: number }[];
   /** PK02: visits used from a patient's course instead of invoiced. */
   courseUses: number;
+  /**
+   * Visits the member chose to use from a course that could not be (the course ran out, was cancelled, or had expired
+   * on the visit's date): left out of the invoices too – never charged without the member knowing – with the reason.
+   */
+  courseRefused: CourseUseRefusal[];
   /** Visits left out: already invoiced meanwhile, no price, or a 0 % fee. */
   skipped: number;
 }
@@ -93,8 +99,10 @@ export async function invoiceVisitsFor(actor: BillingActor, input: InvoiceVisits
     const allPriced = await priceVisits(ctx, t, visits);
     // Visits the member chose to use from a course (PK02): used first, then left out of the invoices.
     const wanted = new Set(parsed.data.useCourse ?? []);
-    const used = wanted.size ? await useCoursesForVisits(ctx, t, allPriced.filter((p) => wanted.has(p.visit.appointmentId)), actor.actor) : new Set<string>();
-    const priced = allPriced.filter((p) => !used.has(p.visit.appointmentId));
+    const { used, refused } = wanted.size ? await useCoursesForVisits(ctx, t, allPriced.filter((p) => wanted.has(p.visit.appointmentId)), actor.actor) : { used: new Set<string>(), refused: [] as CourseUseRefusal[] };
+    // A visit ticked "use course" that could not be used is NOT invoiced instead: the member is told and decides.
+    const refusedIds = new Set(refused.map((r) => r.appointmentId));
+    const priced = allPriced.filter((p) => !used.has(p.visit.appointmentId) && !refusedIds.has(p.visit.appointmentId));
     const settings = await getBillingSettings(ctx, t);
     const groups = new Map<string, typeof priced>();
     let skipped = ids.length - visits.length;
@@ -154,8 +162,11 @@ export async function invoiceVisitsFor(actor: BillingActor, input: InvoiceVisits
         throw err;
       }
     }
-    if (out.length === 0 && used.size === 0) return fail("invalid", "None of the chosen visits could be invoiced: they are invoiced already, or have no price.");
-    return ok({ invoices: out, skipped, courseUses: used.size });
+    if (out.length === 0 && used.size === 0) {
+      if (refused.length > 0) return fail("invalid", `${courseRefusedText(refused.length)} ${refused[0].reason}`);
+      return fail("invalid", "None of the chosen visits could be invoiced: they are invoiced already, or have no price.");
+    }
+    return ok({ invoices: out, skipped, courseUses: used.size, courseRefused: refused });
   });
 }
 

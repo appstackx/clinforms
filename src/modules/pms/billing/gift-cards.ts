@@ -110,6 +110,24 @@ export const GIFT_CARD_MOVE_LABELS: Readonly<Record<GiftCardMoveKind, string>> =
   adjust: "Balance adjusted",
 };
 
+/**
+ * For the reverse-payment confirmation (PK06): a spend put back on a card that has expired – or whose last valid day is
+ * today, so tonight's sweep expires it – goes back on the card, and the nightly expiry then removes it again: the
+ * patient does not get that value back. null when no card is affected (or the payment spent no card).
+ */
+export function giftCardReversalWarning(cards: readonly { status: GiftCardStatus; expiresOn: string | null; amountPence: number }[], today: string): string | null {
+  const expired = cards.filter((c) => c.status === "expired" || (c.expiresOn !== null && c.expiresOn < today));
+  const lastDay = cards.filter((c) => !expired.includes(c) && c.status !== "cancelled" && c.expiresOn !== null && c.expiresOn === today);
+  const pence = (xs: typeof cards) => formatPence(xs.reduce((a, c) => a + c.amountPence, 0));
+  if (expired.length > 0) {
+    return `This payment came from a gift card that has expired. Reversing it puts ${pence(expired)} back on an expired card, and the nightly expiry removes it again – the patient does not get it back. To give the value back another way, credit the invoice it paid instead.`;
+  }
+  if (lastDay.length > 0) {
+    return `This payment came from a gift card whose last valid day is today. Reversing it puts ${pence(lastDay)} back on the card, but whatever is left on it tonight is removed by the nightly expiry.`;
+  }
+  return null;
+}
+
 /** "£40.00 of £50.00 left · expires 01/11/2028" */
 export function giftCardBalanceLabel(c: Pick<GiftCard, "balancePence" | "initialPence" | "expiresOn">): string {
   return `${formatPence(c.balancePence)} of ${formatPence(c.initialPence)} left${c.expiresOn ? ` · expires ${formatUkDate(c.expiresOn)}` : ""}`;

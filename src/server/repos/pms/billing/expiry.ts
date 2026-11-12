@@ -9,8 +9,9 @@
  *   balance after it 0) and the audit row pms.gift_card.expire (ids and amounts only, never the code).
  * - The expiry day itself still counts: only `expires_on < today` is swept.
  *
- * The screens and every write already treat a past-expiry course or card as expired from the date (no spend, no use)
- * – the sweep only makes the stored status and the card's balance say so. Safe to run any number of times: each
+ * The screens and every write already treat a past-expiry card as expired from the date (no spend, no credit), and a
+ * course by the VISIT's date (a visit dated on or before the expiry is still used from it, also after this sweep) – the
+ * sweep only makes the stored status and the card's balance say so. Safe to run any number of times: each
  * statement is conditional on the row as it was read (status, balance, expiry still past), so a second run – or two
  * at once – changes nothing more; a card or course changed meanwhile is simply left for the next run. Tenant-scoped:
  * every statement names the clinic; batches stay well inside the gateway's 100 statements.
@@ -46,8 +47,12 @@ function inGroups<T>(rows: readonly T[], size: number): T[][] {
   return out;
 }
 
-/** Marks one clinic's courses and gift cards past their expiry as expired. */
-export async function sweepExpiredForTenant(ctx: DbContext, tenantId: string, actor: PmsActor = EXPIRY_SWEEP_ACTOR): Promise<ExpirySweepResult> {
+/**
+ * Marks one clinic's courses and gift cards past their expiry as expired. `stop` (the nightly run's deadline) is asked
+ * before each batch: once it says true no new batch starts – the rest waits for the next night.
+ */
+export async function sweepExpiredForTenant(ctx: DbContext, tenantId: string, actor: PmsActor = EXPIRY_SWEEP_ACTOR, options: { stop?: () => boolean } = {}): Promise<ExpirySweepResult> {
+  const stop = options.stop ?? (() => false);
   assertTenantId(tenantId);
   const today = todayOf(ctx);
   const out: ExpirySweepResult = { courses: 0, giftCards: 0, giftCardPence: 0 };
@@ -70,8 +75,9 @@ export async function sweepExpiredForTenant(ctx: DbContext, tenantId: string, ac
           .execute(),
       )
     ).filter((c) => !seen.has(c.id));
-    if (due.length === 0) break;
+    if (due.length === 0 || stop()) break;
     for (const group of inGroups(due, EXPIRY_BATCH_ROWS)) {
+      if (stop()) return out;
       const at = nowIso(ctx);
       const queries: BatchQuery[] = [];
       for (const c of group) {
@@ -133,8 +139,9 @@ export async function sweepExpiredForTenant(ctx: DbContext, tenantId: string, ac
           .execute(),
       )
     ).filter((c) => !seen.has(c.id));
-    if (due.length === 0) break;
+    if (due.length === 0 || stop()) break;
     for (const group of inGroups(due, EXPIRY_BATCH_ROWS)) {
+      if (stop()) return out;
       const r = await runCardGroup(ctx, tenantId, group, today, actor);
       out.giftCards += r.cards;
       out.giftCardPence += r.pence;
@@ -275,21 +282,41 @@ export async function clinicsWithExpiredItems(ctx: DbContext): Promise<string[]>
 export interface ExpiryRunResult extends ExpirySweepResult {
   clinics: number;
   errors: number;
+  /** The deadline came before everything was swept: no new clinic or batch was started; the rest waits for the next night. */
+  stoppedEarly: boolean;
 }
 
-/** The nightly run: every clinic with something past its expiry, one at a time; one clinic's failure does not stop the rest. */
-export async function runExpirySweep(ctx: DbContext, options: { onError?: (tenantId: string, err: unknown) => void } = {}): Promise<ExpiryRunResult> {
+/** How long the nightly run starts new work (the cron route has 60 s in all, the retention pass and billing first). */
+export const EXPIRY_RUN_BUDGET_MS = 20_000;
+
+/**
+ * The nightly run: every clinic with something past its expiry, one at a time; one clinic's failure does not stop the
+ * rest. After `budgetMs` (real time, `nowMs`) no new clinic or batch is started – a batch already running finishes –
+ * and `stoppedEarly` says so; the next night carries on (every statement is conditional, nothing is done twice).
+ */
+export async function runExpirySweep(
+  ctx: DbContext,
+  options: { onError?: (tenantId: string, err: unknown) => void; budgetMs?: number; nowMs?: () => number } = {},
+): Promise<ExpiryRunResult> {
+  const nowMs = options.nowMs ?? Date.now;
+  const deadline = nowMs() + (options.budgetMs ?? EXPIRY_RUN_BUDGET_MS);
   const out: ExpiryRunResult = {
     clinics: 0,
     courses: 0,
     giftCards: 0,
     giftCardPence: 0,
     errors: 0,
+    stoppedEarly: false,
+  };
+  const stop = () => {
+    if (nowMs() >= deadline) out.stoppedEarly = true;
+    return out.stoppedEarly;
   };
   for (const tenantId of await clinicsWithExpiredItems(ctx)) {
+    if (stop()) break;
     out.clinics += 1;
     try {
-      const r = await sweepExpiredForTenant(ctx, tenantId);
+      const r = await sweepExpiredForTenant(ctx, tenantId, EXPIRY_SWEEP_ACTOR, { stop });
       out.courses += r.courses;
       out.giftCards += r.giftCards;
       out.giftCardPence += r.giftCardPence;

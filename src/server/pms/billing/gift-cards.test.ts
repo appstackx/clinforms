@@ -7,7 +7,7 @@
  */
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
-import { formatGiftCardCode, giftCardExpiry, normaliseGiftCardCode } from "../../../modules/pms/billing/gift-cards";
+import { formatGiftCardCode, giftCardExpiry, giftCardReversalWarning, normaliseGiftCardCode } from "../../../modules/pms/billing/gift-cards";
 import { testCipher } from "../../db/testing/databases";
 import { runBatch } from "../../db/batch";
 import { GIFT_CARD_CASCADE_DELETED_TABLES } from "../../db/pms-schema/billing";
@@ -30,6 +30,16 @@ const B = "harbour-gift";
 const SEED = { userId: "user_owner_01", sessionId: "sess_owner" };
 
 describe("gift card codes (pure)", () => {
+  it("PK06 review: the reverse-payment warning – an expired card, or one whose last valid day is today; none otherwise", () => {
+    const today = "2026-11-12";
+    assert.match(giftCardReversalWarning([{ status: "expired", expiresOn: "2026-11-01", amountPence: 1000 }], today) ?? "", /^This payment came from a gift card that has expired\. Reversing it puts £10\.00 back on an expired card, and the nightly expiry removes it again/);
+    assert.match(giftCardReversalWarning([{ status: "active", expiresOn: "2026-11-11", amountPence: 500 }], today) ?? "", /has expired.*£5\.00/, "past its expiry before the sweep");
+    assert.match(giftCardReversalWarning([{ status: "used", expiresOn: today, amountPence: 2500 }], today) ?? "", /last valid day is today.*£25\.00.*nightly expiry/);
+    assert.equal(giftCardReversalWarning([{ status: "active", expiresOn: "2026-11-13", amountPence: 500 }], today), null);
+    assert.equal(giftCardReversalWarning([{ status: "active", expiresOn: null, amountPence: 500 }], today), null);
+    assert.equal(giftCardReversalWarning([], today), null);
+  });
+
   it("12 characters without look-alikes, typed any way; expiry 24 months less a day", () => {
     const code = formatGiftCardCode(new Uint8Array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]));
     assert.match(code, /^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/);

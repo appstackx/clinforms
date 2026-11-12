@@ -158,7 +158,9 @@ export function proRataCredit(line: { totalPence: number; creditedPence: number 
 
 /** Whether a course covers a visit: active, not cancelled, a session left, the service covered, the case agrees, in date. */
 export function courseCovers(c: Pick<PatientCourse, "status" | "serviceIds" | "caseId" | "expiresOn" | "sessionsTotal" | "sessionsUsed" | "patientId">, visit: { patientId: string; serviceId: string; caseId: string | null; date: string }): boolean {
-  if (c.status !== "active") return false;
+  // An expired course still covers a visit dated on or before its expiry (the visit was within its validity – it may be
+  // invoiced days later, after the nightly sweep); never a cancelled or used-up one.
+  if (c.status !== "active" && c.status !== "expired") return false;
   if (c.patientId !== visit.patientId) return false;
   if (sessionsLeft(c) <= 0) return false;
   if (!c.serviceIds.includes(visit.serviceId)) return false;
@@ -197,6 +199,11 @@ export function offerCourses(
     left.set(c.id, n - 1);
   }
   return out;
+}
+
+/** "1 visit could not be used from its course and was not invoiced." */
+export function courseRefusedText(n: number): string {
+  return `${n} visit${n === 1 ? "" : "s"} could not be used from ${n === 1 ? "its course" : "their courses"} and ${n === 1 ? "was" : "were"} not invoiced either – untick "Use course" to invoice ${n === 1 ? "it" : "them"}.`;
 }
 
 /** The invoice line that sells a course (an ordinary item line; VAT as the course type says). */
