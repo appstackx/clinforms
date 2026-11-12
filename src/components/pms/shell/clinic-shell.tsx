@@ -28,6 +28,7 @@ import {
   List,
   Lock,
   LogOut,
+  MonitorSmartphone,
   MapPin,
   Menu,
   MessageSquare,
@@ -45,6 +46,8 @@ import {
 } from "lucide-react";
 import { signOutAndReload } from "@/app/app/session-forms";
 import { cn } from "@/lib/utils";
+import { useClinicApp } from "@/components/pwa/clinic-app";
+import { InstallAppDialog } from "@/components/pwa/install-app-dialog";
 import { InlineKbd } from "../ui/inputs";
 import { ShortcutsSheet } from "../ui/keyboard-hint";
 import { PmsAvatar } from "../ui/pms-avatar";
@@ -75,6 +78,11 @@ export interface ClinicShellProps {
    * menu – "Plan and billing", "Clinic administration". Empty for everyone else.
    */
   adminLinks?: readonly ShellNavItem[];
+  /**
+   * The host's brand has an installable app (src/lib/brand.ts installableApp – ClinDesk's hosts only): registers the
+   * service worker and offers "Install the app" in the account menu when the browser can install (12/11/2026, xt05).
+   */
+  installableApp?: boolean;
   children: React.ReactNode;
 }
 
@@ -105,7 +113,9 @@ const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [{ title: "Everywhere", shortc
 const focusRing = "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary";
 
 export function ClinicShell(props: ClinicShellProps) {
-  const { productName, mark, homeHref, clinicName, user, nav, sites, searchHref, clinForms, accountHref, adminLinks = [], children } = props;
+  const { productName, mark, homeHref, clinicName, user, nav, sites, searchHref, clinForms, accountHref, adminLinks = [], installableApp = false, children } = props;
+  const app = useClinicApp(installableApp);
+  const [installOpen, setInstallOpen] = React.useState(false);
   const pathname = usePathname() ?? "";
   const router = useRouter();
   const [navOpen, setNavOpen] = React.useState(false);
@@ -150,14 +160,14 @@ export function ClinicShell(props: ClinicShellProps) {
 
   return (
     <ToastProvider>
-      <div className="flex min-h-screen flex-col bg-background text-sm text-foreground">
+      <div className="flex min-h-screen flex-col bg-background pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] text-sm text-foreground">
         <a
           href="#clinic-main"
           className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-3 focus:z-[70] focus:rounded-lg focus:bg-white focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:shadow"
         >
           Skip to content
         </a>
-        <header className="flex min-h-14 flex-wrap items-center gap-x-3 gap-y-2 border-b border-border bg-white px-4 py-2.5">
+        <header className="flex min-h-14 flex-wrap items-center gap-x-3 gap-y-2 border-b border-border bg-white px-4 pb-2.5 pt-[calc(0.625rem_+_env(safe-area-inset-top))]">
           <button
             type="button"
             className={cn("inline-flex h-9 w-9 items-center justify-center rounded-[8px] text-[#334155] hover:bg-[#F1F5F9] md:hidden", focusRing)}
@@ -237,6 +247,7 @@ export function ClinicShell(props: ClinicShellProps) {
               adminLinks={adminLinks}
               clinForms={clinForms}
               onShortcuts={() => setShortcutsOpen(true)}
+              onInstallApp={app.hint ? () => setInstallOpen(true) : null}
             />
           </div>
         </header>
@@ -287,12 +298,15 @@ export function ClinicShell(props: ClinicShellProps) {
               </div>
             </div>
           </div>
-          <main id="clinic-main" tabIndex={-1} className="min-w-0 flex-1 px-4 py-5 focus:outline-none sm:px-6">
+          <main id="clinic-main" tabIndex={-1} className="min-w-0 flex-1 px-4 pb-[calc(1.25rem_+_env(safe-area-inset-bottom))] pt-5 focus:outline-none sm:px-6">
             {children}
           </main>
         </div>
       </div>
       <ShortcutsSheet open={shortcutsOpen} onOpenChange={setShortcutsOpen} groups={SHORTCUT_GROUPS} />
+      {app.hint ? (
+        <InstallAppDialog open={installOpen} onOpenChange={setInstallOpen} appName={productName} hint={app.hint} onInstall={app.install} onDismiss={app.dismiss} />
+      ) : null}
     </ToastProvider>
   );
 }
@@ -328,10 +342,12 @@ interface UserMenuProps {
   adminLinks: readonly ShellNavItem[];
   clinForms: ClinicShellProps["clinForms"];
   onShortcuts: () => void;
+  /** "Install the app" (the browser can install and the member has not dismissed it), else null. */
+  onInstallApp: (() => void) | null;
 }
 
 /** The account menu (role="menu"): ↓/↑ move, Esc closes and returns to the button, Tab leaves. */
-function UserMenu({ user, accountHref, adminLinks, clinForms, onShortcuts }: UserMenuProps) {
+function UserMenu({ user, accountHref, adminLinks, clinForms, onShortcuts, onInstallApp }: UserMenuProps) {
   const [open, setOpen] = React.useState(false);
   const rootRef = React.useRef<HTMLDivElement>(null);
   const buttonRef = React.useRef<HTMLButtonElement>(null);
@@ -452,6 +468,22 @@ function UserMenu({ user, accountHref, adminLinks, clinForms, onShortcuts }: Use
               ?
             </span>
           </button>
+          {onInstallApp ? (
+            <button
+              role="menuitem"
+              tabIndex={-1}
+              type="button"
+              className={itemClass}
+              data-testid="menu-install-app"
+              onClick={() => {
+                close(false);
+                onInstallApp();
+              }}
+            >
+              <MonitorSmartphone className="h-4 w-4 shrink-0" aria-hidden />
+              <span className="flex-1">Install the app</span>
+            </button>
+          ) : null}
           {clinForms ? (
             <Link role="menuitem" tabIndex={-1} href={clinForms.href} className={itemClass} onClick={() => close(false)}>
               <ArrowLeftRight className="h-4 w-4 shrink-0" aria-hidden />

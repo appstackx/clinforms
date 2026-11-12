@@ -320,7 +320,9 @@ function MobileTabs() {
     { href: "/app/clinic/messages", label: "Messages", Icon: MessageSquare },
   ];
   return (
-    <nav aria-label="Quick links" className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-border bg-white md:hidden">
+    // Clear of the home bar and the rounded corners in the installed app (viewport-fit=cover; 0 in a browser tab). The
+    // page's own bottom padding (pb-20) plus the clinic shell's safe-area padding keep the last card above the bar.
+    <nav aria-label="Quick links" className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-border bg-white pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] md:hidden">
       {tabs.map((t) => (
         <Link
           key={t.href}

@@ -209,6 +209,7 @@ Existing `MEDREPORT_*`, `TM3_SIM_*`, `ANTHROPIC_API_KEY`, plus: `CLINFORMS_DB`, 
 `MAILERSEND_API_KEY`, `MAILERSEND_FROM_EMAIL` (*built:* replace `CLINFORMS_EMAIL_FROM`, still read as a fallback),
 `CLINFORMS_PLATFORM_ADMINS`, `CLINFORMS_PUBLIC_DEMO`, `CRON_SECRET`,
 `NEXT_PUBLIC_POSTHOG_KEY`, `NEXT_PUBLIC_POSTHOG_HOST` (default `/ingest`).
+`CLINFORMS_PWA` (optional; `off` = the installable ClinDesk staff app's kill switch, §9).
 
 **Patient files in the file store (B07, built 11/11/2026, off until set):** `CLINFORMS_FILE_STORE=supabase`,
 `SUPABASE_URL` (the London project), `SUPABASE_SERVICE_ROLE_KEY` (server only), `CLINFORMS_FILE_BUCKET` (default
@@ -240,3 +241,24 @@ cancelled appointment is an appointment with its reason; the clinic's own clinic
 in the review and, for uploaded notes, can be recorded on the report by the approver (kept in its activity). The
 store's daily new-data allowance also counts the growth of updates. Detail: module README "Fix wave 3".
 
+## 9. Installable ClinDesk staff app (PWA, built 12/11/2026, tracker xt05)
+- **What:** on ClinDesk's hosts only, the clinic area (`/app/clinic`) links a web app manifest (`/clindesk.webmanifest`:
+  start `/app/clinic`, scope `/app`, standalone) and registers a service worker (`/clindesk-sw.js`, scope `/app`,
+  production builds only). ClinForms' hosts: both URLs 404, nothing linked or registered. Code: `src/lib/pwa/`
+  (`manifest.ts`, `service-worker.ts`, `install-hint.ts`), `src/server/pwa.ts`, `src/components/pwa/`; tests
+  `src/lib/pwa/pwa.test.ts`, e2e `scripts/e2e/clindesk-pwa.cjs`.
+- **What the worker keeps:** `/_next/static/*` (content-hashed build files) and the app icons, nothing else. Pages
+  inside `/app` always come from the network; offline they get a built-in offline page – never a stored page, API
+  answer or patient data. POSTs/server actions, RSC/data requests, `/api`, `/ingest`, other origins (payments, media)
+  and every page outside `/app` pass through untouched. Cache name = the deployment's commit; older ones deleted.
+- **Rollback / kill switch** (removes the worker from devices that installed it – a plain revert would leave it
+  registered): set `CLINFORMS_PWA=off` in Vercel production and redeploy (or revert the feature and keep the
+  self-removing worker, i.e. keep `/clindesk-sw.js` answering on ClinDesk's hosts with `serviceWorkerKillSource`).
+  Switched off: the manifest answers 404, the clinic area links no manifest and offers no install, and on ClinDesk's
+  hosts `/clindesk-sw.js` serves a **self-removing worker** – the browser picks it up on the next page load inside
+  `/app` (and at least daily), it deletes the app's caches, unregisters itself and reloads the open pages from the
+  network. An open clinic page also unregisters the old worker and clears its caches at once. Never answer 404 at
+  `/clindesk-sw.js` on ClinDesk's hosts while any device may still have the worker: a 404 leaves it in place.
+  Check: in Chrome DevTools → Application → Service workers on `clindesk.co.uk/app/clinic` → none after one reload.
+  Switch back on: remove the variable and redeploy. An icon already on a home screen stays and still opens ClinDesk
+  (online only, no worker) – staff remove it like any app.

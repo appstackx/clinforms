@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { cookies, headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { reportsSection } from "@/components/pms/reporting/reports-nav";
@@ -8,13 +8,15 @@ import { accountAdminLinks, clinicRoleLabel, shellNav, sitesSummary, withSetupAc
 import { resolveSiteChoice, SITE_COOKIE } from "@/components/pms/shell/site-cookie";
 import { ALL_SITES } from "@/components/pms/ui/site-switcher";
 import { roleLabel } from "@/lib/account-copy";
-import { CLINFORMS_NAME, CLINIC_SYSTEM_NAME, REPORTS_ADDON_NAME } from "@/lib/brand";
+import { CLINFORMS_NAME, CLINIC_SYSTEM_NAME, REPORTS_ADDON_NAME, brandViewport } from "@/lib/brand";
+import { MANIFEST_PATH } from "@/lib/pwa/manifest";
 import { listMemberships } from "@/server/auth/membership";
 import { CLINIC_BASE_PATH } from "@/modules/pms/core/modules";
 import { PMS_NAV } from "@/modules/pms/nav";
 import { pagePermissionFor } from "@/modules/pms/core/page-permissions";
 import { REPORTS_PATH, isReportId, reportAccess } from "@/modules/pms/reporting/catalogue";
 import { currentBrand } from "@/server/brand";
+import { currentInstallableApp } from "@/server/pwa";
 import { activeClinicPackages, notFoundTitle, requireClinicOnItsHost } from "@/server/brand-home";
 import { requireClinicActor } from "@/server/pms/actor";
 import { requireAppContext } from "@/server/auth/session";
@@ -33,12 +35,29 @@ export const dynamic = "force-dynamic";
 /** /app/clinic/patients/<segment> pages that are not a patient's record. */
 const PATIENT_LIST_SEGMENTS = new Set(["new", "export", "note-templates", "unsigned-notes"]);
 
-/** Tab titles "… · ClinDesk"; a clinic without the clinic package gets the 404 page, titled as one (01/11/2026, R3). */
+/**
+ * The host brand's theme colour (as /app's layout) and, for the installed app, the page drawn edge to edge
+ * (viewport-fit=cover): the clinic shell pads itself by the safe areas, so nothing sits under a notch or the home bar.
+ */
+export function generateViewport(): Viewport {
+  return { ...brandViewport(currentBrand()), viewportFit: "cover" };
+}
+
+/**
+ * Tab titles "… · ClinDesk"; a clinic without the clinic package gets the 404 page, titled as one (01/11/2026, R3).
+ * On a brand with an installable app (ClinDesk's hosts, 12/11/2026 xt05): the web app manifest and the iOS home-screen
+ * tags – never on ClinForms' hosts (src/lib/pwa/manifest.ts).
+ */
 export async function generateMetadata(): Promise<Metadata> {
   const robots = { index: false, follow: false };
   const packages = await activeClinicPackages();
   if (packages && !packages.clinic) return { title: { default: notFoundTitle(), template: notFoundTitle() }, robots };
-  return { title: { default: CLINIC_SYSTEM_NAME, template: `%s · ${CLINIC_SYSTEM_NAME}` }, robots };
+  const app = currentInstallableApp(); // the host brand's app, unless switched off (CLINFORMS_PWA=off)
+  return {
+    title: { default: CLINIC_SYSTEM_NAME, template: `%s · ${CLINIC_SYSTEM_NAME}` },
+    robots,
+    ...(app ? { manifest: MANIFEST_PATH, appleWebApp: { capable: true, title: app.shortName, statusBarStyle: "default" as const } } : {}),
+  };
 }
 
 /**
@@ -101,6 +120,7 @@ export default async function ClinicSystemLayout({ children }: { children: React
       clinForms={reports ? { href: "/app/studio", label: brand.id === "clinic" ? REPORTS_ADDON_NAME : CLINFORMS_NAME } : null}
       accountHref="/app/clinic/account"
       adminLinks={menu}
+      installableApp={currentInstallableApp() !== null}
     >
       <BillingBannerBar banner={billing} className="mb-4 rounded-md border" />
       {children}
