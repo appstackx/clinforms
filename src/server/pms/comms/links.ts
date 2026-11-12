@@ -101,3 +101,12 @@ export function verifyStopToken(token: string | null | undefined, secret: string
 export function stopLinkUrl(origin: string, token: string): string {
   return `${origin}${STOP_LINK_PATH}?t=${encodeURIComponent(token)}`;
 }
+
+/**
+ * The List-Unsubscribe headers (RFC 8058) for an email sent again from its stored copy (Retry): the stop link its
+ * footer carries, when it has one (review 12/11/2026 – a retried email keeps its one-click unsubscribe).
+ */
+export function unsubscribeHeadersFromText(text: string | null | undefined): Record<string, string> {
+  const m = /https?:\/\/[^\s<>"']+\/api\/clinic-messages\/unsubscribe\?t=[A-Za-z0-9._%~-]+/.exec(text ?? "");
+  return m ? { "List-Unsubscribe": `<${m[0]}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" } : {};
+}

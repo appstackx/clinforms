@@ -36,11 +36,17 @@ import { changeConsent, listConsentEvents } from "../consent";
 import { normaliseAudience, type AudienceFilters } from "../../../../../modules/pms/comms/campaigns";
 import type { DispatchDeps } from "../../../../pms/comms/dispatch";
 import { runCampaigns } from "../../../../pms/comms/campaigns/send";
-import { audienceCountFor, bulkEmailAvailable, mayUseBulkEmail, saveCampaignFor, setMarketingConsentFor, marketingConsentFor, type CampaignActor } from "../../../../pms/comms/campaigns/service";
+import { audienceCountFor, bulkEmailAvailable, campaignEditorFor, campaignsHomeFor, cancelFor, continueSendingFor, mayUseBulkEmail, saveCampaignFor, setMarketingConsentFor, marketingConsentFor, type CampaignActor } from "../../../../pms/comms/campaigns/service";
 import { verifyStopToken } from "../../../../pms/comms/links";
 import { outboxEmail, outboxSms } from "../../../../pms/comms/providers/outbox";
 import { clearTestOutbox, testEmail, testOutbox, testSms } from "../../../../pms/comms/providers/test";
 import { handleUnsubscribe } from "../../../../pms/comms/unsubscribe";
+import { handleCommsCron } from "../../../../pms/comms/cron";
+import { retryMessage } from "../../../../pms/comms/dispatch";
+import type { OutboundEmail } from "../../../../pms/comms/providers";
+import { countPmsRows, deletePmsQueries } from "../../../../pms/offboard";
+import { COMMS_CASCADE_DELETED_TABLES } from "../../../../db/pms-schema/comms";
+import { runBatch } from "../../../../db/batch";
 
 export interface CampaignsSuiteDb {
   db: Kysely<Database>;
@@ -381,9 +387,40 @@ export function defineCampaignsRepoSuite(label: string, factory: () => Promise<C
       await scheduleCampaign(ctx, A, c.id, 1, nowIsoText(), OWNER);
       assert.equal((await runCampaigns(ctx, A, outbox, { actor: OWNER })).written, 0);
       assert.equal((await getCampaignSummary(ctx, A, c.id))?.status, "scheduled");
-      await cancelCampaign(ctx, A, c.id, OWNER);
+      // Review item 7: its time passed while bulk email was off – switching it on puts it back to draft, not sent late.
+      clock += 60 * 60_000;
       const s2 = await getBulkEmailSettings(ctx, A);
-      await updateBulkEmailSettings(ctx, A, s2.rev, { enabled: true, dailyCap: 500 }, OWNER);
+      const on = await updateBulkEmailSettings(ctx, A, s2.rev, { enabled: true, dailyCap: 500 }, OWNER);
+      assert.equal(on.ok && on.unscheduled, 1);
+      const back = await getCampaignSummary(ctx, A, c.id);
+      assert.deepEqual([back?.status, back?.scheduledFor], ["draft", null]);
+      assert.equal((await runCampaigns(ctx, A, outbox, { actor: OWNER })).written, 0, "nothing goes late");
+      assert.ok((await listAudit(ctx, A, { limit: 50 })).some((a) => a.action === "pms.email_campaign.unschedule" && a.targetId === c.id));
+      // A save that does not switch it on unschedules nothing.
+      const s3 = await getBulkEmailSettings(ctx, A);
+      const again = await updateBulkEmailSettings(ctx, A, s3.rev, { enabled: true, dailyCap: 500 }, OWNER);
+      assert.equal(again.ok && again.unscheduled, undefined);
+      await cancelCampaign(ctx, A, c.id, OWNER);
+      clock -= 60 * 60_000;
+    });
+
+    it("review: a draft writes the clinic's settings row (campaigns hang off it); no signing key = failed, nothing sent", async () => {
+      // Clinic B never saved its setting: its first draft writes the row (off), so the cascade has a parent.
+      assert.equal((await getBulkEmailSettings(ctx, B)).rev, 0);
+      await createCampaign(ctx, B, { ...base, name: "B draft" }, OWNER_B);
+      const sb = await getBulkEmailSettings(ctx, B);
+      assert.deepEqual([sb.rev, sb.enabled], [1, false]);
+      // Review item 3: no unsubscribe link can be signed → every recipient failed with the reason, no message written.
+      const before = (await ctx.db.selectFrom("pms_messages").select("id").where("tenant_id", "=", A).execute()).length;
+      const c = await createCampaign(ctx, A, { ...base, name: "No link" }, OWNER);
+      await scheduleCampaign(ctx, A, c.id, 1, nowIsoText(), OWNER);
+      const noLink: DispatchDeps = { ...test, linkSecret: null };
+      const r = await runCampaigns(ctx, A, noLink, { actor: OWNER, onlyCampaignId: c.id });
+      assert.deepEqual([r.written, r.failed], [0, 4]);
+      assert.equal((await ctx.db.selectFrom("pms_messages").select("id").where("tenant_id", "=", A).execute()).length, before, "nothing written");
+      const report = await campaignReport(ctx, A, c.id);
+      assert.deepEqual([report.failed, report.sent, report.skipReasons.no_unsubscribe_link], [4, 0, 4]);
+      assert.equal((await getCampaignSummary(ctx, A, c.id))?.status, "sent", "finished – nothing left to send");
     });
 
     it("send (outbox provider): one message per address, kept in the outbox, report counts", async () => {
@@ -431,6 +468,14 @@ export function defineCampaignsRepoSuite(label: string, factory: () => Promise<C
       const report = await campaignReport(ctx, A, c.id);
       assert.deepEqual([report.sent, report.failed, report.outbox], [3, 1, 0]);
       ids.megUrl = url;
+      // Review item 6: Retry of the failed (bounced) email keeps its one-click unsubscribe headers.
+      const failedMsg = await ctx.db.selectFrom("pms_messages").select("id").where("tenant_id", "=", A).where("status", "=", "failed").where("address_key", "=", "bounce@example.com").executeTakeFirstOrThrow();
+      const captured: OutboundEmail[] = [];
+      const capture: DispatchDeps = { ...test, providers: { sms: testSms, email: { id: "test", mode: "test", send: async (m) => (captured.push(m), { status: "sent", providerMessageId: "test_retry_1" }) } } };
+      const retried = await retryMessage(ctx, A, failedMsg.id, OWNER, capture);
+      assert.equal(retried.ok, true);
+      assert.match(captured[0]?.headers["List-Unsubscribe"] ?? "", /^<https:\/\/clinic\.example\.com\/api\/clinic-messages\/unsubscribe\?t=.+>$/);
+      assert.equal(captured[0]?.headers["List-Unsubscribe-Post"], "List-Unsubscribe=One-Click");
     });
 
     it("unsubscribe: GET changes nothing; one-click POST withdraws, records the message, idempotent, counted", async () => {
@@ -602,8 +647,76 @@ export function defineCampaignsRepoSuite(label: string, factory: () => Promise<C
       assert.doesNotMatch(text, /example\.com|Megan|Pilates/);
     });
 
+    it("review: a member limited to some sites sees, sends and cancels only campaigns for one of their sites", async () => {
+      process.env.CLINFORMS_BULK_EMAIL = "on";
+      try {
+        const mine = await createCampaign(ctx, A, { ...base, name: "Wolverton only", audience: { siteId: ids.other } }, OWNER);
+        const all = await createCampaign(ctx, A, { ...base, name: "Every site" }, OWNER);
+        const scoped: CampaignActor = { ...actorFor("admin"), siteIds: new Set([ids.other]) };
+        const home = await campaignsHomeFor(scoped);
+        assert.ok(home.ok);
+        const names = home.value.campaigns.map((c) => c.name);
+        assert.ok(names.includes("Wolverton only") && !names.includes("Every site"), names.join(", "));
+        assert.equal((await campaignEditorFor(scoped, all.id)).ok, false);
+        assert.equal((await campaignEditorFor(scoped, mine.id)).ok, true);
+        const cancelOther = await cancelFor(scoped, all.id);
+        assert.equal(cancelOther.ok ? null : cancelOther.code, "not_found");
+        assert.equal((await getCampaignSummary(ctx, A, all.id))?.status, "draft", "untouched");
+        assert.equal((await continueSendingFor(scoped, all.id, outbox)).ok, false);
+        // "Send more now" is for owners and admins: a clinician granted the permission is refused.
+        const clinician: CampaignActor = { ...actorFor("clinician"), can: () => true };
+        const more = await continueSendingFor(clinician, mine.id, outbox);
+        assert.equal(more.ok ? null : more.code, "forbidden");
+        assert.deepEqual(await cancelFor(scoped, mine.id), { ok: true, value: { cancelled: true } });
+        await cancelCampaign(ctx, A, all.id, OWNER);
+      } finally {
+        delete process.env.CLINFORMS_BULK_EMAIL;
+      }
+    });
+
+    it("review: the message run sends campaigns in a second pass with their own time, after every clinic's planned messages", async () => {
+      const cur = await getBulkEmailSettings(ctx, A);
+      await updateBulkEmailSettings(ctx, A, cur.rev, { enabled: true, dailyCap: 500 }, OWNER);
+      const c = await createCampaign(ctx, A, { ...base, name: "Cron pass" }, OWNER);
+      await scheduleCampaign(ctx, A, c.id, 1, nowIsoText(), OWNER);
+      const events: string[] = [];
+      const cronDeps = (campaignBudgetMs?: number) => ({
+        secret: "cron-secret-for-the-suite-".padEnd(40, "c"),
+        ctx: () => ctx,
+        dispatch: () => outbox,
+        bulkEmail: true,
+        campaignBudgetMs,
+        log: (event: string) => events.push(event),
+      });
+      const call = (deps: ReturnType<typeof cronDeps>) => handleCommsCron(new Request("https://x/api/clinic-messages/cron", { headers: { authorization: `Bearer ${deps.secret}` } }), deps);
+      // No time for the campaign pass: the planned messages still run, the campaign waits.
+      const none = (await (await call(cronDeps(0))).json()) as { ok: boolean; clinics: number; campaignEmails?: number };
+      assert.deepEqual([none.ok, none.clinics >= 2, none.campaignEmails], [true, true, 0]);
+      assert.equal((await getCampaignSummary(ctx, A, c.id))?.status, "scheduled");
+      // With its time: sent in the second pass.
+      const some = (await (await call(cronDeps())).json()) as { campaignEmails?: number };
+      assert.ok((some.campaignEmails ?? 0) >= 1, JSON.stringify(some));
+      assert.equal((await getCampaignSummary(ctx, A, c.id))?.status, "sent");
+      // Without the platform switch the run never touches campaigns.
+      const off = (await (await call({ ...cronDeps(), bulkEmail: false })).json()) as { campaignEmails?: number };
+      assert.equal(off.campaignEmails, undefined);
+    });
+
+    it("review: offboarding – campaigns and recipients go by cascade, never named, none left", async () => {
+      const before = await countPmsRows(ctx.db, A);
+      for (const t of COMMS_CASCADE_DELETED_TABLES) assert.ok((before[t] ?? 0) > 0, `${t} has rows`);
+      const queries = deletePmsQueries(ctx.db, A, { only: Object.keys(before) });
+      const named = queries.map((q) => ("compile" in q && typeof q.compile === "function" ? q.compile().sql : ""));
+      for (const t of COMMS_CASCADE_DELETED_TABLES) assert.ok(!named.some((sql) => sql.includes(`"${t}"`)), `${t} is not named`);
+      await runBatch(ctx.db, queries);
+      assert.deepEqual(await countPmsRows(ctx.db, A), {});
+      assert.ok(((await countPmsRows(ctx.db, B)).pms_email_campaigns ?? 0) >= 1, "clinic B untouched");
+    });
+
     it("tenant scope: every statement names tenant_id", () => {
-      if (suite.log) assert.deepEqual(unscopedStatements(suite.log.statements), []);
+      // The message run's one documented cross-clinic read (which clinics have the clinic system – cron.ts) is allowed.
+      const crossClinic = /^select \* from "clinic_entitlements" order by "tenant_id", "package"$/;
+      if (suite.log) assert.deepEqual(unscopedStatements(suite.log.statements).filter((sql) => !crossClinic.test(sql.trim())), []);
     });
   });
 }

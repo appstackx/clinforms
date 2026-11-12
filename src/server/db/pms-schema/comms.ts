@@ -395,3 +395,6 @@ export const COMMS_TIMESTAMP_COLUMNS: readonly string[] = [
 
 /** Every comms table is per clinic (offboarding exports them decrypted, then deletes them in reverse order). */
 export const COMMS_TENANT_TABLES: readonly (typeof COMMS_TABLES)[number][] = COMMS_TABLES;
+
+/** Bulk email (0146): campaigns go with the clinic's bulk email settings row, recipients with their campaign (cascade). */
+export const COMMS_CASCADE_DELETED_TABLES: readonly (typeof COMMS_TABLES)[number][] = ["pms_email_campaigns", "pms_email_campaign_recipients"];

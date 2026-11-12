@@ -53,7 +53,13 @@ function SettingsPanel({ view }: { view: CampaignsHomeView }) {
       setError(r.fieldErrors?.dailyCap ?? r.error);
       return;
     }
-    toast.success(enabled ? "Bulk email switched on." : "Bulk email switched off.");
+    toast.success(
+      enabled
+        ? r.unscheduled
+          ? `Bulk email switched on. ${r.unscheduled} scheduled email${r.unscheduled === 1 ? "" : "s"} missed ${r.unscheduled === 1 ? "its" : "their"} time while it was off and went back to draft – choose a new time.`
+          : "Bulk email switched on."
+        : "Bulk email switched off.",
+    );
     router.refresh();
   }
   return (

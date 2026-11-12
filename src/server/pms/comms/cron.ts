@@ -30,6 +30,8 @@ export interface CommsCronDeps {
    * clinic whose own bulk email setting is on also sends what is due of its campaigns, after its planned messages.
    */
   bulkEmail?: boolean;
+  /** The campaign pass's own time (default 10 s, at most a third of the run's budget). */
+  campaignBudgetMs?: number;
 }
 
 function json(status: number, body: unknown): Response {
@@ -68,26 +70,44 @@ export async function handleCommsCron(req: Request, deps: CommsCronDeps): Promis
   const totals: Omit<RunSummary, "reasons"> & { clinics: number; failedClinics: number; campaignEmails?: number } = { clinics: 0, failedClinics: 0, claimed: 0, released: 0, sent: 0, outbox: 0, failed: 0, skipped: 0 };
   try {
     const ctx = deps.ctx();
-    for (const tenantId of await clinicsWithClinicSystem(ctx)) {
-      if (pmsNowMs() - started > budget) break;
+    const clinics = await clinicsWithClinicSystem(ctx);
+    // Pass 1: every clinic's planned messages (reminders, confirmations, notices) – these come first, always. With
+    // bulk email on, pass 1 leaves the campaign pass its own time, so campaigns never starve reminders and reminders
+    // never leave campaigns nothing.
+    const campaignBudget = deps.bulkEmail ? Math.min(deps.campaignBudgetMs ?? 10_000, Math.floor(budget / 3)) : 0;
+    const plannedBudget = budget - campaignBudget;
+    for (const tenantId of clinics) {
+      if (pmsNowMs() - started > plannedBudget) break;
       totals.clinics++;
       try {
         // First heal any diary write whose message sync failed (M9b – the same run, no other job).
         await reconcileDiaryMessages(ctx, tenantId);
-        const r = await runAllDueMessages(ctx, tenantId, dispatch, { budgetMs: Math.max(1000, budget - (pmsNowMs() - started)) });
+        const r = await runAllDueMessages(ctx, tenantId, dispatch, { budgetMs: Math.max(1000, plannedBudget - (pmsNowMs() - started)) });
         totals.claimed += r.claimed;
         totals.released += r.released;
         totals.sent += r.sent;
         totals.outbox += r.outbox;
         totals.failed += r.failed;
         totals.skipped += r.skipped;
-        if (deps.bulkEmail) {
-          const c = await runCampaigns(ctx, tenantId, dispatch, { budgetMs: Math.max(1000, budget - (pmsNowMs() - started)) });
-          totals.campaignEmails = (totals.campaignEmails ?? 0) + c.written;
-        }
       } catch (err) {
         totals.failedClinics++;
         log("cron.clinic_messages.clinic_failed", { error: err instanceof Error ? err.name : "unknown" });
+      }
+    }
+    // Pass 2 (bulk email, CLINFORMS_BULK_EMAIL=on): campaigns, with their own budget, after every clinic's planned
+    // messages. A clinic whose campaign fails does not stop the others.
+    if (deps.bulkEmail) {
+      const passStarted = pmsNowMs();
+      totals.campaignEmails = 0;
+      for (const tenantId of clinics) {
+        const left = campaignBudget - (pmsNowMs() - passStarted);
+        if (left <= 0) break;
+        try {
+          const c = await runCampaigns(ctx, tenantId, dispatch, { budgetMs: Math.max(500, left) });
+          totals.campaignEmails += c.written;
+        } catch (err) {
+          log("cron.clinic_messages.campaigns_failed", { error: err instanceof Error ? err.name : "unknown" });
+        }
       }
     }
   } catch (err) {

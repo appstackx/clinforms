@@ -46,6 +46,9 @@ import type { OutboundEmail } from "../providers";
 import { clinicContact, type ClinicContact } from "../render";
 import { greetingName } from "../../../../modules/pms/comms/consent";
 
+/** Why a recipient failed without a message: no unsubscribe link could be signed (the report's reason). */
+export const NO_UNSUBSCRIBE_LINK = "no_unsubscribe_link";
+
 /** Who the emails come from and what their footer shows. postalAddress null = the campaign cannot send. */
 export interface CampaignSender {
   contact: ClinicContact;
@@ -220,6 +223,7 @@ async function sendRound(
   const toSend: { recipientId: string; email: OutboundEmail }[] = [];
   let skipped = 0;
   let written = 0;
+  let failedNoLink = 0;
   for (const r of claimed) {
     const contact = contacts.get(r.patientId);
     const address = eligible.get(r.patientId);
@@ -243,6 +247,14 @@ async function sendRound(
       continue;
     }
     const messageId = pmsId(COMMS_ID_PREFIXES.message, ctx);
+    const stopUrl = stopUrlFor(deps, tenantId, contact.id, messageId, campaign.purpose, nowMs);
+    if (!stopUrl) {
+      // No signing key (BETTER_AUTH_SECRET missing): no unsubscribe link or header can be built, and a bulk email
+      // never goes without one (PECR) – recorded as failed, with the reason, nothing written or sent.
+      failedNoLink++;
+      queries.push(recipientUpdateQuery(ctx, tenantId, r.id, token, { status: "failed", skipReason: NO_UNSUBSCRIBE_LINK }));
+      continue;
+    }
     const rendered = renderCampaign({
       subject: campaign.subject,
       body: campaign.body,
@@ -251,7 +263,7 @@ async function sendRound(
       postalAddress: sender.postalAddress as string,
       phone: sender.contact.phone,
       purpose: campaign.purpose,
-      stopUrl: stopUrlFor(deps, tenantId, contact.id, messageId, campaign.purpose, nowMs),
+      stopUrl,
     });
     const { query } = outboundInsertQuery(
       ctx,
@@ -342,7 +354,7 @@ async function sendRound(
   }
   await recordSendOutcomes(ctx, tenantId, outcomes, actor);
   await recordRecipientOutcomes(ctx, tenantId, token, recipientOutcomes);
-  return { written, sent, outbox: outbox ? written : 0, failed, skipped };
+  return { written, sent, outbox: outbox ? written : 0, failed: failed + failedNoLink, skipped };
 }
 
 export type TestSendResult = { ok: true; status: "sent" | "outbox" } | { ok: false; reason: "no_address" | "failed"; message: string };

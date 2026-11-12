@@ -157,6 +157,25 @@ describe("bulk email – merge fields and the finished email", () => {
   });
 });
 
+describe("bulk email – review: merged values never become links", () => {
+  it("a patient name that looks like a link is escaped text; the clinic's own link still works", () => {
+    const r = renderCampaign({
+      subject: "Hi",
+      body: "Hello {first_name}, book at https://clinic.example.com/book",
+      values: { first_name: "https://evil.example.com/x <b>" },
+      clinicName: "R",
+      postalAddress: "A",
+      phone: null,
+      purpose: "marketing",
+      stopUrl: "https://clinic.example.com/api/clinic-messages/unsubscribe?t=abc",
+    });
+    assert.doesNotMatch(r.html, /href="https:\/\/evil/);
+    assert.match(r.html, /Hello https:\/\/evil\.example\.com\/x &lt;b&gt;, book at <a href="https:\/\/clinic\.example\.com\/book">/);
+    assert.match(r.html, /<a href="https:\/\/clinic\.example\.com\/api\/clinic-messages\/unsubscribe\?t=abc">/);
+    assert.match(r.text, /^Hello https:\/\/evil\.example\.com\/x <b>, book at/, "the text version as merged");
+  });
+});
+
 describe("bulk email – audience dates", () => {
   it("last seen, age band and adults-only marketing", () => {
     const b = audienceBounds(

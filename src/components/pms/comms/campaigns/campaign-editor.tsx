@@ -420,7 +420,7 @@ export function CampaignEditor({ view }: { view: CampaignEditorView }) {
               Cancel before it goes
             </PmsButton>
           ) : null}
-          {c?.status === "sending" ? (
+          {c?.status === "sending" && view.canManage ? (
             <PmsButton variant="secondary" loading={busy === "more"} onClick={() => void sendMore()} data-testid="campaign-send-more">
               Send more now
             </PmsButton>

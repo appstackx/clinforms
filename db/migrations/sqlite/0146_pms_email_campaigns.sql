@@ -9,6 +9,9 @@
 --   per address (address_key = the lower-case email, unique per campaign, so one address gets one copy), each
 --   claimed conditionally (claim_token) before it is sent, then sent / outbox / failed / skipped with its message.
 --   sent_on is the UK day it went (the per-clinic daily cap).
+-- Offboarding: campaigns hang off the clinic's settings row and recipients off their campaign, patient and message,
+--   all ON DELETE CASCADE, so offboarding names neither table (PMS_CASCADE_DELETED_TABLES). The settings row is
+--   written (if missing) in the same batch as a clinic's first draft.
 -- The emails themselves are ordinary rows of pms_messages (kind marketing or general), so the outbox, retries and
 -- delivery updates work as for any message. Unsubscribes are pms_consent_events with the message id.
 -- Kept in step with supabase/migrations/20261024000146_pms_email_campaigns.sql (db/parity.test.ts).
@@ -45,6 +48,7 @@ CREATE TABLE IF NOT EXISTS pms_email_campaigns (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   PRIMARY KEY (tenant_id, id),
+  FOREIGN KEY (tenant_id) REFERENCES pms_bulk_email_settings (tenant_id) ON DELETE CASCADE,
   CHECK (purpose = 'marketing' OR service_reason IS NOT NULL)
 );
 CREATE INDEX IF NOT EXISTS pms_email_campaigns_status ON pms_email_campaigns (tenant_id, status, scheduled_for);
@@ -65,9 +69,9 @@ CREATE TABLE IF NOT EXISTS pms_email_campaign_recipients (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   PRIMARY KEY (tenant_id, id),
-  FOREIGN KEY (tenant_id, campaign_id) REFERENCES pms_email_campaigns (tenant_id, id),
-  FOREIGN KEY (tenant_id, patient_id) REFERENCES pms_patients (tenant_id, id),
-  FOREIGN KEY (tenant_id, message_id) REFERENCES pms_messages (tenant_id, id)
+  FOREIGN KEY (tenant_id, campaign_id) REFERENCES pms_email_campaigns (tenant_id, id) ON DELETE CASCADE,
+  FOREIGN KEY (tenant_id, patient_id) REFERENCES pms_patients (tenant_id, id) ON DELETE CASCADE,
+  FOREIGN KEY (tenant_id, message_id) REFERENCES pms_messages (tenant_id, id) ON DELETE CASCADE
 );
 CREATE UNIQUE INDEX IF NOT EXISTS pms_email_campaign_recipients_address ON pms_email_campaign_recipients (tenant_id, campaign_id, address_key);
 CREATE UNIQUE INDEX IF NOT EXISTS pms_email_campaign_recipients_patient ON pms_email_campaign_recipients (tenant_id, campaign_id, patient_id);

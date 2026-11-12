@@ -13,13 +13,13 @@ export type CampaignActionResult<T = unknown> = ({ ok: true } & T) | { ok: false
 
 const BASE = `${CLINIC_BASE_PATH}/messages/campaigns`;
 
-export async function saveBulkSettingsAction(rev: number, input: { enabled: boolean; dailyCap: number }): Promise<CampaignActionResult<{ rev: number }>> {
+export async function saveBulkSettingsAction(rev: number, input: { enabled: boolean; dailyCap: number }): Promise<CampaignActionResult<{ rev: number; unscheduled: number }>> {
   const actor = await clinicActionActor({ permission: "messages.templates" });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
   const r = await saveBulkEmailSettingsFor(actor, rev, input);
   if (!r.ok) return { ok: false, error: r.error, fieldErrors: r.fieldErrors };
   revalidatePath(BASE);
-  return { ok: true, rev: r.value.rev };
+  return { ok: true, rev: r.value.rev, unscheduled: r.value.unscheduled };
 }
 
 export async function countAudienceAction(purpose: string, audience: unknown): Promise<CampaignActionResult<{ patients: number; addresses: number }>> {

@@ -192,12 +192,14 @@ export function campaignTextProblem(text: string): string | null {
 
 /** Replaces the merge fields (a missing value becomes ""; for {first_name}, "there" – "Hello there"). */
 export function renderCampaignText(text: string, values: CampaignValues): string {
-  return text.replace(FIELD, (whole, key: string) => {
-    const k = key.trim() as CampaignField;
-    if (!FIELD_KEYS.has(k)) return whole;
-    const v = (values[k] ?? "").trim();
-    return v || (k === "first_name" ? "there" : "");
-  });
+  return text.replace(FIELD, (whole, key: string) => fieldValue(key, values) ?? whole);
+}
+
+function fieldValue(key: string, values: CampaignValues): string | null {
+  const k = key.trim() as CampaignField;
+  if (!FIELD_KEYS.has(k)) return null;
+  const v = (values[k] ?? "").trim();
+  return v || (k === "first_name" ? "there" : "");
 }
 
 export function escapeHtml(text: string): string {
@@ -207,7 +209,7 @@ export function escapeHtml(text: string): string {
 const URL_RE = /\bhttps:\/\/[^\s<>"']+[^\s<>"'.,;:!?)]/g;
 
 /** Escaped text with https links made clickable (only https; nothing else becomes markup). */
-function inline(text: string): string {
+function inlineText(text: string): string {
   let out = "";
   let last = 0;
   for (const m of Array.from(text.matchAll(URL_RE))) {
@@ -219,11 +221,29 @@ function inline(text: string): string {
 }
 
 /**
- * The email's HTML from the (already merged) plain text: blank lines make paragraphs, lines starting "- " a list,
- * https links are clickable, everything else is escaped. The footer (clinic name, postal address, why, unsubscribe)
- * in small print.
+ * One line of the clinic's own text with the merge fields filled in: links are made only from the clinic's text –
+ * a merged value (a patient's name) is escaped and never becomes a link (review 12/11/2026).
  */
-export function campaignHtml(clinicName: string, body: string, footer: readonly string[]): string {
+function inlineTemplate(line: string, values: CampaignValues): string {
+  let out = "";
+  let last = 0;
+  for (const m of Array.from(line.matchAll(FIELD))) {
+    const v = fieldValue(m[1], values);
+    if (v === null) continue;
+    out += inlineText(line.slice(last, m.index));
+    out += escapeHtml(v);
+    last = (m.index ?? 0) + m[0].length;
+  }
+  return out + inlineText(line.slice(last));
+}
+
+/**
+ * The email's HTML: blank lines make paragraphs, lines starting "- " a list, https links in the CLINIC's text are
+ * clickable, everything else is escaped. `body` is the template when `values` are given (merged here, values never
+ * linked), else already-merged text. The footer (clinic name, postal address, why, unsubscribe) in small print.
+ */
+export function campaignHtml(clinicName: string, body: string, footer: readonly string[], values?: CampaignValues): string {
+  const inline = (line: string) => (values ? inlineTemplate(line, values) : inlineText(line));
   const blocks: string[] = [];
   for (const para of body.replace(/\r\n?/g, "\n").split(/\n\s*\n/)) {
     const lines = para
@@ -237,7 +257,7 @@ export function campaignHtml(clinicName: string, body: string, footer: readonly 
       blocks.push(`<p style="margin:0 0 12px">${lines.map(inline).join("<br>")}</p>`);
     }
   }
-  const foot = footer.map(inline).join("<br>");
+  const foot = footer.map(inlineText).join("<br>");
   return `<!doctype html><html lang="en-GB"><body style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#0f172a"><p style="font-weight:700;margin:0 0 12px">${escapeHtml(clinicName)}</p>${blocks.join("")}<hr style="border:0;border-top:1px solid #cbd5e1;margin:24px 0 12px"><p style="font-size:13px;color:#334155">${foot}</p></body></html>`;
 }
 
@@ -288,7 +308,7 @@ export function renderCampaign(input: {
   return {
     subject,
     text: `${body}\n\n--\n${footer.join("\n")}`,
-    html: campaignHtml(input.clinicName, body, footer),
+    html: campaignHtml(input.clinicName, input.body.trim(), footer, input.values),
     headers: input.stopUrl
       ? {
           "List-Unsubscribe": `<${input.stopUrl}>`,

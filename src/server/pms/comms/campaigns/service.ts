@@ -105,6 +105,15 @@ function scopeProblem(actor: CampaignActor, audience: AudienceFilters): string |
   return null;
 }
 
+/**
+ * May the member see this campaign at all? A member limited to some sites sees only campaigns aimed at one of their
+ * sites (not "every site", not another site's) – lists, the editor, test, schedule, send more and cancel alike.
+ */
+function campaignInScope(actor: CampaignActor, audience: AudienceFilters): boolean {
+  const scope = actor.siteIds ?? null;
+  return scope === null || (audience.siteId !== null && scope.has(audience.siteId));
+}
+
 /* ------------------------------------------------------------------------------------------------
  * Views
  * ----------------------------------------------------------------------------------------------*/
@@ -116,7 +125,7 @@ export async function campaignsHomeFor(actor: CampaignActor): Promise<Result<Cam
     const ctx = actor.repo();
     const [settings, campaigns] = await Promise.all([getBulkEmailSettings(ctx, actor.tenantId), listCampaigns(ctx, actor.tenantId, 100)]);
     const rows: CampaignRow[] = [];
-    for (const c of campaigns)
+    for (const c of campaigns.filter((x) => campaignInScope(actor, x.audience)))
       rows.push({
         ...c,
         report: c.status === "sending" || c.status === "sent" ? await campaignReport(ctx, actor.tenantId, c.id) : null,
@@ -139,7 +148,7 @@ export async function campaignEditorFor(actor: CampaignActor, id: string | null)
     if (id) {
       if (!/^ecmp_[A-Za-z0-9]{10,40}$/.test(id)) return notFound();
       campaign = await getCampaign(ctx, actor.tenantId, id);
-      if (!campaign) return notFound();
+      if (!campaign || !campaignInScope(actor, campaign.audience)) return notFound();
     }
     const [sites, sender, settings, report] = await Promise.all([
       listSites(ctx, actor.tenantId),
@@ -162,6 +171,7 @@ export async function campaignEditorFor(actor: CampaignActor, id: string | null)
       emailMode: providerStatus().email,
       memberEmail: actor.email,
       now: nowIso(ctx),
+      canManage: mayManageBulkEmail(actor),
     });
   });
 }
@@ -183,7 +193,7 @@ export async function audienceCountFor(actor: CampaignActor, purpose: unknown, a
  * Writes
  * ----------------------------------------------------------------------------------------------*/
 
-export async function saveBulkEmailSettingsFor(actor: CampaignActor, rev: unknown, input: unknown): Promise<Result<{ rev: number }>> {
+export async function saveBulkEmailSettingsFor(actor: CampaignActor, rev: unknown, input: unknown): Promise<Result<{ rev: number; unscheduled: number }>> {
   if (!bulkEmailAvailable()) return notFound();
   if (!mayManageBulkEmail(actor)) return forbidden();
   if (typeof rev !== "number" || !Number.isInteger(rev) || rev < 0) return fail("invalid", "Reload the page and try again.");
@@ -191,7 +201,7 @@ export async function saveBulkEmailSettingsFor(actor: CampaignActor, rev: unknow
   if (!parsed.success) return fail("invalid", parsed.error.issues[0]?.message ?? "Check the settings.", { fieldErrors: fieldErrors(parsed.error.issues) });
   return attempt("comms.bulk_settings_save", async () => {
     const r = await updateBulkEmailSettings(actor.repo(), actor.tenantId, rev, parsed.data, actor.actor);
-    return r.ok ? ok({ rev: r.rev }) : saveFailure(r);
+    return r.ok ? ok({ rev: r.rev, unscheduled: r.unscheduled ?? 0 }) : saveFailure(r);
   });
 }
 
@@ -223,7 +233,9 @@ export async function saveCampaignFor(actor: CampaignActor, id: string | null, r
 
 async function draftOf(actor: CampaignActor, id: unknown): Promise<Campaign | null> {
   if (typeof id !== "string" || !/^ecmp_[A-Za-z0-9]{10,40}$/.test(id)) return null;
-  return getCampaign(actor.repo(), actor.tenantId, id);
+  const c = await getCampaign(actor.repo(), actor.tenantId, id);
+  // Out of the member's site scope: as if it did not exist.
+  return c && campaignInScope(actor, c.audience) ? c : null;
 }
 
 /** A test copy to the member's own address – at most 10 an hour per member. */
@@ -279,6 +291,7 @@ export async function scheduleFor(actor: CampaignActor, id: unknown, rev: unknow
 export async function continueSendingFor(actor: CampaignActor, id: unknown, deps?: DispatchDeps): Promise<Result<CampaignRunSummary>> {
   const g = gate(actor);
   if (g) return g;
+  if (!mayManageBulkEmail(actor)) return forbidden();
   return attempt("comms.campaign_continue", async () => {
     const c = await draftOf(actor, id);
     if (!c) return notFound();

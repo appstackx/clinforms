@@ -82,7 +82,52 @@ export async function getBulkEmailSettings(ctx: DbContext, tenantId: string): Pr
   };
 }
 
-export async function updateBulkEmailSettings(ctx: DbContext, tenantId: string, expectedRev: number, input: BulkEmailSettingsInput, actor: PmsActor): Promise<PmsSaveResult> {
+/**
+ * Saves the clinic's setting (with the revision the editor saw). Switching it ON puts every scheduled campaign whose
+ * time passed while it was off back to draft (`unscheduled`, audited "pms.email_campaign.unschedule") – nothing
+ * goes out late without a person choosing a new time (review 12/11/2026).
+ */
+export async function updateBulkEmailSettings(
+  ctx: DbContext,
+  tenantId: string,
+  expectedRev: number,
+  input: BulkEmailSettingsInput,
+  actor: PmsActor,
+): Promise<PmsSaveResult & { unscheduled?: number }> {
+  const before = await getBulkEmailSettings(ctx, tenantId);
+  const r = await saveSettingsRow(ctx, tenantId, expectedRev, input, actor);
+  if (r.ok && !before.enabled && input.enabled) return { ...r, unscheduled: await unscheduleOverdue(ctx, tenantId, actor) };
+  return r;
+}
+
+/** Scheduled campaigns whose time has passed → draft again (no send time), each audited. Returns how many. */
+export async function unscheduleOverdue(ctx: DbContext, tenantId: string, actor: PmsActor): Promise<number> {
+  assertTenantId(tenantId);
+  const at = nowIso(ctx);
+  const overdue = await ctx.db.selectFrom(C).select(["id"]).where("tenant_id", "=", tenantId).where("status", "=", "scheduled").where("scheduled_for", "<=", at).limit(100).execute();
+  let n = 0;
+  for (const c of overdue) {
+    n += await changeWithAudit(ctx, [
+      ctx.db
+        .updateTable(C)
+        .set((eb) => ({ status: "draft", scheduled_for: null, scheduled_by: null, rev: eb("rev", "+", 1), updated_at: at }))
+        .where("tenant_id", "=", tenantId)
+        .where("id", "=", c.id)
+        .where("status", "=", "scheduled")
+        .where("scheduled_for", "<=", at),
+      commsAuditWhen(
+        ctx,
+        tenantId,
+        actor,
+        { action: "pms.email_campaign.unschedule", targetType: "pms_email_campaign", targetId: c.id, detail: { reason: "time_passed_while_switched_off" } },
+        ctx.db.selectFrom(C).select("id").where("tenant_id", "=", tenantId).where("id", "=", c.id).where("status", "=", "draft").where("updated_at", "=", at),
+      ),
+    ]);
+  }
+  return n;
+}
+
+async function saveSettingsRow(ctx: DbContext, tenantId: string, expectedRev: number, input: BulkEmailSettingsInput, actor: PmsActor): Promise<PmsSaveResult> {
   assertTenantId(tenantId);
   if (!Number.isInteger(expectedRev) || expectedRev < 0) throw new RepoInputError("expectedRev must be a whole number.");
   const d = parseInput(BulkEmailSettingsInputSchema, input, "Bulk email settings");
@@ -231,6 +276,12 @@ export async function createCampaign(ctx: RepoContext, tenantId: string, input: 
   const at = nowIso(ctx);
   const audience = normaliseAudience(d.audience);
   await writeWithAudit(ctx, [
+    // Campaigns hang off the clinic's settings row (ON DELETE CASCADE – offboarding): written here if it is missing
+    // (off, the defaults – never changes an existing row).
+    ctx.db
+      .insertInto(S)
+      .values({ tenant_id: tenantId, rev: 1, enabled: 0, daily_cap: DEFAULT_DAILY_CAP, updated_by: actor.userId, created_at: at, updated_at: at })
+      .onConflict((oc) => oc.column("tenant_id").doNothing()),
     ctx.db.insertInto(C).values({
       tenant_id: tenantId,
       id,
@@ -872,7 +923,11 @@ export async function campaignReport(ctx: DbContext, tenantId: string, campaignI
       out.delivered += n;
     } else if (m === "sent") out.sent += n;
     else if (m === "outbox") out.outbox += n;
-    else if (m === "failed" || r.rstatus === "failed") out.failed += n;
+    else if (m === "failed" || r.rstatus === "failed") {
+      out.failed += n;
+      // A failure with a reason and no message (no unsubscribe link could be made) is listed with the reasons.
+      if (r.skip_reason) out.skipReasons[r.skip_reason] = (out.skipReasons[r.skip_reason] ?? 0) + n;
+    }
     else out.pending += n;
   }
   const u = await ctx.db

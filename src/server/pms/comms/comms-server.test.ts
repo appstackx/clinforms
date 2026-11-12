@@ -234,3 +234,15 @@ describe("cron, webhook and unsubscribe handlers", () => {
     assert.deepEqual(unscopedStatements(g.log.statements), []);
   });
 });
+
+describe("review 12/11/2026: a retried email keeps its unsubscribe headers", () => {
+  it("reads the stop link from the stored footer", async () => {
+    const { unsubscribeHeadersFromText } = await import("./links");
+    assert.deepEqual(unsubscribeHeadersFromText("Hi\n\n--\nR\nUnsubscribe from news and offers: https://clinic.example.com/api/clinic-messages/unsubscribe?t=v1.abc.def"), {
+      "List-Unsubscribe": "<https://clinic.example.com/api/clinic-messages/unsubscribe?t=v1.abc.def>",
+      "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    });
+    assert.deepEqual(unsubscribeHeadersFromText("an invoice, no link"), {});
+    assert.deepEqual(unsubscribeHeadersFromText(null), {});
+  });
+});

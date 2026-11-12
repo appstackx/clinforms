@@ -90,14 +90,26 @@ cap; owners and admins only; no row = off). Rules: `src/modules/pms/comms/campai
   rendered by the sending code, a test copy to the member's OWN address (max 10 an hour, "[Test]", not logged as a
   message), Send now (confirm) or Schedule (UK time), Cancel while draft or scheduled. After sending: recipients, sent,
   delivered (when the provider reports it), kept in the outbox, failed, not sent (with reasons), waiting, unsubscribed.
-- **Sending** (part of the message run `GET /api/clinic-messages/cron` when the switch is on, and Send now / "Send more
-  now"): the campaign is claimed (scheduled → sending), its recipients written once (the audience at that moment), then
+- **Sending** (the message run's second pass `GET /api/clinic-messages/cron` when the switch is on, and Send now /
+  "Send more now"): the campaign is claimed (scheduled → sending), its recipients written once (the audience at that moment), then
   rounds of ≤ 40: claim → re-check every rule for each patient at that moment (consent withdrawn since = skipped) →
   write each `pms_messages` row (kind `marketing` / `general`) with its recipient row and one audit row in one batch →
   provider → record answers. **Rate limits:** ≤ 200 campaign emails per clinic per run and the clinic's **daily cap**
   (default 500, max 5,000 per UK day); the rest waits for the next run/day. Stale claims (15 min) are taken back. The
   emails appear in the outbox like any other; the email providers are unchanged (outbox / test / mailpit – there is
   still NO live patient-email provider, so nothing reaches a patient in this build).
+- **Review fixes (12/11/2026, before release):** campaigns run in a **second pass** of the message run, after every
+  clinic's planned messages, with their own time (default 10 s, at most a third of the run) – reminders always go
+  first; a bulk email is **never sent without an unsubscribe link** (no signing key → each recipient "failed: no
+  unsubscribe link", nothing written); members limited to some sites see, test, send, "send more" and cancel only
+  campaigns aimed at one of their sites; "Send more now" is owners/admins only; merged values (a patient's name) are
+  escaped and never turned into links; Retry of a failed email keeps its `List-Unsubscribe` headers (read from the
+  stop link in its stored footer); switching the clinic's setting back ON puts every scheduled campaign whose time
+  passed while it was off back to **draft** (audited `pms.email_campaign.unschedule`, the screen says how many) –
+  nothing goes out late.
+- **Daily cap – not atomic (documented):** each run counts today's campaign emails, then claims at most what is left,
+  in rounds of ≤ 40. Two runs at the same moment (the cron and a "Send now") can together go over the cap by at most one
+  round (40). Make it a ledger row with a conditional claim if a clinic ever needs a hard limit.
 - **Unsubscribe:** the existing stop-emails link (`/api/clinic-messages/unsubscribe`), now signed with the message id
   (and "announcement" for service links – wording only): GET shows a button and changes nothing, POST / one-click
   withdraws (marketing link → marketing emails off; announcement link → reminder and announcement emails off, booking
@@ -107,7 +119,10 @@ cap; owners and admins only; no row = off). Rules: `src/modules/pms/comms/campai
   how, last withdrawn when and how; staff with `patients.edit` record (how is required) or withdraw it – audited
   (`pms.consent.change` + the event). The patient portal has no preferences page yet (nothing added there).
 - **Data:** migration `0146_pms_email_campaigns` (+ Postgres twin; number reserved in `src/modules/pms/core/modules.ts`):
-  `pms_bulk_email_settings`, `pms_email_campaigns` (subject/body encrypted), `pms_email_campaign_recipients`. Audit codes
+  `pms_bulk_email_settings`, `pms_email_campaigns` (subject/body encrypted), `pms_email_campaign_recipients`. Campaigns
+  hang off the settings row (written with a clinic's first draft) and recipients off their campaign, patient and message,
+  all `ON DELETE CASCADE`: offboarding names only the settings table (`PMS_CASCADE_DELETED_TABLES`; 360 member accounts
+  still fit one offboarding batch). Audit codes
   `pms.bulk_email_settings.update`, `pms.email_campaign.{create,update,schedule,cancel,start,send,finish,test_send}`.
 - **Before switching it on for a real clinic:** a live patient-email provider (K2-COMMS-005) that passes our
   `List-Unsubscribe` headers through and reports bounces / complaints (then record them – today only send failures are

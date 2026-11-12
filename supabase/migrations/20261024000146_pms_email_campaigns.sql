@@ -1,6 +1,7 @@
 -- ClinForms 0146 (Postgres / Supabase): clinic system, comms - BULK EMAIL to groups of patients (tracker xt02),
 -- behind CLINFORMS_BULK_EMAIL=on and a per-clinic setting that is off by default. Settings per clinic, campaigns
 -- (subject and body encrypted per clinic), and the recipients written when a campaign starts (one per address).
+-- Campaigns cascade from the settings row, recipients from their campaign, patient and message (offboarding).
 -- Kept in step with db/migrations/sqlite/0146_pms_email_campaigns.sql (db/parity.test.ts).
 -- RLS on, no policies, Data API roles revoked. Idempotent.
 
@@ -35,6 +36,7 @@ create table if not exists public.pms_email_campaigns (
   created_at timestamptz not null,
   updated_at timestamptz not null,
   primary key (tenant_id, id),
+  foreign key (tenant_id) references public.pms_bulk_email_settings (tenant_id) on delete cascade,
   check (purpose = 'marketing' or service_reason is not null)
 );
 create index if not exists pms_email_campaigns_status on public.pms_email_campaigns (tenant_id, status, scheduled_for);
@@ -55,9 +57,9 @@ create table if not exists public.pms_email_campaign_recipients (
   created_at timestamptz not null,
   updated_at timestamptz not null,
   primary key (tenant_id, id),
-  foreign key (tenant_id, campaign_id) references public.pms_email_campaigns (tenant_id, id),
-  foreign key (tenant_id, patient_id) references public.pms_patients (tenant_id, id),
-  foreign key (tenant_id, message_id) references public.pms_messages (tenant_id, id)
+  foreign key (tenant_id, campaign_id) references public.pms_email_campaigns (tenant_id, id) on delete cascade,
+  foreign key (tenant_id, patient_id) references public.pms_patients (tenant_id, id) on delete cascade,
+  foreign key (tenant_id, message_id) references public.pms_messages (tenant_id, id) on delete cascade
 );
 create unique index if not exists pms_email_campaign_recipients_address on public.pms_email_campaign_recipients (tenant_id, campaign_id, address_key);
 create unique index if not exists pms_email_campaign_recipients_patient on public.pms_email_campaign_recipients (tenant_id, campaign_id, patient_id);

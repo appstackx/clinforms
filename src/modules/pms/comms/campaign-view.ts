@@ -84,6 +84,8 @@ export interface CampaignEditorView {
   emailMode: EmailMode;
   memberEmail: string;
   now: string;
+  /** Owners and admins: "Send more now" on a campaign that is sending. */
+  canManage: boolean;
 }
 
 export interface MarketingConsentView {
@@ -107,4 +109,5 @@ export const CAMPAIGN_SKIP_LABELS: Readonly<Record<string, string>> = {
   opted_out: "Stopped these emails",
   not_in_audience: "No longer in the group (record or filters changed)",
   address_changed: "Email address changed since the email started",
+  no_unsubscribe_link: "Failed: no unsubscribe link could be made (the server's signing key is missing)",
 };

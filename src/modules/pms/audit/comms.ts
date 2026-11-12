@@ -52,6 +52,7 @@ export const COMMS_AUDIT_LABELS: Readonly<Record<string, string>> = {
   "pms.email_campaign.send": "Bulk emails sent",
   "pms.email_campaign.finish": "Bulk email finished sending",
   "pms.email_campaign.test_send": "Test copy of a bulk email sent to a member",
+  "pms.email_campaign.unschedule": "Scheduled bulk email back to draft (its time passed while bulk email was off)",
 };
 
 /** Names of the record types its audit rows point at (target_type → label). */
