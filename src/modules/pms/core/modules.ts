@@ -25,6 +25,8 @@ export interface PmsModuleInfo {
    * groundwork (11/2026, docs/clinic-system/healthcode.md): billing 0220–0229. File store (B07): records 0230.
    * Courses, gift cards and products (PK, 11/2026): billing 0231–0239. Bulk email to patient groups (xt02, 11/2026):
    * comms 0146 (inside comms' own range – reserved here so no other comms branch takes it; 0147–0149 stay free).
+   * Public clinic API v1 (xt03, 11/2026, docs/clinic-system/api.md): integration 0171 (inside integration's own range –
+   * reserved here; 0172–0179 stay free).
    */
   extra?: readonly (readonly [number, number])[];
 }

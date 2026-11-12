@@ -6,7 +6,8 @@
 import type { PmsNavEntry } from "@/modules/pms/core/nav";
 import type { PmsModuleId } from "@/modules/pms/core/modules";
 import type { PmsPermission } from "@/modules/pms/core/permissions";
-import { visibleNav } from "@/modules/pms/core/nav";
+import { navAllowed, visibleNav } from "@/modules/pms/core/nav";
+import { CLINIC_API_NAV_ID } from "@/modules/pms/nav/integration";
 
 export type ShellNavIcon =
   | "overview"
@@ -128,6 +129,7 @@ export const SETUP_ORDER: readonly string[] = [
   "reporting.targets",
   "reporting.audit",
   "reporting.import",
+  "integration.api",
 ];
 
 /** Set-up entries that are day-to-day work too: without the Set-up area (reception) they stay in the main list. */
@@ -251,4 +253,18 @@ const CLINIC_ROLE_LABELS: Readonly<Record<string, string>> = { owner: "Owner", a
  */
 export function clinicRoleLabel(role: string, fallback: string): string {
   return CLINIC_ROLE_LABELS[role] ?? fallback;
+}
+
+/**
+ * The navigation entries switched off on this deployment left out: API keys (integration.api) only while
+ * CLINFORMS_CLINIC_API=on. Used by the clinic layout and the Set-up landing page, so neither offers it while it is off.
+ */
+export function navForDeployment(entries: readonly PmsNavEntry[], switches: { clinicApi: boolean }): readonly PmsNavEntry[] {
+  return switches.clinicApi ? entries : entries.filter((e) => e.id !== CLINIC_API_NAV_ID);
+}
+
+/** Set-up's start (/app/clinic/setup): the first set-up page, in the design's order, this member may open. */
+export function firstSetupEntry(entries: readonly PmsNavEntry[], can: (p: PmsPermission) => boolean, switches: { clinicApi: boolean }): PmsNavEntry | null {
+  const allowed = navForDeployment(entries, switches).filter((e) => e.group === "manage" && navAllowed(e, can) && e.id !== "diary.rotas");
+  return SETUP_ORDER.map((id) => allowed.find((e) => e.id === id)).find((e): e is PmsNavEntry => Boolean(e)) ?? allowed[0] ?? null;
 }

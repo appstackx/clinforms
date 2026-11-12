@@ -21,6 +21,14 @@ export const INTEGRATION_AUDIT_LABELS: Readonly<Record<string, string>> = {
   "pms.filed_form.create": "Approved referrer form filed to a case",
   "pms.filed_form.view": "Filed referrer form opened",
   "pms.native.bundle_read": "Case record read to complete a referrer form",
+  // Public clinic API v1 (0171, xt03). Use is counted per key per day: one row on the first call of each day.
+  "pms.api_settings.update": "Clinic API switched on or off",
+  "pms.api_key.create": "API key created",
+  "pms.api_key.revoke": "API key revoked",
+  "pms.api_key.rotate": "API key replaced by a new one",
+  "pms.api_key.use": "API key used (first call of the day)",
+  "pms.api.patient_read": "Patient record read through the API",
+  "pms.api.appointment_book": "Appointment booked through the API",
 };
 
 /** Names of the record types its audit rows point at (target_type → label), e.g. { pms_appointment: "Appointment" }. */
@@ -28,4 +36,6 @@ export const INTEGRATION_AUDIT_TARGETS: Readonly<Record<string, string>> = {
   pms_import_batch: "Data import",
   pms_form_request: "Referrer form request",
   pms_filed_form: "Filed referrer form",
+  pms_api_key: "API key",
+  pms_api_settings: "Clinic API",
 };
