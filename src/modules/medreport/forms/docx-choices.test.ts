@@ -25,6 +25,14 @@ import { proposeFieldsByRules } from "../ai/form-rules";
 import type { ValidatorInput } from "../core/validation";
 import { DocxAnchorSchema, MAX_ANCHOR_OPTIONS } from "../core/schemas";
 
+/** This thread's CPU time in ms (as core/validation/__corpus__/harness/work-meter.ts threadCpuMs). */
+const threadCpuMs = () => {
+  // .nvmrc says "22": an older 22.x has no threadCpuUsage – the whole process's CPU then (helper threads too).
+  const thread = (process as unknown as { threadCpuUsage?: () => NodeJS.CpuUsage }).threadCpuUsage;
+  const { user, system } = thread ? thread.call(process) : process.cpuUsage();
+  return (user + system) / 1000;
+};
+
 const W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 
 function docx(body: string): Uint8Array {
@@ -559,11 +567,14 @@ test("mark the column: ☑ and × printed as a default in another column are cle
 test("hostile sizes: a paragraph of 160,000 typed boxes or bracket placeholders is read in linear time", () => {
   for (const unit of ["[ ]", "[a]", "[x]"]) {
     const file = docx(p(Array.from({ length: 160_000 }, () => r(unit)).join("")));
-    const t0 = Date.now();
+    // This thread's CPU time, not wall time (Date.now): the outline is synchronous, so its CPU time is its cost, and it
+    // does not grow while the process waits for a core – wall time did (up to 7.7 s for 2.4 s of CPU with 24 CPU hogs,
+    // against the 10 s ceiling), so the guard failed on a busy machine with the same work done.
+    const t0 = threadCpuMs();
     const ol = buildDocxOutline(file);
-    const ms = Date.now() - t0;
-    // Linear: about 1.5 s here; the earlier per-match scans took 25–30 s on the same input.
-    assert.ok(ms < 10_000, `${unit}: ${ms} ms`);
+    const ms = Math.round(threadCpuMs() - t0);
+    // Linear: about 1.5 s CPU here (2.4 s on a loaded machine); the earlier per-match scans took 25–30 s on the same input.
+    assert.ok(ms < 10_000, `${unit}: ${ms} ms CPU`);
     assert.ok(ol.blocks.length >= 1);
   }
 });
