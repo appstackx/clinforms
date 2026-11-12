@@ -27,6 +27,7 @@ export function TwoFactorSetup({ email, enabled, productName, continueHref }: { 
   if (start.status === "scan") {
     return (
       <form action={confirmAction} className="space-y-5">
+        <input type="hidden" name="next" value={continueHref} />
         <section className="space-y-3">
           <h2 className="text-sm font-semibold">1. Add {productName} to your authenticator app</h2>
           <p className="text-sm text-slate-600">

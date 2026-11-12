@@ -16,7 +16,7 @@
  */
 import { createHash } from "node:crypto";
 import { sql, type Expression, type RawBuilder } from "kysely";
-import { formatGiftCardCode, giftCardExpiry, type GiftCard, type GiftCardMove, type GiftCardMoveKind, type GiftCardStatus } from "../../../../modules/pms/billing/gift-cards";
+import { formatGiftCardCode, giftCardExpiry, giftCardReversalWarning, type GiftCard, type GiftCardMove, type GiftCardMoveKind, type GiftCardStatus } from "../../../../modules/pms/billing/gift-cards";
 import { BILLING_ID_PREFIXES as P } from "../../../../modules/pms/billing/ids";
 import type { PmsActor } from "../../../../modules/pms/core/types";
 import type { BatchQuery } from "../../../db/batch";
@@ -201,10 +201,14 @@ export async function giftCardCreditQueries(ctx: RepoContext, tenantId: string, 
     parts.map((p) => p.lineId),
   );
   const queries: BatchQuery[] = [];
+  const today = todayOf(ctx);
   for (const c of cards) {
     const part = parts.find((p) => p.lineId === c.saleLineId);
     if (!part || part.creditPence <= 0) continue;
     if (c.status === "cancelled" || c.status === "pending") throw new RepoInputError("This gift card has been cancelled, so nothing is left on it to credit.");
+    // PK06: past its expiry (UK date) a card is expired whether or not the nightly sweep has marked it – the same
+    // answer before and after the sweep (also for an expired card holding a spend put back, which the sweep removes).
+    if (c.status === "expired" || (c.expiresOn !== null && c.expiresOn < today)) throw new RepoInputError("This gift card has expired, so nothing is left on it to credit.");
     if (part.creditPence > c.balancePence) {
       throw new RepoInputError(
         c.balancePence === 0
@@ -221,7 +225,9 @@ export async function giftCardCreditQueries(ctx: RepoContext, tenantId: string, 
         .where("tenant_id", "=", tenantId)
         .where("id", "=", c.id)
         .where("balance_pence", "=", c.balancePence)
-        .where("status", "=", c.status),
+        .where("status", "=", c.status)
+        // Never past its expiry, even when the date changes between the read and the batch (the move is then refused).
+        .where((eb) => eb.or([eb("expires_on", "is", null), eb("expires_on", ">=", today)])),
       ctx.db.insertInto(MOVES).values({
         tenant_id: tenantId,
         id: pmsId(GIFT_CARD_MOVE_PREFIX, ctx),
@@ -282,7 +288,9 @@ export function giftCardRedeemQueries(ctx: RepoContext, tenantId: string, c: Gif
       .where("tenant_id", "=", tenantId)
       .where("id", "=", c.id)
       .where("status", "=", "active")
-      .where("balance_pence", "=", c.balancePence),
+      .where("balance_pence", "=", c.balancePence)
+      // PK06: never spent past its expiry (the expiry day itself still counts), even before the nightly sweep.
+      .where((eb) => eb.or([eb("expires_on", "is", null), eb("expires_on", ">=", todayOf(ctx))])),
     ctx.db.insertInto(MOVES).values({
       tenant_id: tenantId,
       id: pmsId(GIFT_CARD_MOVE_PREFIX, ctx),
@@ -297,6 +305,27 @@ export function giftCardRedeemQueries(ctx: RepoContext, tenantId: string, c: Gif
     }),
     pmsAuditQuery(ctx, tenantId, actor, { action: "pms.gift_card.redeem", targetType: "pms_gift_card", targetId: c.id, detail: { paymentId, amountPence } }),
   ];
+}
+
+/**
+ * For the reverse-payment confirmation: the warning when what the payment took off gift cards would go back on a card
+ * that has expired, or expires tonight (giftCardReversalWarning) – null otherwise. Reads this clinic's rows only.
+ */
+export async function giftCardReversalNotice(ctx: RepoContext, tenantId: string, paymentId: string): Promise<string | null> {
+  assertTenantId(tenantId);
+  assertId(paymentId, "payment id");
+  const moves = await readOrEmpty(MOVES, [] as { gift_card_id: string; amount_pence: unknown }[], () =>
+    ctx.db.selectFrom(MOVES).select(["gift_card_id", "amount_pence"]).where("tenant_id", "=", tenantId).where("payment_id", "=", paymentId).execute(),
+  );
+  const spent = new Map<string, number>();
+  for (const m of moves) spent.set(m.gift_card_id, (spent.get(m.gift_card_id) ?? 0) - num(m.amount_pence));
+  const ids = Array.from(spent.entries()).filter(([, n]) => n > 0).map(([id]) => id);
+  if (ids.length === 0) return null;
+  const cards = await ctx.db.selectFrom(CARDS).select(["id", "status", "expires_on"]).where("tenant_id", "=", tenantId).where("id", "in", ids).execute();
+  return giftCardReversalWarning(
+    cards.map((c) => ({ status: c.status as GiftCardStatus, expiresOn: c.expires_on, amountPence: spent.get(c.id) ?? 0 })),
+    todayOf(ctx),
+  );
 }
 
 /** For a payment's reversal batch: what the payment took off a card goes back ("refund" move). [] when it used none. */

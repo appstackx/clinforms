@@ -150,3 +150,72 @@ describe("copy D1/SQLite → Postgres with Better Auth's tables (sign-in still w
     }
   });
 });
+
+describe("copy D1/SQLite → Postgres when self sign-up's tables (migration 0010) are absent on one side", () => {
+  const signupRow = {
+    id: "su_fictional_1",
+    token_hash: "t".repeat(43),
+    brand: "clinic",
+    clinic_name: "Copy Physio (fictional)",
+    owner_name: "Dana Lark",
+    email: "dana@copy-physio.example",
+    password_hash: null,
+    terms_version: "clindesk-terms-2026-11-01",
+    dpa_version: "dpa-draft-1",
+    ip_hash: "i".repeat(43),
+    ua_hash: "u".repeat(43),
+    created_at: "2026-11-12T10:00:00.000Z",
+    expires_at: "2026-11-13T10:00:00.000Z",
+    claimed_at: "2026-11-12T10:05:00.000Z",
+    tenant_id: "copy-physio",
+    completed_at: "2026-11-12T10:05:01.000Z",
+  };
+  const freshTarget = async (dropSignup: boolean) => {
+    const pglite = await createPglite();
+    await applyPostgresMigrations(pgliteMigrationClient(pglite));
+    if (dropSignup) await pglite.exec("drop table public.signup_acceptances; drop table public.signup_requests;");
+    return pglite;
+  };
+
+  it("both sides have them: the rows are copied and verified (timestamps compared as ISO)", async () => {
+    const src = createSqliteTestDb();
+    const pglite = await freshTarget(false);
+    try {
+      await src.db.insertInto("signup_requests").values(signupRow).execute();
+      const result = await copyDatabase(sqliteSource(src.sqlite), pgliteMigrationClient(pglite));
+      assert.equal(result.tables.find((t) => t.table === "signup_requests")?.rows, 1);
+    } finally {
+      await src.close();
+    }
+  });
+
+  it("absent on the source: counted as empty, the copy goes ahead", async () => {
+    const src = createSqliteTestDb();
+    const pglite = await freshTarget(false);
+    try {
+      src.sqlite.exec("drop table signup_acceptances; drop table signup_requests;");
+      const lines: string[] = [];
+      const result = await copyDatabase(sqliteSource(src.sqlite), pgliteMigrationClient(pglite), { log: (l) => lines.push(l) });
+      const s = result.tables.find((t) => t.table === "signup_requests");
+      assert.equal(s?.absent, true);
+      assert.equal(s?.rows, 0);
+      assert.ok(lines.some((l) => l.includes("signup_requests") && l.includes("absent")));
+      assert.ok(lines.some((l) => l.startsWith("verified reports")));
+    } finally {
+      await src.close();
+    }
+  });
+
+  it("absent on the target with nothing to copy: skipped; with rows to copy: refused (migrate first)", async () => {
+    const src = createSqliteTestDb();
+    try {
+      const lines: string[] = [];
+      await copyDatabase(sqliteSource(src.sqlite), pgliteMigrationClient(await freshTarget(true)), { log: (l) => lines.push(l) });
+      assert.ok(lines.some((l) => l.startsWith("target signup_requests") && l.includes("skipped")));
+      await src.db.insertInto("signup_requests").values(signupRow).execute();
+      await assert.rejects(copyDatabase(sqliteSource(src.sqlite), pgliteMigrationClient(await freshTarget(true))), /not migrated \(missing: signup_requests\)/);
+    } finally {
+      await src.close();
+    }
+  });
+});

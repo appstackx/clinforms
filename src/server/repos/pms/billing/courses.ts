@@ -390,10 +390,11 @@ function toCourse(r: CourseRow, used: number): PatientCourse {
 }
 
 /**
- * Patients' courses with the sessions used, newest sale first. `active` = only courses that can still be used
- * (status active – expiry and sessions left are checked per visit).
+ * Patients' courses with the sessions used, newest sale first. `usable` = only courses a visit may still be used from
+ * (active, or expired – a visit dated on or before the expiry still counts; expiry and sessions left are checked per
+ * visit).
  */
-export async function listPatientCourses(ctx: RepoContext, tenantId: string, patientIds: readonly string[], options: { active?: boolean } = {}): Promise<PatientCourse[]> {
+export async function listPatientCourses(ctx: RepoContext, tenantId: string, patientIds: readonly string[], options: { usable?: boolean } = {}): Promise<PatientCourse[]> {
   assertTenantId(tenantId);
   return readOrEmpty(COURSES, [] as PatientCourse[], async () => {
     const rows: CourseRow[] = [];
@@ -406,7 +407,7 @@ export async function listPatientCourses(ctx: RepoContext, tenantId: string, pat
         .where("c.tenant_id", "=", tenantId)
         .where("t.tenant_id", "=", tenantId)
         .where("c.patient_id", "in", group);
-      if (options.active) q = q.where("c.status", "=", "active");
+      if (options.usable) q = q.where("c.status", "in", ["active", "expired"]);
       rows.push(...((await q.orderBy("c.sold_on", "desc").orderBy("c.id", "desc").limit(500).execute()) as CourseRow[]));
     }
     const used = await usedCounts(
@@ -562,9 +563,15 @@ export interface CourseUseInput {
   caseId: string | null;
 }
 
-const USE_REFUSED = "This visit cannot be used from the course: it has no session left, has expired or was cancelled, or the visit is already invoiced.";
+const USE_REFUSED = "This visit cannot be used from the course: it has no session left, the course had expired on the visit's date or was cancelled, or the visit is already invoiced.";
+/** After the course's expiry date: the one date rule for a use (the visit's date, not today – see the doc §9). */
+export const COURSE_EXPIRED_ON_VISIT = "The course had expired on the visit's date.";
 
-/** Uses one session of a course for a visit (instead of invoicing it). Audited in the same batch. */
+/**
+ * Uses one session of a course for a visit (instead of invoicing it). Audited in the same batch. The visit must be
+ * dated on or before the course's expiry – whenever the use is recorded: a visit on the last day can be used from the
+ * course days later, also after the nightly sweep has marked the course expired.
+ */
 export async function recordCourseUse(ctx: RepoContext, tenantId: string, input: CourseUseInput, actor: PmsActor): Promise<CourseUse> {
   assertTenantId(tenantId);
   assertId(input.patientCourseId, "course id");
@@ -575,14 +582,16 @@ export async function recordCourseUse(ctx: RepoContext, tenantId: string, input:
   if (course.patientId !== input.patientId) throw new RepoInputError("That course belongs to another patient.");
   if (!course.serviceIds.includes(input.serviceId)) throw new RepoInputError("That course does not cover this kind of visit.");
   if (course.caseId !== null && course.caseId !== input.caseId) throw new RepoInputError("That course belongs to another case.");
-  if (course.status !== "active") throw new RepoInputError(course.status === "cancelled" ? "That course has been cancelled." : "That course has no session left.");
-  if (course.expiresOn !== null && input.usedOn > course.expiresOn) throw new RepoInputError("That course had expired by the date of the visit.");
+  if (course.status === "cancelled") throw new RepoInputError("That course has been cancelled.");
+  if (course.expiresOn !== null && input.usedOn > course.expiresOn) throw new RepoInputError(COURSE_EXPIRED_ON_VISIT);
+  if (course.status === "used_up" || course.sessionsUsed >= course.sessionsTotal) throw new RepoInputError("That course has no session left.");
   const id = pmsId(P.courseUse, ctx);
   const at = nowIso(ctx);
   const t = tenantId;
   const c = course.id;
-  // NULL (refused) unless the course is active, in date, has a session left, and no invoice line holds the visit.
-  const allowed = sql<string>`(select pc.id from pms_patient_courses pc where pc.tenant_id = ${t} and pc.id = ${c} and pc.status = 'active' and (pc.expires_on is null or pc.expires_on >= ${input.usedOn}) and (select count(*) from pms_course_uses u where u.tenant_id = ${t} and u.patient_course_id = ${c} and u.reversed_at is null) < pc.sessions_total and not exists (select 1 from pms_invoice_lines l where l.tenant_id = ${t} and l.appointment_id = ${input.appointmentId} and l.billing_lock = 1))`;
+  // NULL (refused) unless the course is active or expired (not used up or cancelled), the visit is dated on or before
+  // its expiry, it has a session left, and no invoice line holds the visit.
+  const allowed = sql<string>`(select pc.id from pms_patient_courses pc where pc.tenant_id = ${t} and pc.id = ${c} and pc.status in ('active', 'expired') and (pc.expires_on is null or pc.expires_on >= ${input.usedOn}) and (select count(*) from pms_course_uses u where u.tenant_id = ${t} and u.patient_course_id = ${c} and u.reversed_at is null) < pc.sessions_total and not exists (select 1 from pms_invoice_lines l where l.tenant_id = ${t} and l.appointment_id = ${input.appointmentId} and l.billing_lock = 1))`;
   await billingBatch(
     ctx,
     [
@@ -649,14 +658,25 @@ export async function setCourseExpiry(ctx: RepoContext, tenantId: string, id: st
   if (course.rev !== expectedRev) return { ok: false, reason: "conflict", currentRev: course.rev };
   if (course.status === "cancelled") throw new RepoInputError("That course has been cancelled.");
   if (expiresOn !== null && expiresOn < course.soldOn) throw new RepoInputError("Course: expiresOn: The expiry cannot be before the sale.");
+  const revive = course.status === "expired" && (expiresOn === null || expiresOn >= todayOf(ctx));
+  // An expired course can be used up meanwhile (visits dated before its expiry still use it): revived, it is used up.
+  const revivedAs = course.sessionsUsed >= course.sessionsTotal ? "used_up" : "active";
   const at = nowIso(ctx);
   const results = await billingBatch(ctx, [
-    ctx.db.updateTable(COURSES).set({ expires_on: expiresOn, rev: expectedRev + 1, updated_at: at }).where("tenant_id", "=", tenantId).where("id", "=", id).where("rev", "=", expectedRev).where("status", "<>", "cancelled"),
+    // An expired course (marked by the nightly sweep) whose expiry moves to today or later – or is removed – is active
+    // again (used up when it has no session left).
+    ctx.db
+      .updateTable(COURSES)
+      .set({ expires_on: expiresOn, status: revive ? revivedAs : course.status, rev: expectedRev + 1, updated_at: at })
+      .where("tenant_id", "=", tenantId)
+      .where("id", "=", id)
+      .where("rev", "=", expectedRev)
+      .where("status", "<>", "cancelled"),
     billingAuditWhen(
       ctx,
       tenantId,
       actor,
-      { action: "pms.course.expiry", targetType: "pms_patient_course", targetId: id, detail: { from: course.expiresOn ?? "none", to: expiresOn ?? "none" } },
+      { action: "pms.course.expiry", targetType: "pms_patient_course", targetId: id, detail: { from: course.expiresOn ?? "none", to: expiresOn ?? "none", ...(revive ? { reactivated: true } : {}) } },
       ctx.db.selectFrom(COURSES).select("id").where("tenant_id", "=", tenantId).where("id", "=", id).where("rev", "=", expectedRev + 1).where("updated_at", "=", at),
     ),
   ]);

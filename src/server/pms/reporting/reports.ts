@@ -29,7 +29,31 @@ import {
   type RevenueRow,
   type UtilisationRow,
 } from "../../../modules/pms/reporting/metrics";
-import { checkAppointmentFacts, checkAvailabilityFacts, checkDebtFacts, checkRevenueFacts, checkVisitFacts, type FactFilter, type KnownIds } from "../../../modules/pms/reporting/fact-checks";
+import {
+  checkAppointmentFacts,
+  checkAvailabilityFacts,
+  checkCourseFacts,
+  checkCourseSaleFacts,
+  checkDebtFacts,
+  checkGiftCardFacts,
+  checkProductSaleFacts,
+  checkRevenueFacts,
+  checkStockFacts,
+  checkVisitFacts,
+  type FactFilter,
+  type KnownIds,
+} from "../../../modules/pms/reporting/fact-checks";
+import {
+  courseLiability,
+  giftCardLiability,
+  productSales,
+  stockRows,
+  type CourseLiabilityRow,
+  type GiftCardLiabilityRow,
+  type ProductSalesRow,
+  type StockRow,
+} from "../../../modules/pms/reporting/liability";
+import type { ReportProduct } from "../../../modules/pms/reporting/facts";
 import type { ReportFilterParams } from "../../../modules/pms/reporting/schemas";
 import { siteFilterFor, sitesInScope, type SiteScope } from "../../../modules/pms/reporting/site-scope";
 import type { PayerType, Practitioner, ReferrerKind, Room, Service, Site } from "../../../modules/pms/core/types";
@@ -482,6 +506,82 @@ export async function loadDebtors(ctx: RepoContext, req: ReportRequest, sources:
     rows: rows.map((r) => ({ ...r, name: r.payerReferrerId ? (names.get(r.payerReferrerId) as string) : r.payerType === "self_pay" ? "Self-pay patients" : "No account recorded" })),
     total,
   };
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * PK06 – course and gift-card liability, products and stock (billing)
+ * ----------------------------------------------------------------------------------------------*/
+
+/** The "as at" date of a liability report: the period's last day, or today when the period ends later. */
+export function asAtOf(req: Pick<ReportRequest, "period" | "today">): string {
+  return req.period.to > req.today ? req.today : req.period.to;
+}
+
+/** The movement range of a liability report: [period.from, as at] (empty when the period starts after today). */
+function liabilityRange(req: ReportRequest): { from: string; to: string } {
+  const asAt = asAtOf(req);
+  return { from: req.period.from <= asAt ? req.period.from : asAt, to: asAt };
+}
+
+export interface CourseLiabilityReport {
+  available: true;
+  asAt: string;
+  from: string;
+  expiringBy: string;
+  rows: CourseLiabilityRow[];
+  total: CourseLiabilityRow;
+}
+
+export async function loadCourseLiability(ctx: RepoContext, req: ReportRequest, sources: ReportingSources): Promise<CourseLiabilityReport | Unavailable> {
+  if (!sources.billing) return { available: false };
+  const range = liabilityRange(req);
+  const q = toQuery(req, range);
+  const raw = await sources.billing.courseFacts(ctx, req.tenantId, q);
+  const open = checkCourseFacts(raw?.open, { siteIds: req.siteIds, known: req.known, asAt: range.to });
+  const sold = checkCourseSaleFacts(raw?.sold, { from: range.from, to: range.to, siteIds: req.siteIds, known: req.known });
+  noteDropped("billing.courses", open.dropped + sold.dropped);
+  const r = courseLiability(open.facts, sold.facts, range.to);
+  return { available: true, asAt: range.to, from: range.from, expiringBy: r.expiringBy, rows: r.rows, total: r.total };
+}
+
+export interface GiftCardLiabilityReport {
+  available: true;
+  asAt: string;
+  from: string;
+  rows: GiftCardLiabilityRow[];
+  total: GiftCardLiabilityRow;
+}
+
+export async function loadGiftCardLiability(ctx: RepoContext, req: ReportRequest, sources: ReportingSources): Promise<GiftCardLiabilityReport | Unavailable> {
+  if (!sources.billing) return { available: false };
+  const range = liabilityRange(req);
+  const checked = checkGiftCardFacts(await sources.billing.giftCardFacts(ctx, req.tenantId, toQuery(req, range)), { siteIds: req.siteIds, known: req.known });
+  noteDropped("billing.gift_cards", checked.dropped);
+  const r = giftCardLiability(checked.facts, range.from, range.to);
+  return { available: true, asAt: range.to, from: range.from, rows: r.rows, total: r.total };
+}
+
+export interface ProductsReport {
+  available: true;
+  products: ReportProduct[];
+  sales: ProductSalesRow[];
+  salesTotal: Omit<ProductSalesRow, "productId" | "siteId">;
+  stock: StockRow[];
+  stockValuePence: number;
+  lowStock: number;
+}
+
+export async function loadProducts(ctx: RepoContext, req: ReportRequest, sources: ReportingSources): Promise<ProductsReport | Unavailable> {
+  if (!sources.billing) return { available: false };
+  const q = toQuery(req);
+  const [products, rawSales, rawStock] = await Promise.all([sources.billing.products(ctx, req.tenantId), sources.billing.productSaleFacts(ctx, req.tenantId, q), sources.billing.stockFacts(ctx, req.tenantId, q)]);
+  const productIds = (products ?? []).map((p) => p.id);
+  const sales = checkProductSaleFacts(rawSales, { from: req.period.from, to: req.period.to, siteIds: req.siteIds, known: req.known, productIds });
+  const stock = checkStockFacts(rawStock, { siteIds: req.siteIds, known: req.known, productIds });
+  noteDropped("billing.products", sales.dropped + stock.dropped);
+  const s = productSales(sales.facts);
+  const st = stockRows(stock.facts, products ?? []);
+  return { available: true, products: products ?? [], sales: s.rows, salesTotal: s.total, stock: st.rows, stockValuePence: st.valuePence, lowStock: st.low };
 }
 
 /* ------------------------------------------------------------------------------------------------

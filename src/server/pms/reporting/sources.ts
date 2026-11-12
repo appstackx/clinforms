@@ -12,7 +12,20 @@ import "server-only";
 import type { RepoContext } from "../../repos/context";
 import { BILLING_REPORTING_SOURCE } from "../billing/reporting-source";
 import { DIARY_REPORTING_SOURCE } from "../diary/reporting-source";
-import type { AppointmentFact, AttendedPatientsFact, AvailabilityFact, DebtFact, RevenueFact, VisitFact } from "../../../modules/pms/reporting/facts";
+import type {
+  AppointmentFact,
+  AttendedPatientsFact,
+  AvailabilityFact,
+  CourseFact,
+  CourseSaleFact,
+  DebtFact,
+  GiftCardFact,
+  ProductSaleFact,
+  ReportProduct,
+  RevenueFact,
+  StockFact,
+  VisitFact,
+} from "../../../modules/pms/reporting/facts";
 export type { ReportingQuery } from "./query";
 import type { ReportingQuery } from "./query";
 
@@ -35,6 +48,19 @@ export interface BillingReportingSource {
   revenueFacts(ctx: RepoContext, tenantId: string, query: ReportingQuery): Promise<RevenueFact[]>;
   /** What is owed NOW (query.now) on unpaid invoices, by payer, site and due date (the period is ignored). */
   debtFacts(ctx: RepoContext, tenantId: string, query: ReportingQuery): Promise<DebtFact[]>;
+  /**
+   * PK06: courses still open at the end of query.to (the "as at" date; query.end is the instant it ends), and the
+   * courses sold in [query.from, query.to]. [] before the course tables exist.
+   */
+  courseFacts(ctx: RepoContext, tenantId: string, query: ReportingQuery): Promise<{ open: CourseFact[]; sold: CourseSaleFact[] }>;
+  /** PK06: gift-card moves up to the end of query.to, split before / in the period. [] before the tables exist. */
+  giftCardFacts(ctx: RepoContext, tenantId: string, query: ReportingQuery): Promise<GiftCardFact[]>;
+  /** PK06: products sold and credited in the period, by UK date, site and product. */
+  productSaleFacts(ctx: RepoContext, tenantId: string, query: ReportingQuery): Promise<ProductSaleFact[]>;
+  /** PK06: stock on hand NOW per site and product (the period is ignored). */
+  stockFacts(ctx: RepoContext, tenantId: string, query: ReportingQuery): Promise<StockFact[]>;
+  /** PK06: the clinic's products (archived ones too). */
+  products(ctx: RepoContext, tenantId: string): Promise<ReportProduct[]>;
 }
 
 export interface ReportingSources {

@@ -201,5 +201,56 @@ the reason). **Before the migrations:** reads answer "no products", invoices iss
 invoice with an item line) and +returned only looked up for credited item lines – no extra gateway requests for other
 invoices and credit notes.
 
-**Still to do (PK06/PK07):** liability report (course value unused, gift-card balances – `giftCardsOutstanding` exists),
-product sales and stock-value report, an expiry sweep for courses and gift cards, the public website copy.
+**Still to do (PK06/PK07):** done 12/11/2026 – see §9.
+
+## 9. Built – PK06 reports and the expiry sweep, PK07 website (12/11/2026, branch `feat/pk06-reports`, not merged, no migration)
+
+| What | Where | Code |
+|---|---|---|
+| **Course liability**: per site, as at the period's last day (today when the period ends later) – courses sold in the period and for how much (cancelled ones included; a voided sale invoice left out, as in Revenue and Products), courses with sessions left, sessions sold / used / left, **value unused** = sale line total less credit notes issued by that date × left ÷ sold (whole pence, halves away from zero), and what expires within 30 days of the date | Reports → Finance → **Course liability** (`/app/clinic/reports/course-liability`, CSV) | `courseFacts` in `src/server/pms/billing/reporting-source.ts`; `courseLiability` in `src/modules/pms/reporting/liability.ts` |
+| **Gift card liability**: per site, held at the start (end of the day before the period), sold, spent (less spends put back), credited, expired, held at the end ("as at"). Reconciles: start + sold − spent − credited − expired = end | Reports → Finance → **Gift card liability** | `giftCardFacts`, `giftCardLiability` |
+| **Products and stock**: per product and site, units sold and given back, net (sold less credit notes in the period), VAT, total; stock on hand today per site, value at today's sale price (nothing for a count below zero), low-stock flag | Reports → Finance → **Products and stock** | `productSaleFacts`, `stockFacts`, `products`; `productSales`, `stockRows` |
+| **Expiry sweep**: active courses past their expiry → `expired` (audit `pms.course.expire`); gift cards past their expiry (active, used up, or expired with a spend put back) → `expired`, balance 0, an `expire` move of what was left (audit `pms.gift_card.expire`, ids and amounts only) | Daily cron `GET /api/cron/retention` (vercel.json `17 3 * * *`, `CRON_SECRET`) – after an authorised retention pass and AFTER the billing extras (`afterRetentionCron`); a time budget of 20 s (`EXPIRY_RUN_BUDGET_MS`): no new clinic or batch after it, the rest the next night, logged `stoppedEarly`; each step caught on its own (getDb() opened inside), so the route always returns its response | `src/server/repos/pms/billing/expiry.ts`, `src/server/cron/expiry.ts` |
+| **Course uses follow the VISIT's date** (review fix): a course is offered for, and used by, any visit dated on or before its expiry – whenever the use is recorded, also after the course expired and after the sweep marked it `expired` (its last session used, it stays `expired`). Refused: a visit after the expiry ("The course had expired on the visit's date."), no session left ("That course has no session left."), a cancelled course. A visit ticked "Use course" whose use is refused is NOT invoiced instead: the result lists it (`courseRefused`) and the visits screen says why (`courseRefusedText`) | Billing → Visits to invoice | `recordCourseUse`, `courseOffersFor`, `courseCovers`, `useCoursesForVisits`, `invoiceVisitsFor` |
+| **Gift cards keep today's rule**: past its expiry (UK date) a card spends nothing (the balance update matches no row), and its sale can no longer be credited or voided ("has expired") – the same answer before and after the sweep (also for an expired card holding a spend put back) | – | `giftCardRedeemQueries`, `giftCardCreditQueries` |
+| **Reversing a gift-card spend on an expired card** (or one whose last valid day is today): a warning that the amount goes back on an expired card and is removed by the nightly expiry. **No reverse-payment dialog exists yet** – the warning is ready for it (`giftCardReversalNotice(ctx, tenantId, paymentId)`; text `giftCardReversalWarning`) | – | `src/server/repos/pms/billing/gift-cards.ts`, `src/modules/pms/billing/gift-cards.ts` |
+| Moving an expired course's expiry to today or later (or removing it) makes it active again – used up when no session is left (audit detail `reactivated`) | Patient → Invoices → Change expiry | `setCourseExpiry` |
+| **Website (PK07)**: two lines in the billing section of clindesk.co.uk/features (courses; gift cards, products and stock, the reports) – no memberships, no online selling | `src/app/clindesk-site/features/page.tsx` | – |
+
+**Rules and decisions:**
+- **The expiry day itself is valid**; "expired" = the UK date is after `expires_on` (BST midnight included). For a
+  COURSE USE the date that counts is the visit's (visit date ≤ `expires_on`), not today: a visit on the last day can be
+  invoiced and used from the course days later, before or after the sweep – the answer is the same either way. For a
+  GIFT CARD it is today (spend, credit, void). (Changed 12/11/2026 after review: a "today" rule for course uses let a
+  last-day visit be charged as well as paid for by the course.)
+- Every figure comes from billing's reporting source (the reports never read billing's tables); facts are checked
+  (another site, an unknown product, an expired course, bad numbers are dropped and logged). Permissions as the other
+  Finance reports: `reports.all`, CSV `reports.export` (audited `pms.report.export`, formula-safe cells), site scope from
+  the member's sites. A course / card belongs to the site of the invoice that sold it ("No site" when it has none –
+  shown only to members who see the whole clinic).
+- "As at" uses the stored dates and instants: a course counts from its sale date until cancelled (`cancelled_at`), used
+  sessions by the visit date (reversals by `reversed_at`), credits by the credit note's date; a card's sale by its sale
+  date, other moves by when they were recorded. The sweep's own "expire" move is never counted as a spend or credit,
+  so the gift-card figures are the same before and after it.
+- Sweep safety: per clinic (a cross-clinic read of clinic ids only, to find who has something to sweep), 25 rows per
+  batch (≤ 75 statements, few parameters), each statement conditional on the row as read (status, rev / balance, still
+  past expiry) – a second run, or two at once, change nothing; a card changed between read and batch makes the batch
+  refuse and the cards are then tried one by one (the changed one waits for the next night). At most 2,000 of each per
+  clinic per night. One clinic's failure does not stop the others. Logs counts only (`cron.expiry.done`).
+- A spend put back (payment reversed) on a card that has expired goes back on the card and is taken off again by the
+  next sweep (unchanged PK04 behaviour – the money is not refunded); the reverse-payment confirmation is to warn of it
+  (see the table). The gift-card liability's opening balance never counts an `expire` move either.
+- **Known, left as is (review item 7): two site definitions for gift cards.** The reports put a card at the site of the
+  invoice that sold it; the Gift cards screen scopes a site-limited member by the buyer patient's visibility. They
+  agree in the normal case (sold at the patient's site); a card sold at another site can show on one and not the other.
+- No migration (0239 unused): the sweep's reads use the existing indexes; volumes are small.
+
+**Tests:** `src/modules/pms/reporting/liability.test.ts` (pure figures, fact checks, catalogue);
+`src/server/pms/billing/testing/pk06-reports-suite.ts` and `pk06-expiry-suite.ts` (incl. the review fixes: last-day
+visit used after expiry and after the sweep, the use messages, refused uses returned, past-expiry card credit / void
+refused, the reversal warning, the sweep's deadline, a voided course sale left out), run on node:sqlite and PGlite
+(`pk06-reports.test.ts`, `pk06-expiry.test.ts`, tenant-scope guard) and on D1 through the gateway
+(`workers/data-gateway/test/pk06-stack.test.ts`, stand-in and local workerd). Also `courses-service.test.ts`
+(invoicing through the diary's visits: last-day visit before / after the sweep, a refused use not invoiced),
+`src/server/cron/expiry.test.ts` (order billing → sweep, nothing thrown, a database that cannot be opened),
+`liability.test.ts` (opening balance without `expire`), `courses.test.ts`, `gift-cards.test.ts` (pure).

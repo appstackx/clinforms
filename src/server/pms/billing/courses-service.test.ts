@@ -18,6 +18,7 @@ import { testActor } from "./access";
 import { cancelCourseFor, courseTypesScreenFor, patientCoursesFor, reverseCourseUseFor, saveCourseTypeFor, sellCourseFor, setCourseExpiryFor } from "./courses";
 import { billingHomeFor, uninvoicedVisitsFor } from "./views";
 import { invoiceVisitsFor } from "./writes";
+import { runExpirySweep } from "../../repos/pms/billing/expiry";
 
 const A = "riverside-crs";
 const SEED = { userId: "user_owner_01", sessionId: "sess_owner" };
@@ -39,15 +40,15 @@ function suite(label: string, factory: () => Promise<GuardedDb>) {
       return r.value;
     };
 
-    async function attendedVisit(patientId: string, start: string, serviceId = id.fu) {
+    async function attendedVisit(patientId: string, start: string, serviceId = id.fu, day = DAY) {
       const [apptId] = await bulkCreateDiaryItems(
         ctx,
         A,
-        [{ kind: "appointment", siteId: id.site, practitionerId: id.prac, patientId, caseId: null, serviceId, authorisationId: null, startsAt: utc(DAY, start), endsAt: utc(DAY, `${start.slice(0, 2)}:30`), status: "booked", source: "staff" }],
+        [{ kind: "appointment", siteId: id.site, practitionerId: id.prac, patientId, caseId: null, serviceId, authorisationId: null, startsAt: utc(day, start), endsAt: utc(day, `${start.slice(0, 2)}:30`), status: "booked", source: "staff" }],
         SEED,
       );
       const saved = clock;
-      clock = Date.parse(utc(DAY, "18:00"));
+      clock = Math.max(saved, Date.parse(utc(day, "18:00")));
       const r = await setAppointmentStatus(ctx, A, apptId, { expectedRev: 1, status: "attended" }, SEED);
       clock = saved;
       assert.ok(r.ok);
@@ -119,8 +120,15 @@ function suite(label: string, factory: () => Promise<GuardedDb>) {
       const before = ok(await billingHomeFor(owner())).figures.uninvoicedVisits;
       const r = ok(await invoiceVisitsFor(owner(), { appointmentIds: [id.v1, id.v2, id.v3], issue: true, useCourse: [id.v1, id.v2, id.v3] }));
       assert.equal(r.courseUses, 2);
-      assert.equal(r.invoices.length, 1, "the assessment is invoiced");
-      const inv = await getInvoice(ctx, A, r.invoices[0].id);
+      // Ticked "use course" but no course covers it: NOT invoiced instead (never charged without the member knowing).
+      assert.equal(r.invoices.length, 0);
+      assert.deepEqual(
+        r.courseRefused.map((x) => x.appointmentId),
+        [id.v3],
+      );
+      const r3 = ok(await invoiceVisitsFor(owner(), { appointmentIds: [id.v3], issue: true }));
+      assert.equal(r3.invoices.length, 1, "the assessment is invoiced on its own");
+      const inv = await getInvoice(ctx, A, r3.invoices[0].id);
       assert.deepEqual(
         inv?.lines.map((l) => l.appointmentId),
         [id.v3],
@@ -166,6 +174,44 @@ function suite(label: string, factory: () => Promise<GuardedDb>) {
       assert.equal(view.courses[0].stateLabel, "Cancelled");
       const list = ok(await uninvoicedVisitsFor(owner()));
       assert.ok(list.visits.find((v) => v.appointmentId === id.back)?.course == null, "a cancelled course is offered no more");
+    });
+
+    it("PK06 review: a visit on a course's last day is used from it when invoiced later, also after the sweep; a refused use is not charged", async () => {
+      const t = ok(await saveCourseTypeFor(setup(owner()), { name: "2 follow-ups", serviceIds: [id.fu], sessions: "2", price: "£100.00", validDays: "30" })).id;
+      id.mia = (await createPatient(ctx, A, { firstName: "Mia", lastName: "Hale", dateOfBirth: "1992-02-14" }, SEED)).id;
+      const sold = ok(await sellCourseFor(owner(), id.mia, { courseTypeId: t, issue: true }));
+      assert.ok(sold.issued);
+      const c = ok(await patientCoursesFor(owner(), id.mia)).courses.find((x) => x.name === "2 follow-ups")!;
+      ok(await setCourseExpiryFor(owner(), c.id, c.rev, "2026-11-10")); // the last valid day: 10/11/2026
+      const last1 = await attendedVisit(id.mia, "09:00", id.fu, "2026-11-10");
+      const last2 = await attendedVisit(id.mia, "10:00", id.fu, "2026-11-10");
+      clock = Date.parse(utc("2026-11-11", "09:00"));
+      const late = await attendedVisit(id.mia, "08:00", id.fu, "2026-11-11");
+      clock = Date.parse(utc("2026-11-12", "09:00")); // two days on, the course past its expiry, not swept yet
+      const list = new Map(ok(await uninvoicedVisitsFor(owner())).visits.map((v) => [v.appointmentId, v]));
+      assert.equal(list.get(last1)?.course?.label, "Use course (2 of 2 left)", "offered for a visit dated within its validity");
+      assert.equal(list.get(late)?.course ?? null, null, "not for a visit after the expiry");
+      const r1 = ok(await invoiceVisitsFor(owner(), { appointmentIds: [last1], issue: true, useCourse: [last1] }));
+      assert.deepEqual([r1.courseUses, r1.invoices.length, r1.courseRefused.length], [1, 0, 0]);
+      // After the nightly sweep marked it expired: the other last-day visit still uses it.
+      db.log.pause();
+      try {
+        assert.equal((await runExpirySweep(ctx)).courses, 1);
+      } finally {
+        db.log.resume();
+      }
+      const r2 = ok(await invoiceVisitsFor(owner(), { appointmentIds: [last2], issue: true, useCourse: [last2] }));
+      assert.deepEqual([r2.courseUses, r2.invoices.length], [1, 0]);
+      const after = ok(await patientCoursesFor(owner(), id.mia)).courses.find((x) => x.id === c.id)!;
+      assert.equal(after.progress.startsWith("2 of 2 used"), true);
+      // Ticked "use course" for the visit after the expiry: refused, said so, and not invoiced either.
+      const r3 = await invoiceVisitsFor(owner(), { appointmentIds: [late], issue: true, useCourse: [late] });
+      assert.ok(!r3.ok && /could not be used from its course and was not invoiced/.test(r3.error), r3.ok ? "ok" : r3.error);
+      assert.ok(
+        ok(await uninvoicedVisitsFor(owner())).visits.some((v) => v.appointmentId === late),
+        "still on the list to invoice",
+      );
+      clock = Date.parse(utc("2026-11-10", "09:00"));
     });
 
     it("every statement names the clinic (tenant-scope guard)", () => {
