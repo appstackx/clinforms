@@ -11,7 +11,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import * as React from "react";
-import { MessageSquareText, Moon, Send, Settings } from "lucide-react";
+import { Mails, MessageSquareText, Moon, Send, Settings } from "lucide-react";
 import type { LetterRowView, MessagesHomeView, OutboxRowView, ReplyRowView, ReplyThreadView, SendFormView, TemplateRowView } from "@/modules/pms/comms/view";
 import { CHANNEL_LABELS, INTENT_LABELS } from "@/modules/pms/comms/copy";
 import { cn } from "@/lib/utils";
@@ -40,6 +40,8 @@ export interface MessagesPageProps {
   failed: string | null;
   /** Prepaid text credits: the balance (everyone with messages.send sees it; the link opens Text credits). */
   credits?: { balance: number; low: boolean } | null;
+  /** Bulk email (CLINFORMS_BULK_EMAIL=on and a member who may use it): the header links to it. */
+  bulkEmail?: boolean;
 }
 
 const FILTERS: { key: OutboxFilterKey; label: string }[] = [
@@ -95,6 +97,12 @@ export function MessagesPage(props: MessagesPageProps) {
             Quiet hours {home.quietStart}–{home.quietEnd}
           </span>
         )}
+        {props.bulkEmail ? (
+          <Link href={`${MESSAGES_PATH}/campaigns`} className={cn(pmsButtonVariants({ variant: "secondary" }), "h-9")} data-testid="bulk-email-link">
+            <Mails aria-hidden />
+            Bulk email
+          </Link>
+        ) : null}
         <Link href={hrefFor({ tab: "send" })} className={cn(pmsButtonVariants({ variant: "primary" }), "h-9")} data-testid="send-message-button">
           <Send aria-hidden />
           Send a message

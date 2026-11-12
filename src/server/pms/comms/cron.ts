@@ -13,6 +13,7 @@ import type { RepoContext } from "../../repos/pms/context";
 import { listEntitlementsByTenant } from "../../repos/pms/entitlements";
 import { reconcileDiaryMessages } from "../diary/message-sync";
 import { runAllDueMessages, type DispatchDeps, type RunSummary } from "./dispatch";
+import { runCampaigns } from "./campaigns/send";
 import { CommsConfigError } from "./providers";
 import { pmsNow, pmsNowMs } from "../../../modules/pms/core/clock";
 
@@ -24,6 +25,11 @@ export interface CommsCronDeps {
   log?: (event: string, detail: Record<string, unknown>) => void;
   /** Total time for the run (default 45 s – the route's maxDuration is 60 s). */
   budgetMs?: number;
+  /**
+   * Bulk email (0146): true only when the platform switch CLINFORMS_BULK_EMAIL=on (the route reads it). Then each
+   * clinic whose own bulk email setting is on also sends what is due of its campaigns, after its planned messages.
+   */
+  bulkEmail?: boolean;
 }
 
 function json(status: number, body: unknown): Response {
@@ -59,7 +65,7 @@ export async function handleCommsCron(req: Request, deps: CommsCronDeps): Promis
   }
   const started = pmsNowMs();
   const budget = deps.budgetMs ?? 45_000;
-  const totals: Omit<RunSummary, "reasons"> & { clinics: number; failedClinics: number } = { clinics: 0, failedClinics: 0, claimed: 0, released: 0, sent: 0, outbox: 0, failed: 0, skipped: 0 };
+  const totals: Omit<RunSummary, "reasons"> & { clinics: number; failedClinics: number; campaignEmails?: number } = { clinics: 0, failedClinics: 0, claimed: 0, released: 0, sent: 0, outbox: 0, failed: 0, skipped: 0 };
   try {
     const ctx = deps.ctx();
     for (const tenantId of await clinicsWithClinicSystem(ctx)) {
@@ -75,6 +81,10 @@ export async function handleCommsCron(req: Request, deps: CommsCronDeps): Promis
         totals.outbox += r.outbox;
         totals.failed += r.failed;
         totals.skipped += r.skipped;
+        if (deps.bulkEmail) {
+          const c = await runCampaigns(ctx, tenantId, dispatch, { budgetMs: Math.max(1000, budget - (pmsNowMs() - started)) });
+          totals.campaignEmails = (totals.campaignEmails ?? 0) + c.written;
+        }
       } catch (err) {
         totals.failedClinics++;
         log("cron.clinic_messages.clinic_failed", { error: err instanceof Error ? err.name : "unknown" });

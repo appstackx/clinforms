@@ -27,6 +27,7 @@ import { BillingBannerBar } from "@/components/account/billing-banner";
 import { billingBannerFor } from "@/server/billing/banner";
 import { canManageBilling } from "@/server/billing/views";
 import { getDb } from "@/server/db";
+import { bulkEmailAvailable, mayUseBulkEmail } from "@/server/pms/comms/campaigns/service";
 
 export const dynamic = "force-dynamic";
 
@@ -63,6 +64,9 @@ export default async function ClinicSystemLayout({ children }: { children: React
   const path = headers().get("x-clinforms-path");
   const needs = pagePermissionFor(path);
   if (needs && !needs.some((p) => actor.can(p))) notFound();
+  // Bulk email (xt02): without the platform switch the pages do not exist; reception never opens them (a real 404
+  // here too – the Messages section's skeleton would stream 200 first).
+  if (path && /^\/app\/clinic\/messages\/campaigns(?:[/?#]|$)/.test(path) && (!bulkEmailAvailable() || !mayUseBulkEmail(actor))) notFound();
   const report = path?.split(/[?#]/)[0].match(new RegExp(`^${REPORTS_PATH}/([a-z]+)$`))?.[1];
   if (report && report !== "export" && (!isReportId(report) || reportAccess(report, (p) => actor.can(p)) === null)) notFound();
   const brand = currentBrand();

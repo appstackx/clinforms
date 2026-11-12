@@ -11,4 +11,7 @@ export const COMMS_ID_PREFIXES = {
   consentEvent: "cev",
   letter: "ltr",
   letterTemplate: "ltpl",
+  /** Bulk email (0146). */
+  campaign: "ecmp",
+  campaignRecipient: "ecrc",
 } as const;

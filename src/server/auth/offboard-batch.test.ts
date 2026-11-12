@@ -32,7 +32,11 @@ describe("offboarding batch vs the gateway's statement limit", () => {
     // Headroom kept visible: the fixed part (no users) and how many member accounts still fit in one batch.
     const fixed = offboardDeleteQueries(t.db, base({ pmsTables: PMS_TENANT_TABLES, releaseSlug: true })).length;
     const usersThatFit = (GATEWAY_MAX_STATEMENTS - fixed) * OFFBOARD_USER_IDS_PER_STATEMENT;
-    assert.ok(usersThatFit >= 450, `only ${usersThatFit} member accounts fit next to every clinic-system table`);
+    // 12/11/2026 (bulk email, 0146 – three more clinic tables): lowered from 450 to 180, still far above any clinic's
+    // member count (Blue Heart, 11 sites: well under 100). Past it the offboarding sends ordered batches with the
+    // organization's tombstone last (the next test). REVIEW: the next table added drops this to 90 – decide then
+    // whether to group deletes or accept multi-batch offboarding for large clinics.
+    assert.ok(usersThatFit >= 180, `only ${usersThatFit} member accounts fit next to every clinic-system table`);
   });
 
   it("only the tables that hold the clinic's rows are named – a ClinForms-only clinic sends no clinic-system statement", () => {
