@@ -16,7 +16,7 @@ import { listAudit } from "../../../repos/audit";
 import type { RepoContext } from "../../../repos/context";
 import { cancelPatientCourse } from "../../../repos/pms/billing/course-cancel";
 import { createCourseType, getCourseType, listPatientCourses, recordCourseUse } from "../../../repos/pms/billing/courses";
-import { createCreditNote } from "../../../repos/pms/billing/credit-notes";
+import { createCreditNote, voidInvoice } from "../../../repos/pms/billing/credit-notes";
 import { sweepExpiredForTenant } from "../../../repos/pms/billing/expiry";
 import { createDraftInvoice, issueInvoice } from "../../../repos/pms/billing/invoices";
 import { createProduct, recordStockChange } from "../../../repos/pms/billing/products";
@@ -263,6 +263,21 @@ export function definePk06ReportsSuite(label: string, factory: () => Promise<Pk0
       assert.equal(stat(g, "outstanding"), "£30.00");
       const b = await page(ownerB(), "course-liability", period("2026-11-01", "2026-11-10"));
       assert.equal(stat(b, "unused-value"), "£999.00", "clinic B sees its own course only");
+    });
+
+    it("course liability: a course whose sale invoice was voided is not 'sold in the period' (as Revenue and Products)", async () => {
+      clock = "2026-11-20T10:00:00.000Z";
+      const q = period("2026-11-15", "2026-11-20");
+      const before = rows(await page(owner(), "course-liability", q), "sites").find((r) => r[0] === "Mill Lane (fictional)")!;
+      const sold = await sellCourse(A, id.patient, id.taster, id.s2, "2026-11-20");
+      const withSale = rows(await page(owner(), "course-liability", q), "sites").find((r) => r[0] === "Mill Lane (fictional)")!;
+      assert.deepEqual([withSale[1], withSale[2]], [String(Number(before[1]) + 1), "£100.00"]);
+      await voidInvoice(ctx, A, sold.invoice.id, { reason: "Sold by mistake (fictional)" }, SEED);
+      const v = await page(owner(), "course-liability", q);
+      const after = rows(v, "sites").find((r) => r[0] === "Mill Lane (fictional)")!;
+      assert.deepEqual([after[1], after[2]], [before[1], before[2]], "the voided sale is left out");
+      assert.match(v.footnote ?? "", /a voided sale invoice is left out \(as in Revenue and Products\)/);
+      clock = "2026-11-10T10:00:00.000Z";
     });
 
     it("every statement names the clinic (tenant-scope guard)", () => {

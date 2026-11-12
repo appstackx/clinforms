@@ -96,6 +96,7 @@ async function debtFacts(ctx: RepoContext, tenantId: string, q: ReportingQuery):
  * Courses open at the end of the "as at" date D (= q.to): sold on or before D, not cancelled by the end of D, D on
  * or before the expiry (the expiry day itself still counts). Sessions used = uses dated on or before D and not
  * reversed by the end of D. Value = the sale line's total less credit notes on that line issued on or before D.
+ * Sold in the period: by sale date, a voided sale invoice left out (as revenueFacts and productSaleFacts).
  * Tenant ids in the subqueries come from the outer row (D1 allows at most 100 bound parameters per statement).
  */
 async function courseFacts(ctx: RepoContext, tenantId: string, q: ReportingQuery): Promise<{ open: CourseFact[]; sold: CourseSaleFact[] }> {
@@ -119,7 +120,7 @@ async function courseFacts(ctx: RepoContext, tenantId: string, q: ReportingQuery
         from pms_patient_courses c
         join pms_invoices i on i.tenant_id = c.tenant_id and i.id = c.sale_invoice_id
         join pms_invoice_lines l on l.tenant_id = c.tenant_id and l.id = c.sale_line_id
-        where c.tenant_id = ${tenantId} and c.sold_on >= ${q.from} and c.sold_on <= ${q.to}${siteIn("i.site_id", q.siteIds)}
+        where c.tenant_id = ${tenantId} and i.voided_at is null and c.sold_on >= ${q.from} and c.sold_on <= ${q.to}${siteIn("i.site_id", q.siteIds)}
         group by 1, 2
       `.execute(ctx.db),
     ]);

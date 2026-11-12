@@ -297,7 +297,11 @@ interface VisitForCourse {
   chargePence: number | null;
 }
 
-/** For the visits list: the course each visit can use (completed, self-pay, a course covering it). */
+/**
+ * For the visits list: the course each visit can use (completed, self-pay, a course covering it). The rule is the
+ * VISIT's date: a course offers itself for any visit dated within its validity – also once it has expired (before or
+ * after the nightly sweep marked it), so a visit on its last day invoiced later is still used from it.
+ */
 export async function courseOffersFor(ctx: RepoContext, tenantId: string, priced: readonly VisitForCourse[]): Promise<Map<string, CourseOffer>> {
   const eligible = priced.filter((p) => p.visit.status === "attended" && p.billTo === "patient");
   if (eligible.length === 0) return new Map();
@@ -305,36 +309,45 @@ export async function courseOffersFor(ctx: RepoContext, tenantId: string, priced
     ctx,
     tenantId,
     eligible.map((p) => p.visit.patientId),
-    { active: true },
+    { usable: true },
   );
-  // PK06: past its expiry a course offers nothing, even before the nightly sweep marks it expired.
-  const today = todayOf(ctx);
-  const valid = courses.filter((c) => c.expiresOn === null || c.expiresOn >= today);
-  if (valid.length === 0) return new Map();
+  if (courses.length === 0) return new Map();
   return offerCourses(
     priced.map((p) => ({ ...p.visit, eligible: p.visit.status === "attended" && p.billTo === "patient" })),
-    valid,
+    courses,
   );
+}
+
+/** A visit the member ticked to use from a course that could not be used (it is then NOT invoiced either). */
+export interface CourseUseRefusal {
+  appointmentId: string;
+  reason: string;
 }
 
 /**
  * Uses a course for each of these visits that one covers (worked out again on the server, in date order). A visit
- * whose course ran out or was changed meanwhile is simply not used – it is invoiced as usual. Returns the
- * appointments used.
+ * the member ticked whose course ran out, was cancelled or was changed meanwhile is NOT used – and is returned in
+ * `refused` with the reason, so the caller leaves it out of the invoices and says so (never charged without the
+ * member knowing). Returns the appointments used.
  */
-export async function useCoursesForVisits(ctx: RepoContext, tenantId: string, priced: readonly VisitForCourse[], actor: BillingActor["actor"]): Promise<Set<string>> {
+export async function useCoursesForVisits(ctx: RepoContext, tenantId: string, priced: readonly VisitForCourse[], actor: BillingActor["actor"]): Promise<{ used: Set<string>; refused: CourseUseRefusal[] }> {
   const used = new Set<string>();
+  const refused: CourseUseRefusal[] = [];
   const offers = await courseOffersFor(ctx, tenantId, priced);
-  const byId = new Map(priced.map((p) => [p.visit.appointmentId, p.visit]));
-  for (const [appointmentId, offer] of Array.from(offers.entries())) {
-    const v = byId.get(appointmentId);
-    if (!v) continue;
+  for (const p of priced) {
+    const v = p.visit;
+    const offer = offers.get(v.appointmentId);
+    if (!offer) {
+      refused.push({ appointmentId: v.appointmentId, reason: "No course covers this visit any more: it has no session left, was cancelled, or had expired on the visit's date." });
+      continue;
+    }
     try {
-      await recordCourseUse(ctx, tenantId, { patientCourseId: offer.patientCourseId, appointmentId, usedOn: v.date, patientId: v.patientId, serviceId: v.serviceId, caseId: v.caseId }, actor);
-      used.add(appointmentId);
+      await recordCourseUse(ctx, tenantId, { patientCourseId: offer.patientCourseId, appointmentId: v.appointmentId, usedOn: v.date, patientId: v.patientId, serviceId: v.serviceId, caseId: v.caseId }, actor);
+      used.add(v.appointmentId);
     } catch (err) {
       if (!(err instanceof RepoInputError)) throw err;
+      refused.push({ appointmentId: v.appointmentId, reason: err.message });
     }
   }
-  return used;
+  return { used, refused };
 }

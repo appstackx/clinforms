@@ -12,6 +12,7 @@ import { CheckCircle2 } from "lucide-react";
 import { invoiceVisitsAction, waiveFeeAction } from "@/app/app/clinic/billing/actions";
 import type { VisitStatus } from "@/modules/pms/billing/types";
 import type { UninvoicedVisitView } from "@/modules/pms/billing/view";
+import { courseRefusedText } from "@/modules/pms/billing/courses";
 import { cn } from "@/lib/utils";
 import { PmsButton, PmsNotice, StatusPill, pmsButtonVariants, useToast } from "@/components/pms/ui";
 import { BILLING_PATH, date, focusRing, money } from "./format";
@@ -66,6 +67,8 @@ export function VisitsTable({ visits, mode, today, from, until }: { visits: Unin
   const [error, setError] = React.useState<string | null>(null);
   const [made, setMade] = React.useState<{ id: string; number: string | null; billTo: string; totalPence: number }[]>([]);
   const [usedFromCourses, setUsedFromCourses] = React.useState(0);
+  // Visits ticked "use course" that could not be used: not invoiced either – said here, never charged silently.
+  const [courseRefused, setCourseRefused] = React.useState<{ appointmentId: string; reason: string }[]>([]);
 
   const shown = visits.filter((v) => include[v.status]);
   const picked = shown.filter((v) => !off[v.appointmentId] && v.chargePence !== null);
@@ -80,6 +83,7 @@ export function VisitsTable({ visits, mode, today, from, until }: { visits: Unin
   async function create(issue: boolean) {
     setBusy(issue ? "issue" : "draft");
     setError(null);
+    setCourseRefused([]);
     const r = await invoiceVisitsAction(
       picked.map((v) => v.appointmentId),
       issue,
@@ -92,6 +96,7 @@ export function VisitsTable({ visits, mode, today, from, until }: { visits: Unin
     }
     setMade(r.result.invoices);
     setUsedFromCourses(r.result.courseUses);
+    setCourseRefused(r.result.courseRefused ?? []);
     const uses = r.result.courseUses > 0 ? ` · ${r.result.courseUses} visit${r.result.courseUses === 1 ? "" : "s"} used from courses` : "";
     toast.success(`${r.result.invoices.length} invoice${r.result.invoices.length === 1 ? "" : "s"} ${issue ? "issued" : "drafted"}${uses}`);
     if (mode === "stepper") setStep(3);
@@ -136,6 +141,24 @@ export function VisitsTable({ visits, mode, today, from, until }: { visits: Unin
         <p role="alert" className="text-sm text-destructive-strong">
           {error}
         </p>
+      ) : null}
+
+      {courseRefused.length > 0 ? (
+        <div role="alert" data-testid="course-refused">
+          <PmsNotice tone="warning" title={courseRefusedText(courseRefused.length)}>
+            <ul className="list-disc pl-5">
+              {courseRefused.map((x) => {
+                const v = visits.find((y) => y.appointmentId === x.appointmentId);
+                return (
+                  <li key={x.appointmentId}>
+                    {v ? `${v.patientName}, ${date(v.date)}: ` : ""}
+                    {x.reason}
+                  </li>
+                );
+              })}
+            </ul>
+          </PmsNotice>
+        </div>
       ) : null}
 
       {step === 1 ? (

@@ -492,7 +492,7 @@ async function courseLiabilityView(b: Built, sources: ReportingSources): Promise
         empty: NO_COURSES_YET,
       },
     ],
-    footnote: `Value unused = what was paid for each course (after any credit notes issued by ${asAt}) × sessions left ÷ sessions sold. A course counts until it is used up, cancelled or past its expiry date – the expiry date itself still counts. "Sold in period" = courses whose invoice was issued from ${formatUkDate(r.from)} to ${asAt}, cancelled ones included. A course belongs to the site of the invoice that sold it.`,
+    footnote: `Value unused = what was paid for each course (after any credit notes issued by ${asAt}) × sessions left ÷ sessions sold. A course counts until it is used up, cancelled or past its expiry date – the expiry date itself still counts. "Sold in period" = courses whose invoice was issued from ${formatUkDate(r.from)} to ${asAt} – a voided sale invoice is left out (as in Revenue and Products), a course cancelled or credited otherwise still counts. A course belongs to the site of the invoice that sold it.`,
     csv: {
       header: ["group", "name", "as_at", "courses_sold_in_period", "sold_for_gbp", "courses_with_sessions_left", "sessions_sold", "sessions_used", "sessions_left", "value_unused_gbp", "courses_expiring_30_days", "sessions_expiring_30_days", "value_expiring_30_days_gbp"],
       rows: [

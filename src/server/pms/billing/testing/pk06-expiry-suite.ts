@@ -15,16 +15,18 @@ import { runBatch } from "../../../db/batch";
 import { testCipher } from "../../../db/testing/databases";
 import { listAudit } from "../../../repos/audit";
 import type { RepoContext } from "../../../repos/context";
-import { createCourseType, getCourseType, getPatientCourse, listPatientCourses, recordCourseUse, setCourseExpiry } from "../../../repos/pms/billing/courses";
+import { cancelPatientCourse } from "../../../repos/pms/billing/course-cancel";
+import { createCourseType, getCourseType, getPatientCourse, listCourseUses, listPatientCourses, recordCourseUse, reverseCourseUse, setCourseExpiry } from "../../../repos/pms/billing/courses";
 import { clinicsWithExpiredItems, runExpirySweep, sweepExpiredForTenant } from "../../../repos/pms/billing/expiry";
-import { getGiftCard, giftCardRedeemQueries, listGiftCardMoves } from "../../../repos/pms/billing/gift-cards";
+import { createCreditNote, voidInvoice } from "../../../repos/pms/billing/credit-notes";
+import { getGiftCard, giftCardRedeemQueries, giftCardReversalNotice, listGiftCardMoves } from "../../../repos/pms/billing/gift-cards";
 import { createDraftInvoice, issueInvoice } from "../../../repos/pms/billing/invoices";
 import { reversePayment } from "../../../repos/pms/billing/payments";
 import { createService } from "../../../repos/pms/directory";
 import { createPatient } from "../../../repos/pms/patients";
 import { unscopedStatements, type QueryLog } from "../../../repos/pms/testing/guarded-db";
 import { testActor } from "../access";
-import { courseOffersFor } from "../courses";
+import { courseOffersFor, useCoursesForVisits } from "../courses";
 import { sellGiftCardFor } from "../gift-cards";
 import { takePaymentFor } from "../writes";
 
@@ -97,14 +99,22 @@ export function definePk06ExpirySuite(label: string, factory: () => Promise<Pk06
       assert.equal((await getPatientCourse(ctx, A, id.course))?.sessionsUsed, 1);
       ok(await spend(id.code, 1000));
       assert.equal((await getGiftCard(ctx, A, id.card))?.balancePence, 4000);
+      // Reversing that spend today: the amount goes back on a card whose last valid day is today – warned.
+      const pay = (await listGiftCardMoves(ctx, A, id.card)).find((m) => m.kind === "redeem")!;
+      assert.match((await giftCardReversalNotice(ctx, A, pay.paymentId!)) ?? "", /last valid day is today.*£10\.00.*nightly expiry/);
       assert.deepEqual(await sweepExpiredForTenant(ctx, A), { courses: 0, giftCards: 0, giftCardPence: 0 }, "nothing is swept on the expiry day");
     });
 
-    it("the day after (UK): no use and no spend, before the sweep has run – the database refuses a stale spend too", async () => {
+    it("the day after (UK), before the sweep: a visit dated on the last day is still used from the course; a later visit is not; no card spend – the database refuses a stale spend too", async () => {
       clock = "2026-11-07T00:30:00.000Z";
       assert.equal((await getPatientCourse(ctx, A, id.course))?.status, "active", "not swept yet");
-      assert.equal((await courseOffersFor(ctx, A, [visit(2, "2026-11-06")])).size, 0, "no offer past the expiry");
-      await assert.rejects(use(id.course, 2, "2026-11-06"), /expired/, "even a visit dated on the last day");
+      // Course uses follow the VISIT's date (≤ the expiry), whenever the use is recorded.
+      assert.equal((await courseOffersFor(ctx, A, [visit(2, "2026-11-06")])).size, 1, "offered for a visit on its last day");
+      assert.equal((await courseOffersFor(ctx, A, [visit(9, "2026-11-07")])).size, 0, "not for a visit after the expiry");
+      await use(id.course, 2, "2026-11-06");
+      assert.equal((await getPatientCourse(ctx, A, id.course))?.sessionsUsed, 2);
+      await assert.rejects(use(id.course, 9, "2026-11-07"), { message: "The course had expired on the visit's date." });
+      // Gift cards keep today's rule.
       const r = await spend(id.code, 500);
       assert.ok(!r.ok && /expired/.test(r.error));
       // A spend prepared from a read before midnight (the card still "active" with £40): its balance change matches no row.
@@ -112,6 +122,17 @@ export function definePk06ExpirySuite(label: string, factory: () => Promise<Pk06
       const results = await runBatch(ctx.db, [giftCardRedeemQueries(ctx, A, stale, 500, "pay_01JPK06STALE00000000000000", SEED, "2026-11-07T00:30:00.000Z")[0]]);
       assert.equal(Number(results[0]?.numAffectedRows ?? 0), 0);
       assert.equal((await getGiftCard(ctx, A, id.card))?.balancePence, 4000);
+      // Crediting the card's sale past its expiry is refused as after the sweep ("has expired"), nothing changed.
+      const card = (await getGiftCard(ctx, A, id.card))!;
+      await assert.rejects(
+        createCreditNote(ctx, A, { invoiceId: card.saleInvoiceId!, lines: [{ invoiceLineId: card.saleLineId!, totalPence: 1000 }], reason: "Goodwill (fictional)" }, SEED),
+        { message: "This gift card has expired, so nothing is left on it to credit." },
+      );
+      await assert.rejects(voidInvoice(ctx, A, card.saleInvoiceId!, { reason: "Sold by mistake (fictional)" }, SEED), /has expired/);
+      assert.deepEqual([(await getGiftCard(ctx, A, id.card))?.balancePence, (await getGiftCard(ctx, A, id.card))?.status], [4000, "active"]);
+      // And the reversal warning now says the card has expired.
+      const pay = (await listGiftCardMoves(ctx, A, id.card)).find((m) => m.kind === "redeem")!;
+      assert.match((await giftCardReversalNotice(ctx, A, pay.paymentId!)) ?? "", /has expired.*£10\.00 back on an expired card/);
     });
 
     it("the sweep: the course becomes expired, the card expires with its £40 taken off (an expire move, audited); twice changes nothing; clinic B untouched", async () => {
@@ -136,18 +157,58 @@ export function definePk06ExpirySuite(label: string, factory: () => Promise<Pk06
       assert.equal(await audits(B, "pms.course.expire"), 0);
     });
 
+    it("after the sweep: an expired course still offers itself for, and is used by, a visit dated on or before its expiry; its last session used, it stays expired; a cancelled course never", async () => {
+      assert.equal((await getPatientCourse(ctx, A, id.course))?.status, "expired");
+      assert.equal((await courseOffersFor(ctx, A, [visit(4, "2026-11-05")])).get(appt(4))?.left, 1);
+      assert.equal((await courseOffersFor(ctx, A, [visit(9, "2026-11-07")])).size, 0);
+      await assert.rejects(use(id.course, 9, "2026-11-07"), { message: "The course had expired on the visit's date." });
+      await use(id.course, 4, "2026-11-05");
+      const c = await getPatientCourse(ctx, A, id.course);
+      assert.deepEqual([c?.status, c?.sessionsUsed], ["expired", 3]);
+      // No session left vs expired: each says what is wrong.
+      await assert.rejects(use(id.course, 5, "2026-11-04"), { message: "That course has no session left." });
+      await assert.rejects(use(id.course, 5, "2026-11-08"), { message: "The course had expired on the visit's date." });
+      assert.equal((await courseOffersFor(ctx, A, [visit(5, "2026-11-04")])).size, 0, "nothing left to offer");
+      // A cancelled course is used for nothing, whatever the visit's date.
+      const cancelled = await sellCourse(A, id.patient, id.type, "2026-11-02");
+      await cancelPatientCourse(ctx, A, cancelled.id, { reason: "Changed mind (fictional)" }, SEED);
+      await assert.rejects(use(cancelled.id, 6, "2026-11-03"), { message: "That course has been cancelled." });
+      assert.equal((await courseOffersFor(ctx, A, [visit(6, "2026-11-03")])).size, 0);
+    });
+
+    it("useCoursesForVisits: a ticked visit whose use is refused is returned with the reason (the caller does not invoice it)", async () => {
+      const r = await useCoursesForVisits(ctx, A, [visit(7, "2026-11-04"), visit(8, "2026-11-09")], owner().actor);
+      assert.equal(r.used.size, 0);
+      assert.deepEqual(
+        r.refused.map((x) => x.appointmentId),
+        [appt(7), appt(8)],
+      );
+      assert.match(r.refused[0].reason, /no session left|expired on the visit's date/);
+    });
+
     it("a spend put back after the expiry is swept the next night; moving a course's expiry brings it back into use", async () => {
       clock = "2026-11-08T10:00:00.000Z";
       const pay = (await listGiftCardMoves(ctx, A, id.card)).find((m) => m.kind === "redeem")!;
+      assert.match((await giftCardReversalNotice(ctx, A, pay.paymentId!)) ?? "", /expired card.*nightly expiry removes it/);
       assert.ok(await reversePayment(ctx, A, pay.paymentId!, { reason: "Taken by mistake" }, SEED));
       assert.deepEqual([(await getGiftCard(ctx, A, id.card))?.status, (await getGiftCard(ctx, A, id.card))?.balancePence], ["expired", 1000]);
+      // The £10 put back cannot be credited either (the same answer as before the sweep).
+      const card = (await getGiftCard(ctx, A, id.card))!;
+      await assert.rejects(
+        createCreditNote(ctx, A, { invoiceId: card.saleInvoiceId!, lines: [{ invoiceLineId: card.saleLineId!, totalPence: 1000 }], reason: "Goodwill (fictional)" }, SEED),
+        { message: "This gift card has expired, so nothing is left on it to credit." },
+      );
       assert.deepEqual(await sweepExpiredForTenant(ctx, A), { courses: 0, giftCards: 1, giftCardPence: 1000 });
       assert.equal((await getGiftCard(ctx, A, id.card))?.balancePence, 0);
+      // The course was used up after it expired (above): moving its expiry makes it used up, not active.
       const c = (await getPatientCourse(ctx, A, id.course))!;
       assert.deepEqual(await setCourseExpiry(ctx, A, id.course, c.rev, "2026-12-31", SEED), { ok: true, rev: c.rev + 1 });
+      assert.equal((await getPatientCourse(ctx, A, id.course))?.status, "used_up");
+      const last = (await listCourseUses(ctx, A, [id.course])).find((u) => u.appointmentId === appt(4))!;
+      assert.equal((await reverseCourseUse(ctx, A, last.id, SEED)).reversed, true);
       assert.equal((await getPatientCourse(ctx, A, id.course))?.status, "active");
       await use(id.course, 3, "2026-11-08");
-      assert.equal((await getPatientCourse(ctx, A, id.course))?.sessionsUsed, 2);
+      assert.equal((await getPatientCourse(ctx, A, id.course))?.sessionsUsed, 3);
     });
 
     it("UK date across BST: an expiry of 01/07 is swept at 00:30 BST on 02/07 (23:30 UTC on 01/07), not an hour before", async () => {
@@ -176,6 +237,42 @@ export function definePk06ExpirySuite(label: string, factory: () => Promise<Pk06
       }
       assert.equal((await getPatientCourse(ctx, B, id.courseB))?.status, "expired");
       assert.equal(await audits(B, "pms.course.expire"), 1);
+    });
+
+    it("the nightly run's deadline: past it no new clinic or batch starts, the log says stopped early, the next night finishes", async () => {
+      // TEST ONLY: 30 expired cards in clinic B (fictional, no codes anyone holds) – two batches of 25 and 5.
+      for (let i = 0; i < 30; i++) {
+        await db.db
+          .insertInto("pms_gift_cards")
+          .values({ tenant_id: B, id: `gcd_01JPK06DEADLINE00000000${String(i).padStart(2, "0")}`, rev: 1, code_sha256: `deadline-${i}`, code_last4: "DEAD", initial_pence: 100, balance_pence: 100, sold_on: "2026-01-01", expires_on: "2026-11-01", status: "active", created_at: clock, updated_at: clock } as never)
+          .execute();
+      }
+      db.log?.pause(); // the nightly run's one cross-clinic read (which clinics)
+      try {
+        // Real time is a counter here: the run's start, the clinic, the cards' first page and first batch see 0; the
+        // check before the second batch sees the deadline passed – that batch (and any later one) waits.
+        let n = 0;
+        const r1 = await runExpirySweep(ctx, {
+          budgetMs: 1000,
+          nowMs: () => {
+            n += 1;
+            return n <= 4 ? 0 : 5000;
+          },
+        });
+        assert.equal(r1.stoppedEarly, true);
+        assert.deepEqual([r1.clinics, r1.giftCards, r1.giftCardPence], [1, 25, 2500], "one batch of 25, then stopped");
+        // Already past the deadline: no clinic is started at all.
+        const r0 = await runExpirySweep(ctx, { budgetMs: 0, nowMs: () => 0 });
+        assert.deepEqual([r0.clinics, r0.giftCards, r0.stoppedEarly], [0, 0, true]);
+        // The next night (no deadline pressure) finishes the rest, each card once.
+        const r2 = await runExpirySweep(ctx);
+        assert.equal(r2.stoppedEarly, false);
+        assert.equal(r2.giftCards, 5);
+        assert.equal((await runExpirySweep(ctx)).giftCards, 0);
+      } finally {
+        db.log?.resume();
+      }
+      assert.equal(await audits(B, "pms.gift_card.expire"), 30);
     });
 
     it("many at once: 30 expired cards go in batches inside the gateway's limit (100 statements), each once", async () => {

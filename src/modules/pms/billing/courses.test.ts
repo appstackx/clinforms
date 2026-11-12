@@ -72,6 +72,10 @@ describe("courses (pure)", () => {
     assert.equal(courseCovers(course(), visit(1, { date: "2027-03-13" })), false);
     assert.equal(courseCovers(course({ sessionsUsed: 6 }), visit(1)), false);
     assert.equal(courseCovers(course({ status: "used_up" }), visit(1)), false);
+    // PK06 review: an expired course still covers a visit dated on or before its expiry; never a cancelled one.
+    assert.equal(courseCovers(course({ status: "expired" }), visit(1)), true);
+    assert.equal(courseCovers(course({ status: "expired" }), visit(1, { date: "2027-03-13" })), false);
+    assert.equal(courseCovers(course({ status: "cancelled" }), visit(1)), false);
     assert.equal(courseCovers(course(), visit(1, { patientId: "pat_2" })), false);
   });
 

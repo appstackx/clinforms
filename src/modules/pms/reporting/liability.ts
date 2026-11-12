@@ -132,7 +132,8 @@ export function giftCardLiability(facts: readonly GiftCardFact[], from: string, 
       else r.expiredPence += f.amountPence;
     }
     if (f.when === "before") {
-      r.openingPence += f.amountPence;
+      // The sweep's own "expire" move is never part of what was held (as for closing / spent / credited).
+      if (f.kind !== "expire") r.openingPence += f.amountPence;
       continue;
     }
     if (f.kind === "sale") {
