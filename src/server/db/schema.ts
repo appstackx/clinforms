@@ -437,6 +437,45 @@ export interface ClinicBillingExtrasTable {
   updated_at: IsoTimestamp;
 }
 
+/**
+ * `signup_requests` (migration 0010) – "Start free trial" forms waiting for the email link (src/server/signup). The
+ * token and the password are never stored: a SHA-256 of the token, the password's sign-in hash (cleared once used).
+ */
+export interface SignupRequestsTable {
+  id: string;
+  token_hash: string;
+  /** clinforms | clinic */
+  brand: string;
+  clinic_name: string;
+  owner_name: string;
+  email: string;
+  password_hash: string | null;
+  terms_version: string;
+  dpa_version: string;
+  ip_hash: string;
+  ua_hash: string;
+  created_at: IsoTimestamp;
+  expires_at: IsoTimestamp;
+  claimed_at: IsoTimestamp | null;
+  tenant_id: string | null;
+  completed_at: IsoTimestamp | null;
+}
+
+/** `signup_acceptances` (migration 0010) – the record of acceptance of the terms and the DPA, one per self-signed clinic. */
+export interface SignupAcceptancesTable {
+  id: string;
+  tenant_id: string;
+  user_id: string;
+  signup_id: string;
+  brand: string;
+  terms_version: string;
+  dpa_version: string;
+  accepted_at: IsoTimestamp;
+  confirmed_at: IsoTimestamp;
+  ip_hash: string;
+  ua_hash: string;
+}
+
 /** `access_requests` – the landing page's "Request access" form. */
 export interface AccessRequestsTable {
   id: string;
@@ -483,6 +522,8 @@ export interface Database extends PmsDatabase {
   launch_token_uses: LaunchTokenUsesTable;
   rate_limits: RateLimitsTable;
   access_requests: AccessRequestsTable;
+  signup_requests: SignupRequestsTable;
+  signup_acceptances: SignupAcceptancesTable;
 }
 
 /** Better Auth's tables in foreign-key order (parents first). */
@@ -520,6 +561,8 @@ export const TABLES_IN_FK_ORDER = [
   "launch_token_uses",
   "rate_limits",
   "access_requests",
+  "signup_requests",
+  "signup_acceptances",
   ...PMS_TABLES_IN_FK_ORDER,
 ] as const satisfies readonly (keyof Database)[];
 
@@ -555,6 +598,8 @@ export const PRIMARY_KEYS: { readonly [T in TableName]: readonly (keyof Database
   launch_token_uses: ["jti"],
   rate_limits: ["key", "window_start"],
   access_requests: ["id"],
+  signup_requests: ["id"],
+  signup_acceptances: ["id"],
   ...PMS_PRIMARY_KEYS,
 };
 

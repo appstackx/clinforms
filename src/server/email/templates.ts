@@ -287,3 +287,88 @@ export function billingNoticeEmail(input: BillingNoticeEmailInput): EmailMessage
   const html = layout(name, subject, [escapeHtml(greeting(input.to)), ...paragraphs.map(escapeHtml)], { label: "Open plan and billing", href: input.billingUrl });
   return { kind: "billing_notice", to: input.to, subject, text, html, ...brandField(input.brand) };
 }
+
+export interface SignupConfirmEmailInput {
+  to: EmailRecipient;
+  /** The brand of the host the form was filled in on. */
+  brand?: BrandId;
+  clinicName: string;
+  link: string;
+  expiresAt: string;
+}
+
+/** Self-serve sign-up (docs/auth.md §1b): the one-time link that confirms the address and creates the clinic. */
+export function signupConfirmEmail(input: SignupConfirmEmailInput): EmailMessage {
+  const name = productNameOf(input.brand);
+  const expires = ukDateTime(input.expiresAt);
+  const subject = `Confirm your email to start your ${name} trial`;
+  const text = [
+    greeting(input.to),
+    "",
+    `Thank you for starting a free trial of ${name} for ${input.clinicName}.`,
+    "Open this link to confirm your email address and create your clinic's account (you will enter the password you chose, then set up two-step verification):",
+    input.link,
+    "",
+    `The link works once and expires on ${expires}.`,
+    `If you did not sign up for ${name}, you can ignore this email: nothing is created unless the link is used with the password chosen at sign-up.`,
+    "",
+    `${name} · ${COMPANY_NAME}`,
+  ].join("\n");
+  const html = layout(
+    name,
+    subject,
+    [
+      escapeHtml(greeting(input.to)),
+      `Thank you for starting a free trial of ${escapeHtml(name)} for <strong>${escapeHtml(input.clinicName)}</strong>.`,
+      "Confirm your email address with the button below. You will enter the password you chose, then set up two-step verification.",
+    ],
+    { label: "Confirm and create my clinic", href: input.link },
+    `The link works once and expires on ${escapeHtml(expires)}. If you did not sign up for ${escapeHtml(name)}, you can ignore this email: ` +
+      "nothing is created unless the link is used with the password chosen at sign-up.",
+  );
+  return { kind: "signup_confirm", to: input.to, subject, text, html, link: input.link, linkExpiresAt: input.expiresAt, ...brandField(input.brand) };
+}
+
+export interface SignupExistingAccountEmailInput {
+  to: EmailRecipient;
+  brand?: BrandId;
+  /** The brand host's sign-in page. */
+  signInLink: string;
+  /** Its "Forgotten your password?" page. */
+  resetLink: string;
+}
+
+/**
+ * Self-serve sign-up for an address that already has an account: the page says the same as for anyone else (it never
+ * reveals whether an address has an account); the person is told by email instead.
+ */
+export function signupExistingAccountEmail(input: SignupExistingAccountEmailInput): EmailMessage {
+  const name = productNameOf(input.brand);
+  const subject = `You already have a ${name} account`;
+  const text = [
+    greeting(input.to),
+    "",
+    `Someone – probably you – tried to start a free trial of ${name} with this email address. You already have an account, so nothing new was created.`,
+    "Sign in here:",
+    input.signInLink,
+    "",
+    "Forgotten your password? Ask for a new one here:",
+    input.resetLink,
+    "",
+    "To add another clinic to your account, contact us. If this was not you, you can ignore this email.",
+    "",
+    `${name} · ${COMPANY_NAME}`,
+  ].join("\n");
+  const html = layout(
+    name,
+    subject,
+    [
+      escapeHtml(greeting(input.to)),
+      `Someone – probably you – tried to start a free trial of ${escapeHtml(name)} with this email address. You already have an account, so nothing new was created.`,
+      `Forgotten your password? <a href="${escapeHtml(input.resetLink)}">Ask for a new one</a>.`,
+    ],
+    { label: "Sign in", href: input.signInLink },
+    "To add another clinic to your account, contact us. If this was not you, you can ignore this email.",
+  );
+  return { kind: "signup_existing_account", to: input.to, subject, text, html, ...brandField(input.brand) };
+}

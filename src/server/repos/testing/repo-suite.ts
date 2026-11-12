@@ -27,6 +27,19 @@ import { hitRateLimit, peekRateLimit, purgeRateLimits } from "../rate-limits";
 import { beginFormFileUpload, formFileChunkIndexes, purgeIncompleteUploads, putFormFileChunk } from "../form-file-uploads";
 import { createReport, deleteReport, getReport, getReportMeta, listReports, retentionDeadline, updateReport } from "../reports";
 import { getTenantSettings, putTenantSettings } from "../tenant-settings";
+import {
+  claimSignupRequest,
+  closeSignupRequest,
+  completeSignupRequest,
+  createSignupRequest,
+  findSignupRequestByTokenHash,
+  getSignupRequest,
+  listSignupAcceptances,
+  purgeSignupRequests,
+  recordSignupAcceptance,
+  releaseSignupClaim,
+  setSignupTenant,
+} from "../signup";
 
 export interface SuiteDb {
   db: Kysely<Database>;
@@ -376,7 +389,7 @@ export function defineRepoSuite(label: string, factory: () => Promise<SuiteDb>):
       assert.ok((await purgeOldAccessRequests(ctx)) >= 1);
       assert.ok(!(await listAccessRequests(ctx)).some((r) => r.id === request.id));
       const pass = await runRetention(ctx);
-      assert.deepEqual(Object.keys(pass).sort(), ["accessRequests", "incompleteUploads", "launchTokens", "rateLimits", "reports", "usageEvents"]);
+      assert.deepEqual(Object.keys(pass).sort(), ["accessRequests", "incompleteUploads", "launchTokens", "rateLimits", "reports", "signupRequests", "usageEvents"]);
     });
 
     it("retention keeps what Settings → Clinic says it keeps (24/10/2026): drafts go too; forms, files, profile, members and activity stay", async () => {
@@ -475,6 +488,69 @@ export function defineRepoSuite(label: string, factory: () => Promise<SuiteDb>):
       assert.equal(await getFormFileMeta(ctx, A, other), null);
       assert.ok(await getFormFile(ctx, A, sha), "complete files are kept");
       assert.equal(await deleteFormFile(ctx, A, sha), true);
+    });
+
+    it("self sign-up (migration 0010): request, one-time claim, release, complete, acceptance record, purge", async () => {
+      const iso = (ms: number) => new Date(clock + ms).toISOString();
+      const base = {
+        brand: "clinic" as const,
+        clinicName: "Larkfield Physio (fictional)",
+        ownerName: "Dana Lark",
+        email: "dana@larkfield.example",
+        passwordHash: "salt:hash",
+        termsVersion: "clindesk-terms-2026-11-01",
+        dpaVersion: "dpa-draft-2026-11-12",
+        ipHash: "ip-hash",
+        uaHash: "ua-hash",
+      };
+      const req = await createSignupRequest(ctx, { ...base, tokenHash: "tok-1", expiresAt: iso(86_400_000) });
+      assert.equal((await findSignupRequestByTokenHash(ctx, "tok-1"))?.id, req.id);
+      assert.equal(await findSignupRequestByTokenHash(ctx, "nope"), null);
+      await assert.rejects(createSignupRequest(ctx, { ...base, tokenHash: "tok-1", expiresAt: iso(1000) }), "token hashes are unique");
+      await assert.rejects(createSignupRequest(ctx, { ...base, brand: "other" as never, tokenHash: "tok-x", expiresAt: iso(1000) }), RepoInputError);
+      // One claim only, then released (nothing created) and claimed again.
+      assert.equal(await claimSignupRequest(ctx, req.id), true);
+      assert.equal(await claimSignupRequest(ctx, req.id), false, "a second click cannot claim it");
+      await releaseSignupClaim(ctx, req.id);
+      assert.equal(await claimSignupRequest(ctx, req.id), true);
+      await setSignupTenant(ctx, req.id, "larkfield-physio");
+      await releaseSignupClaim(ctx, req.id); // a clinic exists now: the claim is kept
+      assert.equal(await claimSignupRequest(ctx, req.id), false);
+      await completeSignupRequest(ctx, req.id);
+      const done = await getSignupRequest(ctx, req.id);
+      assert.equal(done?.tenantId, "larkfield-physio");
+      assert.ok(done?.completedAt);
+      assert.equal(done?.passwordHash, null, "the password hash is cleared once used");
+      const acc = await recordSignupAcceptance(ctx, {
+        tenantId: "larkfield-physio",
+        userId: "user-1",
+        signupId: req.id,
+        brand: "clinic",
+        termsVersion: base.termsVersion,
+        dpaVersion: base.dpaVersion,
+        acceptedAt: req.createdAt,
+        ipHash: "ip-hash",
+        uaHash: "ua-hash",
+      });
+      assert.deepEqual(
+        (await listSignupAcceptances(ctx, "larkfield-physio")).map((a) => [a.id, a.userId, a.termsVersion, a.dpaVersion, a.acceptedAt]),
+        [[acc.id, "user-1", base.termsVersion, base.dpaVersion, req.createdAt]],
+      );
+      await assert.rejects(recordSignupAcceptance(ctx, { ...acc, signupId: req.id }), "one acceptance per sign-up");
+      // An expired link cannot be claimed; closing one clears its password hash.
+      const old = await createSignupRequest(ctx, { ...base, tokenHash: "tok-2", expiresAt: iso(1000) });
+      tick(2000);
+      assert.equal(await claimSignupRequest(ctx, old.id), false, "expired");
+      const other = await createSignupRequest(ctx, { ...base, tokenHash: "tok-3", expiresAt: iso(86_400_000) });
+      await closeSignupRequest(ctx, other.id);
+      assert.equal((await getSignupRequest(ctx, other.id))?.passwordHash, null);
+      assert.equal(await claimSignupRequest(ctx, other.id), false);
+      // Retention: a week after the link's end the request goes; the acceptance stays.
+      assert.equal(await purgeSignupRequests(ctx, iso(-60_000)), 0);
+      tick(8 * 86_400_000);
+      assert.ok((await purgeSignupRequests(ctx, iso(-7 * 86_400_000))) >= 2);
+      assert.equal(await getSignupRequest(ctx, req.id), null);
+      assert.equal((await listSignupAcceptances(ctx, "larkfield-physio")).length, 1);
     });
 
     it("getReportMeta: one report's metadata without decrypting it", async () => {

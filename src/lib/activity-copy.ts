@@ -44,6 +44,7 @@ export const ACTIVITY_GROUPS: readonly ActivityGroup[] = [
     label: "Clinic account",
     actions: [
       "clinic.create",
+      "clinic.self_signup",
       "clinic.update",
       "clinic.offboard",
       "clinic.trial_set",
@@ -118,6 +119,7 @@ export const ACTIVITY_LABELS: Readonly<Record<string, string>> = {
   "member.profile_update": "Signing details updated",
   "member.remove": "Member removed",
   "clinic.create": "Clinic account opened",
+  "clinic.self_signup": "Signed up online – terms and data processing agreement accepted",
   "clinic.update": "Clinic details updated",
   "clinic.offboard": "Clinic account closed",
   "clinic.trial_set": "Trial set up by our support team",
@@ -280,6 +282,8 @@ export function describeActivityDetail(action: string, detail: Record<string, un
       const fields = Array.isArray(detail.fields) ? detail.fields.map((f) => CLINIC_FIELDS[String(f)] ?? String(f)) : [];
       return fields.length ? `Changed: ${fields.join(", ")}` : null;
     }
+    case "clinic.self_signup":
+      return typeof detail.termsVersion === "string" && typeof detail.dpaVersion === "string" ? `Terms ${detail.termsVersion} · agreement ${detail.dpaVersion}` : null;
     case "clinic.create":
       return typeof detail.retentionDays === "number" ? `Reports kept for ${detail.retentionDays} days` : null;
     case "auth.sign_in":

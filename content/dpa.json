@@ -1,0 +1,119 @@
+{
+  "status": "DRAFT – pending legal review",
+  "statusNote": "This data processing agreement is a DRAFT. It has not yet been reviewed by a lawyer and may change before it is used. It is shown only where self-serve sign-up is switched on for testing. Placeholders in [square brackets] are to be completed.",
+  "version": "dpa-draft-2026-11-12",
+  "lastUpdated": "2026-11-12",
+  "title": "Data processing agreement",
+  "intro": "This data processing agreement (DPA) forms part of the agreement between {company} and the clinic that uses {product}. It sets out how we process personal data on the clinic's behalf, as required by Article 28 of the UK GDPR.",
+  "sections": [
+    {
+      "id": "parties",
+      "heading": "1. Parties and roles",
+      "paragraphs": [
+        "The clinic is the controller of the personal data it puts into {product}, including patient information. {company} (\"we\") is its processor.",
+        "This DPA applies for as long as we process personal data for the clinic, including after the agreement ends until the data is returned or deleted."
+      ]
+    },
+    {
+      "id": "scope",
+      "heading": "2. Subject matter, nature and purpose",
+      "paragraphs": [
+        "We process personal data only to provide {product} and its support to the clinic, as described in the terms and the clinic's order.",
+        "Categories of data subjects: the clinic's patients, its staff and users, and the referrers, insurers and other contacts the clinic records.",
+        "Categories of personal data: identification and contact details, appointment and billing details, and the health information the clinic records (special category data). Annex 1 gives more detail."
+      ]
+    },
+    {
+      "id": "instructions",
+      "heading": "3. Instructions",
+      "paragraphs": [
+        "We process personal data only on the clinic's documented instructions – this DPA, the terms, the clinic's order and the clinic's use of the service's settings – unless the law requires otherwise, in which case we tell the clinic first unless the law forbids it.",
+        "We tell the clinic straight away if we think an instruction breaks data protection law."
+      ]
+    },
+    {
+      "id": "confidentiality",
+      "heading": "4. Confidentiality",
+      "paragraphs": ["Everyone we authorise to process the personal data is bound by a duty of confidentiality."]
+    },
+    {
+      "id": "security",
+      "heading": "5. Security",
+      "paragraphs": [
+        "We take appropriate technical and organisational measures to protect the personal data, as set out in Annex 2 and on our security page. They include encryption in transit and at rest, two-step verification for every user, access limited by role and an audit trail."
+      ]
+    },
+    {
+      "id": "sub-processors",
+      "heading": "6. Sub-processors",
+      "paragraphs": [
+        "The clinic gives us general authorisation to use sub-processors. The current list, with their locations and safeguards, is in Annex 3 and is available on request.",
+        "We tell the clinic at least [30] days before adding or replacing a sub-processor that handles patient information, so the clinic can object. Each sub-processor is bound by data protection terms no less protective than this DPA, and we remain responsible for its work."
+      ]
+    },
+    {
+      "id": "transfers",
+      "heading": "7. International transfers",
+      "paragraphs": [
+        "Clinic data is stored in [the UK]. We transfer personal data outside the UK only with appropriate safeguards (such as an adequacy regulation or the International Data Transfer Addendum), as Annex 3 records."
+      ]
+    },
+    {
+      "id": "assistance",
+      "heading": "8. Helping the clinic",
+      "paragraphs": [
+        "We help the clinic, taking into account the nature of the processing, to answer requests from people exercising their rights, and with security, breach notification, data protection impact assessments and consultation with the Information Commissioner's Office."
+      ]
+    },
+    {
+      "id": "breaches",
+      "heading": "9. Personal data breaches",
+      "paragraphs": [
+        "We tell the clinic without undue delay, and in any case within [48] hours, after becoming aware of a personal data breach affecting its data, with the information the clinic needs to meet its own obligations."
+      ]
+    },
+    {
+      "id": "end",
+      "heading": "10. Return and deletion",
+      "paragraphs": [
+        "When the agreement ends, the clinic can export its data. We then delete it within [30] days, unless the law requires us to keep it, and confirm the deletion in writing on request."
+      ]
+    },
+    {
+      "id": "audits",
+      "heading": "11. Information and audits",
+      "paragraphs": [
+        "We make available the information needed to show that we meet these obligations, and allow for and contribute to reasonable audits by the clinic or an auditor it appoints, on reasonable notice and at most [once a year] unless a breach or a regulator requires more."
+      ]
+    },
+    {
+      "id": "general",
+      "heading": "12. General",
+      "paragraphs": [
+        "If this DPA and the terms conflict, this DPA wins on anything about personal data. This DPA is governed by the law of England and Wales.",
+        "The clinic accepts this DPA online when it signs up. The version accepted, and when, are recorded with the clinic's account."
+      ]
+    },
+    {
+      "id": "annex-1",
+      "heading": "Annex 1 – Details of the processing",
+      "paragraphs": [
+        "Duration: the term of the agreement and the return and deletion period after it.",
+        "Frequency: continuous, while the clinic uses the service.",
+        "Retention: as the clinic sets it in the service, and as section 10 says at the end."
+      ]
+    },
+    {
+      "id": "annex-2",
+      "heading": "Annex 2 – Security measures",
+      "paragraphs": ["[To be completed: the technical and organisational measures, matching the security page.]"]
+    },
+    {
+      "id": "annex-3",
+      "heading": "Annex 3 – Sub-processors",
+      "paragraphs": [
+        "[To be completed before use: the named sub-processors, what each does, where it processes data and the transfer safeguard. Categories today: hosting and database, email delivery, payment processing, usage statistics and the drafting service used when a clinic switches drafting on.]"
+      ]
+    }
+  ]
+}

@@ -10,6 +10,7 @@ import { assertIso, nowIso, type DbContext } from "./context";
 import { purgeIncompleteUploads } from "./form-file-uploads";
 import { purgeExpiredLaunchTokens } from "./launch-tokens";
 import { purgeRateLimits } from "./rate-limits";
+import { purgeSignupRequests } from "./signup";
 import { purgeUsageEvents } from "./usage";
 
 const DAY_MS = 86_400_000;
@@ -65,6 +66,8 @@ export interface RetentionResult {
    * themselves (clinic_usage, usage_report) are never deleted by retention: a month's numbers outlive its reports.
    */
   usageEvents: number;
+  /** 12/11/2026: self-serve sign-up requests whose link expired more than a week ago (0 before migration 0010). */
+  signupRequests: number;
 }
 
 /**
@@ -80,5 +83,6 @@ export async function runRetention(ctx: DbContext): Promise<RetentionResult> {
     accessRequests: await purgeOldAccessRequests(ctx, now),
     incompleteUploads: await purgeIncompleteUploads(ctx, daysBefore(now, 1)),
     usageEvents: await purgeUsageEvents(ctx, daysBefore(now, USAGE_EVENT_RETENTION_DAYS)),
+    signupRequests: await purgeSignupRequests(ctx, daysBefore(now, 7)),
   };
 }

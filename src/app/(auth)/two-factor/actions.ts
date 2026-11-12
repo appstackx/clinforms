@@ -9,6 +9,7 @@ import { ACCOUNT_ERRORS } from "@/lib/account-copy";
 import { getAuth } from "@/server/auth/auth";
 import { authErrorMessage } from "@/server/auth/errors";
 import { manualEntryKey, otpauthQrDataUri } from "@/server/auth/qr";
+import { safeNextPath } from "@/server/auth/config";
 import { getServerSession, hasTwoFactor, requestHeaders, throttle } from "@/server/auth/session";
 import { landingPath } from "@/server/brand";
 
@@ -49,6 +50,8 @@ export async function confirmSetup(_prev: ConfirmState, form: FormData): Promise
   } catch (err) {
     return { status: "error", error: authErrorMessage(err, "two_factor_confirm") };
   }
-  // Leave this page straight away: a re-render here would still carry the old (now revoked) session cookie.
-  redirect(landingPath());
+  // Leave this page straight away: a re-render here would still carry the old (now revoked) session cookie. Where to:
+  // the page's own ?next= (only an /app path – safeNextPath; self sign-up sends the new owner to Plan and billing),
+  // else the brand's landing page as before.
+  redirect(safeNextPath(form.get("next"), landingPath()));
 }
