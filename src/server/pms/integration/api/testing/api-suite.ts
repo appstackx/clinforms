@@ -20,6 +20,7 @@ import type { RepoContext } from "../../../../repos/context";
 import { createPractitioner, createService, createSite } from "../../../../repos/pms/directory";
 import { setEntitlement } from "../../../../repos/pms/entitlements";
 import { createPatient } from "../../../../repos/pms/patients";
+import { createCase } from "../../../../repos/pms/cases";
 import { bookAppointment } from "../../../../repos/pms/diary/appointments";
 import { createAvailability } from "../../../../repos/pms/diary/availability";
 import { listPatientHistory } from "../../../../repos/pms/records/history";
@@ -27,7 +28,7 @@ import { createApiKey, listApiKeys, revokeApiKey, rotateApiKey, setApiEnabled } 
 import { unscopedStatements, type QueryLog } from "../../../../repos/pms/testing/guarded-db";
 import { countPmsRows, deletePmsQueries } from "../../../offboard";
 import { INTEGRATION_CASCADE_DELETED_TABLES } from "../../../../db/pms-schema/integration";
-import { serve, type ApiEndpoint, type ClinicApiDeps } from "../http";
+import { API_RESPONSE_HEADERS, publicApiRoute, serve, type ApiEndpoint, type ClinicApiDeps } from "../http";
 import { bookAppointmentEndpoint, getAppointmentById, getInvoiceById, getPatientById, listAppointments, listInvoices, listPatients, listSlots } from "../endpoints";
 
 export interface ApiSuiteDb {
@@ -426,7 +427,7 @@ export function defineClinicApiSuite(label: string, factory: () => Promise<ApiSu
       assert.equal(codeOf(await call("/patients?name=h", { key: keys.all })), "INVALID_REQUEST");
       const one = await call(`/patients/${ids.megan}`, { key: keys.all });
       assert.equal(dataOf(one).email, "megan.hart@example.com");
-      assert.ok(!/_enc|alerts|notes|gp/i.test(JSON.stringify(one.json)), "no clinical or internal fields");
+      assert.ok(!Object.keys(dataOf(one)).some((k) => /_enc|alerts|notes|^gp|emergency|tenant/i.test(k)), "no clinical or internal fields");
       const history = await listPatientHistory(ctx, A, ids.megan);
       const reads = history.filter((e) => e.action === "pms.api.patient_read");
       assert.ok(reads.length >= 3, `history shows the API reads (${reads.length})`);
@@ -534,8 +535,11 @@ export function defineClinicApiSuite(label: string, factory: () => Promise<ApiSu
       for (const r of ok) assert.equal(dataOf(r).id, made[0].appointment_id);
     });
 
-    it("rate limits: per key per minute and per network per minute answer 429 with Retry-After", async () => {
-      limits = { perKeyPerMinute: 3, perIpPerMinute: 1000 };
+    const rateRows = async () => Number((await ctx.db.selectFrom("rate_limits").select((eb) => eb.fn.countAll<number>().as("n")).executeTakeFirstOrThrow()).n);
+    const rateTotal = async () => Number((await ctx.db.selectFrom("rate_limits").select((eb) => eb.fn.sum<number>("count").as("n")).executeTakeFirstOrThrow()).n ?? 0);
+
+    it("rate limits: per key per minute answers 429 with Retry-After; other keys and the next minute are not affected", async () => {
+      limits = { perKeyPerMinute: 3 };
       for (let i = 0; i < 3; i++) assert.equal((await call("/appointments?from=2026-11-17&to=2026-11-17", { key: keys.apptOnly })).status, 200);
       const over = await call("/appointments?from=2026-11-17&to=2026-11-17", { key: keys.apptOnly });
       assert.equal(over.status, 429);
@@ -544,22 +548,62 @@ export function defineClinicApiSuite(label: string, factory: () => Promise<ApiSu
       assert.equal((await call("/invoices", { key: keys.all })).status, 200, "another key is not limited");
       clock += 61_000;
       assert.equal((await call("/appointments?from=2026-11-17&to=2026-11-17", { key: keys.apptOnly })).status, 200, "a new minute");
-      limits = { perIpPerMinute: 2 };
-      nextIp();
-      await call("/invoices", { key: keys.all });
-      await call("/invoices", { key: keys.all });
-      assert.equal(codeOf(await call("/invoices", { key: keys.all })), "RATE_LIMITED");
-      nextIp();
-      assert.equal((await call("/invoices", { key: keys.all })).status, 200, "another network");
     });
 
-    it("rate limits: repeated wrong keys from one network block it for a while – even a right key", async () => {
-      limits = { failedPerIpPer10Minutes: 3 };
-      for (let i = 0; i < 3; i++) assert.equal((await call("/invoices", { key: `cdk_${A}_aaaaaaaaaaaaaaaa_${"x".repeat(43)}` })).status, 401);
-      const blocked = await call("/invoices", { key: keys.all });
-      assert.equal(blocked.status, 429);
+    it("no key or a malformed one: refused with NO database write; one network flooding them gets 429 from memory – a right key still gets in", async () => {
+      limits = { anonPerIpPerMinute: 3 };
+      const rows = await rateRows();
+      const total = await rateTotal();
+      const audit = (await listAudit(ctx, A, { limit: 500 })).length;
+      for (const key of [null, "nonsense", "cdk_x", `Bearer-less ${keys.all}`.slice(0, 20)]) assert.ok([401, 429].includes((await call("/invoices", { key })).status));
+      assert.equal((await call("/invoices", { headers: { authorization: "Basic abc" } })).status, 429, "the network's bucket is empty");
+      assert.equal(await rateRows(), rows, "no rate-limit row written");
+      assert.equal(await rateTotal(), total, "no rate-limit count changed");
+      assert.equal((await listAudit(ctx, A, { limit: 500 })).length, audit);
+      assert.equal((await call("/invoices", { key: keys.all })).status, 200, "a right key from the same network");
       nextIp();
-      assert.equal((await call("/invoices", { key: keys.all })).status, 200);
+      assert.equal((await call("/invoices", { key: null })).status, 401, "another network has its own bucket");
+    });
+
+    it("failed-key lockout never refuses a RIGHT key: wrong keys count per presented key and per network, verified first", async () => {
+      // Per presented key: wrong secrets for the lookup of keys.all.
+      limits = { failedPerKeyPer10Minutes: 3, failedPerIpPer10Minutes: 1000 };
+      const lookup = keys.all.split("_")[2];
+      const wrong = (i: number) => `cdk_${A}_${lookup}_${String(i).padStart(43, "Q")}`;
+      for (let i = 0; i < 3; i++) assert.equal((await call("/invoices", { key: wrong(i) })).status, 401);
+      nextIp();
+      const blocked = await call("/invoices", { key: wrong(9) });
+      assert.equal(blocked.status, 429, "that key's lookup is blocked for wrong secrets, from any network");
+      const rows = await rateTotal();
+      await call("/invoices", { key: wrong(10) });
+      assert.equal(await rateTotal(), rows, "a blocked wrong key writes nothing more");
+      assert.equal((await call("/invoices", { key: keys.all })).status, 200, "the right key still works");
+      // Per network: wrong keys with made-up lookups.
+      limits = { failedPerKeyPer10Minutes: 1000, failedPerIpPer10Minutes: 2 };
+      nextIp();
+      for (let i = 0; i < 2; i++) assert.equal((await call("/invoices", { key: `cdk_${A}_${String(i).padStart(16, "z")}_${"x".repeat(43)}` })).status, 401);
+      assert.equal((await call("/invoices", { key: `cdk_${A}_${"y".repeat(16)}_${"x".repeat(43)}` })).status, 429, "the network is blocked for wrong keys");
+      assert.equal((await call("/invoices", { key: keys.all })).status, 200, "a right key from that network still works");
+      assert.equal((await call("/invoices", { key: keys.site1 })).status, 200);
+    });
+
+    it("openapi.json: no key, no database write, cacheable; answers carry no duplicate security headers", async () => {
+      const route = publicApiRoute({ scope: null, handle: async ({ url }) => ({ body: { openapi: "3.1.0", from: url.pathname } }) }, deps);
+      const total = await rateTotal();
+      const rows = await rateRows();
+      const r = await route.GET(new Request(`${ORIGIN}/api/clinic/v1/openapi.json`, { headers: { "x-forwarded-for": ip } }));
+      assert.equal(r.status, 200);
+      assert.equal(r.headers.get("cache-control"), "public, max-age=3600");
+      assert.equal(await rateTotal(), total);
+      assert.equal(await rateRows(), rows);
+      env = {};
+      assert.equal((await route.GET(new Request(`${ORIGIN}/api/clinic/v1/openapi.json`))).status, 404);
+      env = { CLINFORMS_CLINIC_API: "on" };
+      const a = await call("/invoices", { key: keys.all });
+      // Referrer-Policy / X-Content-Type-Options come once, from next.config.mjs – never from the API's own answer.
+      assert.equal(a.headers.get("referrer-policy"), null);
+      assert.equal(a.headers.get("x-content-type-options"), null);
+      assert.deepEqual(Object.keys(API_RESPONSE_HEADERS).sort(), ["cache-control", "content-type"]);
     });
 
     it("use is counted: last_used_at, use_count, calls per day – ONE audit row per key per day", async () => {
@@ -608,6 +652,56 @@ export function defineClinicApiSuite(label: string, factory: () => Promise<ApiSu
       const audit = await listAudit(ctx, A, { limit: 500 });
       assert.ok(audit.some((e) => e.action === "pms.api_key.rotate" && e.targetId === old.id && e.detail?.newKeyId === fresh.id));
       assert.ok(audit.some((e) => e.action === "pms.api_key.create" && e.targetId === old.id));
+    });
+
+    it("idempotency across rotation: a retry with the replacement key returns the original booking", async () => {
+      const old = await createApiKey(ctx, A, { name: "Booking widget", scopes: ["appointments:write", "appointments:read"], siteIds: [], expiresInDays: 90 }, OWNER);
+      const body = { patientId: ids.daniel, serviceId: ids.svc, practitionerId: ids.prac, siteId: ids.s1, date: "2026-11-30", startTime: "11:00" };
+      const first = await call("/appointments", { key: old.key, body, headers: { "idempotency-key": "rotation-retry-0001" } });
+      assert.equal(first.status, 201, JSON.stringify(first.json));
+      const fresh = await rotateApiKey(ctx, A, old.id, OWNER);
+      assert.ok(fresh);
+      assert.equal(fresh.familyId, old.familyId);
+      const retry = await call("/appointments", { key: fresh.key, body, headers: { "idempotency-key": "rotation-retry-0001" } });
+      assert.equal(retry.status, 200);
+      assert.equal(retry.headers.get("idempotent-replayed"), "true");
+      assert.equal(dataOf(retry).id, dataOf(first).id);
+      assert.equal(codeOf(await call("/appointments", { key: fresh.key, body: { ...body, startTime: "11:30" }, headers: { "idempotency-key": "rotation-retry-0001" } })), "IDEMPOTENCY_MISMATCH");
+      // An unrelated key (another family) with the same Idempotency-Key is a new request: the time is taken now.
+      assert.equal(codeOf(await call("/appointments", { key: keys.all, body, headers: { "idempotency-key": "rotation-retry-0001" } })), "SLOT_NOT_FREE");
+      const rows = await ctx.db.selectFrom("pms_appointments").select("id").where("tenant_id", "=", A).where("patient_id", "=", ids.daniel).where("starts_on", "=", "2026-11-30").execute();
+      assert.equal(rows.length, 1);
+    });
+
+    it("revoke is atomic with its audit row: one revoke, one audit row, never one without the other", async () => {
+      const k = await createApiKey(ctx, A, { name: "Revoke once", scopes: ["invoices:read"], siteIds: [], expiresInDays: 30 }, OWNER);
+      assert.equal(await revokeApiKey(ctx, A, k.id, OWNER), true);
+      assert.equal(await revokeApiKey(ctx, A, k.id, OWNER), false);
+      clock += 1000;
+      assert.equal(await revokeApiKey(ctx, A, k.id, OWNER), false);
+      const rows = (await listAudit(ctx, A, { limit: 500 })).filter((e) => e.action === "pms.api_key.revoke" && e.targetId === k.id);
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0].userId, OWNER.userId);
+    });
+
+    it("booking with a case: only an open case of this patient, at one of a site-limited key's sites – one answer for the rest", async () => {
+      const atS2 = await createCase(ctx, A, { patientId: ids.megan, title: "Knee (fictional)", siteId: ids.s2, openedOn: "2026-11-01" } as never, OWNER);
+      const atS1 = await createCase(ctx, A, { patientId: ids.megan, title: "Shoulder (fictional)", siteId: ids.s1, openedOn: "2026-11-01" } as never, OWNER);
+      const nells = await createCase(ctx, A, { patientId: ids.nell, title: "Back (fictional)", siteId: ids.s1, openedOn: "2026-11-01" } as never, OWNER);
+      const bCase = await createCase(ctx, B, { patientId: ids.bea, title: "Neck (fictional)", siteId: ids.sb, openedOn: "2026-11-01" } as never, OWNER_B);
+      const closed = await createCase(ctx, A, { patientId: ids.megan, title: "Old (fictional)", siteId: ids.s1, openedOn: "2026-01-01" } as never, OWNER);
+      await ctx.db.updateTable("pms_cases").set({ status: "closed", closed_on: "2026-06-01" }).where("tenant_id", "=", A).where("id", "=", closed.id).execute();
+      const body = { patientId: ids.megan, serviceId: ids.svc, practitionerId: ids.prac, siteId: ids.s1, date: "2026-11-30", startTime: "09:00" };
+      const messages = new Set<string>();
+      for (const [i, caseId] of Array.from([atS2.id, nells.id, bCase.id, closed.id, "case_01JD0000000000000000000099"].entries())) {
+        const r = await call("/appointments", { key: keys.site1, body: { ...body, caseId }, headers: { "idempotency-key": `case-check-000${i}` } });
+        assert.equal(r.status, 422, caseId);
+        messages.add(JSON.stringify(r.json));
+      }
+      assert.equal(messages.size, 1, "one answer – nothing about whether the case exists");
+      const ok = await call("/appointments", { key: keys.site1, body: { ...body, caseId: atS1.id }, headers: { "idempotency-key": "case-check-ok-01" } });
+      assert.equal(ok.status, 201, JSON.stringify(ok.json));
+      assert.equal(dataOf(ok).caseId, atS1.id);
     });
 
     it("keys are stored as SHA-256 only, with lookup and last4", async () => {

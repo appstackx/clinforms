@@ -9,8 +9,13 @@
  *   1. platform switch CLINFORMS_CLINIC_API=on – else 404 for EVERY method and path (the API does not exist);
  *   2. the method – 405 (OPTIONS too: no CORS headers are ever sent, so browsers on other sites are refused);
  *   3. HTTPS – a plain-HTTP request (except to localhost) is refused 403;
- *   4. query string ≤ 2 KiB; per-network rate limit; per-network failed-key limit (429 with Retry-After);
- *   5. Authorization: Bearer <key> only (cookies are never read – no session, no CSRF surface) → 401;
+ *   4. query string ≤ 2 KiB;
+ *   5. Authorization: Bearer <key> only (cookies are never read – no session, no CSRF surface) → 401:
+ *      – no header, or not a well-formed key: refused WITHOUT any database write; an in-memory per-instance token
+ *        bucket per network (pre-filter) answers 429 when one network sends too many of these;
+ *      – a well-formed key is VERIFIED FIRST. A right key is never refused for others' failures. A wrong one counts
+ *        against its presented lookup and against its network (rate_limits rows – the only writes before auth);
+ *        once either is over its limit, wrong keys get 429 (no further write) – a right key still gets in;
  *   6. the key's clinic has the clinic package AND its API setting on → else 403 API_OFF;
  *   7. per-key rate limit (429); the endpoint's scope (403);
  *   8. POST: JSON only (415), ≤ 8 KiB (413);
@@ -22,7 +27,7 @@ import "server-only";
 import type { Kysely } from "kysely";
 import { packageIsOn } from "../../../../modules/pms/core/entitlements";
 import { pmsNow } from "../../../../modules/pms/core/clock";
-import { API_ERRORS, API_LIMITS, bearerToken, clinicApiSwitchOn, type ApiErrorCode, type ApiScope } from "../../../../modules/pms/integration/api";
+import { API_ERRORS, API_LIMITS, bearerToken, clinicApiSwitchOn, parseApiKey, type ApiErrorCode, type ApiScope } from "../../../../modules/pms/integration/api";
 import type { PmsActor } from "../../../../modules/pms/core/types";
 import { getDataCipher, type DataCipher } from "../../../crypto";
 import { getDb, type Database } from "../../../db";
@@ -41,7 +46,28 @@ export interface ClinicApiDeps {
   env: Env;
   now: () => Date;
   /** Tests lower the limits. */
-  limits?: Partial<Record<"perKeyPerMinute" | "perIpPerMinute" | "failedPerIpPer10Minutes", number>>;
+  limits?: Partial<Record<LimitName, number>>;
+}
+
+type LimitName = "perKeyPerMinute" | "anonPerIpPerMinute" | "failedPerKeyPer10Minutes" | "failedPerIpPer10Minutes";
+
+/* ------------------------------------------------------------------------------------------------
+ * In-memory pre-filter for requests without a usable key (per server instance; no database write)
+ * ----------------------------------------------------------------------------------------------*/
+
+const anonBuckets = new Map<string, { tokens: number; at: number }>();
+const ANON_BUCKETS_MAX = 10_000;
+
+/** Takes one token from the network's bucket (refills perMinute per minute, holds at most perMinute). */
+export function takeAnonToken(subject: string, perMinute: number, nowMs: number): boolean {
+  if (anonBuckets.size >= ANON_BUCKETS_MAX && !anonBuckets.has(subject)) anonBuckets.clear();
+  const b = anonBuckets.get(subject) ?? { tokens: perMinute, at: nowMs };
+  b.tokens = Math.min(perMinute, b.tokens + Math.max(0, ((nowMs - b.at) / 60_000) * perMinute));
+  b.at = nowMs;
+  anonBuckets.set(subject, b);
+  if (b.tokens < 1) return false;
+  b.tokens -= 1;
+  return true;
 }
 
 export function defaultApiDeps(): ClinicApiDeps {
@@ -100,12 +126,15 @@ export interface PublicApiEndpoint {
   handle: (req: { url: URL; deps: ClinicApiDeps }) => Promise<ApiReply>;
 }
 
-const BASE_HEADERS: Record<string, string> = {
+/**
+ * Headers of every API answer. Referrer-Policy, X-Content-Type-Options and the other security headers come ONCE
+ * from next.config.mjs (securityHeaders on "/:path*") – setting them here too sent each header twice.
+ */
+export const API_RESPONSE_HEADERS: Readonly<Record<string, string>> = {
   "content-type": "application/json; charset=utf-8",
   "cache-control": "no-store",
-  "x-content-type-options": "nosniff",
-  "referrer-policy": "no-referrer",
 };
+const BASE_HEADERS = API_RESPONSE_HEADERS;
 
 export function apiJson(status: number, body: unknown, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...BASE_HEADERS, ...headers } });
@@ -187,7 +216,10 @@ export function clinicApiRoute<P = Record<string, string>>(
   return out;
 }
 
-/** A route without a key (the OpenAPI document): switch, method, HTTPS and the per-network limit only. */
+/**
+ * A route without a key (the OpenAPI document): switch, method, HTTPS and the in-memory per-network pre-filter only –
+ * no database read or write; the answer may be cached for an hour (it holds no clinic data).
+ */
 export function publicApiRoute(endpoint: PublicApiEndpoint, depsOf: () => ClinicApiDeps = defaultApiDeps): Record<Method, (req: Request) => Promise<Response>> {
   const out = {} as Record<Method, (req: Request) => Promise<Response>>;
   for (const method of METHODS) {
@@ -197,13 +229,12 @@ export function publicApiRoute(endpoint: PublicApiEndpoint, depsOf: () => Clinic
       if (method !== "GET") return apiErrorResponse("METHOD_NOT_ALLOWED", undefined, { allow: "GET" });
       if (!isSecureRequest(req)) return apiErrorResponse("HTTPS_REQUIRED");
       try {
-        const now = deps.now();
-        const ctx: RepoContext = { db: deps.db(), cipher: deps.cipher(), now: () => now };
         const ip = ipLimitSubject(signupClientIp(req.headers, deps.env));
-        const hit = await hitRateLimit(ctx, `capi:ip:${ip}`, 60_000);
-        if (hit.count > (deps.limits?.perIpPerMinute ?? API_LIMITS.perIpPerMinute)) return apiErrorResponse("RATE_LIMITED", undefined, retryAfter(hit.resetAt, now));
+        if (!takeAnonToken(`public:${ip}`, deps.limits?.anonPerIpPerMinute ?? API_LIMITS.anonPerIpPerMinute, deps.now().getTime())) {
+          return apiErrorResponse("RATE_LIMITED", undefined, { "retry-after": "60" });
+        }
         const reply = await endpoint.handle({ url: new URL(req.url), deps });
-        return apiJson(reply.status ?? 200, reply.body, reply.headers);
+        return apiJson(reply.status ?? 200, reply.body, { "cache-control": "public, max-age=3600", ...reply.headers });
       } catch (err) {
         logAuthEvent("pms.api.failed", { error: err instanceof Error ? err.name : "error" });
         return apiErrorResponse("SERVER_ERROR");
@@ -228,21 +259,32 @@ export async function serve<P>(req: Request, params: P, endpoint: ApiEndpoint<P>
   const url = new URL(req.url);
   if (url.search.length > API_LIMITS.maxQueryChars) return apiErrorResponse("INVALID_REQUEST", "The query string is too long.");
   const now = deps.now();
+  const limits: Record<LimitName, number> = { ...API_LIMITS, ...deps.limits };
+  const ip = ipLimitSubject(signupClientIp(req.headers, deps.env));
+  const unauthenticated = () => apiErrorResponse("UNAUTHENTICATED", undefined, { "www-authenticate": 'Bearer realm="clinic-api"' });
+
+  // No header, or not a well-formed key: cheap rejection, no database read or write. The in-memory bucket stops one
+  // network flooding these (per instance – a pre-filter, not a guarantee).
+  const token = bearerToken(req.headers.get("authorization"));
+  const parsed = token ? parseApiKey(token) : null;
+  if (!token || !parsed) {
+    if (!takeAnonToken(`anon:${ip}`, limits.anonPerIpPerMinute, now.getTime())) return apiErrorResponse("RATE_LIMITED", undefined, { "retry-after": "60" });
+    return unauthenticated();
+  }
+
   const ctx: RepoContext = { db: deps.db(), cipher: deps.cipher(), now: () => now };
   try {
-    const limits: Record<"perKeyPerMinute" | "perIpPerMinute" | "failedPerIpPer10Minutes", number> = { ...API_LIMITS, ...deps.limits };
-    const ip = ipLimitSubject(signupClientIp(req.headers, deps.env));
-    const perIp = await hitRateLimit(ctx, `capi:ip:${ip}`, 60_000);
-    if (perIp.count > limits.perIpPerMinute) return apiErrorResponse("RATE_LIMITED", undefined, retryAfter(perIp.resetAt, now));
-    const failedKey = `capi:fail:${ip}`;
-    const failed = await peekRateLimit(ctx, failedKey, 600_000);
-    if (failed.count >= limits.failedPerIpPer10Minutes) return apiErrorResponse("RATE_LIMITED", undefined, retryAfter(failed.resetAt, now));
-
-    const token = bearerToken(req.headers.get("authorization"));
-    const key = token ? await verifyApiKey(ctx, token) : null;
+    // Verify FIRST: a right key always gets past the failure limits (only its own per-key limit can stop it).
+    const key = await verifyApiKey(ctx, token);
     if (!key) {
-      await hitRateLimit(ctx, failedKey, 600_000);
-      return apiErrorResponse("UNAUTHENTICATED", undefined, { "www-authenticate": 'Bearer realm="clinic-api"' });
+      const byKey = `capi:fail:key:${parsed.tenantId}:${parsed.lookup}`;
+      const byIp = `capi:fail:ip:${ip}`;
+      const [k, n] = await Promise.all([peekRateLimit(ctx, byKey, 600_000), peekRateLimit(ctx, byIp, 600_000)]);
+      if (k.count >= limits.failedPerKeyPer10Minutes) return apiErrorResponse("RATE_LIMITED", undefined, retryAfter(k.resetAt, now));
+      if (n.count >= limits.failedPerIpPer10Minutes) return apiErrorResponse("RATE_LIMITED", undefined, retryAfter(n.resetAt, now));
+      await hitRateLimit(ctx, byKey, 600_000);
+      await hitRateLimit(ctx, byIp, 600_000);
+      return unauthenticated();
     }
     if (!(await clinicApiOn(ctx, key.tenantId, now))) return apiErrorResponse("API_OFF");
     const perKey = await hitRateLimit(ctx, `capi:key:${key.tenantId}:${key.id}`, 60_000);

@@ -28,7 +28,7 @@ import { londonDate } from "../../../../modules/pms/diary/time";
 import type { BatchQuery } from "../../../db/batch";
 import { runBatch } from "../../../db/batch";
 import { auditInsertWhenExists } from "../../audit";
-import { RepoInputError, assertActor, assertId, assertTenantId, nowIso, num, parseInput, pmsAuditQuery, pmsId, writeWithAudit, type DbContext, type PmsActor } from "../context";
+import { RepoInputError, assertActor, assertId, assertTenantId, nowIso, num, parseInput, pmsAuditQuery, pmsId, translateDbError, writeWithAudit, type DbContext, type PmsActor } from "../context";
 
 const K = "pms_api_keys";
 const S = "pms_api_settings";
@@ -43,6 +43,7 @@ export interface ApiSettings {
 
 export interface ApiKeyInfo {
   id: string;
+  familyId: string;
   tenantId: string;
   name: string;
   /** What the list shows: "cdk_<clinic>_<lookup>". */
@@ -68,6 +69,8 @@ export interface CreatedApiKey extends ApiKeyInfo {
 /** A verified key, as the API's handlers see it. */
 export interface VerifiedApiKey {
   id: string;
+  /** The rotation chain the key belongs to (Idempotency-Keys are per family). */
+  familyId: string;
   tenantId: string;
   name: string;
   scopes: ApiScope[];
@@ -95,10 +98,11 @@ function parseSiteIds(json: string | null): string[] | null {
   }
 }
 
-const COLUMNS = ["id", "tenant_id", "name", "lookup", "last4", "scopes_json", "site_ids_json", "expires_at", "last_used_at", "use_count", "replaced_by_id", "revoked_at", "created_by", "created_at"] as const;
+const COLUMNS = ["id", "family_id", "tenant_id", "name", "lookup", "last4", "scopes_json", "site_ids_json", "expires_at", "last_used_at", "use_count", "replaced_by_id", "revoked_at", "created_by", "created_at"] as const;
 
 type KeyRow = {
   id: string;
+  family_id: string;
   tenant_id: string;
   name: string;
   lookup: string;
@@ -117,6 +121,7 @@ type KeyRow = {
 function toInfo(r: KeyRow): ApiKeyInfo {
   return {
     id: r.id,
+    familyId: r.family_id,
     tenantId: r.tenant_id,
     name: r.name,
     prefix: `${API_KEY_PREFIX}${r.tenant_id}_${r.lookup}`,
@@ -194,12 +199,13 @@ async function checkSites(ctx: DbContext, tenantId: string, siteIds: readonly st
   if (rows.length !== new Set(siteIds).size) throw new RepoInputError("A chosen site is not one of this clinic's sites.");
 }
 
-function keyRow(ctx: DbContext, tenantId: string, input: { id: string; name: string; scopes: readonly ApiScope[]; siteIds: readonly string[] | null; expiresAt: string | null; createdBy: string | null }, at: string) {
+function keyRow(ctx: DbContext, tenantId: string, input: { id: string; familyId: string; name: string; scopes: readonly ApiScope[]; siteIds: readonly string[] | null; expiresAt: string | null; createdBy: string | null }, at: string) {
   const lookup = newLookup();
   const key = `${API_KEY_PREFIX}${tenantId}_${lookup}_${randomBytes(32).toString("base64url")}`;
   const row = {
     tenant_id: tenantId,
     id: input.id,
+    family_id: input.familyId,
     lookup,
     key_hash: hashApiKey(key),
     last4: key.slice(-4),
@@ -228,7 +234,7 @@ export async function createApiKey(ctx: DbContext, tenantId: string, input: Crea
   if ((await countActiveKeys(ctx, tenantId, at)) >= API_LIMITS.activeKeysMax) throw new RepoInputError(`A clinic can have at most ${API_LIMITS.activeKeysMax} active keys. Revoke one first.`);
   await checkSites(ctx, tenantId, d.siteIds);
   const id = pmsId("apik", ctx);
-  const { key, row } = keyRow(ctx, tenantId, { id, name: d.name, scopes: d.scopes, siteIds: d.siteIds, expiresAt: expiryFrom(at, d.expiresInDays), createdBy: who.userId }, at);
+  const { key, row } = keyRow(ctx, tenantId, { id, familyId: id, name: d.name, scopes: d.scopes, siteIds: d.siteIds, expiresAt: expiryFrom(at, d.expiresInDays), createdBy: who.userId }, at);
   await writeWithAudit(
     ctx,
     [
@@ -275,22 +281,28 @@ export async function apiKeyUsage(ctx: DbContext, tenantId: string, today: strin
   return out;
 }
 
-/** Revokes a key of this clinic. False when it does not exist or was revoked already. */
+/**
+ * Revokes a key of this clinic. False when it does not exist or was revoked already. The change and its audit row are
+ * ONE atomic batch: the conditional update stamps a fresh write_id, and the audit row is inserted only where that
+ * write_id is found – so there is never a revocation without its audit row, nor an audit row without a revocation.
+ */
 export async function revokeApiKey(ctx: DbContext, tenantId: string, id: string, actor: PmsActor): Promise<boolean> {
   assertTenantId(tenantId);
   assertId(id, "Key id");
   const who = assertActor(actor);
   const at = nowIso(ctx);
-  const result = await ctx.db
-    .updateTable(K)
-    .set({ revoked_at: at, revoked_by: who.userId, updated_at: at })
-    .where("tenant_id", "=", tenantId)
-    .where("id", "=", id)
-    .where("revoked_at", "is", null)
-    .executeTakeFirst();
-  if (Number(result.numUpdatedRows) === 0) return false;
-  await runBatch(ctx.db, [pmsAuditQuery(ctx, tenantId, actor, { action: "pms.api_key.revoke", targetType: "pms_api_key", targetId: id })]);
-  return true;
+  const writeId = randomBytes(12).toString("base64url");
+  const marked = ctx.db.selectFrom(K).select("id").where("tenant_id", "=", tenantId).where("id", "=", id).where("write_id", "=", writeId);
+  let results;
+  try {
+    results = await runBatch(ctx.db, [
+      ctx.db.updateTable(K).set({ revoked_at: at, revoked_by: who.userId, write_id: writeId, updated_at: at }).where("tenant_id", "=", tenantId).where("id", "=", id).where("revoked_at", "is", null),
+      auditInsertWhenExists(ctx, tenantId, { action: "pms.api_key.revoke", targetType: "pms_api_key", targetId: id, userId: who.userId, sessionId: who.sessionId }, marked).query,
+    ]);
+  } catch (err) {
+    throw translateDbError(err);
+  }
+  return Number(results[0]?.numAffectedRows ?? 0) > 0;
 }
 
 /**
@@ -312,7 +324,7 @@ export async function rotateApiKey(ctx: DbContext, tenantId: string, id: string,
   const { key, row } = keyRow(
     ctx,
     tenantId,
-    { id: newId, name: old.name, scopes: old.scopes, siteIds: old.siteIds, expiresAt: lengthMs ? new Date(Date.parse(at) + lengthMs).toISOString() : null, createdBy: who.userId },
+    { id: newId, familyId: old.familyId, name: old.name, scopes: old.scopes, siteIds: old.siteIds, expiresAt: lengthMs ? new Date(Date.parse(at) + lengthMs).toISOString() : null, createdBy: who.userId },
     at,
   );
   const marked = ctx.db.selectFrom(K).select("id").where("tenant_id", "=", tenantId).where("id", "=", id).where("replaced_by_id", "=", newId);
@@ -355,7 +367,7 @@ export async function verifyApiKey(ctx: DbContext, presented: string): Promise<V
   }
   const row = await ctx.db
     .selectFrom(K)
-    .select(["id", "tenant_id", "name", "key_hash", "scopes_json", "site_ids_json", "expires_at", "revoked_at"])
+    .select(["id", "family_id", "tenant_id", "name", "key_hash", "scopes_json", "site_ids_json", "expires_at", "revoked_at"])
     .where("tenant_id", "=", parsed.tenantId)
     .where("lookup", "=", parsed.lookup)
     .executeTakeFirst();
@@ -364,7 +376,7 @@ export async function verifyApiKey(ctx: DbContext, presented: string): Promise<V
   if (!row || !same) return null;
   if (!apiKeyActive({ revokedAt: row.revoked_at, expiresAt: row.expires_at }, nowIso(ctx))) return null;
   const sites = parseSiteIds(row.site_ids_json);
-  return { id: row.id, tenantId: row.tenant_id, name: row.name, scopes: parseScopes(row.scopes_json), siteIds: sites ? new Set(sites) : null };
+  return { id: row.id, familyId: row.family_id, tenantId: row.tenant_id, name: row.name, scopes: parseScopes(row.scopes_json), siteIds: sites ? new Set(sites) : null };
 }
 
 /**

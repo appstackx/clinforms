@@ -148,6 +148,24 @@ export const listSlots: ApiEndpoint<Record<string, string>> = {
   },
 };
 
+/** One answer whether the case does not exist, is another clinic's or patient's, is closed or at another site. */
+const CASE_NOT_USABLE = "The request is not valid: caseId: not an open case of this patient that this key can use.";
+
+/**
+ * A case the booking may name: this clinic's, this patient's, open, and – for a key limited to some sites – at one
+ * of its sites (a case without a site is allowed, as for the patient's own visibility).
+ */
+async function usableCase(caller: ApiRequest<Record<string, string>>["caller"], caseId: string, patientId: string): Promise<boolean> {
+  const row = await caller.ctx.db
+    .selectFrom("pms_cases")
+    .select(["patient_id", "status", "site_id"])
+    .where("tenant_id", "=", caller.tenantId)
+    .where("id", "=", caseId)
+    .executeTakeFirst();
+  if (!row || row.patient_id !== patientId || row.status !== "open") return false;
+  return !caller.siteIds || row.site_id === null || caller.siteIds.has(row.site_id);
+}
+
 function requestHash(text: string): string {
   return createHash("sha256").update(text, "utf8").digest("hex");
 }
@@ -158,7 +176,8 @@ async function replay(req: ApiRequest<Record<string, string>>, idemKey: string, 
     .selectFrom("pms_api_idempotency")
     .select(["request_sha256", "appointment_id"])
     .where("tenant_id", "=", caller.tenantId)
-    .where("key_id", "=", caller.key.id)
+    // Per key FAMILY (a key and its replacements): a retry after a rotation still finds the original booking.
+    .where("family_id", "=", caller.key.familyId)
     .where("idem_key", "=", idemKey)
     .executeTakeFirst();
   if (!row) return null;
@@ -199,6 +218,7 @@ export const bookAppointmentEndpoint: ApiEndpoint<Record<string, string>> = {
     ]);
     if (!patient || !site || !service || !practitioner) throw new ApiError("NOT_FOUND");
     if (patient.status !== "active") throw new ApiError("INVALID_REQUEST", "The request is not valid: patientId: the patient's record is not active.");
+    if (b.caseId && !(await usableCase(caller, b.caseId, b.patientId))) throw new ApiError("INVALID_REQUEST", CASE_NOT_USABLE);
     // The same rules as online booking: active and marked for online booking (src/server/pms/portal/availability.ts).
     if (!site.active || !service.active || !service.onlineBookable || !practitioner.active || !practitioner.bookable || !practitioner.onlineBookable) throw new ApiError("SLOT_NOT_FREE");
     const startMinute = parseHhmm(b.startTime);
@@ -246,7 +266,7 @@ export const bookAppointmentEndpoint: ApiEndpoint<Record<string, string>> = {
         caller.actor,
         {
           alsoWrite: (appointmentId) => [
-            ctx.db.insertInto("pms_api_idempotency").values({ tenant_id: tenantId, id: idemId, key_id: caller.key.id, idem_key: idemKey, request_sha256: hash, appointment_id: appointmentId, created_at: now }),
+            ctx.db.insertInto("pms_api_idempotency").values({ tenant_id: tenantId, id: idemId, key_id: caller.key.id, family_id: caller.key.familyId, idem_key: idemKey, request_sha256: hash, appointment_id: appointmentId, created_at: now }),
             pmsAuditQuery(ctx, tenantId, caller.actor, { action: "pms.api.appointment_book", targetType: "pms_appointment", targetId: appointmentId, detail: { apiKeyId: caller.key.id, via: "api" } }),
           ],
         },

@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { reportsSection } from "@/components/pms/reporting/reports-nav";
 import { ClinicShell } from "@/components/pms/shell/clinic-shell";
 import { ClinicSystemMark } from "@/components/clindesk/logo";
-import { accountAdminLinks, clinicRoleLabel, shellNav, sitesSummary, withSetupAccountLinks } from "@/components/pms/shell/nav-model";
+import { accountAdminLinks, clinicRoleLabel, navForDeployment, shellNav, sitesSummary, withSetupAccountLinks } from "@/components/pms/shell/nav-model";
 import { resolveSiteChoice, SITE_COOKIE } from "@/components/pms/shell/site-cookie";
 import { ALL_SITES } from "@/components/pms/ui/site-switcher";
 import { roleLabel } from "@/lib/account-copy";
@@ -30,7 +30,6 @@ import { billingBannerFor } from "@/server/billing/banner";
 import { canManageBilling } from "@/server/billing/views";
 import { getDb } from "@/server/db";
 import { bulkEmailAvailable, mayUseBulkEmail } from "@/server/pms/comms/campaigns/service";
-import { CLINIC_API_NAV_ID } from "@/modules/pms/nav/integration";
 import { clinicApiAvailable, mayManageApi } from "@/server/pms/integration/api/screen";
 
 export const dynamic = "force-dynamic";
@@ -123,7 +122,7 @@ export default async function ClinicSystemLayout({ children }: { children: React
       homeHref={CLINIC_BASE_PATH}
       clinicName={actor.clinicName}
       user={{ name: actor.name, email: actor.email, roleLabel: clinicRoleLabel(actor.role, roleLabel(actor.role)), sitesSummary: sitesSummary(mySites.length, sites.length) }}
-      nav={withSetupAccountLinks(shellNav(apiOn ? PMS_NAV : PMS_NAV.filter((e) => e.id !== CLINIC_API_NAV_ID), actor.can, { "comms.messages": { count: replies, label: "replies to answer" } }, reportsSection(actor.can)), account.setup)}
+      nav={withSetupAccountLinks(shellNav(navForDeployment(PMS_NAV, { clinicApi: apiOn }), actor.can, { "comms.messages": { count: replies, label: "replies to answer" } }, reportsSection(actor.can)), account.setup)}
       sites={{ options: mySites.map((s, i) => ({ id: s.id, name: s.name, note: i === 0 ? "Default" : undefined })), value: siteValue, total: sites.length }}
       searchHref={actor.can("patients.view") ? `${CLINIC_BASE_PATH}/patients` : null}
       clinForms={reports ? { href: "/app/studio", label: brand.id === "clinic" ? REPORTS_ADDON_NAME : CLINFORMS_NAME } : null}

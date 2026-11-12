@@ -204,7 +204,7 @@ function Docs({ apiBase }: { apiBase: string }) {
       <h3 className="mt-2 font-medium text-foreground">Limits and answers</h3>
       <ul className="list-disc space-y-1 pl-5">
         <li>
-          {API_LIMITS.perKeyPerMinute} requests a minute per key; too many answers 429 with a Retry-After header. Repeated wrong keys from one network are blocked for a while.
+          {API_LIMITS.perKeyPerMinute} requests a minute per key; too many answers 429 with a Retry-After header. Repeated wrong keys are refused for a while – a right key is never blocked by them.
         </li>
         <li>401 – no key or a wrong, revoked or expired key. 403 – the key lacks the scope or the site, or the clinic&apos;s API is off. 404 – not found (also anything of another clinic or site). 422 – a value is not valid, or the time is not free.</li>
         <li>No clinical notes, booking notes, invoice descriptions or diagnoses are ever returned.</li>

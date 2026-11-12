@@ -158,6 +158,8 @@ export interface PmsApiSettingsTable {
 export interface PmsApiKeysTable {
   tenant_id: string;
   id: string;
+  /** The first key of its rotation chain (its own id for a new key; kept by replacements). */
+  family_id: string;
   /** 16 random characters inside the key that name it (unique per clinic). */
   lookup: string;
   /** SHA-256 (hex) of the whole key. The key itself is never stored. */
@@ -175,6 +177,8 @@ export interface PmsApiKeysTable {
   replaced_by_id: string | null;
   revoked_at: IsoTimestamp | null;
   revoked_by: string | null;
+  /** A fresh id set by a revocation: its audit row is inserted in the same batch only where this id is found. */
+  write_id: ColumnType<string | null, string | null | undefined, string | null>;
   created_by: string | null;
   created_at: IsoTimestamp;
   updated_at: IsoTimestamp;
@@ -194,7 +198,10 @@ export interface PmsApiKeyDaysTable {
 export interface PmsApiIdempotencyTable {
   tenant_id: string;
   id: string;
+  /** The key that booked. */
   key_id: string;
+  /** Its family (pms_api_keys.family_id): Idempotency-Keys are unique per family, so they survive a rotation. */
+  family_id: string;
   idem_key: string;
   /** SHA-256 (hex) of the canonical request body. */
   request_sha256: string;

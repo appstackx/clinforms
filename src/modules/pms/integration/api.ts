@@ -118,9 +118,12 @@ export const API_LIMITS = {
   /** Request body (POST) and query string. */
   maxBodyBytes: 8 * 1024,
   maxQueryChars: 2048,
-  /** Requests per key per minute, per network per minute, failed sign-ins per network per 10 minutes. */
+  /** Requests per key per minute (a right key is limited by this only). */
   perKeyPerMinute: 120,
-  perIpPerMinute: 300,
+  /** Requests without a usable key per network per minute (in memory, per server instance – no database write). */
+  anonPerIpPerMinute: 60,
+  /** Wrong keys per presented key (its lookup) and per network in 10 minutes; then wrong keys get 429. */
+  failedPerKeyPer10Minutes: 20,
   failedPerIpPer10Minutes: 20,
   /** A key's name. */
   nameMax: 80,

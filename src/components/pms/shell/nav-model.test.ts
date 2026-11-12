@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import type { PmsNavEntry } from "@/modules/pms/core/nav";
 import { pmsCan, type PmsRole } from "@/modules/pms/core/permissions";
 import { PMS_NAV } from "@/modules/pms/nav";
-import { accountAdminLinks, clinicRoleLabel, currentNavId, currentSection, shellNav, sitesSummary, withSetupAccountLinks } from "./nav-model";
+import { accountAdminLinks, clinicRoleLabel, currentNavId, currentSection, firstSetupEntry, navForDeployment, shellNav, sitesSummary, withSetupAccountLinks } from "./nav-model";
 import { resolveSiteChoice } from "./site-cookie";
 
 const B = "/app/clinic";
@@ -94,6 +94,15 @@ describe("shell navigation by permission", () => {
     assert.ok(!shellNav(PMS_NAV, as("admin")).manage.some((i) => i.label === "API keys"), "administrators never see API keys");
     assert.deepEqual(shellNav(PMS_NAV, as("clinician")).main.map((i) => i.label), ["Dashboard", "Diary", "Patients", "Unsigned notes", "Billing", "Messages", "Reports"]);
     assert.deepEqual(shellNav(PMS_NAV, as("clinician")).manage, []);
+  });
+
+  it("Set-up's start and the navigation leave out API keys while CLINFORMS_CLINIC_API is off (security review 12/11)", () => {
+    const onlyApi = (p: string) => p === "settings.owner" || p === "clinic.view";
+    assert.equal(firstSetupEntry(PMS_NAV, onlyApi, { clinicApi: false }), null, "nothing to open – never the API keys page");
+    assert.equal(firstSetupEntry(PMS_NAV, onlyApi, { clinicApi: true })?.href, "/app/clinic/setup/api");
+    assert.ok(!navForDeployment(PMS_NAV, { clinicApi: false }).some((e) => e.id === "integration.api"));
+    assert.ok(navForDeployment(PMS_NAV, { clinicApi: true }).some((e) => e.id === "integration.api"));
+    assert.equal(firstSetupEntry(PMS_NAV, as("owner"), { clinicApi: false })?.id, "reporting.sites");
   });
 
   it("a badge on an entry (Messages: replies waiting) only when the count is above 0", () => {
