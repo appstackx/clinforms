@@ -3,6 +3,7 @@ import { firstSetupEntry } from "@/components/pms/shell/nav-model";
 import { PMS_NAV } from "@/modules/pms/nav";
 import { requireClinicActor } from "@/server/pms/actor";
 import { clinicApiAvailable } from "@/server/pms/integration/api/screen";
+import { exercisesAvailable } from "@/server/pms/records/exercises-service";
 import { canOpenSetup } from "@/server/pms/reporting/setup";
 import { notFound } from "next/navigation";
 
@@ -15,7 +16,7 @@ export const dynamic = "force-dynamic";
 export default async function SetupStartPage() {
   const actor = await requireClinicActor();
   if (!canOpenSetup(actor)) notFound();
-  const first = firstSetupEntry(PMS_NAV, actor.can, { clinicApi: clinicApiAvailable() });
+  const first = firstSetupEntry(PMS_NAV, actor.can, { clinicApi: clinicApiAvailable(), exercises: exercisesAvailable() });
   if (!first) notFound();
   redirect(first.href);
 }

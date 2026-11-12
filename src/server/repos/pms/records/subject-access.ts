@@ -19,6 +19,8 @@ import { getPatientAttachments } from "./attachments";
 import { getNote, listNotesForPatient } from "./notes";
 import { getOutcome, listOutcomesForPatient } from "./outcomes";
 import { getPatientExtras, listClinicalFlags } from "./patient-extras";
+import { exerciseDataForPatient } from "./exercises";
+import type { ExerciseCheckin, ExerciseProgramme } from "../../../../modules/pms/records/exercises";
 
 export interface SubjectAccessData {
   patient: Patient;
@@ -30,6 +32,8 @@ export interface SubjectAccessData {
   /** 0125: the patient's pronouns and every clinical flag (active and ended). */
   pronouns: string | null;
   clinicalFlags: ClinicalFlag[];
+  /** 0127–0128: home exercise programmes with the patient's check-ins (empty before the migrations). */
+  exercises: { programme: ExerciseProgramme; checkins: ExerciseCheckin[] }[];
   /** id → display name, for the copy's readers. */
   names: { practitioners: Record<string, string>; referrers: Record<string, string>; sites: Record<string, string> };
 }
@@ -50,6 +54,7 @@ export async function collectSubjectAccess(ctx: RepoContext, tenantId: string, p
     getPatientExtras(ctx, tenantId, patientId),
     listClinicalFlags(ctx, tenantId, patientId, { includeEnded: true }),
   ]);
+  const exercises = await exerciseDataForPatient(ctx, tenantId, patientId);
   const cases: Case[] = [];
   for (const c of caseSummaries) {
     const full = await getCase(ctx, tenantId, c.id);
@@ -80,6 +85,7 @@ export async function collectSubjectAccess(ctx: RepoContext, tenantId: string, p
     attachments,
     pronouns: extras.pronouns,
     clinicalFlags,
+    exercises,
     names: {
       practitioners: byId(practitioners, (p) => (p.registrationNumber ? `${p.displayName} (${p.registrationNumber})` : p.displayName)),
       referrers: byId(referrers, (r) => r.name),

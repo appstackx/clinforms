@@ -27,6 +27,8 @@ export interface PmsModuleInfo {
    * comms 0146 (inside comms' own range – reserved here so no other comms branch takes it; 0147–0149 stay free).
    * Public clinic API v1 (xt03, 11/2026, docs/clinic-system/api.md): integration 0171 (inside integration's own range –
    * reserved here; 0172–0179 stay free).
+   * Home exercise programmes (ex03–ex06, 11/2026, docs/clinic-system/exercise-programmes.md): records 0126–0128 (inside
+   * records' own range – reserved here; 0129 stays free).
    */
   extra?: readonly (readonly [number, number])[];
 }

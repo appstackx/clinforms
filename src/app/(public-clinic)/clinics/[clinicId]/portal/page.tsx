@@ -1,11 +1,13 @@
 import Link from "next/link";
-import { ChevronRight, ClipboardList, FileText } from "lucide-react";
+import { Activity, ChevronRight, ClipboardList, FileText } from "lucide-react";
 import { SignInForm } from "@/components/pms/portal/sign-in-form";
 import { PortalSignOut } from "@/components/pms/portal/portal-sign-out";
 import { clinicPublicPaths } from "@/modules/pms/portal/paths";
 import { portalHome } from "@/server/pms/portal/portal-views";
 import { humanCheckSiteKey } from "@/server/pms/portal/human-check";
 import { portalViewer, publicClinicOr404, publicCtx } from "@/server/pms/portal/public-page";
+import { portalProgrammesFor } from "@/server/pms/records/exercises-service";
+import { formatUkDate } from "@/modules/pms/core/text";
 import { requestLinkAction, signOutAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +31,7 @@ export default async function PortalPage({ params, searchParams }: { params: { c
       </main>
     );
   }
-  const home = await portalHome(publicCtx(), clinic, viewer.patientId);
+  const [home, exercises] = await Promise.all([portalHome(publicCtx(), clinic, viewer.patientId), portalProgrammesFor(publicCtx(), clinic, viewer.patientId)]);
   const toast = searchParams.done ? DONE[searchParams.done] : null;
   return (
     <>
@@ -101,6 +103,30 @@ export default async function PortalPage({ params, searchParams }: { params: { c
             ))}
           </ul>
         </section>
+        {exercises.length > 0 ? (
+          <section aria-labelledby="pt-ex">
+            <h2 id="pt-ex" className="text-[17px] font-semibold text-foreground">
+              Your exercises
+            </h2>
+            <ul className="mt-2 divide-y divide-border rounded-[12px] border border-border bg-white">
+              {exercises.map((x) => (
+                <li key={x.id}>
+                  <Link href={`${paths.portal}/exercises/${encodeURIComponent(x.id)}`} className="flex items-center gap-3 p-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+                    <Activity className="h-5 w-5 shrink-0 text-[#0F766E]" aria-hidden="true" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[15px] text-foreground">{x.title}</span>
+                      <span className="block text-[13px] text-[#334155]">
+                        {x.itemCount} {x.itemCount === 1 ? "exercise" : "exercises"}
+                        {x.sharedAt ? ` · given ${formatUkDate(x.sharedAt.slice(0, 10))}` : ""} · {x.checkedInToday ? "checked in today" : "check in today"}
+                      </span>
+                    </span>
+                    <ChevronRight className="h-[18px] w-[18px] text-[#475569]" aria-hidden="true" />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
         <section aria-labelledby="pt-docs">
           <h2 id="pt-docs" className="text-[17px] font-semibold text-foreground">
             Shared with you

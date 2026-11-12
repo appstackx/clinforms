@@ -17,6 +17,7 @@ import { PMS_AUDIT_LABELS } from "../../../modules/pms/audit";
 import { describeMarker } from "../../../modules/pms/records/body-chart";
 import { AMENDMENT_KIND_LABELS, noteStatusLabel, shortFingerprint } from "../../../modules/pms/records/notes";
 import { MEASURES, formatScore } from "../../../modules/pms/records/outcomes";
+import { PROGRAMME_STATUS_LABELS, doseLine } from "../../../modules/pms/records/exercises";
 import { NOTE_TYPE_LABELS } from "../../../modules/pms/records/templates";
 import { CASE_STATUS_LABELS, PAYER_TYPE_LABELS } from "../../../modules/pms/records/copy";
 import { formatBytes } from "../../../modules/pms/records/attachments";
@@ -222,6 +223,29 @@ export function subjectAccessSections(data: SubjectAccessData, history: readonly
     })),
   };
 
+  const exercises: ExportSection = {
+    id: "exercises",
+    heading: "Home exercise programmes",
+    empty: "No exercise programmes.",
+    entries: data.exercises.map(({ programme: p, checkins }) => ({
+      heading: `${p.title ?? "(anonymised)"} – ${PROGRAMME_STATUS_LABELS[p.status]}`,
+      lines: [
+        { label: "Started", text: dt(p.createdAt) },
+        ...line("Shared", p.sharedAt ? `${dt(p.sharedAt)}${p.sharedByName ? ` by ${p.sharedByName}` : ""}` : null),
+        ...line("Ended", p.endedAt ? dt(p.endedAt) : null),
+        ...para(p.notes, "Note to the patient"),
+        ...p.items.map((it, i) => ({
+          label: `Exercise ${i + 1}`,
+          text: [it.name, doseLine(it), it.instructions, it.cautions ? `Cautions: ${it.cautions}` : null, it.notes ? `Notes: ${it.notes}` : null, it.imageUrl, it.videoUrl].filter(Boolean).join(" – "),
+        })),
+        ...checkins.map((c) => ({
+          label: `Check-in ${d(c.doneOn)}`,
+          text: [c.completed ? "Did the exercises" : "Did not do the exercises", c.painScore !== null ? `pain ${c.painScore}/10` : null, c.comment].filter(Boolean).join(" – "),
+        })),
+      ],
+    })),
+  };
+
   const log: ExportSection = {
     id: "history",
     heading: "Record history (who accessed or changed the record)",
@@ -229,7 +253,7 @@ export function subjectAccessSections(data: SubjectAccessData, history: readonly
     entries: [{ lines: history.map((h) => ({ label: dt(h.at), text: PMS_AUDIT_LABELS[h.action] ?? h.action })) }].filter((e) => e.lines.length > 0),
   };
 
-  return [patient, cases, auths, notes, outcomes, files, ...extraSections, log];
+  return [patient, cases, auths, notes, outcomes, files, exercises, ...extraSections, log];
 }
 
 /** The machine-readable copy (same content, exact text; internal tenant ids left out). */
@@ -255,6 +279,7 @@ export function subjectAccessJson(data: SubjectAccessData, history: readonly Aud
     })),
     outcomeMeasures: data.outcomes.map(strip),
     attachedFiles: data.attachments.map(strip),
+    exerciseProgrammes: data.exercises.map(({ programme, checkins }) => ({ ...programme, checkins })),
     names: data.names,
     history: history.map((h) => ({ at: h.at, action: h.action, label: PMS_AUDIT_LABELS[h.action] ?? h.action, recordType: h.targetType })),
     ...extra,

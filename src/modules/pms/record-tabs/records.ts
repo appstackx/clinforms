@@ -9,5 +9,10 @@ export const RECORDS_RECORD_TABS: readonly PmsRecordTab[] = [
   // TODO(cs-access): the design shows Attachments to reception too; the records back end treats attached files as
   // clinical (referral letters, scans) – revisit with configurable permissions.
   { id: "records.attachments", module: "records", label: "Attachments", segment: "attachments", order: 24, permission: "clinical.view" },
+  // Home exercise programmes (ex03–ex05): behind CLINFORMS_EXERCISE=on and the clinic's setting – the record's layout
+  // leaves the tab out while either is off (EXERCISES_TAB_ID).
+  { id: "records.exercises", module: "records", label: "Exercises", segment: "exercises", order: 25, permission: "clinical.view" },
   { id: "records.history", module: "records", label: "History", segment: "history", order: 29, permission: "patients.view" },
 ];
+
+export const EXERCISES_TAB_ID = "records.exercises";

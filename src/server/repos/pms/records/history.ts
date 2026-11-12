@@ -8,6 +8,7 @@
  */
 import type { AuditEntry } from "../../audit";
 import { assertTenantId, type RepoContext } from "../context";
+import { programmeIdsForPatient } from "./exercises";
 
 const GROUP = 90;
 
@@ -21,8 +22,10 @@ async function idsOf(ctx: RepoContext, tenantId: string, patientId: string): Pro
     db.selectFrom("pms_attachments").select("id").where("tenant_id", "=", tenantId).where("patient_id", "=", patientId).limit(500).execute(),
     db.selectFrom("pms_clinical_flags").select("id").where("tenant_id", "=", tenantId).where("patient_id", "=", patientId).limit(500).execute(),
   ]);
+  // Exercise programmes (0127): their check-ins are audited against the programme, so the programme ids find both.
+  const programmes = await programmeIdsForPatient(ctx, tenantId, patientId);
   // The pronouns row's id is the patient's own id (pms_patient_extras), so its rows are found with the patient's.
-  return [patientId, ...[cases, auths, notes, outcomes, files, flags].flatMap((rows) => rows.map((r) => r.id))];
+  return [patientId, ...[cases, auths, notes, outcomes, files, flags].flatMap((rows) => rows.map((r) => r.id)), ...programmes];
 }
 
 export interface PatientHistoryOptions {
