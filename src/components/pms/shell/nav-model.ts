@@ -128,6 +128,7 @@ export const SETUP_ORDER: readonly string[] = [
   "reporting.targets",
   "reporting.audit",
   "reporting.import",
+  "integration.api",
 ];
 
 /** Set-up entries that are day-to-day work too: without the Set-up area (reception) they stay in the main list. */

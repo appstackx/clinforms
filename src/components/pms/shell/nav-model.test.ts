@@ -87,8 +87,11 @@ describe("shell navigation by permission", () => {
         "Report targets",
         "Audit trail",
         "Import data",
+        // The owner only, and only while CLINFORMS_CLINIC_API=on (the clinic layout leaves it out otherwise).
+        "API keys",
       ],
     );
+    assert.ok(!shellNav(PMS_NAV, as("admin")).manage.some((i) => i.label === "API keys"), "administrators never see API keys");
     assert.deepEqual(shellNav(PMS_NAV, as("clinician")).main.map((i) => i.label), ["Dashboard", "Diary", "Patients", "Unsigned notes", "Billing", "Messages", "Reports"]);
     assert.deepEqual(shellNav(PMS_NAV, as("clinician")).manage, []);
   });

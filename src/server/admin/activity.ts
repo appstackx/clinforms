@@ -16,6 +16,7 @@ import type { Database } from "../db/schema";
 import { listAudit, type AuditEntry } from "../repos/audit";
 import type { DbContext } from "../repos/context";
 import { listPartnerKeys } from "../repos/partner-keys";
+import { listApiKeys } from "../repos/pms/integration/api-keys";
 
 export const ACTIVITY_PATH = "/app/settings/activity";
 export const ACTIVITY_EXPORT_PATH = "/app/settings/activity/export";
@@ -192,6 +193,8 @@ export interface ActivityLookups {
   members: Map<string, { name: string; userId: string }>;
   /** partner key id → key name. */
   keys: Map<string, string>;
+  /** Clinic API key id → key name (entries written by the clinic API carry detail.apiKeyId – xt03). */
+  apiKeys?: Map<string, string>;
 }
 
 export interface PersonOption {
@@ -223,7 +226,17 @@ export async function loadActivityLookups(db: Kysely<Database>, viewer: Activity
   if (entries.some((e) => e.targetType === "partner_key")) {
     for (const k of await listPartnerKeys({ db }, viewer.tenantId)) keys.set(k.id, k.name);
   }
-  return { users, members, keys };
+  // Clinic API (0171): rows written through an API key name the key, not a member. Fail-safe: a database without the
+  // clinic system's tables (or any read error) shows them as "Automatic", as before.
+  const apiKeys = new Map<string, string>();
+  if (entries.some((e) => apiKeyIdOf(e) !== null)) {
+    try {
+      for (const k of await listApiKeys({ db }, viewer.tenantId)) apiKeys.set(k.id, k.name);
+    } catch {
+      // leave the names out
+    }
+  }
+  return { users, members, keys, apiKeys };
 }
 
 /** The person filter's choices (owners and administrators only): current members, then ClinForms support. */
@@ -250,6 +263,21 @@ export function activityTargetHref(entry: Pick<AuditEntry, "targetType" | "targe
   if (entry.targetType === "report") return `/app/studio/${encodeURIComponent(entry.targetId)}`;
   if (entry.targetType === "form") return `/app/studio/forms/${encodeURIComponent(entry.targetId)}`;
   return null;
+}
+
+function apiKeyIdOf(entry: Pick<AuditEntry, "userId" | "detail">): string | null {
+  const id = entry.userId === null ? entry.detail?.apiKeyId : undefined;
+  return typeof id === "string" && id.length <= 64 ? id : null;
+}
+
+/** "API key “Website booking”" for a row written through the clinic API, else the person. */
+function whoOf(entry: AuditEntry, lookups: ActivityLookups): string {
+  const keyId = apiKeyIdOf(entry);
+  if (keyId) {
+    const name = lookups.apiKeys?.get(keyId);
+    return name ? `${ACTIVITY_TARGETS.pms_api_key ?? "API key"} “${name}”` : (ACTIVITY_TARGETS.pms_api_key ?? "API key");
+  }
+  return personName(entry.userId, lookups);
 }
 
 function personName(userId: string | null, lookups: ActivityLookups): string {
@@ -296,7 +324,7 @@ export function presentActivity(entries: AuditEntry[], lookups: ActivityLookups)
     at: e.at,
     action: e.action,
     label: activityLabel(e.action),
-    who: personName(e.userId, lookups),
+    who: whoOf(e, lookups),
     target: targetText(e, lookups),
     targetHref: activityTargetHref(e),
     detail: describeActivityDetail(e.action, e.detail),

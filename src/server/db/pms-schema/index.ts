@@ -8,6 +8,7 @@ import { COMMS_CASCADE_DELETED_TABLES, COMMS_PRIMARY_KEYS, COMMS_TABLES, COMMS_T
 import { DIARY_PRIMARY_KEYS, DIARY_TABLES, DIARY_TENANT_TABLES, DIARY_TIMESTAMP_COLUMNS, type DiaryTables } from "./diary";
 import { FOUNDATION_PRIMARY_KEYS, FOUNDATION_TABLES, FOUNDATION_TENANT_TABLES, FOUNDATION_TIMESTAMP_COLUMNS, type FoundationTables } from "./foundation";
 import {
+  INTEGRATION_CASCADE_DELETED_TABLES,
   INTEGRATION_PRIMARY_KEYS,
   INTEGRATION_TABLES,
   INTEGRATION_TENANT_TABLES,
@@ -82,4 +83,8 @@ export const PMS_TENANT_TABLES: readonly PmsTableName[] = [
  * Per-clinic tables deleted by their parents' ON DELETE CASCADE: offboarding does not name them in its delete batch
  * (one statement fewer each against the gateway's limit). Exported and counted like the others.
  */
-export const PMS_CASCADE_DELETED_TABLES: ReadonlySet<PmsTableName> = new Set<PmsTableName>([...BILLING_CASCADE_DELETED_TABLES, ...COMMS_CASCADE_DELETED_TABLES]);
+export const PMS_CASCADE_DELETED_TABLES: ReadonlySet<PmsTableName> = new Set<PmsTableName>([
+  ...BILLING_CASCADE_DELETED_TABLES,
+  ...COMMS_CASCADE_DELETED_TABLES,
+  ...INTEGRATION_CASCADE_DELETED_TABLES,
+]);

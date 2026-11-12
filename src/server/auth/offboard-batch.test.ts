@@ -35,7 +35,9 @@ describe("offboarding batch vs the gateway's statement limit", () => {
     // 12/11/2026 (bulk email, 0146): its settings table is named, its campaigns and recipients go by cascade – 360 fit
     // (was 450 before it; still far above any clinic's member count). Past the limit the offboarding sends ordered
     // batches with the organization's tombstone last (the next test).
-    assert.ok(usersThatFit >= 360, `only ${usersThatFit} member accounts fit next to every clinic-system table`);
+    // 12/11/2026 (clinic API, 0171): its settings table is named, its keys, day counters and idempotency rows go by
+    // cascade – 270 fit (was 360). Flagged for review: the next per-clinic table should hang off an existing parent row.
+    assert.ok(usersThatFit >= 270, `only ${usersThatFit} member accounts fit next to every clinic-system table`);
   });
 
   it("only the tables that hold the clinic's rows are named – a ClinForms-only clinic sends no clinic-system statement", () => {
