@@ -47,7 +47,7 @@ export function SendMessageDialog({ open, onOpenChange, patientId, context, onSe
         <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-[rgba(15,23,42,0.45)]" />
         <DialogPrimitive.Content
           data-testid="send-message-dialog"
-          className="fixed inset-0 z-50 flex flex-col overflow-y-auto bg-white text-sm focus:outline-none md:inset-auto md:left-1/2 md:top-1/2 md:max-h-[calc(100dvh-32px)] md:w-[calc(100vw-32px)] md:max-w-[680px] md:-translate-x-1/2 md:-translate-y-1/2 md:rounded-xl md:shadow-[0_24px_48px_rgba(15,23,42,0.24)]"
+          className="fixed inset-0 z-50 flex flex-col overflow-y-auto bg-white pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] pt-[env(safe-area-inset-top)] md:p-0 text-sm focus:outline-none md:inset-auto md:left-1/2 md:top-1/2 md:max-h-[calc(100dvh-32px)] md:w-[calc(100vw-32px)] md:max-w-[680px] md:-translate-x-1/2 md:-translate-y-1/2 md:rounded-xl md:shadow-[0_24px_48px_rgba(15,23,42,0.24)]"
         >
           <div className="flex items-start justify-between gap-3 border-b border-border px-5 py-4">
             <div className="flex flex-col gap-0.5">
