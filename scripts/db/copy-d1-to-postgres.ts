@@ -23,6 +23,7 @@ import { openSqliteDatabase, type SqliteDatabaseLike } from "../../src/server/db
 import type { PgMigrationClient } from "../../src/server/db/migrations";
 import { PMS_TIMESTAMP_COLUMNS } from "../../src/server/db/pms-schema";
 import { PRIMARY_KEYS, TABLES_IN_FK_ORDER, type Database, type TableName } from "../../src/server/db/schema";
+import { isMissingSignupTable } from "../../src/server/repos/signup";
 import { pgMigrationClient } from "./migrate";
 import { readSecretsFile } from "./provision-gateway-secrets";
 
@@ -56,6 +57,11 @@ const TIMESTAMP_COLUMNS = new Set([
   "accessTokenExpiresAt",
   "refreshTokenExpiresAt",
   "lockedUntil",
+  // Self sign-up (migration 0010; timestamptz in Postgres).
+  "claimed_at",
+  "completed_at",
+  "accepted_at",
+  "confirmed_at",
   // The clinic system's own (src/server/db/pms-schema/<module>.ts *_TIMESTAMP_COLUMNS).
   ...PMS_TIMESTAMP_COLUMNS,
 ]);
@@ -136,6 +142,27 @@ export interface TableSummary {
   table: TableName;
   rows: number;
   sha256: string;
+  /** The table does not exist on that side (only ever an OPTIONAL_TABLES one): counted as empty. */
+  absent?: boolean;
+}
+
+/**
+ * Tables a database may not have yet (a newer migration not applied on one side): self sign-up's (migration 0010,
+ * behind CLINFORMS_SELF_SIGNUP). Absent on the source = empty; absent on the target = skipped, unless the source has
+ * rows for it (then the copy refuses: migrate the target first). Every other table must exist on both sides.
+ */
+export const OPTIONAL_TABLES: ReadonlySet<TableName> = new Set<TableName>(["signup_requests", "signup_acceptances"]);
+
+const EMPTY_SHA256 = createHash("sha256").digest("hex");
+
+/** summarise(), or an absent (empty) summary when an optional table does not exist on that side. */
+async function summariseOptional(source: SourceReader, table: TableName): Promise<TableSummary> {
+  try {
+    return await summarise(source, table);
+  } catch (err) {
+    if (OPTIONAL_TABLES.has(table) && isMissingSignupTable(err)) return { table, rows: 0, sha256: EMPTY_SHA256, absent: true };
+    throw err;
+  }
 }
 
 async function* readAll(source: SourceReader, table: TableName): AsyncGenerator<Row[]> {
@@ -214,28 +241,35 @@ export async function copyDatabase(
 ): Promise<CopyResult> {
   const log = options.log ?? (() => undefined);
   const sourceSummaries: TableSummary[] = [];
-  for (const table of TABLES_IN_FK_ORDER) sourceSummaries.push(await summarise(source, table));
-  for (const s of sourceSummaries) log(`source ${s.table.padEnd(18)} ${String(s.rows).padStart(7)} rows  ${s.sha256.slice(0, 16)}…`);
+  for (const table of TABLES_IN_FK_ORDER) sourceSummaries.push(await summariseOptional(source, table));
+  for (const s of sourceSummaries) {
+    log(s.absent ? `source ${s.table.padEnd(18)}  absent (not migrated there: counted as empty)` : `source ${s.table.padEnd(18)} ${String(s.rows).padStart(7)} rows  ${s.sha256.slice(0, 16)}…`);
+  }
   if (options.dryRun) return { dryRun: true, tables: sourceSummaries };
 
   const { rows: present } = await target.query(
     "select table_name from information_schema.tables where table_schema = 'public' and table_name = any($1)",
     [Array.from(TABLES_IN_FK_ORDER)],
   );
-  const missing = TABLES_IN_FK_ORDER.filter((t) => !present.some((r) => r.table_name === t));
+  const absentOnTarget = new Set(TABLES_IN_FK_ORDER.filter((t) => !present.some((r) => r.table_name === t)));
+  const missing = Array.from(absentOnTarget).filter((t) => !OPTIONAL_TABLES.has(t) || (sourceSummaries.find((s) => s.table === t)?.rows ?? 0) > 0);
   if (missing.length) throw new Error(`Target is not migrated (missing: ${missing.join(", ")}). Run npm run db:migrate with CLINFORMS_DB=postgres.`);
-  for (const table of TABLES_IN_FK_ORDER) {
+  const tables = TABLES_IN_FK_ORDER.filter((t) => !absentOnTarget.has(t));
+  for (const t of Array.from(absentOnTarget)) log(`target ${t.padEnd(18)}  absent (empty on the source): skipped`);
+  for (const table of tables) {
     const { rows } = await target.query(`select count(*)::int as n from public.${quote(table)}`);
     if (Number(rows[0].n) > 0) throw new Error(`Target table ${table} is not empty: refusing to copy into a used database.`);
   }
 
   await target.exec("begin");
   try {
-    for (const table of TABLES_IN_FK_ORDER) {
+    for (const table of tables) {
+      if (sourceSummaries.find((s) => s.table === table)?.absent) continue;
       for await (const page of readAll(source, table)) await insertRows(target, table, page);
     }
     const targetReader = pgSource(target);
     for (const expected of sourceSummaries) {
+      if (absentOnTarget.has(expected.table)) continue;
       const actual = await summarise(targetReader, expected.table);
       if (actual.rows !== expected.rows || actual.sha256 !== expected.sha256) {
         throw new Error(

@@ -161,6 +161,23 @@ export async function completeSignupRequest(ctx: DbContext, id: string): Promise
   await ctx.db.updateTable("signup_requests").set({ completed_at: nowIso(ctx), password_hash: null }).where("id", "=", id).execute();
 }
 
+/**
+ * Takes over a STALE claim (a crashed attempt: claimed long ago, no clinic, not completed) – ONE conditional statement
+ * on the claim time read before, so two takeovers at once cannot both win (the loser sees 0 rows: "busy"). The new
+ * claim time is now. Unlike claimSignupRequest it does not look at expires_at: the link was claimed before it expired.
+ */
+export async function takeOverStaleSignupClaim(ctx: DbContext, id: string, staleClaimedAt: string): Promise<boolean> {
+  const result = await ctx.db
+    .updateTable("signup_requests")
+    .set({ claimed_at: nowIso(ctx) })
+    .where("id", "=", id)
+    .where("claimed_at", "=", assertIso(staleClaimedAt, "staleClaimedAt"))
+    .where("tenant_id", "is", null)
+    .where("completed_at", "is", null)
+    .executeTakeFirst();
+  return Number(result.numUpdatedRows) === 1;
+}
+
 /** A claimed request whose clinic could not be created (nothing was written): free it for another try. */
 export async function releaseSignupClaim(ctx: DbContext, id: string): Promise<void> {
   await ctx.db.updateTable("signup_requests").set({ claimed_at: null }).where("id", "=", id).where("tenant_id", "is", null).where("completed_at", "is", null).execute();
@@ -204,7 +221,29 @@ export interface SignupAcceptance extends SignupAcceptanceInput {
   confirmedAt: string;
 }
 
+/**
+ * Records the acceptance of a sign-up – IDEMPOTENT per request (unique signup_id): when the request already has one
+ * (a retry after a later step failed, or two finishing at once) that one is returned and nothing new is written.
+ */
 export async function recordSignupAcceptance(ctx: DbContext, input: SignupAcceptanceInput): Promise<SignupAcceptance> {
+  const signupId = assertText(input.signupId, "Sign-up id", 100);
+  const existing = await findSignupAcceptanceBySignup(ctx, signupId);
+  if (existing) return existing;
+  try {
+    return await insertSignupAcceptance(ctx, input);
+  } catch (err) {
+    const raced = await findSignupAcceptanceBySignup(ctx, signupId).catch(() => null);
+    if (raced) return raced;
+    throw err;
+  }
+}
+
+export async function findSignupAcceptanceBySignup(ctx: DbContext, signupId: string): Promise<SignupAcceptance | null> {
+  const row = await ctx.db.selectFrom("signup_acceptances").selectAll().where("signup_id", "=", signupId).executeTakeFirst();
+  return row ? toAcceptance(row) : null;
+}
+
+async function insertSignupAcceptance(ctx: DbContext, input: SignupAcceptanceInput): Promise<SignupAcceptance> {
   const acceptance: SignupAcceptance = {
     id: randomId("sa"),
     tenantId: assertText(input.tenantId, "Clinic id", 63),
@@ -239,7 +278,25 @@ export async function recordSignupAcceptance(ctx: DbContext, input: SignupAccept
 
 export async function listSignupAcceptances(ctx: DbContext, tenantId: string): Promise<SignupAcceptance[]> {
   const rows = await ctx.db.selectFrom("signup_acceptances").selectAll().where("tenant_id", "=", tenantId).orderBy("confirmed_at", "asc").execute();
-  return rows.map((r) => ({
+  return rows.map(toAcceptance);
+}
+
+type AcceptanceRow = {
+  id: string;
+  tenant_id: string;
+  user_id: string;
+  signup_id: string;
+  brand: string;
+  terms_version: string;
+  dpa_version: string;
+  accepted_at: string;
+  confirmed_at: string;
+  ip_hash: string;
+  ua_hash: string;
+};
+
+function toAcceptance(r: AcceptanceRow): SignupAcceptance {
+  return {
     id: r.id,
     tenantId: r.tenant_id,
     userId: r.user_id,
@@ -251,7 +308,7 @@ export async function listSignupAcceptances(ctx: DbContext, tenantId: string): P
     confirmedAt: r.confirmed_at,
     ipHash: r.ip_hash,
     uaHash: r.ua_hash,
-  }));
+  };
 }
 
 /** A database before migration 0010 (deployed code, migration not applied yet). */

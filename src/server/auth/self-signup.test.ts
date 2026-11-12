@@ -6,6 +6,7 @@
  */
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
+import { sql } from "kysely";
 import { BANNED_TERM_PATTERNS } from "../../modules/medreport/core/wording";
 import { DPA, DPA_VERSION, dpaIsDraft, fillDpa } from "../../lib/legal/dpa";
 import {
@@ -23,8 +24,10 @@ import { authBool } from "../db/schema";
 import { createPgliteTestDb, createSqliteTestDb, type TestDb } from "../db/testing/databases";
 import { setEmailProviderForTests, signupConfirmEmail, signupExistingAccountEmail, type EmailMessage } from "../email";
 import { listAudit } from "../repos/audit";
-import { listSignupAcceptances } from "../repos/signup";
-import { checkFormStamp, confirmSignup, issueFormStamp, startSignup, viewSignupLink, type SignupDeps } from "../signup/self-signup";
+import { hitRateLimit, peekRateLimit } from "../repos/rate-limits";
+import { listSignupAcceptances, takeOverStaleSignupClaim } from "../repos/signup";
+import { ipLimitSubject, signupClientIp } from "../signup/client-ip";
+import { checkFormStamp, confirmSignup, issueFormStamp, signupHostServed, startSignup, viewSignupLink, type SignupDeps } from "../signup/self-signup";
 import { baseUrlSetting } from "./config";
 import { createAuth, type Auth } from "./create-auth";
 import { createClinic } from "./platform";
@@ -75,6 +78,19 @@ describe("self sign-up – input rules", () => {
     assert.equal(isDisposableEmail("x@larkfield-physio.co.uk"), false);
     assert.equal(isDisposableEmail("x@notmailinator.com"), false);
   });
+  it("emails: a trailing dot is the same address; invisible characters are refused and never slip past the list", () => {
+    assert.equal(normaliseSignupEmail("dana@larkfield.example."), "dana@larkfield.example");
+    assert.equal(normaliseSignupEmail("dana@larkfield.example.."), "dana@larkfield.example");
+    assert.equal(isDisposableEmail("x@mailinator.com."), true);
+    assert.equal(isDisposableEmail("x@MAILINATOR.COM."), true);
+    for (const bad of ["x@mail\u200Binator.com", "x@mailinator\u200D.com", "x\u2060y@larkfield.example", "x@larkfield\u00AD.example", "x@yop\uFEFFmail.com", "x@larkfield.example\u200B", "x@a..example", "x@.larkfield.example"]) {
+      assert.equal(normaliseSignupEmail(bad), null, JSON.stringify(bad));
+    }
+    // The list check alone (whatever reaches it) sees through them, and through full-width letters and dots.
+    assert.equal(isDisposableEmail("x@mail\u200Binator.com"), true);
+    assert.equal(isDisposableEmail("x@ｍａｉｌｉｎａｔｏｒ．ｃｏｍ"), true);
+    assert.equal(isDisposableEmail("x@mailinator\u3002com"), true);
+  });
   it("the clinic id from the name", () => {
     assert.equal(slugBaseFromClinicName("Larkfield Physio & Sports (Leeds)"), "larkfield-physio-sports-leeds");
     assert.equal(slugBaseFromClinicName("Clinique Élan"), "clinique-elan");
@@ -97,6 +113,39 @@ describe("self sign-up – input rules", () => {
     assert.match(confirm.subject, /ClinDesk/);
     assert.doesNotMatch(`${confirm.subject}${confirm.text}`, /ClinForms/);
     assert.equal(confirm.brand, "clinic");
+  });
+});
+
+describe("self sign-up – the client's address and the network the limits count", () => {
+  it("on Vercel: x-vercel-forwarded-for, then x-real-ip, then the first x-forwarded-for; elsewhere as before", () => {
+    const h = new Headers({ "x-forwarded-for": "198.51.100.7, 10.0.0.1", "x-real-ip": "198.51.100.8", "x-vercel-forwarded-for": "198.51.100.9" });
+    assert.equal(signupClientIp(h, { VERCEL: "1" }), "198.51.100.9");
+    assert.equal(signupClientIp(new Headers({ "x-forwarded-for": "198.51.100.7", "x-real-ip": "198.51.100.8" }), { VERCEL: "1" }), "198.51.100.8");
+    assert.equal(signupClientIp(new Headers({ "x-forwarded-for": "198.51.100.7, 10.0.0.1" }), { VERCEL: "1" }), "198.51.100.7");
+    assert.equal(signupClientIp(h, {}), "198.51.100.7", "off Vercel: the first x-forwarded-for entry (as clientIp())");
+    assert.equal(signupClientIp(new Headers(), {}), "local");
+  });
+  it("IPv4 as it is; IPv6 by its /64; IPv4-mapped as IPv4", () => {
+    assert.equal(ipLimitSubject("203.0.113.5"), "203.0.113.5");
+    assert.equal(ipLimitSubject("203.0.113.5:4431"), "203.0.113.5");
+    assert.equal(ipLimitSubject("2001:db8:1:2::1"), "2001:db8:1:2::/64");
+    assert.equal(ipLimitSubject("2001:0DB8:0001:0002:ffff:eeee:dddd:cccc"), "2001:db8:1:2::/64");
+    assert.equal(ipLimitSubject("[2001:db8:1:2::abcd]"), "2001:db8:1:2::/64");
+    assert.equal(ipLimitSubject("2001:db8:1:2::abcd%en0"), "2001:db8:1:2::/64");
+    assert.notEqual(ipLimitSubject("2001:db8:1:3::1"), ipLimitSubject("2001:db8:1:2::1"));
+    assert.equal(ipLimitSubject("::ffff:203.0.113.5"), "203.0.113.5");
+    assert.equal(ipLimitSubject("::1"), "0:0:0:0::/64");
+    assert.equal(ipLimitSubject("local"), "local");
+  });
+});
+
+describe("self sign-up – only where the brand's own host is served", () => {
+  it("a deployment without ClinDesk's host refuses ClinDesk sign-ups (never a link to ClinForms' host)", () => {
+    assert.equal(signupHostServed(BASE, "clinic"), true);
+    assert.equal(signupHostServed(BASE, "clinforms"), true);
+    const formsOnly = baseUrlSetting({ BETTER_AUTH_URL: FORMS });
+    assert.equal(signupHostServed(formsOnly, "clinic"), false);
+    assert.equal(signupHostServed(formsOnly, "clinforms"), true);
   });
 });
 
@@ -376,6 +425,179 @@ function defineFlow(label: string, open: () => Promise<TestDb>, dialect: "sqlite
       assert.equal(ids[0], "same-name-physio-fictional");
       assert.match(ids[1], /^same-name-physio-fictional-[a-z0-9]{4}$/);
     });
+
+    const confirmDepsFor = (over: Partial<Parameters<typeof confirmSignup>[1]> = {}) => ({
+      db: t.db,
+      auth,
+      secret: SECRET,
+      baseUrl: BASE,
+      brand: "clinic" as const,
+      headers: headersFor(DESK),
+      isPlatformAdminEmail: () => false,
+      now,
+      ...over,
+    });
+
+    it("the host is not served: refused with a message, nothing stored or sent", async () => {
+      ipCounter++;
+      const count = sent.length;
+      const out = await startSignup(form(), deps({ baseUrl: baseUrlSetting({ BETTER_AUTH_URL: FORMS }) }));
+      assert.equal(out.kind, "unavailable");
+      assert.equal(sent.length, count);
+    });
+
+    it("IPv6: one /64 is one network for the daily limit", async () => {
+      clock += 86_400_000;
+      for (let i = 1; i <= 3; i++) assert.equal((await startSignup(form(), deps({ ip: `2001:db8:${dialect.length}:77::${i}` }))).detail, "sent");
+      assert.equal((await startSignup(form(), deps({ ip: `2001:db8:${dialect.length}:77::ffff:1` }))).kind, "rate_limited");
+      assert.equal((await startSignup(form(), deps({ ip: `2001:db8:${dialect.length}:78::1` }))).detail, "sent", "the next /64 is another network");
+    });
+
+    it("the site-wide daily count alerts (log + one platform audit row) and never blocks", async () => {
+      clock += 86_400_000;
+      const ctx = { db: t.db, now };
+      const current = (await peekRateLimit(ctx, "signup:all-day", 86_400_000)).count;
+      if (SIGNUP_LIMITS.allPerDayAlert - current > 0) await hitRateLimit(ctx, "signup:all-day", 86_400_000, SIGNUP_LIMITS.allPerDayAlert - current);
+      const lines: string[] = [];
+      const info = console.info;
+      console.info = (line: unknown) => void lines.push(String(line));
+      try {
+        for (let i = 0; i < 2; i++) {
+          ipCounter++;
+          assert.equal((await startSignup(form(), deps())).detail, "sent", "a real sign-up is never blocked by the site-wide count");
+        }
+      } finally {
+        console.info = info;
+      }
+      assert.equal(lines.filter((l) => l.includes('"event":"signup.global_cap"')).length, 2);
+      const rows = await listAudit({ db: t.db }, "platform", { limit: 50 });
+      assert.equal(rows.filter((r) => r.action === "platform.signup_global_cap").length, 1, "one audit row per day");
+      clock += 86_400_000;
+    });
+
+    it("a stale claim is taken over by ONE conditional update: two at once, one clinic", async () => {
+      ipCounter++;
+      const f = form({ clinicName: "Stale Physio (fictional)" });
+      await startSignup(f, deps());
+      const token = tokenOf(lastTo(f.email as string));
+      const old = new Date(clock - 5 * 60_000).toISOString();
+      await t.db.updateTable("signup_requests").set({ claimed_at: old }).where("email", "=", f.email as string).execute();
+      const row = await t.db.selectFrom("signup_requests").select("id").where("email", "=", f.email as string).executeTakeFirstOrThrow();
+      const takeovers = await Promise.all([takeOverStaleSignupClaim({ db: t.db, now }, row.id, old), takeOverStaleSignupClaim({ db: t.db, now }, row.id, old)]);
+      assert.deepEqual(takeovers.sort(), [false, true]);
+      // Through confirmSignup: make it stale again, two tries at once.
+      await t.db.updateTable("signup_requests").set({ claimed_at: old }).where("id", "=", row.id).execute();
+      const [a, b] = await Promise.all([confirmSignup({ token, password: PASSWORD }, confirmDepsFor()), confirmSignup({ token, password: PASSWORD }, confirmDepsFor())]);
+      assert.ok([a.kind, b.kind].includes("created"), `${a.kind},${b.kind}`);
+      assert.equal((await t.db.selectFrom("organization").select("id").where("name", "=", "Stale Physio (fictional)").execute()).length, 1);
+    });
+
+    it("partial failure after the account (acceptance step): the retry records the acceptance and the audit once", async () => {
+      ipCounter++;
+      const f = form({ clinicName: "Retry Physio (fictional)" });
+      await startSignup(f, deps());
+      const token = tokenOf(lastTo(f.email as string));
+      await sql`alter table signup_acceptances rename to signup_acceptances_away`.execute(t.db);
+      try {
+        await assert.rejects(confirmSignup({ token, password: PASSWORD }, confirmDepsFor()));
+      } finally {
+        await sql`alter table signup_acceptances_away rename to signup_acceptances`.execute(t.db);
+      }
+      assert.equal((await t.db.selectFrom("user").select("id").where("email", "=", f.email as string).execute()).length, 1, "the account was made");
+      const retry = await confirmSignup({ token, password: PASSWORD }, confirmDepsFor());
+      assert.equal(retry.kind, "created", "not 'existing account' with no record");
+      if (retry.kind !== "created") return;
+      assert.equal((await listSignupAcceptances({ db: t.db }, retry.tenantId)).length, 1);
+      const audit = await listAudit({ db: t.db }, retry.tenantId, { limit: 50 });
+      assert.equal(audit.filter((a) => a.action === "clinic.self_signup").length, 1);
+      const used = await t.db.selectFrom("signup_requests").selectAll().where("email", "=", f.email as string).executeTakeFirstOrThrow();
+      assert.ok(used.completed_at);
+      assert.equal(used.password_hash, null);
+      assert.equal((await confirmSignup({ token, password: PASSWORD }, confirmDepsFor())).kind, "invalid", "then the link is used up");
+      assert.equal(await recordAgain(retry.tenantId), 1);
+    });
+
+    const recordAgain = async (tenantId: string) => (await listSignupAcceptances({ db: t.db }, tenantId)).length;
+
+    it("partial failure after the account (membership step): the retry joins the clinic and records the acceptance", async () => {
+      ipCounter++;
+      const f = form({ clinicName: "Join Retry Physio (fictional)" });
+      await startSignup(f, deps());
+      const token = tokenOf(lastTo(f.email as string));
+      const flaky = {
+        ...auth,
+        api: {
+          ...auth.api,
+          acceptInvitation: async () => {
+            throw new Error("fictional failure");
+          },
+        },
+      } as unknown as Auth;
+      assert.equal((await confirmSignup({ token, password: PASSWORD }, confirmDepsFor({ auth: flaky }))).kind, "failed");
+      assert.equal((await confirmSignup({ token, password: "not the right password" }, confirmDepsFor())).kind, "wrong_password");
+      const retry = await confirmSignup({ token, password: PASSWORD }, confirmDepsFor());
+      assert.equal(retry.kind, "created");
+      if (retry.kind !== "created") return;
+      const member = await t.db.selectFrom("member").select("role").where("userId", "=", retry.userId).executeTakeFirstOrThrow();
+      assert.equal(member.role, "owner");
+      assert.equal((await listSignupAcceptances({ db: t.db }, retry.tenantId)).length, 1);
+      const session = await auth.api.getSession({ headers: new Headers({ cookie: retry.cookie, host: "clinic.localhost:3000" }), query: { disableCookieCache: true } });
+      assert.equal(session?.user.id, retry.userId);
+    });
+
+    if (dialect === "sqlite") {
+      it("timing: a new address, an existing account and a platform address take the same time (email after the answer)", async () => {
+        const owner = "timing.owner@riverside.example";
+        await createClinic(t.db, { name: "Timing (fictional)", slug: "timing-ss", ownerEmail: owner, appOrigin: FORMS, linkSecret: SECRET, sendEmail: false });
+        await auth.api.signUpEmail({ body: { email: owner, password: PASSWORD, name: "Tim Ing" } });
+        // A slow email provider (as a real one): it must not show in the answer's time.
+        const slowSent: EmailMessage[] = [];
+        setEmailProviderForTests({
+          name: "log",
+          async send(message) {
+            await new Promise((r) => setTimeout(r, 40));
+            slowSent.push(message);
+            return { status: "sent", provider: "log" };
+          },
+        });
+        const pending: Promise<void>[] = [];
+        const defer = (task: () => Promise<void>) => void pending.push(task());
+        const times: Record<"new" | "existing" | "platform", number[]> = { new: [], existing: [], platform: [] };
+        try {
+          const run = async (kind: keyof typeof times, email: string) => {
+            ipCounter++;
+            const f = form({ email });
+            const t0 = process.hrtime.bigint();
+            const out = await startSignup(f, deps({ defer }));
+            times[kind].push(Number(process.hrtime.bigint() - t0) / 1e6);
+            assert.equal(out.kind, "check_email");
+          };
+          for (let round = 0; round < 7; round++) {
+            clock += 86_400_000; // a fresh day: the per-address limit never kicks in
+            await run("new", `timing.new.${round}.${dialect}@larkfield-physio.example`);
+            await run("existing", owner);
+            await run("platform", "staff@platform.example");
+          }
+          await Promise.all(pending);
+        } finally {
+          setEmailProviderForTests({
+            name: "log",
+            async send(message) {
+              sent.push(message);
+              return { status: "sent", provider: "log" };
+            },
+          });
+        }
+        const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
+        const m = { new: median(times.new), existing: median(times.existing), platform: median(times.platform) };
+        const ratio = Math.max(m.new, m.existing, m.platform) / Math.min(m.new, m.existing, m.platform);
+        assert.ok(ratio < 1.5, `medians ms ${JSON.stringify(m)} (ratio ${ratio.toFixed(2)})`);
+        // The deferred work still happened: 7 links, 7 "sign in" emails, nothing for the platform address.
+        assert.equal(slowSent.filter((x) => x.kind === "signup_confirm").length, 7);
+        assert.equal(slowSent.filter((x) => x.kind === "signup_existing_account" && x.to.email === owner).length, 7);
+        assert.equal(slowSent.filter((x) => x.to.email === "staff@platform.example").length, 0);
+      });
+    }
   });
 }
 

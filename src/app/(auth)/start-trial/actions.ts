@@ -38,7 +38,7 @@ export async function startTrial(_prev: StartTrialState, form: FormData): Promis
     );
     if (out.kind === "check_email") return { status: "sent" };
     if (out.kind === "expired") return { status: "error", error: SIGNUP_COPY.formExpired, values };
-    if (out.kind === "rate_limited") return { status: "error", error: out.message, values };
+    if (out.kind === "rate_limited" || out.kind === "unavailable") return { status: "error", error: out.message, values };
     return { status: "error", error: "Please check the highlighted details.", fieldErrors: out.fieldErrors, values };
   } catch {
     return { status: "error", error: ACCOUNT_ERRORS.generic, values };

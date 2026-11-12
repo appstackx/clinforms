@@ -177,6 +177,7 @@ export const ACTIVITY_LABELS: Readonly<Record<string, string>> = {
   "platform.package_set": "Package set",
   "platform.package_removed": "Package removed",
   "platform.usage_export": "Usage downloaded (CSV)",
+  "platform.signup_global_cap": "Online sign-ups passed today's alert level",
   "platform.owner_reset_link": "Owner password reset link created",
   "platform.demo_on": "Demo clinic switched on",
   "platform.demo_off": "Demo clinic switched off",
@@ -402,6 +403,8 @@ export function describeActivityDetail(action: string, detail: Record<string, un
     case "clinic.package_removed":
     case "platform.package_removed":
       return withClinic(action, detail, null);
+    case "platform.signup_global_cap":
+      return typeof detail.threshold === "number" ? `More than ${detail.threshold} today` : null;
     case "platform.usage_export":
       return typeof detail.rows === "number" ? `${detail.rows} ${detail.rows === 1 ? "clinic" : "clinics"}` : null;
     default:

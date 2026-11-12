@@ -43,6 +43,7 @@ import { tenantSlugProblem } from "../auth/tenant";
 import type { Database } from "../db/schema";
 import { deliverEmail, signupConfirmEmail, signupExistingAccountEmail } from "../email";
 import { logAuthEvent } from "../email/log";
+import { PLATFORM_AUDIT_TENANT } from "../admin/platform-console";
 import { appendAudit } from "../repos/audit";
 import type { DbContext } from "../repos/context";
 import { hitRateLimit } from "../repos/rate-limits";
@@ -55,8 +56,10 @@ import {
   recordSignupAcceptance,
   releaseSignupClaim,
   setSignupTenant,
+  takeOverStaleSignupClaim,
   type SignupRequest,
 } from "../repos/signup";
+import { ipLimitSubject } from "./client-ip";
 
 const DAY_MS = 86_400_000;
 const HOUR_MS = 3_600_000;
@@ -75,6 +78,14 @@ export interface SignupDeps {
   userAgent: string;
   isPlatformAdminEmail: (email: string) => boolean;
   now?: () => Date;
+  /**
+   * Runs work after the answer has gone (the record and email that differ between a new address and a known one):
+   * Vercel's waitUntil in a request (src/server/signup/request.ts). Absent: the work runs before answering (tests,
+   * scripts) – then `minResponse` pads the answer.
+   */
+  defer?: (task: () => Promise<void>) => void;
+  /** Without `defer`: the answer takes at least `ms` plus a random 0–`jitterMs` (hides what the work took). */
+  minResponse?: { ms: number; jitterMs: number };
 }
 
 function nowOf(deps: { now?: () => Date }): Date {
@@ -141,7 +152,9 @@ export type StartSignupOutcome =
   | { kind: "check_email" }
   | { kind: "invalid"; fieldErrors: Record<string, string> }
   | { kind: "expired" }
-  | { kind: "rate_limited"; message: string };
+  | { kind: "rate_limited"; message: string }
+  /** This deployment does not serve the brand's own host: no link could open on it (never one to the other brand). */
+  | { kind: "unavailable"; message: string };
 
 /** What happened behind "check_email" – for tests and logs only, never shown. */
 export type StartSignupDetail = "sent" | "existing_account" | "spam" | "too_fast" | "address_limit" | "platform_address" | "send_failed";
@@ -154,7 +167,48 @@ async function overLimit(ctx: DbContext, key: string, windowMs: number, max: num
   }
 }
 
+/**
+ * Whether the deployment serves `brand`'s own host, i.e. a link for it opens on that brand (linkTarget). When it does
+ * not (e.g. ClinDesk's host is not in CLINFORMS_AUTH_ORIGINS) sign-up refuses to start for that brand rather than
+ * email a link to the other brand's host – which would only say "this link belongs to ClinDesk" (a loop).
+ */
+export function signupHostServed(baseUrl: BaseUrlSetting, brand: BrandId): boolean {
+  try {
+    return linkTarget(baseUrl, brand).brand === brand;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The site-wide daily count: an alert, never a block (SIGNUP_LIMITS.allPerDayAlert). Every sign-up above the threshold
+ * logs `signup.global_cap`; the first one of the day also writes a platform audit row (shown on /app/platform).
+ */
+async function countSiteWide(ctx: DbContext, brand: BrandId): Promise<void> {
+  let count: number;
+  try {
+    count = (await hitRateLimit(ctx, "signup:all-day", DAY_MS)).count;
+  } catch {
+    return;
+  }
+  if (count <= SIGNUP_LIMITS.allPerDayAlert) return;
+  logAuthEvent("signup.global_cap", { brand, count, threshold: SIGNUP_LIMITS.allPerDayAlert });
+  if (count !== SIGNUP_LIMITS.allPerDayAlert + 1) return;
+  try {
+    await appendAudit(ctx, PLATFORM_AUDIT_TENANT, {
+      action: "platform.signup_global_cap",
+      targetType: "signup",
+      detail: { brand, threshold: SIGNUP_LIMITS.allPerDayAlert },
+    });
+  } catch {
+    // the log line above is the alert of record; the audit row is a convenience
+  }
+}
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
 export async function startSignup(raw: StartSignupInput, deps: SignupDeps): Promise<StartSignupOutcome & { detail?: StartSignupDetail }> {
+  const startedMs = Date.now(); // the real clock (deps.now may be a test clock): for the minimum response time
   const quiet = (detail: StartSignupDetail) => {
     logAuthEvent("signup.start", { brand: deps.brand, outcome: detail });
     return { kind: "check_email" as const, detail };
@@ -165,8 +219,15 @@ export async function startSignup(raw: StartSignupInput, deps: SignupDeps): Prom
   const stamp = checkFormStamp(deps.secret, deps.brand, String(raw.stamp ?? ""), now);
   if (stamp === "expired") return { kind: "expired" };
   if (stamp === "too_fast") return quiet("too_fast");
+  const { origin, brand } = linkTarget(deps.baseUrl, deps.brand);
+  if (brand !== deps.brand) {
+    logAuthEvent("signup.refused", { brand: deps.brand, reason: "brand_host_not_served" });
+    return { kind: "unavailable", message: SIGNUP_COPY.hostNotServed };
+  }
 
-  const ipKey = keyedHash(deps.secret, "ip", deps.ip || "unknown");
+  // Limits count the network: an IPv4 address, an IPv6 /64 (ipLimitSubject). The stored hash is the full address's.
+  const ipHash = keyedHash(deps.secret, "ip", deps.ip || "unknown");
+  const ipKey = keyedHash(deps.secret, "ip", ipLimitSubject(deps.ip) || "unknown");
   if (await overLimit(ctx, `signup:attempt:${ipKey}`, HOUR_MS, SIGNUP_LIMITS.attemptsPerIpPerHour)) {
     return { kind: "rate_limited", message: SIGNUP_COPY.tooManyAttempts };
   }
@@ -189,48 +250,84 @@ export async function startSignup(raw: StartSignupInput, deps: SignupDeps): Prom
   if (raw.accept !== "on" && raw.accept !== true && raw.accept !== "true") fieldErrors.accept = SIGNUP_COPY.mustAccept;
   if (Object.keys(fieldErrors).length > 0 || !email) return { kind: "invalid", fieldErrors };
 
+  // From here every path does the SAME work before answering, so the time taken says nothing about the address:
+  // the password is always hashed, the account is always looked up, and the writes and emails that differ run after
+  // the answer (deps.defer) – or, where that is not available, the answer waits for a minimum time with jitter.
+  const passwordHash = await hashPassword(password);
+
   // Sign-ups per network per day (checked before anything about the address, so it cannot be used to probe one).
   if (await overLimit(ctx, `signup:ip-day:${ipKey}`, DAY_MS, SIGNUP_LIMITS.perIpPerDay)) {
     logAuthEvent("signup.refused", { brand: deps.brand, reason: "ip_daily_limit" });
     return { kind: "rate_limited", message: SIGNUP_COPY.tooManyFromNetwork };
   }
-  if (await overLimit(ctx, "signup:all-day", DAY_MS, SIGNUP_LIMITS.allPerDay)) {
-    logAuthEvent("signup.refused", { brand: deps.brand, reason: "global_daily_limit" });
-    return { kind: "rate_limited", message: SIGNUP_COPY.tooManyFromNetwork };
-  }
+  await countSiteWide(ctx, deps.brand);
   const emailKey = keyedHash(deps.secret, "email", email);
-  if (await overLimit(ctx, `signup:email-day:${emailKey}`, DAY_MS, SIGNUP_LIMITS.perEmailPerDay)) return quiet("address_limit");
-  // A platform administrator's account only ever comes from a platform invitation (docs/auth.md §5).
-  if (deps.isPlatformAdminEmail(email)) return quiet("platform_address");
-
-  const { origin, brand } = linkTarget(deps.baseUrl, deps.brand);
+  const addressLimited = await overLimit(ctx, `signup:email-day:${emailKey}`, DAY_MS, SIGNUP_LIMITS.perEmailPerDay);
   const existing = await deps.db.selectFrom("user").select("id").where("email", "=", email).executeTakeFirst();
-  if (existing) {
-    const sent = await deliverEmail(
-      signupExistingAccountEmail({ to: { email }, brand, signInLink: `${origin}/login`, resetLink: `${origin}/reset-password` }),
-    );
-    return quiet(sent.status === "failed" ? "send_failed" : "existing_account");
-  }
+  // A platform administrator's account only ever comes from a platform invitation (docs/auth.md §5).
+  const platformAddress = deps.isPlatformAdminEmail(email);
 
-  const token = randomBytes(32).toString("base64url");
-  const expiresAt = new Date(now.getTime() + SIGNUP_LIMITS.linkTtlMs).toISOString();
-  const request = await createSignupRequest(ctx, {
-    tokenHash: tokenHash(token),
-    brand: deps.brand,
-    clinicName,
-    ownerName,
-    email,
-    passwordHash: await hashPassword(password),
-    termsVersion: termsVersion(deps.brand),
-    dpaVersion: dpaVersion(),
-    ipHash: ipKey,
-    uaHash: keyedHash(deps.secret, "ua", String(deps.userAgent ?? "").slice(0, 512)),
-    expiresAt,
-  });
-  const link = `${origin}${SIGNUP_CONFIRM_PATH}?token=${encodeURIComponent(token)}`;
-  const sent = await deliverEmail(signupConfirmEmail({ to: { email, name: ownerName }, brand, clinicName, link, expiresAt }));
-  logAuthEvent("signup.requested", { brand: deps.brand, request: request.id, email: sent.status });
-  return quiet(sent.status === "failed" ? "send_failed" : "sent");
+  let detail: StartSignupDetail;
+  let work: (() => Promise<StartSignupDetail>) | null = null;
+  if (addressLimited) detail = "address_limit";
+  else if (platformAddress) detail = "platform_address";
+  else if (existing) {
+    detail = "existing_account";
+    work = async () => {
+      const sent = await deliverEmail(
+        signupExistingAccountEmail({ to: { email }, brand, signInLink: `${origin}/login`, resetLink: `${origin}/reset-password` }),
+      );
+      return sent.status === "failed" ? "send_failed" : "existing_account";
+    };
+  } else {
+    detail = "sent";
+    work = async () => {
+      const token = randomBytes(32).toString("base64url");
+      const expiresAt = new Date(now.getTime() + SIGNUP_LIMITS.linkTtlMs).toISOString();
+      const request = await createSignupRequest(ctx, {
+        tokenHash: tokenHash(token),
+        brand: deps.brand,
+        clinicName,
+        ownerName,
+        email,
+        passwordHash,
+        termsVersion: termsVersion(deps.brand),
+        dpaVersion: dpaVersion(),
+        ipHash,
+        uaHash: keyedHash(deps.secret, "ua", String(deps.userAgent ?? "").slice(0, 512)),
+        expiresAt,
+      });
+      const link = `${origin}${SIGNUP_CONFIRM_PATH}?token=${encodeURIComponent(token)}`;
+      const sent = await deliverEmail(signupConfirmEmail({ to: { email, name: ownerName }, brand, clinicName, link, expiresAt }));
+      logAuthEvent("signup.requested", { brand: deps.brand, request: request.id, email: sent.status });
+      return sent.status === "failed" ? "send_failed" : "sent";
+    };
+  }
+  if (work) {
+    const run = work;
+    const guarded = async (): Promise<StartSignupDetail> => {
+      try {
+        return await run();
+      } catch (err) {
+        // Never a different answer (that would tell a new address from a known one): logged, and the person can retry.
+        logAuthEvent("signup.failed", { brand: deps.brand, error: err instanceof Error ? err.name : "error" });
+        return "send_failed";
+      }
+    };
+    if (deps.defer) {
+      deps.defer(async () => {
+        await guarded();
+      });
+    } else {
+      detail = await guarded();
+    }
+  }
+  if (!deps.defer && deps.minResponse) {
+    const target = deps.minResponse.ms + Math.floor(Math.random() * Math.max(0, deps.minResponse.jitterMs));
+    const left = target - (Date.now() - startedMs);
+    if (left > 0) await sleep(left);
+  }
+  return quiet(detail);
 }
 
 /* ------------------------------------------------------------------ the link */
@@ -319,6 +416,10 @@ export async function confirmSignup(input: { token: unknown; password: unknown }
   }
   const existingUser = await deps.db.selectFrom("user").select("id").where("email", "=", email).executeTakeFirst();
   if (existingUser) {
+    // This sign-up's own account, made by an earlier try that failed after it (membership, acceptance, audit): finish
+    // that try – the acceptance must be recorded – instead of ending at "you already have an account".
+    const resumed = await resumeAfterAccount(request, existingUser.id, password, deps, ctx);
+    if (resumed) return resumed;
     // An account was made for this address meanwhile (e.g. an invitation): never a second one.
     await closeSignupRequest(ctx, request.id);
     return { kind: "existing_account" };
@@ -329,8 +430,8 @@ export async function confirmSignup(input: { token: unknown; password: unknown }
     if (!(await claimSignupRequest(ctx, request.id))) return { kind: "busy" };
   } else if (!request.tenantId) {
     if (now.getTime() - Date.parse(request.claimedAt) < STALE_CLAIM_MS) return { kind: "busy" };
-    await releaseSignupClaim(ctx, request.id);
-    if (!(await claimSignupRequest(ctx, request.id))) return { kind: "busy" };
+    // ONE conditional update on the claim time we read: of two takeovers at once only one wins.
+    if (!(await takeOverStaleSignupClaim(ctx, request.id, request.claimedAt))) return { kind: "busy" };
   }
   request = { ...request, claimedAt: request.claimedAt ?? now.toISOString() };
 
@@ -394,6 +495,17 @@ export async function confirmSignup(input: { token: unknown; password: unknown }
     return { kind: "failed" };
   }
 
+  const acceptanceId = await finishSignup(ctx, request, tenantId, organizationId, userId);
+  logAuthEvent("signup.completed", { brand: request.brand, tenant: tenantId });
+  return { kind: "created", tenantId, userId, acceptanceId, brand: request.brand, cookie };
+}
+
+/**
+ * The records of a finished sign-up, each step idempotent so a retry after any failure completes them: the acceptance
+ * (one per request), the "clinic.self_signup" audit row (once per clinic), then the request marked done – last, so a
+ * failure before it leaves the link usable for the retry.
+ */
+async function finishSignup(ctx: DbContext, request: SignupRequest, tenantId: string, organizationId: string, userId: string): Promise<string> {
   const acceptance = await recordSignupAcceptance(ctx, {
     tenantId,
     userId,
@@ -405,14 +517,75 @@ export async function confirmSignup(input: { token: unknown; password: unknown }
     ipHash: request.ipHash,
     uaHash: request.uaHash,
   });
+  const audited = await ctx.db
+    .selectFrom("audit_log")
+    .select("id")
+    .where("tenant_id", "=", tenantId)
+    .where("action", "=", "clinic.self_signup")
+    .limit(1)
+    .executeTakeFirst();
+  if (!audited) {
+    await appendAudit(ctx, tenantId, {
+      userId,
+      action: "clinic.self_signup",
+      targetType: "organization",
+      targetId: organizationId,
+      detail: { brand: request.brand, termsVersion: request.termsVersion, dpaVersion: request.dpaVersion, acceptance: acceptance.id },
+    });
+  }
   await completeSignupRequest(ctx, request.id);
-  await appendAudit(ctx, tenantId, {
-    userId,
-    action: "clinic.self_signup",
-    targetType: "organization",
-    targetId: organizationId,
-    detail: { brand: request.brand, termsVersion: request.termsVersion, dpaVersion: request.dpaVersion, acceptance: acceptance.id },
-  });
-  logAuthEvent("signup.completed", { brand: request.brand, tenant: tenantId });
-  return { kind: "created", tenantId, userId, acceptanceId: acceptance.id, brand: request.brand, cookie };
+  return acceptance.id;
+}
+
+/**
+ * A retry after the owner's account was made but a later step failed. Only when the request already created its
+ * clinic, the account holds the owner membership of that clinic or that clinic's open owner invitation is for it,
+ * and the password typed (already checked against the request's hash) signs the account in. Then: the membership if
+ * missing, and finishSignup(). Anything else: null (the caller answers "existing account" as before).
+ */
+async function resumeAfterAccount(
+  request: SignupRequest,
+  userId: string,
+  password: string,
+  deps: ConfirmSignupDeps,
+  ctx: DbContext,
+): Promise<ConfirmSignupOutcome | null> {
+  const tenantId = request.tenantId;
+  if (!tenantId || !request.claimedAt) return null;
+  const org = await deps.db.selectFrom("organization").select("id").where("slug", "=", tenantId).executeTakeFirst();
+  if (!org) return null;
+  const member = await deps.db.selectFrom("member").select(["id", "role"]).where("organizationId", "=", org.id).where("userId", "=", userId).executeTakeFirst();
+  const invitation = member
+    ? null
+    : await deps.db
+        .selectFrom("invitation")
+        .select("id")
+        .where("organizationId", "=", org.id)
+        .where("email", "=", request.email)
+        .where("status", "=", "pending")
+        .where("role", "=", "owner")
+        .executeTakeFirst();
+  if (member ? member.role !== "owner" : !invitation) return null;
+
+  let cookie = "";
+  try {
+    const signIn = await deps.auth.api.signInEmail({ body: { email: request.email, password }, headers: deps.headers, returnHeaders: true });
+    // Two-step already on for the account: a challenge, not a session.
+    cookie = (signIn.response as { twoFactorRedirect?: boolean } | null)?.twoFactorRedirect ? "" : cookieHeaderFromSetCookie(signIn.headers);
+    if (invitation) {
+      if (!cookie) return null;
+      const asOwner = new Headers(deps.headers);
+      asOwner.set("cookie", cookie);
+      await deps.auth.api.acceptInvitation({ body: { invitationId: invitation.id }, headers: asOwner });
+      await deps.auth.api.getSession({ headers: asOwner, query: { disableCookieCache: true } });
+    }
+  } catch (err) {
+    logAuthEvent("signup.resume_failed", { tenant: tenantId, error: err instanceof Error ? err.name : "error" });
+    return null;
+  }
+  const acceptanceId = await finishSignup(ctx, request, tenantId, org.id, userId);
+  logAuthEvent("signup.completed", { brand: request.brand, tenant: tenantId, resumed: true });
+  // No session (e.g. two-step already switched on for the account): the records are made; the person signs in.
+  if (!cookie) return { kind: "existing_account" };
+  return { kind: "created", tenantId, userId, acceptanceId, brand: request.brand, cookie };
 }

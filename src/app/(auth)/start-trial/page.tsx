@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { AuthShell, TextLink } from "@/components/account/shell";
+import { AuthShell, Notice, TextLink } from "@/components/account/shell";
 import { SIGNUP_COPY } from "@/lib/self-signup";
 import { authSecret } from "@/server/auth/config";
 import { currentBrand } from "@/server/brand";
-import { signupBrandForPage } from "@/server/signup/request";
+import { signupBrandForPage, signupHostServedForPage } from "@/server/signup/request";
 import { issueFormStamp } from "@/server/signup/self-signup";
 import { StartTrialForm } from "./form";
 
@@ -19,6 +19,14 @@ export default function StartTrialPage() {
   const brand = signupBrandForPage();
   if (!brand) notFound();
   const shown = currentBrand();
+  if (!signupHostServedForPage(brand)) {
+    // This deployment cannot open a link on the brand's own host: no form (never a link to the other brand's host).
+    return (
+      <AuthShell brand={shown} title={SIGNUP_COPY.title} footer={<TextLink href="/login">Sign in</TextLink>}>
+        <Notice tone="warning">{SIGNUP_COPY.hostNotServed}</Notice>
+      </AuthShell>
+    );
+  }
   return (
     <AuthShell
       brand={shown}

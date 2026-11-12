@@ -39,6 +39,7 @@ import {
   recordSignupAcceptance,
   releaseSignupClaim,
   setSignupTenant,
+  takeOverStaleSignupClaim,
 } from "../signup";
 
 export interface SuiteDb {
@@ -536,7 +537,20 @@ export function defineRepoSuite(label: string, factory: () => Promise<SuiteDb>):
         (await listSignupAcceptances(ctx, "larkfield-physio")).map((a) => [a.id, a.userId, a.termsVersion, a.dpaVersion, a.acceptedAt]),
         [[acc.id, "user-1", base.termsVersion, base.dpaVersion, req.createdAt]],
       );
-      await assert.rejects(recordSignupAcceptance(ctx, { ...acc, signupId: req.id }), "one acceptance per sign-up");
+      // One acceptance per sign-up: recording it again (a retry) returns the first one and writes nothing.
+      const again = await recordSignupAcceptance(ctx, { ...acc, userId: "user-1", signupId: req.id });
+      assert.equal(again.id, acc.id);
+      assert.equal((await listSignupAcceptances(ctx, "larkfield-physio")).length, 1);
+      // A stale claim is taken over by one conditional update on the claim time read: the second taker loses.
+      const stale = await createSignupRequest(ctx, { ...base, tokenHash: "tok-stale", expiresAt: iso(86_400_000) });
+      assert.equal(await claimSignupRequest(ctx, stale.id), true);
+      const claimedAt = (await getSignupRequest(ctx, stale.id))?.claimedAt as string;
+      tick(5 * 60_000);
+      assert.equal(await takeOverStaleSignupClaim(ctx, stale.id, claimedAt), true);
+      assert.equal(await takeOverStaleSignupClaim(ctx, stale.id, claimedAt), false, "the claim time moved on: a second takeover fails");
+      await setSignupTenant(ctx, stale.id, "stale-physio");
+      const newer = (await getSignupRequest(ctx, stale.id))?.claimedAt as string;
+      assert.equal(await takeOverStaleSignupClaim(ctx, stale.id, newer), false, "never once a clinic exists");
       // An expired link cannot be claimed; closing one clears its password hash.
       const old = await createSignupRequest(ctx, { ...base, tokenHash: "tok-2", expiresAt: iso(1000) });
       tick(2000);

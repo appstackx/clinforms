@@ -7,7 +7,7 @@ import { baseUrlSetting, brandOrigin } from "@/server/auth/config";
 import { getDb } from "@/server/db";
 import { ukDateTime } from "@/server/email/templates";
 import { currentBrand } from "@/server/brand";
-import { signupBrandForPage } from "@/server/signup/request";
+import { signupBrandForPage, signupHostServedForPage } from "@/server/signup/request";
 import { viewSignupLink } from "@/server/signup/self-signup";
 import { ConfirmTrialForm } from "./form";
 
@@ -24,6 +24,16 @@ export default async function ConfirmTrialPage({ searchParams }: { searchParams:
   const shown = currentBrand();
   const token = String(searchParams.token ?? "");
   const view = await viewSignupLink(getDb(), token, brand);
+  if (view.kind === "wrong_host" && !signupHostServedForPage(view.brand)) {
+    // The link's brand host is not served here: "continue there" would come straight back to this page (a loop).
+    return (
+      <AuthShell brand={shown} title="Link not available" footer={<TextLink href="/login">Sign in</TextLink>}>
+        <Notice tone="warning">
+          This link belongs to {BRANDS[view.brand].productName}. {SIGNUP_COPY.hostNotServed}
+        </Notice>
+      </AuthShell>
+    );
+  }
   if (view.kind === "wrong_host") {
     const origin = brandOrigin(baseUrlSetting(), view.brand);
     return (

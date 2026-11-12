@@ -63,8 +63,12 @@ export const SIGNUP_LIMITS = {
   perEmailPerDay: 3,
   /** Every attempt (valid or not) per IP address per hour. */
   attemptsPerIpPerHour: 20,
-  /** Sign-ups site-wide per day (a ceiling on the emails a flood could send). */
-  allPerDay: 200,
+  /**
+   * Sign-ups site-wide per day above which an ALERT is raised (log line `signup.global_cap` each time, one platform
+   * audit row "platform.signup_global_cap" per day) – it never blocks: a flood from many networks would otherwise lock
+   * out real clinics. The per-IP (IPv6: per /64), per-address and per-hour limits stay the brakes.
+   */
+  allPerDayAlert: 200,
   /** A person cannot fill the form in less (bots do). */
   minFillMs: 3000,
   /** The form's time stamp is good for this long (then the page is reloaded). */
@@ -114,9 +118,34 @@ export function ownerNameProblem(name: string): string | null {
 
 const EMAIL = /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,63}$/;
 
-/** Lower-cased, trimmed address, or null when it is not a plausible email address. */
+/**
+ * Invisible or formatting characters an address must never contain: control and format characters (zero-width
+ * space / joiners, word joiner, bidi marks, soft hyphen, BOM, tags), private use, unusual spaces, Hangul fillers and
+ * variation selectors. They make one address look like another (and slip past the disposable-domain list).
+ */
+// Built with RegExp (see CLINIC_NAME_CHARS).
+const INVISIBLE = new RegExp(
+  "[\\p{Cc}\\p{Cf}\\p{Co}\\p{Cs}\\p{Zl}\\p{Zp}\\u00A0\\u034F\\u115F\\u1160\\u17B4\\u17B5\\u180B-\\u180F\\u2000-\\u200A\\u202F\\u205F\\u3000\\u3164\\uFE00-\\uFE0F\\uFFA0\\u{E0100}-\\u{E01EF}]",
+  "u",
+);
+const INVISIBLE_ALL = new RegExp(INVISIBLE.source, "gu");
+
+/** Whether a value contains an invisible or formatting character (INVISIBLE). */
+export function hasInvisibleChars(value: string): boolean {
+  return INVISIBLE.test(value);
+}
+
+/**
+ * Lower-cased, trimmed address, or null when it is not a plausible email address. Refused: invisible or formatting
+ * characters anywhere (after trimming the ends), an empty label in the domain ("a..b"). The domain's trailing dot(s)
+ * (the DNS root, "clinic.example.") are dropped, so "x@clinic.example." and "x@clinic.example" are one address.
+ */
 export function normaliseSignupEmail(value: unknown): string | null {
-  const email = String(value ?? "").trim().toLowerCase();
+  const trimmed = String(value ?? "").trim().toLowerCase();
+  if (hasInvisibleChars(trimmed)) return null;
+  const email = trimmed.replace(/\.+$/, "");
+  const domain = email.slice(email.lastIndexOf("@") + 1);
+  if (domain.startsWith(".") || domain.includes("..")) return null;
   return email.length <= 254 && EMAIL.test(email) ? email : null;
 }
 
@@ -178,8 +207,24 @@ export const DISPOSABLE_EMAIL_DOMAINS: ReadonlySet<string> = new Set([
   "yopmail.net",
 ]);
 
+/**
+ * The domain as the list compares it: compatibility-normalised (full-width letters), invisible characters removed,
+ * the other dots of IDNA (。．｡) read as ".", lower case, no trailing dot(s).
+ */
+export function comparableEmailDomain(email: string): string {
+  const at = email.lastIndexOf("@");
+  return email
+    .slice(at + 1)
+    .normalize("NFKC")
+    .replace(INVISIBLE_ALL, "")
+    .replace(/[\u3002\uFF0E\uFF61]/g, ".")
+    .toLowerCase()
+    .trim()
+    .replace(/\.+$/, "");
+}
+
 export function isDisposableEmail(email: string): boolean {
-  const domain = email.slice(email.lastIndexOf("@") + 1).toLowerCase();
+  const domain = comparableEmailDomain(email);
   if (!domain) return false;
   const parts = domain.split(".");
   for (let i = 0; i < parts.length - 1; i++) if (DISPOSABLE_EMAIL_DOMAINS.has(parts.slice(i).join("."))) return true;
@@ -218,4 +263,5 @@ export const SIGNUP_COPY = {
   linkBusy: "This link is being used right now. Wait a moment and reload the page.",
   wrongPassword: "That password does not match the one you chose when you signed up.",
   alreadyHaveAccount: "An account already exists for this email address. Sign in instead.",
+  hostNotServed: "Sign-up is not available on this website yet. Please contact us to start a trial.",
 } as const;
