@@ -37,7 +37,7 @@ export function SideDrawer({ open, onOpenChange, title, eyebrow, meta, children,
           {...returnFocus}
           aria-describedby={undefined}
           className={cn(
-            "fixed inset-y-0 right-0 z-50 flex h-full w-full max-w-[400px] flex-col bg-white text-sm shadow-[-12px_0_32px_rgba(15,23,42,0.14)] focus:outline-none data-[state=open]:animate-in data-[state=open]:slide-in-from-right motion-reduce:data-[state=open]:animate-none",
+            "fixed inset-y-0 right-0 z-50 flex h-full w-full max-w-[400px] flex-col bg-white pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] text-sm shadow-[-12px_0_32px_rgba(15,23,42,0.14)] focus:outline-none data-[state=open]:animate-in data-[state=open]:slide-in-from-right motion-reduce:data-[state=open]:animate-none",
             className,
           )}
         >

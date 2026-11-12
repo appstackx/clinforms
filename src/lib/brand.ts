@@ -72,6 +72,13 @@ export interface Brand {
    * (01/11/2026, V3): ClinForms' teal; the clinic brand's coral tape (#C4432B, the accent of its mark and website).
    */
   themeColor: string;
+  /**
+   * The installable staff app (12/11/2026, tracker xt05 "Phone app – installable web app first"): null = this brand's hosts
+   * advertise no app (no manifest, no service worker, no install hint). Otherwise the web app manifest's names and splash
+   * background (src/lib/pwa/manifest.ts); the app is the clinic area, so only the clinic brand has one – ClinForms' hosts
+   * never advertise ClinDesk's app.
+   */
+  installableApp: { name: string; shortName: string; backgroundColor: string } | null;
 }
 
 export const BRANDS: Readonly<Record<BrandId, Brand>> = {
@@ -88,6 +95,7 @@ export const BRANDS: Readonly<Record<BrandId, Brand>> = {
     contactEmail: "hello@clinforms.co.uk",
     icons: null,
     themeColor: "#0D9488",
+    installableApp: null,
   },
   clinic: {
     id: "clinic",
@@ -102,6 +110,8 @@ export const BRANDS: Readonly<Record<BrandId, Brand>> = {
     contactEmail: "hello@clindesk.co.uk",
     icons: { icon: "/clindesk/favicon.svg", apple: "/clindesk/apple-touch-icon.png" },
     themeColor: "#C4432B",
+    // The cream of the mark's tile (public/clindesk/favicon.svg) – the splash screen behind the icon.
+    installableApp: { name: CLINIC_SYSTEM_NAME, shortName: CLINIC_SYSTEM_NAME, backgroundColor: "#FBF4E8" },
   },
 };
 
