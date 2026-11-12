@@ -698,6 +698,28 @@ const toastText = (page, re, timeout = 20000) => page.waitForSelector(`[role=sta
       await phone.setViewportSize({ width: 1440, height: 1000 });
     });
 
+    await step("Reports: course liability, gift card liability, products and stock open with figures; CSV downloads; clinician refused", "Reports (PK06)", async () => {
+      for (const id of ["course-liability", "gift-card-liability", "products"]) {
+        await owner.goto(`${CLINIC}/reports/${id}`);
+        await owner.waitForSelector("h1");
+        const body = await owner.locator("main").innerText();
+        assert(!/something went wrong|error/i.test(await owner.locator("h1").innerText()), `${id}: error page`);
+        assert(/£\d/.test(body), `${id}: no money figures shown`);
+        await shot(owner, `report-${id}`);
+        const csv = await owner.request.get(`${CLINIC}/reports/export/${id}`);
+        assert(csv.status() === 200, `${id}: CSV ${csv.status()}`);
+        const text = await csv.text();
+        assert(text.split("\n").length > 1 && !/^[=+@-]/m.test(text.split("\n").slice(1).join("\n").replace(/^"?-?\d/gm, "")), `${id}: CSV empty or formula cells`);
+      }
+      const course = await owner.goto(`${CLINIC}/reports/course-liability`).then(() => owner.locator("main").innerText());
+      assert(/6/.test(course), "course liability lists the sold course");
+      const gift = await owner.goto(`${CLINIC}/reports/gift-card-liability`).then(() => owner.locator("main").innerText());
+      assert(/£30\.00/.test(gift), "gift card liability shows the £30 left on the card");
+      const res = await clinician.goto(`${CLINIC}/reports/course-liability`);
+      const clin = await clinician.locator("body").innerText();
+      assert(res.status() === 404 || /not allowed|permission|404|not found/i.test(clin) || !/£\d/.test(clin), "clinician sees no liability figures");
+    });
+
     await step("no banned names on the new screens", "all", async () => {
       for (const u of [`${SETUP}/courses`, `${SETUP}/products`, `${BILLING}/gift-cards`, `${BILLING}/stock`, patientInvoices()]) {
         await owner.goto(u);
