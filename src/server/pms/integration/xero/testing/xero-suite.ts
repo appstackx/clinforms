@@ -17,10 +17,16 @@ import { testCipher } from "../../../../db/testing/databases";
 import { listAudit } from "../../../../repos/audit";
 import type { RepoContext } from "../../../../repos/context";
 import { createService, createSite } from "../../../../repos/pms/directory";
+import { paymentMarker } from "../../../../../modules/pms/integration/xero-mappers";
 import { createPatient } from "../../../../repos/pms/patients";
-import { createDraftInvoice, issueInvoice, recordPayment, reversePayment, voidInvoice } from "../../../../repos/pms/billing";
+import { createCreditNote, createDraftInvoice, getInvoice, issueInvoice, recordPayment, reversePayment, voidInvoice } from "../../../../repos/pms/billing";
 import {
+  claimItem,
   claimTokenRefresh,
+  clinicsToSend,
+  finishItem,
+  markClinicRun,
+  storeRefreshedTokens,
   getXeroConnection,
   listSyncItems,
   openConnection,
@@ -36,6 +42,7 @@ import { countPmsRows, deletePmsQueries, exportPmsData } from "../../../offboard
 import { XeroClient } from "../client";
 import { disconnectXeroAndRevoke, finishXeroConnect, startXeroConnect } from "../connect";
 import { handleXeroDrain } from "../drain";
+import { mayManageXero } from "../screen";
 import { sendForClinic } from "../sync";
 import { FakeXero, defaultOrg, type FakeOrg } from "./fake-xero";
 
@@ -67,11 +74,11 @@ export function defineXeroSuite(label: string, factory: () => Promise<XeroSuiteD
       clock += seconds * 1000;
     };
 
-    async function connect(tenantId: string, actor: typeof OWNER, orgIds: string[], tamper: (p: URLSearchParams) => void = () => undefined) {
+    async function connect(tenantId: string, actor: typeof OWNER, orgIds: string[], tamper: (p: URLSearchParams) => void = () => undefined, user = `xero-user-of-${tenantId}`) {
       const url = await startXeroConnect(ctx, tenantId, client, actor);
       assert.ok(url, "connect started");
       const state = new URL(url).searchParams.get("state") ?? "";
-      const q = new URLSearchParams({ code: xero.issueCode(orgIds), state, scope: "openid" });
+      const q = new URLSearchParams({ code: xero.issueCode(orgIds, user), state, scope: "openid" });
       tamper(q);
       return finishXeroConnect(ctx, tenantId, client, actor, q);
     }
@@ -103,7 +110,11 @@ export function defineXeroSuite(label: string, factory: () => Promise<XeroSuiteD
 
     after(async () => {
       if (suite.log) {
-        const bad = unscopedStatements(suite.log.statements);
+        // The one allowed cross-clinic read inside a clinic's own flow: "is this Xero organisation connected to ANOTHER
+        // clinic?" (xeroOrgInUseElsewhere, review item 2) – a yes/no, it returns no other clinic's data.
+        const P = String.raw`(?:\?|\$\d+)`;
+        const orgInUse = new RegExp(`^select "status" from "pms_xero_connections" where "xero_tenant_id" = ${P} and "tenant_id" <> ${P} and "status" in \\(${P}, ${P}\\) limit ${P}$`);
+        const bad = unscopedStatements(suite.log.statements.filter((q) => !orgInUse.test(q)));
         assert.deepEqual(bad, [], "every clinic-system statement names tenant_id");
       }
       await suite.close();
@@ -144,7 +155,7 @@ export function defineXeroSuite(label: string, factory: () => Promise<XeroSuiteD
       await setXeroEnabled(ctx, B, true, OWNER_B);
       assert.deepEqual(await finishXeroConnect(ctx, B, client, OWNER, new URLSearchParams({ state, code: "x" })), { ok: false, error: "state" });
       tick(601);
-      assert.deepEqual(await finishXeroConnect(ctx, A, client, OWNER, new URLSearchParams({ state, code: xero.issueCode([orgA.tenantId]) })), { ok: false, error: "state" }, "expired");
+      assert.deepEqual(await finishXeroConnect(ctx, A, client, OWNER, new URLSearchParams({ state, code: xero.issueCode([orgA.tenantId], `xero-user-of-${A}`) })), { ok: false, error: "state" }, "expired");
       // Refused in Xero: state still checked (and used) first.
       const denied = await connect(A, OWNER, [orgA.tenantId], (q) => {
         q.delete("code");
@@ -210,12 +221,12 @@ export function defineXeroSuite(label: string, factory: () => Promise<XeroSuiteD
       assert.equal(orgA.invoices.length, 1);
       const x = orgA.invoices[0];
       assert.deepEqual([x.Status, x.Type, x.LineAmountTypes, x.Total, x.AmountDue], ["AUTHORISED", "ACCREC", "NoTax", 70, 20]);
-      assert.match(String(x.InvoiceNumber), /^[A-Z]*\d+$/, "the clinic's own number");
+      assert.equal(x.InvoiceNumber, (await getInvoice(ctx, A, id.inv1))?.number, "the clinic's own number, exactly as printed");
       assert.match(String(orgA.contacts[0].Name), /^Megan Hart \(P\d+\)$/);
       assert.match(String(orgA.contacts[0].ContactNumber), /^CD-P\d+$/);
       assert.equal(orgA.contacts[0].EmailAddress, undefined, "no contact details unless ticked");
       assert.equal(orgA.payments.length, 1);
-      assert.deepEqual([(orgA.payments[0].Account as { Code: string }).Code, orgA.payments[0].Amount, orgA.payments[0].Reference], ["610", 50, "Terminal 0042"]);
+      assert.deepEqual([(orgA.payments[0].Account as { Code: string }).Code, orgA.payments[0].Amount, orgA.payments[0].Reference], ["610", 50, `Terminal 0042 ${paymentMarker(id.alloc1)}`]);
       assert.ok(!JSON.stringify(orgA.invoices).includes("description"), "no free text");
       assert.ok((await listAudit(ctx, A, { limit: 100 })).some((e) => e.action === "pms.xero.push"));
     });
@@ -282,7 +293,7 @@ export function defineXeroSuite(label: string, factory: () => Promise<XeroSuiteD
       await sendForClinic(ctx, A, client);
       const i = await statusOf(`invoice:create:${id.inv5}`);
       assert.deepEqual([i?.status, i?.errorClass], ["blocked", "validation"]);
-      assert.match(i?.errorMessage ?? "", /not a valid code/);
+      assert.match(i?.errorMessage ?? "", /account chosen on the Xero page/, "a fixed text, never Xero's own words");
       await setXeroMapping(ctx, A, { kind: "default_account", localKey: "*", xeroValue: "200" }, "200 – Sales", OWNER);
       await retryItem(ctx, A, `invoice:create:${id.inv5}`, OWNER);
       assert.equal((await statusOf(`invoice:create:${id.inv5}`))?.payloadVersion, 2, "a fixed block sends a new body under a new key");
@@ -316,12 +327,12 @@ export function defineXeroSuite(label: string, factory: () => Promise<XeroSuiteD
       await assert.rejects(client.refresh(before.tokens.refreshToken), /no longer accepts/);
       // Two workers with the same rev: only one may refresh.
       assert.ok(afterOpen);
-      const first = await claimTokenRefresh(ctx, A, afterOpen.rev);
-      const second = await claimTokenRefresh(ctx, A, afterOpen.rev);
+      const first = await claimTokenRefresh(ctx, A, afterOpen.tokenRev);
+      const second = await claimTokenRefresh(ctx, A, afterOpen.tokenRev);
       assert.ok(first !== null && second === null);
       tick(31);
       const conn = await openConnection(ctx, A);
-      assert.ok(conn && (await claimTokenRefresh(ctx, A, conn.rev)) !== null, "a stale lock expires");
+      assert.ok(conn && (await claimTokenRefresh(ctx, A, conn.tokenRev)) !== null, "a stale lock expires");
       tick(31);
     });
 
@@ -351,7 +362,149 @@ export function defineXeroSuite(label: string, factory: () => Promise<XeroSuiteD
       assert.deepEqual(await connect(A, OWNER, [orgA.tenantId]), { ok: true, orgName: orgA.name });
     });
 
+    it("review 1: a credit note waits for an earlier payment on its invoice – Xero sees them in the order they happened", async () => {
+      const invId = await issued(A, OWNER, id.megan, id.svc, 7000);
+      const pay = await recordPayment(ctx, A, { payerKind: "patient", patientId: id.megan, receivedOn: "2026-11-12", method: "card", amountPence: 7000, allocations: [{ invoiceId: invId, amountPence: 7000 }] }, OWNER);
+      tick(1);
+      const full = await getInvoice(ctx, A, invId);
+      const cn = await createCreditNote(ctx, A, { invoiceId: invId, lines: [{ invoiceLineId: String(full?.lines[0].id), totalPence: 2000 }], reason: "Goodwill" }, OWNER);
+      const r1 = await sendForClinic(ctx, A, client);
+      assert.equal(r1.blocked + r1.failed, 0, JSON.stringify(r1));
+      assert.equal((await statusOf(`allocation:create:${pay.allocations[0].id}`))?.status, "done", "the payment went in full");
+      const waiting = await statusOf(`credit_note:create:${cn.id}`);
+      assert.equal(waiting?.status === "done" || waiting?.errorClass === "waiting", true, "the credit note went after it, or waits for it");
+      tick(61);
+      await sendForClinic(ctx, A, client);
+      assert.equal((await statusOf(`credit_note:create:${cn.id}`))?.status, "done");
+      const xInv = orgA.invoices.find((i) => i.InvoiceNumber === `${full?.number}`);
+      assert.equal(xInv?.AmountPaid, 70);
+      assert.equal(orgA.creditNotes.find((c) => c.CreditNoteNumber === cn.number)?.RemainingCredit, 20, "nothing left to allocate – the credit stays on the credit note");
+    });
+
+    it("review 2: a number or contact number already used in Xero by something else is never linked", async () => {
+      const invId = await issued(A, OWNER, id.megan, id.svc, 6100);
+      const number = String((await getInvoice(ctx, A, invId))?.number);
+      orgA.invoices.push({ InvoiceID: "99999999-0000-0000-0000-000000000001", InvoiceNumber: number, Type: "ACCPAY", Status: "AUTHORISED", Total: 1, AmountDue: 1, Contact: { ContactID: "someone-else" }, Payments: [] });
+      await sendForClinic(ctx, A, client);
+      const i = await statusOf(`invoice:create:${invId}`);
+      assert.deepEqual([i?.status, i?.errorClass], ["blocked", "validation"]);
+      assert.match(i?.errorMessage ?? "", /already used by a different record/);
+      orgA.invoices.pop();
+      await skipItem(ctx, A, `invoice:create:${invId}`, OWNER);
+      // A contact number taken by a different contact.
+      const brooks = await createPatient(ctx, A, { firstName: "Daniel", lastName: "Brooks", dateOfBirth: "1980-01-19" }, OWNER);
+      const pn = (await ctx.db.selectFrom("pms_patients").select("patient_number").where("tenant_id", "=", A).where("id", "=", brooks.id).executeTakeFirstOrThrow()).patient_number;
+      orgA.contacts.push({ ContactID: "88888888-0000-0000-0000-000000000001", Name: "A Different Person (fictional)", ContactNumber: `CD-P${pn}`, ContactStatus: "ACTIVE" });
+      const inv2 = await issued(A, OWNER, brooks.id, id.svc, 6200);
+      await sendForClinic(ctx, A, client);
+      const j = await statusOf(`invoice:create:${inv2}`);
+      assert.equal(j?.status, "blocked");
+      assert.match(j?.errorMessage ?? "", /different Xero contact already uses contact number/);
+      await skipItem(ctx, A, `invoice:create:${inv2}`, OWNER);
+    });
+
+    it("review 3: a payment whose answer was lost (or unreadable) is found by its marker – never posted twice", async () => {
+      const invId = await issued(A, OWNER, id.megan, id.svc, 3300);
+      await sendForClinic(ctx, A, client);
+      const pay = await recordPayment(ctx, A, { payerKind: "patient", patientId: id.megan, receivedOn: "2026-11-12", method: "card", amountPence: 3300, allocations: [{ invoiceId: invId, amountPence: 3300 }] }, OWNER);
+      const allocId = pay.allocations[0].id;
+      // 200 with no record in the answer: transient (same key), not "blocked".
+      xero.fail({ match: /^PUT \/api\.xro\/2\.0\/Payments$/, status: 200, body: { Payments: [] } });
+      await sendForClinic(ctx, A, client);
+      assert.deepEqual([(await statusOf(`allocation:create:${allocId}`))?.status, (await statusOf(`allocation:create:${allocId}`))?.errorClass], ["pending", "transient"]);
+      // Saved in Xero, answer lost.
+      tick(61);
+      xero.fail({ match: /^PUT \/api\.xro\/2\.0\/Payments$/, status: 503, afterSave: true });
+      await sendForClinic(ctx, A, client);
+      tick(301);
+      await sendForClinic(ctx, A, client);
+      assert.equal((await statusOf(`allocation:create:${allocId}`))?.status, "done");
+      assert.equal(orgA.payments.filter((p) => String(p.Reference).includes(paymentMarker(allocId))).length, 1, "one payment in Xero");
+    });
+
+    it("review 7: only the lease holder records an outcome; a run never starts a Xero call past its deadline", async () => {
+      const invId = await issued(A, OWNER, id.megan, id.svc, 1700);
+      const itemId = `invoice:create:${invId}`;
+      await sendForClinic(ctx, A, client, { maxItems: 0 });
+      const first = await claimItem(ctx, A, itemId);
+      assert.ok(first);
+      tick(301);
+      const second = await claimItem(ctx, A, itemId);
+      assert.ok(second && second !== first, "an expired lease is taken over");
+      const item = (await statusOf(itemId))!;
+      await finishItem(ctx, A, item, first!, { kind: "validation", message: "late worker" });
+      assert.equal((await statusOf(itemId))?.status, "in_flight", "the old holder recorded nothing");
+      await finishItem(ctx, A, item, second!, { kind: "deferred" });
+      assert.equal((await statusOf(itemId))?.status, "pending");
+      // Deadline: budget 1 s, no grace – the first call would end past it, so nothing is sent and nothing counted.
+      let t = 0;
+      const before = xero.calls.length;
+      const r = await sendForClinic(ctx, A, client, { budgetMs: 1000, graceMs: 0, nowMs: () => (t += 1) });
+      assert.equal(r.deferred, 1);
+      assert.equal(xero.calls.length, before, "no Xero call started");
+      const after = await statusOf(itemId);
+      assert.deepEqual([after?.status, after?.attempts], ["pending", 0]);
+      await sendForClinic(ctx, A, client);
+      assert.equal((await statusOf(itemId))?.status, "done");
+    });
+
+    it("review 9: a payment on a blocked invoice is listed as waiting; once the invoice is skipped, it is skipped too", async () => {
+      await setXeroMapping(ctx, A, { kind: "default_account", localKey: "*", xeroValue: "999" }, "999 – Old sales", OWNER);
+      const invId = await issued(A, OWNER, id.megan, id.svc, 1900);
+      const pay = await recordPayment(ctx, A, { payerKind: "patient", patientId: id.megan, receivedOn: "2026-11-12", method: "card", amountPence: 1900, allocations: [{ invoiceId: invId, amountPence: 1900 }] }, OWNER);
+      await sendForClinic(ctx, A, client);
+      const p = await statusOf(`allocation:create:${pay.allocations[0].id}`);
+      assert.deepEqual([p?.status, p?.errorClass], ["pending", "waiting"]);
+      assert.match(p?.errorMessage ?? "", /needs a fix first/);
+      const listed = await listSyncItems(ctx, A, { statuses: ["failed", "blocked"], withWaiting: true, limit: 200 });
+      assert.ok(listed.some((x) => x.id === p?.id), "shown on the screen, not silently pending");
+      await skipItem(ctx, A, `invoice:create:${invId}`, OWNER);
+      tick(61);
+      await sendForClinic(ctx, A, client);
+      const q = await statusOf(`allocation:create:${pay.allocations[0].id}`);
+      assert.equal(q?.status, "skipped");
+      assert.match(q?.errorMessage ?? "", /invoice was skipped/);
+      await setXeroMapping(ctx, A, { kind: "default_account", localKey: "*", xeroValue: "200" }, "200 – Sales", OWNER);
+    });
+
+    it("review 11: saving a setting while a refresh is in flight never discards the new tokens", async () => {
+      const conn = await openConnection(ctx, A);
+      assert.ok(conn);
+      const claimed = await claimTokenRefresh(ctx, A, conn.tokenRev);
+      assert.ok(claimed !== null);
+      await setXeroOptions(ctx, A, { sendFrom: "2026-11-12", sendContactDetails: false }, OWNER);
+      assert.equal(await storeRefreshedTokens(ctx, A, claimed, conn.tokens, new Date(clock + 1800_000).toISOString()), true);
+    });
+
+    it("review 12: a lost answer to a credit-note allocation is not allocated again after a retry", async () => {
+      const invId = await issued(A, OWNER, id.megan, id.svc, 5000);
+      await sendForClinic(ctx, A, client);
+      const full = await getInvoice(ctx, A, invId);
+      const cn = await createCreditNote(ctx, A, { invoiceId: invId, lines: [{ invoiceLineId: String(full?.lines[0].id), totalPence: 1500 }], reason: "Goodwill" }, OWNER);
+      xero.fail({ match: /^PUT \/api\.xro\/2\.0\/CreditNotes\/[^/]+\/Allocations$/, status: 503, afterSave: true });
+      await sendForClinic(ctx, A, client);
+      assert.equal((await statusOf(`credit_note:create:${cn.id}`))?.status, "pending");
+      tick(61);
+      await sendForClinic(ctx, A, client);
+      assert.equal((await statusOf(`credit_note:create:${cn.id}`))?.status, "done");
+      const x = orgA.creditNotes.find((c) => c.CreditNoteNumber === cn.number);
+      assert.equal((x?.Allocations as unknown[]).length, 1, "allocated once");
+      assert.equal(orgA.invoices.find((i) => i.InvoiceNumber === full?.number)?.AmountDue, 35);
+    });
+
+    it("review 5: site-limited admins cannot manage Xero (clinic-wide); owners and all-site admins can", () => {
+      const can = () => true;
+      assert.equal(mayManageXero({ role: "admin", can, siteIds: new Set(["site_x"]) }), false);
+      assert.equal(mayManageXero({ role: "owner", can, siteIds: null }), true);
+      assert.equal(mayManageXero({ role: "admin", can, siteIds: null }), true);
+      assert.equal(mayManageXero({ role: "clinician", can, siteIds: null }), false);
+    });
+
     it("tenant isolation: each clinic sends only its own records to its own organisation", async () => {
+      // Review 2: an organisation already connected to another clinic is refused – and that clinic's connection survives.
+      assert.deepEqual(await connect(B, OWNER_B, [orgA.tenantId]), { ok: false, error: "org_in_use" });
+      assert.equal((await getXeroConnection(ctx, A)).status, "connected");
+      assert.ok(Array.from(xero.connections.values()).some((c) => c.tenantId === orgA.tenantId && c.user === `xero-user-of-${A}`), "A's connection untouched");
       assert.deepEqual(await connect(B, OWNER_B, [orgB.tenantId]), { ok: true, orgName: orgB.name });
       await setXeroMapping(ctx, B, { kind: "default_account", localKey: "*", xeroValue: "200" }, "200 – Sales", OWNER_B);
       id.invB = await issued(B, OWNER_B, id.patB, id.svcB, 4500);
@@ -401,6 +554,51 @@ export function defineXeroSuite(label: string, factory: () => Promise<XeroSuiteD
       assert.equal((await sendForClinic(ctx, A, client)).connected, false);
       assert.equal(await disconnectXeroAndRevoke(ctx, A, client, OWNER), false, "nothing to disconnect");
       assert.ok((await listAudit(ctx, A, { limit: 300 })).some((e) => e.action === "pms.xero.disconnect"));
+    });
+
+    it("review 8: the scheduled run takes clinics oldest-run first", async () => {
+      // A was disconnected above: connected again here (row only) to compare two clinics.
+      await ctx.db.updateTable("pms_xero_connections").set({ status: "connected" }).where("tenant_id", "=", A).execute();
+      suite.log?.pause();
+      await markClinicRun(ctx, A);
+      tick(1);
+      await markClinicRun(ctx, B);
+      assert.deepEqual(await clinicsToSend(ctx), [A, B]);
+      tick(1);
+      await markClinicRun(ctx, A);
+      assert.deepEqual(await clinicsToSend(ctx), [B, A], "B waited longest");
+      suite.log?.resume();
+      await ctx.db.updateTable("pms_xero_connections").set({ status: "disconnected" }).where("tenant_id", "=", A).execute();
+    });
+
+    it("review 4: disconnecting one clinic never revokes another clinic's connection of the same Xero user; no auth event = refused", async () => {
+      const C = "cove-c";
+      const orgC = xero.addOrg(defaultOrg("Cove Clinic (fictional)"));
+      const orgD = xero.addOrg(defaultOrg("Dune Clinic (fictional)"));
+      const OWNER_C = { userId: "user_owner_c", sessionId: "sess_c" };
+      await setXeroEnabled(ctx, C, true, OWNER_C);
+      // The same Xero user connects C (orgC) and, through another ClinDesk clinic, also orgD (modelled by a 2nd code).
+      assert.deepEqual(await connect(C, OWNER_C, [orgC.tenantId], undefined, "shared-xero-user"), { ok: true, orgName: orgC.name });
+      xero.issueCode([orgD.tenantId], "shared-xero-user");
+      assert.equal(await disconnectXeroAndRevoke(ctx, C, client, OWNER_C), true);
+      assert.ok(!xero.revoked.includes("shared-xero-user"), "not revoked while the user has another connection");
+      assert.ok(Array.from(xero.connections.values()).some((c) => c.tenantId === orgD.tenantId), "the other connection survives");
+      assert.ok(!Array.from(xero.connections.values()).some((c) => c.tenantId === orgC.tenantId), "only C's own connection was removed");
+      // A token without the authentication_event_id claim: refused, nothing touched at Xero.
+      const conns = xero.connections.size;
+      xero.omitAuthEventOnce = true;
+      assert.deepEqual(await connect(C, OWNER_C, [orgC.tenantId], undefined, "shared-xero-user"), { ok: false, error: "error" });
+      assert.equal(xero.connections.size, conns + 1, "nothing deleted – the new sign-in's connection stays for the user to remove");
+      assert.ok(!xero.revoked.includes("shared-xero-user"));
+    });
+
+    it("review 10: offboarding's export pages the links by key – every row, however many", async () => {
+      const at = new Date(clock).toISOString();
+      const rows = Array.from({ length: 250 }, (_, n) => ({ tenant_id: B, id: `invoice:inv_fake_${String(n).padStart(4, "0")}`, local_type: "invoice", local_id: `inv_fake_${String(n).padStart(4, "0")}`, xero_id: `x-${n}`, xero_number: null, sent_hash: null, pushed_at: at, created_at: at, updated_at: at }));
+      for (let n = 0; n < rows.length; n += 10) await ctx.db.insertInto("pms_xero_links").values(rows.slice(n, n + 10)).execute();
+      const total = Number((await ctx.db.selectFrom("pms_xero_links").select((eb) => eb.fn.countAll().as("n")).where("tenant_id", "=", B).executeTakeFirstOrThrow()).n);
+      const exported = await exportPmsData(ctx.db, cipher, B, { tables: ["pms_xero_links"] });
+      assert.equal(exported.pms_xero_links?.length, total);
     });
 
     it("offboarding: no Xero table is named in the delete batch; every Xero row goes with the clinic's billing settings", async () => {

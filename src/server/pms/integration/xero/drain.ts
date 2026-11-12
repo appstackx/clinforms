@@ -3,12 +3,13 @@
  * Worker calls it every 5 minutes: Vercel Hobby crons run once a day). `Authorization: Bearer $CRON_SECRET`; refuses
  * everything without CRON_SECRET; 404 while CLINFORMS_XERO is off (as if the route did not exist).
  * Each clinic is worked on with its own id in every statement; a failure in one clinic never stops the others.
+ * Clinics are taken in order of their last run (oldest first), so a long list never starves the clinics at its end.
  */
 import "server-only";
 import { cronAuthorized, cronSecretConfigured } from "../../../cron/auth";
 import { xeroSwitchOn } from "../../../../modules/pms/integration/xero";
 import type { RepoContext } from "../../../repos/pms/context";
-import { clinicsToSend } from "../../../repos/pms/integration/xero";
+import { clinicsToSend, markClinicRun } from "../../../repos/pms/integration/xero";
 import type { XeroClient } from "./client";
 import { sendForClinic } from "./sync";
 
@@ -37,7 +38,8 @@ export async function handleXeroDrain(req: Request, deps: DrainDeps): Promise<Re
   if (!client) return json(503, { ok: false, error: "The Xero app is not configured." });
   const clock = deps.nowMs ?? (() => Date.now());
   const started = clock();
-  const budget = deps.budgetMs ?? 45_000;
+  // Vercel stops the function at 60 s: no item starts after 33 s, no Xero call starts after 45 s (33 + 12).
+  const budget = deps.budgetMs ?? 35_000;
   const totals = { clinics: 0, failedClinics: 0, sent: 0, blocked: 0, failed: 0, paused: 0 };
   const ctx = deps.ctx();
   for (const tenantId of await clinicsToSend(ctx)) {
@@ -45,7 +47,9 @@ export async function handleXeroDrain(req: Request, deps: DrainDeps): Promise<Re
     if (left < 2000) break;
     totals.clinics++;
     try {
-      const r = await sendForClinic(ctx, tenantId, client, { budgetMs: Math.min(left, 15_000), nowMs: clock });
+      // Taken oldest-run first, so every clinic gets its turn however long the list.
+      await markClinicRun(ctx, tenantId);
+      const r = await sendForClinic(ctx, tenantId, client, { budgetMs: Math.min(left - 2000, 15_000), graceMs: 12_000, nowMs: clock });
       totals.sent += r.done;
       totals.blocked += r.blocked;
       totals.failed += r.failed;

@@ -19,6 +19,7 @@ organisation, so your accountant sees them in Xero without anyone typing them in
 
 - **One way only.** ClinDesk stays where you bill. Nothing you change in Xero comes back into ClinDesk – if you edit
   or pay an invoice in Xero, ClinDesk does not know.
+- **In the order it happened.** A credit note goes after the payments taken on its invoice before it.
 - **Patients appear in Xero by name and number**, for example *Megan Hart (P12)*. Their email and postal address are
   sent only if you tick that option.
 - **Only from the date you choose.** Invoices issued before your "send from" date are not sent (and nor are their
@@ -71,6 +72,7 @@ few minutes. **Set-up → Xero → Sending** shows how many were sent and anythi
 | You see | What to do |
 |---|---|
 | **Needs a fix** | Read the message – usually an account or tax rate not chosen yet, or one Xero no longer allows. Fix it, then press **Retry** |
+| **Waiting** with a reason | A payment or credit note waits for its invoice (or for an earlier payment on it). It goes by itself once that is sent; if its invoice is skipped, it is skipped too |
 | **Failed – needs you** | Xero was unreachable for a long time. Press **Retry** (or **Skip** if you have entered it in Xero yourself) |
 | **Skipped** | Not sent. Record it in Xero by hand if it should be there |
 | **Reconnect Xero** banner | Xero stopped accepting the connection (for example it was removed in Xero, or not used for a long time). Press **Connect again** – nothing is lost, sending carries on where it stopped |
@@ -87,7 +89,9 @@ shows the **Reconnect Xero** banner.
 ## Questions
 
 - **Can I send old invoices?** Not at the moment – only invoices issued on or after your "send from" date.
-- **Can two ClinDesk clinics share one Xero organisation?** Connect each clinic on its own; check with your
-  accountant first, because both clinics' invoice numbers then share one Xero ledger.
+- **Can two ClinDesk clinics share one Xero organisation?** No – each Xero organisation can be connected to one
+  clinic only, so two clinics' invoice numbers and contacts never mix in one ledger.
+- **What if a number is already used in Xero?** ClinDesk never takes over a Xero invoice, credit note or contact it
+  did not create. The item shows **Needs a fix** – check that record in Xero, then press Retry or Skip.
 - **Who can see this page?** Only the owner and admins. Every change (switching on, connecting, accounts, Retry,
   Skip, Disconnect) is in the clinic's activity log.

@@ -96,10 +96,18 @@ export function lineAccount(maps: XeroMaps, line: Pick<XeroLineSource, "kind" | 
   return mapValue(maps, "default_account");
 }
 
-/** The Xero tax type of a line: NONE when the clinic is not VAT-registered, else the clinic's map for its VAT code. */
+/** The Xero tax type of a line: NONE for a no-VAT line or invoice, else the clinic's map for its VAT code. */
 export function lineTaxType(maps: XeroMaps, vatCode: string, vatRegistered: boolean): string | null {
-  if (!vatRegistered) return "NONE";
+  if (!vatRegistered || vatCode === "none") return "NONE";
   return mapValue(maps, "tax_type", vatCode);
+}
+
+/**
+ * Whether an invoice was issued as VAT-registered – from ITS OWN lines (frozen when issued), never from today's
+ * setting: a clinic that registers for VAT later must not change how its earlier invoices are sent.
+ */
+export function invoiceUsesVat(lines: readonly Pick<XeroLineSource, "vatCode">[]): boolean {
+  return lines.some((l) => l.vatCode !== "none");
 }
 
 export function lineAmountTypes(vatRegistered: boolean, pricesIncludeVat: boolean): "Inclusive" | "Exclusive" | "NoTax" {
@@ -243,6 +251,8 @@ export function creditNoteToXero(cn: XeroCreditNoteSource, contactId: string, ma
 
 export interface XeroAllocationSource {
   id: string;
+  /** Unique marker put in the payment's Reference, so a payment whose answer was lost is found on the invoice. */
+  marker: string;
   amountPence: number;
   receivedOn: string;
   method: string;
@@ -255,7 +265,12 @@ export interface XeroPaymentBody {
   Account: { Code: string };
   Date: string;
   Amount: number;
-  Reference?: string;
+  Reference: string;
+}
+
+/** "CD-A" + the last 10 characters of the allocation id (random part of its ULID): unique on one invoice. */
+export function paymentMarker(allocationId: string): string {
+  return `CD-A${allocationId.replace(/[^A-Za-z0-9]/g, "").slice(-10).toUpperCase()}`;
 }
 
 /** The account a payment method is paid into: the site's own map first, then the method's. */
@@ -275,7 +290,7 @@ export function allocationToXero(a: XeroAllocationSource, xeroInvoiceId: string,
       Account: { Code: code },
       Date: a.receivedOn,
       Amount: pounds(a.amountPence),
-      ...(a.reference ? { Reference: a.reference.replace(/[\r\n]+/g, " ").slice(0, 255) } : {}),
+      Reference: [a.reference ? a.reference.replace(/[\r\n]+/g, " ").slice(0, 200) : null, a.marker].filter(Boolean).join(" "),
     },
   };
 }

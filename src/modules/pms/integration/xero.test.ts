@@ -13,7 +13,8 @@ import {
   idempotencyKeyFor,
   nextAttemptDelaySeconds,
   paymentMapKey,
-  redactXeroMessage,
+  XERO_GENERIC_REFUSAL,
+  xeroMessageText,
   syncItemId,
   syncOrder,
   validXeroValue,
@@ -26,7 +27,10 @@ import {
   creditNoteToXero,
   invoiceToXero,
   lineAccount,
+  invoiceUsesVat,
   lineDescription,
+  lineTaxType,
+  paymentMarker,
   pounds,
   type XeroInvoiceSource,
   type XeroLineSource,
@@ -107,11 +111,23 @@ describe("Xero rules", () => {
     ]);
   });
 
-  it("redacts Xero's messages: quoted values, emails and long numbers never stored", () => {
-    const m = redactXeroMessage('The contact name "Megan Hart (P12)" is already assigned; email megan.hart@example.com, ref 1234567890\nline two');
-    assert.ok(!m.includes("Megan") && !m.includes("example.com") && !m.includes("1234567890") && !m.includes("\n"), m);
-    assert.equal(redactXeroMessage(undefined), "Xero did not say why.");
-    assert.ok(redactXeroMessage("x".repeat(1000)).length <= 300);
+  it("never keeps Xero's free text: known messages map to fixed lines, anything else to one generic line", () => {
+    const withName = [
+      'The contact name "Megan Hart (P12)" is already assigned to another contact.',
+      "The contact name Megan Hart (P12) is already assigned to another contact.",
+      "Megan Hart owes more than the amount due",
+      "Something odd about Megan Hart and megan.hart@example.com",
+      "Account code 999 is not a valid code for this document.",
+    ];
+    for (const raw of withName) {
+      const m = xeroMessageText(raw);
+      assert.ok(!/Megan|Hart|example\.com|999/.test(m), m);
+    }
+    assert.match(xeroMessageText(withName[0]), /already used/);
+    assert.match(xeroMessageText(withName[4]), /account chosen/);
+    assert.match(xeroMessageText("The document date cannot be before the end of year lock date"), /locked/);
+    assert.equal(xeroMessageText("Megan Hart"), XERO_GENERIC_REFUSAL);
+    assert.equal(xeroMessageText(undefined), XERO_GENERIC_REFUSAL);
   });
 
   it("checks the shape of map values", () => {
@@ -162,6 +178,15 @@ describe("Xero mappers", () => {
     assert.ok(r.ok && r.body.LineItems[0].Quantity === 1 && r.body.LineItems[0].LineAmount === 66.67);
   });
 
+  it("VAT treatment comes from the invoice's own lines, never today's setting (review item 6)", () => {
+    assert.equal(invoiceUsesVat([{ vatCode: "none" }, { vatCode: "none" }]), false);
+    assert.equal(invoiceUsesVat([{ vatCode: "exempt" }]), true);
+    assert.equal(lineTaxType(MAPS, "none", true), "NONE", "a no-VAT line on a VAT invoice needs no map");
+    // An invoice issued before the clinic registered for VAT (all lines "none") still goes as NoTax.
+    const old = invoiceToXero(invoice({ vatRegistered: invoiceUsesVat([line({ vatCode: "none" })]), lines: [line({ vatCode: "none" })] }), "c", MAPS);
+    assert.ok(old.ok && old.body.LineAmountTypes === "NoTax");
+  });
+
   it("not VAT-registered: NoTax and NONE whatever the maps say", () => {
     const r = invoiceToXero(invoice({ vatRegistered: false, lines: [line({ vatCode: "none" })] }), "c", {});
     assert.equal(r.ok, false, "still needs a sales account");
@@ -208,9 +233,11 @@ describe("Xero mappers", () => {
   });
 
   it("payments: the site's own account first, then the method's; refunds are not sent", () => {
-    const base = { id: "alc_1", amountPence: 5000, receivedOn: "2026-11-12", method: "card", siteId: null, reference: "Terminal 0042" };
+    const base = { id: "alc_01JABCDEFGHJKMNPQRS", marker: paymentMarker("alc_01JABCDEFGHJKMNPQRS"), amountPence: 5000, receivedOn: "2026-11-12", method: "card", siteId: null, reference: "Terminal 0042" };
     const r = allocationToXero(base, "inv-guid", MAPS, "Card");
     assert.ok(r.ok && r.body.Account.Code === "610" && r.body.Amount === 50 && r.body.Invoice.InvoiceID === "inv-guid");
+    assert.ok(r.ok && r.body.Reference === `Terminal 0042 ${base.marker}`, "our marker rides in the Reference");
+    assert.match(base.marker, /^CD-A[A-Z0-9]{10}$/);
     const t = allocationToXero({ ...base, siteId: "site_tow" }, "inv-guid", MAPS, "Card");
     assert.ok(t.ok && t.body.Account.Code === "611");
     assert.equal(allocationToXero({ ...base, method: "cash" }, "x", MAPS, "Cash").ok, false);

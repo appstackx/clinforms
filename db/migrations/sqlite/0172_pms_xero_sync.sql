@@ -7,16 +7,17 @@
 --   access and refresh tokens, ENCRYPTED with the data envelope (AAD "<tenant>:pms_xero_connections.tokens_sealed:
 --   <tenant>"). Deliberately not an "_enc" column: offboarding's export decrypts every _enc column, and a live
 --   refresh token must never land in an export file in clear. refresh_lock_until = one refresh at a time (a refresh
---   token is single-use). state_hash / state_session / state_user / state_expires_at = the pending OAuth state
+--   token is single-use) with token_rev (its own revision, so saving a setting never discards a fresh refresh).
+--   last_run_at = when the scheduled run last worked on the clinic (fair rotation). state_hash / state_session / state_user / state_expires_at = the pending OAuth state
 --   (SHA-256 only, tied to the signed-in session, single use, 10 minutes). send_from = only invoices issued on or
 --   after it are sent. Hangs off the clinic's pms_billing_settings row (ON DELETE CASCADE, offboarding only).
 -- pms_xero_mappings: what each ClinDesk thing is in Xero - map_kind + local_key -> xero_value (an account code, a
 --   tax type, a tracking option) and the label shown on screen.
--- pms_xero_links: ClinDesk record -> Xero id (contacts, invoices, credit notes, payments). A record with a link is
+-- pms_xero_links: id = "<local_type>:<local id>" (keyset-paged by offboarding's export), ClinDesk record -> Xero id (contacts, invoices, credit notes, payments). A record with a link is
 --   never created in Xero again (idempotency, with Xero's own Idempotency-Key header and a look-up by number).
 -- pms_xero_sync_items: the send list. id = "<local_type>:<op>:<local id>" so queuing the same record twice is a
 --   no-op (primary key). status pending / in_flight / done / failed / blocked / skipped, attempts, next_attempt_at
---   (back-off), lease_until (one worker at a time), error_class transient / validation / auth, error_message (plain
+--   (back-off), lease_until + lease_token (one worker at a time, only the holder records the outcome), error_class transient / validation / auth, error_message (plain
 --   words, quoted values removed - no patient data), payload_version (bumped by Retry, part of the Idempotency-Key).
 -- Mappings, links and sync items hang off the clinic's connection row (ON DELETE CASCADE), so offboarding names no
 --   new table. Kept in step with supabase/migrations/20261024000172_pms_xero_sync.sql (db/parity.test.ts).
@@ -25,6 +26,7 @@
 CREATE TABLE IF NOT EXISTS pms_xero_connections (
   tenant_id TEXT NOT NULL PRIMARY KEY,
   rev INTEGER NOT NULL DEFAULT 1 CHECK (rev > 0),
+  token_rev INTEGER NOT NULL DEFAULT 1 CHECK (token_rev > 0),
   enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1)),
   status TEXT NOT NULL DEFAULT 'not_connected' CHECK (status IN ('not_connected', 'connected', 'paused', 'disconnected')),
   xero_tenant_id TEXT CHECK (xero_tenant_id IS NULL OR length(xero_tenant_id) <= 64),
@@ -41,6 +43,7 @@ CREATE TABLE IF NOT EXISTS pms_xero_connections (
   state_session TEXT,
   state_user TEXT,
   state_expires_at TEXT,
+  last_run_at TEXT,
   last_error TEXT CHECK (last_error IS NULL OR length(last_error) <= 500),
   connected_by TEXT,
   connected_at TEXT,
@@ -50,6 +53,7 @@ CREATE TABLE IF NOT EXISTS pms_xero_connections (
   FOREIGN KEY (tenant_id) REFERENCES pms_billing_settings (tenant_id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS pms_xero_connections_active ON pms_xero_connections (status, enabled);
+CREATE INDEX IF NOT EXISTS pms_xero_connections_org ON pms_xero_connections (xero_tenant_id);
 
 CREATE TABLE IF NOT EXISTS pms_xero_mappings (
   tenant_id TEXT NOT NULL,
@@ -66,6 +70,7 @@ CREATE TABLE IF NOT EXISTS pms_xero_mappings (
 
 CREATE TABLE IF NOT EXISTS pms_xero_links (
   tenant_id TEXT NOT NULL,
+  id TEXT NOT NULL CHECK (length(id) BETWEEN 1 AND 120),
   local_type TEXT NOT NULL CHECK (local_type IN ('patient', 'referrer', 'invoice', 'credit_note', 'allocation')),
   local_id TEXT NOT NULL,
   xero_id TEXT NOT NULL CHECK (length(xero_id) BETWEEN 1 AND 64),
@@ -74,9 +79,10 @@ CREATE TABLE IF NOT EXISTS pms_xero_links (
   pushed_at TEXT NOT NULL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
-  PRIMARY KEY (tenant_id, local_type, local_id),
+  PRIMARY KEY (tenant_id, id),
   FOREIGN KEY (tenant_id) REFERENCES pms_xero_connections (tenant_id) ON DELETE CASCADE
 );
+CREATE UNIQUE INDEX IF NOT EXISTS pms_xero_links_local ON pms_xero_links (tenant_id, local_type, local_id);
 
 CREATE TABLE IF NOT EXISTS pms_xero_sync_items (
   tenant_id TEXT NOT NULL,
@@ -89,6 +95,7 @@ CREATE TABLE IF NOT EXISTS pms_xero_sync_items (
   payload_version INTEGER NOT NULL DEFAULT 1 CHECK (payload_version > 0),
   next_attempt_at TEXT NOT NULL,
   lease_until TEXT,
+  lease_token TEXT CHECK (lease_token IS NULL OR length(lease_token) <= 64),
   error_class TEXT CHECK (error_class IS NULL OR error_class IN ('transient', 'validation', 'auth', 'waiting')),
   error_message TEXT CHECK (error_message IS NULL OR length(error_message) <= 500),
   xero_id TEXT CHECK (xero_id IS NULL OR length(xero_id) <= 64),

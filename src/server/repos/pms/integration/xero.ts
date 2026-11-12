@@ -6,15 +6,16 @@
  *   (clinicsToSend, for the scheduled run) returns clinic ids only.
  * - Tokens: sealed with the data envelope (AAD "<tenant>:pms_xero_connections.tokens_sealed:<tenant>"), so a row copied
  *   to another clinic cannot be opened there. Never returned by any read except openTokens (the sync engine's).
- * - A refresh token works once: refreshing is claimed with the row's rev (one worker at a time, refresh_lock_until),
- *   and the new pair is stored only where that claim still holds.
+ * - A refresh token works once: refreshing is claimed with the row's token_rev (one worker at a time,
+ *   refresh_lock_until), and the new pair is stored only where that claim still holds. Settings use rev, so saving one
+ *   mid-refresh never discards the new tokens.
  * - OAuth state: only its SHA-256, tied to the member's session, single use (cleared by the same UPDATE that checks
  *   it), 10 minutes.
  * - The send list's id is "<type>:<op>:<local id>": queuing twice is a no-op. Links are written once and never
  *   replaced, so a record that has a Xero id is never created in Xero again.
  * - Before the migration every read answers "off / nothing" (readOrEmpty).
  */
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { sql } from "kysely";
 import {
   XERO_LEASE_SECONDS,
@@ -24,7 +25,7 @@ import {
   XeroMappingInputSchema,
   XeroOptionsInputSchema,
   nextAttemptDelaySeconds,
-  redactXeroMessage,
+  oneLine,
   syncItemId,
   syncOrder,
   validXeroValue,
@@ -174,6 +175,23 @@ export async function previousXeroOrg(ctx: DbContext, tenantId: string): Promise
   return { xeroTenantId: row?.xero_tenant_id ?? null, orgName: row?.org_name ?? null, hasLinks: Boolean(link) };
 }
 
+/**
+ * Is this Xero organisation connected to ANOTHER clinic (connected or paused)? A yes/no only – no other clinic's data.
+ * One organisation, one clinic: two clinics would share one ledger, numbers and contacts.
+ */
+export async function xeroOrgInUseElsewhere(ctx: DbContext, tenantId: string, xeroTenantId: string): Promise<boolean> {
+  assertTenantId(tenantId);
+  const r = await ctx.db
+    .selectFrom(CONN)
+    .select("status")
+    .where("xero_tenant_id", "=", xeroTenantId)
+    .where("tenant_id", "<>", tenantId)
+    .where("status", "in", ["connected", "paused"])
+    .limit(1)
+    .executeTakeFirst();
+  return Boolean(r);
+}
+
 /** The callback's result: tokens sealed, the organisation recorded, status connected. Links and history are kept. */
 export async function saveXeroConnection(ctx: RepoContext, tenantId: string, org: ConnectedOrg, actor: PmsActor): Promise<void> {
   assertTenantId(tenantId);
@@ -195,6 +213,7 @@ export async function saveXeroConnection(ctx: RepoContext, tenantId: string, org
       connected_by: actor.userId,
       connected_at: at,
       rev: eb("rev", "+", 1),
+      token_rev: eb("token_rev", "+", 1),
       updated_by: actor.userId,
       updated_at: at,
     }))
@@ -211,7 +230,8 @@ export interface OpenConnection {
   accessExpiresAt: string | null;
   xeroTenantId: string;
   connectionId: string | null;
-  rev: number;
+  /** The tokens' revision (refresh claims). */
+  tokenRev: number;
   refreshLockUntil: string | null;
   sendFrom: string | null;
   sendContactDetails: boolean;
@@ -222,7 +242,7 @@ export async function openConnection(ctx: RepoContext, tenantId: string): Promis
   const r = await readOrEmpty(CONN, undefined, () =>
     ctx.db
       .selectFrom(CONN)
-      .select(["tokens_sealed", "access_expires_at", "xero_tenant_id", "connection_id", "rev", "refresh_lock_until", "send_from", "send_contact_details"])
+      .select(["tokens_sealed", "access_expires_at", "xero_tenant_id", "connection_id", "token_rev", "refresh_lock_until", "send_from", "send_contact_details"])
       .where("tenant_id", "=", tenantId)
       .where("status", "=", "connected")
       .where("enabled", "=", 1)
@@ -234,25 +254,25 @@ export async function openConnection(ctx: RepoContext, tenantId: string): Promis
     accessExpiresAt: iso(r.access_expires_at),
     xeroTenantId: r.xero_tenant_id,
     connectionId: r.connection_id,
-    rev: num(r.rev),
+    tokenRev: num(r.token_rev),
     refreshLockUntil: iso(r.refresh_lock_until),
     sendFrom: r.send_from,
     sendContactDetails: num(r.send_contact_details) === 1,
   };
 }
 
-/** Claims the token refresh (rev must not have moved, nobody else refreshing). Returns the claimed rev, or null. */
-export async function claimTokenRefresh(ctx: DbContext, tenantId: string, rev: number): Promise<number | null> {
+/** Claims the token refresh (token_rev must not have moved, nobody else refreshing). Returns the claimed revision, or null. */
+export async function claimTokenRefresh(ctx: DbContext, tenantId: string, tokenRev: number): Promise<number | null> {
   const at = nowIso(ctx);
   const r = await ctx.db
     .updateTable(CONN)
-    .set({ rev: rev + 1, refresh_lock_until: plus(at, XERO_REFRESH_LOCK_SECONDS), updated_at: at })
+    .set({ token_rev: tokenRev + 1, refresh_lock_until: plus(at, XERO_REFRESH_LOCK_SECONDS), updated_at: at })
     .where("tenant_id", "=", tenantId)
-    .where("rev", "=", rev)
+    .where("token_rev", "=", tokenRev)
     .where("status", "=", "connected")
     .where((eb) => eb.or([eb("refresh_lock_until", "is", null), eb("refresh_lock_until", "<", at)]))
     .executeTakeFirst();
-  return affected(r) === 1 ? rev + 1 : null;
+  return affected(r) === 1 ? tokenRev + 1 : null;
 }
 
 /** Stores the refreshed pair where our claim still holds (the old refresh token is dead from now on). */
@@ -260,15 +280,16 @@ export async function storeRefreshedTokens(ctx: RepoContext, tenantId: string, c
   const at = nowIso(ctx);
   const r = await ctx.db
     .updateTable(CONN)
-    .set({ tokens_sealed: sealTokens(ctx, tenantId, tokens), access_expires_at: accessExpiresAt, refresh_lock_until: null, rev: claimedRev + 1, updated_at: at })
+    .set({ tokens_sealed: sealTokens(ctx, tenantId, tokens), access_expires_at: accessExpiresAt, refresh_lock_until: null, token_rev: claimedRev + 1, updated_at: at })
     .where("tenant_id", "=", tenantId)
-    .where("rev", "=", claimedRev)
+    .where("token_rev", "=", claimedRev)
+    .where("status", "=", "connected")
     .executeTakeFirst();
   return affected(r) === 1;
 }
 
 export async function releaseTokenRefresh(ctx: DbContext, tenantId: string, claimedRev: number): Promise<void> {
-  await ctx.db.updateTable(CONN).set({ refresh_lock_until: null, updated_at: nowIso(ctx) }).where("tenant_id", "=", tenantId).where("rev", "=", claimedRev).execute();
+  await ctx.db.updateTable(CONN).set({ refresh_lock_until: null, updated_at: nowIso(ctx) }).where("tenant_id", "=", tenantId).where("token_rev", "=", claimedRev).execute();
 }
 
 /** Xero refused our tokens (revoked, removed in Xero): stop sending until the clinic connects again. Audited once. */
@@ -276,7 +297,7 @@ export async function pauseXero(ctx: RepoContext, tenantId: string, reason: stri
   const at = nowIso(ctx);
   const r = await ctx.db
     .updateTable(CONN)
-    .set((eb) => ({ status: "paused", last_error: redactXeroMessage(reason).slice(0, 500), refresh_lock_until: null, rev: eb("rev", "+", 1), updated_at: at }))
+    .set((eb) => ({ status: "paused", last_error: oneLine(reason).slice(0, 500), refresh_lock_until: null, rev: eb("rev", "+", 1), token_rev: eb("token_rev", "+", 1), updated_at: at }))
     .where("tenant_id", "=", tenantId)
     .where("status", "=", "connected")
     .executeTakeFirst();
@@ -295,7 +316,20 @@ export async function disconnectXero(ctx: RepoContext, tenantId: string, actor: 
   const at = nowIso(ctx);
   const r = await ctx.db
     .updateTable(CONN)
-    .set({ status: "disconnected", tokens_sealed: null, access_expires_at: null, refresh_lock_until: null, state_hash: null, state_session: null, state_user: null, state_expires_at: null, rev: num(row.rev) + 1, updated_by: actor.userId, updated_at: at })
+    .set((eb) => ({
+      status: "disconnected",
+      tokens_sealed: null,
+      access_expires_at: null,
+      refresh_lock_until: null,
+      state_hash: null,
+      state_session: null,
+      state_user: null,
+      state_expires_at: null,
+      rev: num(row.rev) + 1,
+      token_rev: eb("token_rev", "+", 1),
+      updated_by: actor.userId,
+      updated_at: at,
+    }))
     .where("tenant_id", "=", tenantId)
     .where("rev", "=", num(row.rev))
     .executeTakeFirst();
@@ -382,8 +416,8 @@ export async function putLink(ctx: DbContext, tenantId: string, type: XeroLinkTy
   const at = nowIso(ctx);
   await ctx.db
     .insertInto(LINKS)
-    .values({ tenant_id: tenantId, local_type: type, local_id: localId, xero_id: xeroId.slice(0, 64), xero_number: xeroNumber ? xeroNumber.slice(0, 100) : null, sent_hash: sentHash, pushed_at: at, created_at: at, updated_at: at })
-    .onConflict((oc) => oc.columns(["tenant_id", "local_type", "local_id"]).doNothing())
+    .values({ tenant_id: tenantId, id: `${type}:${localId}`.slice(0, 120), local_type: type, local_id: localId, xero_id: xeroId.slice(0, 64), xero_number: xeroNumber ? xeroNumber.slice(0, 100) : null, sent_hash: sentHash, pushed_at: at, created_at: at, updated_at: at })
+    .onConflict((oc) => oc.doNothing())
     .execute();
   return (await getLink(ctx, tenantId, type, localId))?.xeroId ?? xeroId;
 }
@@ -538,63 +572,76 @@ export async function dueItems(ctx: DbContext, tenantId: string, limit: number):
     .slice(0, limit);
 }
 
-/** One worker takes the item (conditional UPDATE): false = someone else has it, or it is no longer due. */
-export async function claimItem(ctx: DbContext, tenantId: string, id: string): Promise<boolean> {
+/**
+ * One worker takes the item (conditional UPDATE). Returns its lease token – only the holder of that token records the
+ * outcome (finishItem) – or null: someone else has it, or it is no longer due.
+ */
+export async function claimItem(ctx: DbContext, tenantId: string, id: string): Promise<string | null> {
   const at = nowIso(ctx);
+  const token = randomBytes(16).toString("hex");
   const r = await ctx.db
     .updateTable(ITEMS)
-    .set({ status: "in_flight", lease_until: plus(at, XERO_LEASE_SECONDS), updated_at: at })
+    .set({ status: "in_flight", lease_until: plus(at, XERO_LEASE_SECONDS), lease_token: token, updated_at: at })
     .where("tenant_id", "=", tenantId)
     .where("id", "=", id)
     .where((eb) => eb.or([eb.and([eb("status", "=", "pending"), eb("next_attempt_at", "<=", at)]), eb.and([eb("status", "=", "in_flight"), eb("lease_until", "<", at)])]))
     .executeTakeFirst();
-  return affected(r) === 1;
+  return affected(r) === 1 ? token : null;
 }
 
 export type ItemOutcome =
   | { kind: "done"; xeroId: string | null }
   | { kind: "skipped"; message: string }
   | { kind: "waiting"; message: string }
+  | { kind: "deferred" }
   | { kind: "transient"; message: string; retryAfterSeconds?: number | null }
   | { kind: "validation"; message: string }
   | { kind: "auth"; message: string };
 
-/** Records what happened to an item this worker holds. A transient failure past the last back-off is "failed". */
-export async function finishItem(ctx: DbContext, tenantId: string, item: Pick<SyncItem, "id" | "attempts">, outcome: ItemOutcome): Promise<XeroSyncStatus> {
+/**
+ * Records what happened to an item this worker holds (its lease token must still be on the row – a worker whose
+ * lease ran out and was taken over records nothing). A transient failure past the last back-off is "failed".
+ */
+export async function finishItem(ctx: DbContext, tenantId: string, item: Pick<SyncItem, "id" | "attempts">, leaseToken: string, outcome: ItemOutcome): Promise<XeroSyncStatus> {
   const at = nowIso(ctx);
-  const base = ctx.db.updateTable(ITEMS).where("tenant_id", "=", tenantId).where("id", "=", item.id).where("status", "=", "in_flight");
+  const base = ctx.db.updateTable(ITEMS).where("tenant_id", "=", tenantId).where("id", "=", item.id).where("status", "=", "in_flight").where("lease_token", "=", leaseToken);
   let status: XeroSyncStatus;
   switch (outcome.kind) {
     case "done":
       status = "done";
-      await base.set({ status, xero_id: outcome.xeroId, error_class: null, error_message: null, lease_until: null, done_at: at, attempts: item.attempts + 1, updated_at: at }).execute();
+      await base.set({ status, xero_id: outcome.xeroId, error_class: null, error_message: null, lease_until: null, lease_token: null, done_at: at, attempts: item.attempts + 1, updated_at: at }).execute();
       return status;
     case "skipped":
       status = "skipped";
-      await base.set({ status, error_class: null, error_message: redactXeroMessage(outcome.message), lease_until: null, done_at: at, updated_at: at }).execute();
+      await base.set({ status, error_class: null, error_message: oneLine(outcome.message), lease_until: null, lease_token: null, done_at: at, updated_at: at }).execute();
       return status;
     case "waiting":
       // Its invoice is not in Xero yet: looked at again soon. Waiting is not a try.
       status = "pending";
-      await base.set({ status, error_class: "waiting", error_message: redactXeroMessage(outcome.message), lease_until: null, next_attempt_at: plus(at, XERO_WAIT_SECONDS), updated_at: at }).execute();
+      await base.set({ status, error_class: "waiting", error_message: oneLine(outcome.message), lease_until: null, lease_token: null, next_attempt_at: plus(at, XERO_WAIT_SECONDS), updated_at: at }).execute();
+      return status;
+    case "deferred":
+      // The run's time was up before a call: back on the list now, untouched.
+      status = "pending";
+      await base.set({ status, lease_until: null, lease_token: null, updated_at: at }).execute();
       return status;
     case "transient": {
       const attempts = item.attempts + 1;
       const delay = nextAttemptDelaySeconds(attempts, outcome.retryAfterSeconds);
       status = delay === null ? "failed" : "pending";
       await base
-        .set({ status, attempts, error_class: "transient", error_message: redactXeroMessage(outcome.message), lease_until: null, next_attempt_at: delay === null ? at : plus(at, delay), updated_at: at })
+        .set({ status, attempts, error_class: "transient", error_message: oneLine(outcome.message), lease_until: null, lease_token: null, next_attempt_at: delay === null ? at : plus(at, delay), updated_at: at })
         .execute();
       return status;
     }
     case "validation":
       status = "blocked";
-      await base.set({ status, attempts: item.attempts + 1, error_class: "validation", error_message: redactXeroMessage(outcome.message), lease_until: null, updated_at: at }).execute();
+      await base.set({ status, attempts: item.attempts + 1, error_class: "validation", error_message: oneLine(outcome.message), lease_until: null, lease_token: null, updated_at: at }).execute();
       return status;
     case "auth":
       // Not the item's fault: back to the list untouched; the connection is paused by the caller.
       status = "pending";
-      await base.set({ status, error_class: "auth", error_message: redactXeroMessage(outcome.message), lease_until: null, updated_at: at }).execute();
+      await base.set({ status, error_class: "auth", error_message: oneLine(outcome.message), lease_until: null, lease_token: null, updated_at: at }).execute();
       return status;
   }
 }
@@ -650,10 +697,14 @@ export async function syncCounts(ctx: DbContext, tenantId: string): Promise<Reco
 }
 
 /** The screen's list: what needs the clinic first (failed, blocked), then the newest. */
-export async function listSyncItems(ctx: DbContext, tenantId: string, options: { statuses?: XeroSyncStatus[]; limit?: number } = {}): Promise<SyncItem[]> {
+export async function listSyncItems(ctx: DbContext, tenantId: string, options: { statuses?: XeroSyncStatus[]; withWaiting?: boolean; limit?: number } = {}): Promise<SyncItem[]> {
   return readOrEmpty(ITEMS, [] as SyncItem[], async () => {
     let q = ctx.db.selectFrom(ITEMS).selectAll().where("tenant_id", "=", tenantId);
-    if (options.statuses?.length) q = q.where("status", "in", options.statuses);
+    const statuses = options.statuses;
+    if (statuses?.length && options.withWaiting) {
+      // Also what waits on something that needs the clinic (its invoice blocked or failed) – never silently pending.
+      q = q.where((eb) => eb.or([eb("status", "in", statuses), eb.and([eb("status", "=", "pending"), eb("error_class", "=", "waiting")])]));
+    } else if (statuses?.length) q = q.where("status", "in", statuses);
     const rows = await q.orderBy("updated_at", "desc").orderBy("id").limit(Math.min(options.limit ?? 50, 200)).execute();
     return rows.map((r) => toItem(r as Record<string, unknown>));
   });
@@ -670,7 +721,27 @@ export async function auditPush(ctx: RepoContext, tenantId: string, actor: PmsAc
  */
 export async function clinicsToSend(ctx: DbContext, limit = 500): Promise<string[]> {
   const rows = await readOrEmpty(CONN, [] as { tenant_id: string }[], () =>
-    ctx.db.selectFrom(CONN).select("tenant_id").where("status", "=", "connected").where("enabled", "=", 1).orderBy("tenant_id").limit(limit).execute(),
+    ctx.db
+      .selectFrom(CONN)
+      .select("tenant_id")
+      .where("status", "=", "connected")
+      .where("enabled", "=", 1)
+      // The clinic the run worked on longest ago first, so a long list never starves the clinics at its end.
+      .orderBy(sql`coalesce(last_run_at, ${"1970-01-01T00:00:00.000Z"})`)
+      .orderBy("tenant_id")
+      .limit(limit)
+      .execute(),
   );
   return rows.map((r) => r.tenant_id);
+}
+
+/** The scheduled run worked on this clinic now (its place in the rotation). */
+export async function markClinicRun(ctx: DbContext, tenantId: string): Promise<void> {
+  await ctx.db.updateTable(CONN).set({ last_run_at: nowIso(ctx) }).where("tenant_id", "=", tenantId).execute();
+}
+
+/** The send list's item of a record (its status), or null. */
+export async function itemStatus(ctx: DbContext, tenantId: string, id: string): Promise<XeroSyncStatus | null> {
+  const r = await ctx.db.selectFrom(ITEMS).select("status").where("tenant_id", "=", tenantId).where("id", "=", id).executeTakeFirst();
+  return (r?.status as XeroSyncStatus | undefined) ?? null;
 }

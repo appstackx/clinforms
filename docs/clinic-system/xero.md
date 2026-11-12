@@ -70,8 +70,8 @@ Clinic guide: `docs/clinic-guides/xero.md`.
   `<tenant>:pms_xero_connections.tokens_sealed:<tenant>`), never logged, never returned to a screen. The column is
   deliberately not `_enc`: offboarding's export decrypts `_enc` columns, and a live refresh token must never land in an
   export file in clear.
-- **Refresh-token rotation:** a refresh is claimed with the row's `rev` plus `refresh_lock_until` (30 s), the new pair
-  stored only where the claim still holds. `invalid_grant` / 403 → status `paused`, the "Reconnect Xero" banner.
+- **Refresh-token rotation:** a refresh is claimed with the row's `token_rev` plus `refresh_lock_until` (30 s), the new
+  pair stored only where the claim still holds (settings use `rev`, so a save never discards it). `invalid_grant` / 403 → status `paused`, the "Reconnect Xero" banner.
 - **OAuth state:** 256 random bits, only its SHA-256 stored with the member's user id and session id, 10 minutes,
   consumed by the same conditional UPDATE that checks it (single use) – even for Xero's error answers.
 - **One GBP organisation** per clinic, picked by the access token's `authentication_event_id`; anything else is
@@ -81,7 +81,29 @@ Clinic guide: `docs/clinic-guides/xero.md`.
   comes only from the clinic's own row; the drain's one cross-clinic read returns clinic ids only.
 - **Idempotency:** `pms_xero_links` (a linked record is never created again), a look-up by invoice / credit-note
   number before creating (a lost answer), and an `Idempotency-Key` per item + payload version (bumped by Retry).
-- **Messages** from Xero are stored redacted (quoted values, emails, long numbers removed – Xero quotes names).
+- **Messages:** Xero's own text is never stored – fixed plain-English lines only (`xeroMessageText`).
+- **One organisation, one clinic** (`xeroOrgInUseElsewhere` – the one cross-clinic yes/no read in a clinic's flow).
+
+### Independent review fixes (12/11/2026)
+
+| # | Finding | Fix |
+|---|---|---|
+| 1 | A credit note sent before an earlier payment blocked that payment | A credit note waits until every payment allocated to its invoice before it (by `created_at`) is linked, done or skipped |
+| 2 | Find-by-number could link someone else's document / contact | A found invoice / credit note is linked only if type (ACCREC / ACCRECCREDIT), total and contact match; a `CD-P…` contact only if its name matches; otherwise "needs a fix". One Xero organisation per clinic: connecting an organisation another clinic uses is refused (`org_in_use`) and that clinic's connection is left alone |
+| 3 | Unreadable 200 → blocked → new key → duplicate payment | Unreadable / id-less answers are TRANSIENT (same key). Each payment carries a marker `CD-A<10>` in its Reference; before creating, the invoice's payments are checked and a match is linked |
+| 4 | Revoking could end another clinic's connection | Disconnect / failed connect delete only this sign-in's connections whose organisation no other clinic uses; the refresh token is revoked only when the Xero user has no connection left (`revokeIfAlone`); a token without `authentication_event_id` is refused and nothing is touched |
+| 5 | Site-limited admins could run the clinic-wide sync | `mayManageXero` also needs `siteIds === null` |
+| 6 | VAT treatment from today's setting | From the invoice's own lines (`invoiceUsesVat`); a "none" line is always `NONE` |
+| 7 | Lease without owner; items could outlast it | `lease_token` per claim, only the holder records the outcome; lease 120 s; every Xero call (10 s timeout) checks the run's deadline first (`XeroDeferred` → back on the list, no try counted); drain: no item starts after 33 s, no call after 45 s |
+| 8 | Drain starved later clinics | `last_run_at`, clinics taken oldest-run first |
+| 9 | Dependents of a skipped / blocked invoice silently pending | Skipped invoice → dependents skipped with a reason; blocked / failed → dependents "waiting" with a reason, listed on the screen |
+| 10 | Links export capped at 10,000 | `pms_xero_links` keyed `(tenant_id, id)` → keyset-paged by the export |
+| 11 | A settings save discarded a fresh refresh | Separate `token_rev` for refresh claims |
+| 12 | Lost credit-note allocation answer | Allocation capped by the credit note's remaining credit (0 = already allocated) and the invoice's amount due |
+| 13 | Messages could keep patient names | Xero's text is never stored: known messages map to fixed lines (`xeroMessageText`), anything else to one generic line |
+
+Also found while testing: invoice / credit-note numbers are now sent exactly as ClinDesk prints them
+(`formatDocumentNumber`, e.g. `RIV00042`).
 
 ### Differences from the scope doc (deliberate, to review)
 

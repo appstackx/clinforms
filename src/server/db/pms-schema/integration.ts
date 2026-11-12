@@ -220,6 +220,8 @@ export interface PmsApiIdempotencyTable {
 export interface PmsXeroConnectionsTable {
   tenant_id: string;
   rev: WithDefault<number>;
+  /** The tokens' own revision (refresh claims), apart from rev (settings), so a save never discards a refresh. */
+  token_rev: WithDefault<number>;
   enabled: WithDefault<number>;
   /** "not_connected" | "connected" | "paused" | "disconnected" */
   status: WithDefault<string>;
@@ -240,6 +242,8 @@ export interface PmsXeroConnectionsTable {
   state_session: string | null;
   state_user: string | null;
   state_expires_at: IsoTimestamp | null;
+  /** When the scheduled run last worked on this clinic (clinics are taken oldest first). */
+  last_run_at: IsoTimestamp | null;
   last_error: string | null;
   connected_by: string | null;
   connected_at: IsoTimestamp | null;
@@ -262,6 +266,8 @@ export interface PmsXeroMappingsTable {
 
 export interface PmsXeroLinksTable {
   tenant_id: string;
+  /** "<local_type>:<local_id>" */
+  id: string;
   /** "patient" | "referrer" | "invoice" | "credit_note" | "allocation" */
   local_type: string;
   local_id: string;
@@ -285,6 +291,8 @@ export interface PmsXeroSyncItemsTable {
   payload_version: WithDefault<number>;
   next_attempt_at: IsoTimestamp;
   lease_until: IsoTimestamp | null;
+  /** Random per claim: only the worker holding it records the outcome. */
+  lease_token: string | null;
   error_class: string | null;
   error_message: string | null;
   xero_id: string | null;
@@ -339,12 +347,12 @@ export const INTEGRATION_PRIMARY_KEYS: { readonly [T in (typeof INTEGRATION_TABL
   pms_api_idempotency: ["tenant_id", "id"],
   pms_xero_connections: ["tenant_id"],
   pms_xero_mappings: ["tenant_id", "map_kind", "local_key"],
-  pms_xero_links: ["tenant_id", "local_type", "local_id"],
+  pms_xero_links: ["tenant_id", "id"],
   pms_xero_sync_items: ["tenant_id", "id"],
 };
 
 /** Timestamp columns beyond created_at/updated_at (TEXT in SQLite, timestamptz in Postgres) – for the D1 → Postgres copy. */
-export const INTEGRATION_TIMESTAMP_COLUMNS: readonly string[] = ["lease_until", "checked_at", "approved_at", "imported_at", "undone_at", "cancelled_at", "closed_at", "signed_at", "filed_at", "expires_at", "last_used_at", "revoked_at", "access_expires_at", "refresh_lock_until", "state_expires_at", "connected_at", "pushed_at", "next_attempt_at", "done_at"];
+export const INTEGRATION_TIMESTAMP_COLUMNS: readonly string[] = ["lease_until", "checked_at", "approved_at", "imported_at", "undone_at", "cancelled_at", "closed_at", "signed_at", "filed_at", "expires_at", "last_used_at", "revoked_at", "access_expires_at", "refresh_lock_until", "state_expires_at", "connected_at", "pushed_at", "next_attempt_at", "done_at", "last_run_at"];
 
 /** Every integration table holds one clinic's data (offboarding exports them decrypted, then deletes them). */
 export const INTEGRATION_TENANT_TABLES: readonly (typeof INTEGRATION_TABLES)[number][] = INTEGRATION_TABLES;

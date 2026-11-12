@@ -28,6 +28,8 @@ export interface FakeOrg {
 interface Grant {
   authEventId: string;
   orgIds: string[];
+  /** The Xero user who signed in (GET /connections lists every connection of that user to this app). */
+  user: string;
 }
 
 export interface InjectedFailure {
@@ -102,13 +104,17 @@ export class FakeXero {
   };
   readonly orgs = new Map<string, FakeOrg>();
   /** connection id → org (every connection the fake Xero user made). */
-  readonly connections = new Map<string, { id: string; tenantId: string; authEventId: string; created: string }>();
+  readonly connections = new Map<string, { id: string; tenantId: string; authEventId: string; created: string; user: string }>();
+  /** The next token minted carries no authentication_event_id claim. */
+  omitAuthEventOnce = false;
   private readonly codes = new Map<string, Grant>();
-  private readonly access = new Map<string, { exp: number; orgIds: string[] }>();
+  private readonly access = new Map<string, { exp: number; orgIds: string[]; user: string }>();
   private readonly refreshTokens = new Map<string, Grant>();
   private readonly idempotency = new Map<string, Response>();
   private failures: InjectedFailure[] = [];
   readonly calls: string[] = [];
+  /** Users whose grant was revoked. */
+  readonly revoked: string[] = [];
   /** The fake's own clock (ms) for token expiry. */
   now = () => Date.now();
 
@@ -118,13 +124,15 @@ export class FakeXero {
   }
 
   /** What Xero hands the redirect after the user allowed these organisations: a one-time code. */
-  issueCode(orgIds: string[]): string {
+  issueCode(orgIds: string[], user = "xero-user-1"): string {
     const code = `code-${randomUUID()}`;
     const authEventId = randomUUID();
-    this.codes.set(code, { authEventId, orgIds });
+    this.codes.set(code, { authEventId, orgIds, user });
     for (const tenantId of orgIds) {
-      const id = randomUUID();
-      this.connections.set(id, { id, tenantId, authEventId, created: new Date(this.now()).toISOString() });
+      // One connection per user and organisation: connecting again updates it (new auth event).
+      const existing = Array.from(this.connections.values()).find((c) => c.user === user && c.tenantId === tenantId);
+      const id = existing?.id ?? randomUUID();
+      this.connections.set(id, { id, tenantId, authEventId, created: new Date(this.now()).toISOString(), user });
     }
     return code;
   }
@@ -155,9 +163,11 @@ export class FakeXero {
   }
 
   private mint(grant: Grant): Json {
-    const accessToken = `${b64url(JSON.stringify({ alg: "none" }))}.${b64url(JSON.stringify({ authentication_event_id: grant.authEventId, jti: randomUUID() }))}.sig`;
+    const claims = this.omitAuthEventOnce ? { jti: randomUUID() } : { authentication_event_id: grant.authEventId, jti: randomUUID() };
+    this.omitAuthEventOnce = false;
+    const accessToken = `${b64url(JSON.stringify({ alg: "none" }))}.${b64url(JSON.stringify(claims))}.sig`;
     const refreshToken = `rt-${randomUUID()}`;
-    this.access.set(accessToken, { exp: this.now() + 1800_000, orgIds: grant.orgIds });
+    this.access.set(accessToken, { exp: this.now() + 1800_000, orgIds: grant.orgIds, user: grant.user });
     this.refreshTokens.set(refreshToken, grant);
     return { access_token: accessToken, refresh_token: refreshToken, expires_in: 1800, token_type: "Bearer", scope: "openid profile email offline_access accounting.invoices accounting.payments accounting.contacts accounting.settings.read" };
   }
@@ -192,7 +202,15 @@ export class FakeXero {
       if (basic !== `Basic ${Buffer.from(`${this.app.clientId}:${this.app.clientSecret}`).toString("base64")}`) return jsonResponse(401, { error: "invalid_client" });
       const form = new URLSearchParams(String(init.body ?? ""));
       if (path === "/connect/revocation") {
+        // Revoking ends the grant: every connection of that user to this app goes with it.
+        const g = this.refreshTokens.get(form.get("token") ?? "");
         this.refreshTokens.delete(form.get("token") ?? "");
+        if (g) {
+          this.revoked.push(g.user);
+          Array.from(this.connections.entries()).forEach(([k, c]) => {
+            if (c.user === g.user) this.connections.delete(k);
+          });
+        }
         return new Response(null, { status: 200 });
       }
       if (form.get("grant_type") === "authorization_code") {
@@ -219,7 +237,7 @@ export class FakeXero {
       return jsonResponse(
         200,
         Array.from(this.connections.values())
-          .filter((c) => tok.orgIds.includes(c.tenantId))
+          .filter((c) => c.user === tok.user)
           .map((c) => ({ id: c.id, authEventId: c.authEventId, tenantId: c.tenantId, tenantType: "ORGANISATION", tenantName: this.orgs.get(c.tenantId)?.name ?? "", createdDateUtc: c.created })),
       );
     }
@@ -231,7 +249,7 @@ export class FakeXero {
 
     const tenant = this.headerOf(init, "xero-tenant-id") ?? "";
     const org = this.orgs.get(tenant);
-    const connected = Array.from(this.connections.values()).some((c) => c.tenantId === tenant);
+    const connected = Array.from(this.connections.values()).some((c) => c.tenantId === tenant && c.user === tok.user);
     if (!org || !tok.orgIds.includes(tenant) || !connected) return jsonResponse(403, { Title: "Forbidden", Detail: "AuthenticationUnsuccessful" });
 
     const idem = this.headerOf(init, "idempotency-key");
@@ -276,9 +294,14 @@ export class FakeXero {
       const err = this.checkDoc(org, inv, "InvoiceNumber", org.invoices);
       if (err) return validation(err);
       const total = this.total(inv);
-      const row = { ...inv, InvoiceID: randomUUID(), Total: total, AmountDue: total, AmountPaid: 0, AmountCredited: 0 };
+      const row = { ...inv, InvoiceID: randomUUID(), Total: total, AmountDue: total, AmountPaid: 0, AmountCredited: 0, Payments: [] as Json[] };
       org.invoices.push(row);
       return jsonResponse(200, { Invoices: [row] });
+    }
+    const cnOne = /^\/CreditNotes\/([^/]+)$/.exec(p);
+    if (method === "GET" && cnOne) {
+      const cn = org.creditNotes.find((c) => c.CreditNoteID === cnOne[1]);
+      return cn ? jsonResponse(200, { CreditNotes: [cn] }) : jsonResponse(404, { Message: "Not found" });
     }
     if (method === "GET" && p === "/CreditNotes") return jsonResponse(200, { CreditNotes: org.creditNotes.filter((c) => (eq ? String(c[eq[1]]) === eq[2] : true)) });
     if (method === "PUT" && p === "/CreditNotes") {
@@ -313,8 +336,9 @@ export class FakeXero {
       if (Number(pay.Amount) > Number(inv.AmountDue) + 1e-9) return validation("Payment amount exceeds the amount outstanding on this document.");
       inv.AmountDue = Math.round((Number(inv.AmountDue) - Number(pay.Amount)) * 100) / 100;
       inv.AmountPaid = Math.round((Number(inv.AmountPaid) + Number(pay.Amount)) * 100) / 100;
-      const row = { ...pay, PaymentID: randomUUID(), Status: "AUTHORISED" };
+      const row: Json = { ...pay, PaymentID: randomUUID(), Status: "AUTHORISED" };
       org.payments.push(row);
+      (inv.Payments as Json[]).push({ PaymentID: row.PaymentID, Amount: row.Amount, Reference: row.Reference ?? "", Status: "AUTHORISED" });
       return jsonResponse(200, { Payments: [row] });
     }
     const payOne = /^\/Payments\/([^/]+)$/.exec(p);
@@ -325,6 +349,7 @@ export class FakeXero {
       pay.Status = "DELETED";
       const inv = org.invoices.find((i) => i.InvoiceID === (pay.Invoice as Json).InvoiceID);
       if (inv) {
+        for (const ip of inv.Payments as Json[]) if (ip.PaymentID === pay.PaymentID) ip.Status = "DELETED";
         inv.AmountDue = Math.round((Number(inv.AmountDue) + Number(pay.Amount)) * 100) / 100;
         inv.AmountPaid = Math.round((Number(inv.AmountPaid) - Number(pay.Amount)) * 100) / 100;
       }

@@ -8,13 +8,15 @@
  *   transient  – 429 (Retry-After kept), 5xx, timeouts, network errors: retried with back-off;
  *   validation – 400 / 404 and Xero's ValidationErrors: blocked until the clinic fixes it and presses Retry;
  *   auth       – 401 after a refresh, 403, invalid_grant: the clinic must reconnect.
- * Messages are redacted (quoted values removed) before they leave this file: Xero quotes names and numbers.
+ * Xero's own message text never leaves this file: it is mapped to a fixed plain-English line (xeroMessageText) –
+ * Xero quotes names, numbers and e-mail addresses, quoted or not.
+ * Every call checks the run's deadline first (XeroDeferred): an item is never left half-sent by a killed function.
  *
  * Secrets: the client secret only goes in the Basic header of the token, refresh and revocation calls; tokens are
  * never logged or put in an error message.
  */
 import "server-only";
-import { XERO_URLS, redactXeroMessage, type XeroErrorClass } from "../../../../modules/pms/integration/xero";
+import { XERO_URLS, oneLine, xeroMessageText, type XeroErrorClass } from "../../../../modules/pms/integration/xero";
 
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
@@ -41,12 +43,20 @@ export class XeroError extends Error {
   /** 401 on an API call: the access token may only need a refresh. */
   readonly unauthorized: boolean;
   constructor(errorClass: Exclude<XeroErrorClass, "waiting">, status: number, message: string, options: { retryAfterSeconds?: number | null; unauthorized?: boolean } = {}) {
-    super(redactXeroMessage(message));
+    super(oneLine(message));
     this.name = "XeroError";
     this.errorClass = errorClass;
     this.status = status;
     this.retryAfterSeconds = options.retryAfterSeconds ?? null;
     this.unauthorized = options.unauthorized === true;
+  }
+}
+
+/** The run's time is up: nothing was sent by this call; the item goes back on the list untouched. */
+export class XeroDeferred extends Error {
+  constructor() {
+    super("Will be sent on the next run.");
+    this.name = "XeroDeferred";
   }
 }
 
@@ -144,6 +154,11 @@ export class XeroClient {
     this.urls = { ...XERO_URLS, ...(deps.urls ?? {}) };
   }
 
+  /** Longest a single call may take (the send run keeps every item well inside its lease). */
+  get timeoutMs(): number {
+    return this.deps.timeoutMs ?? 10_000;
+  }
+
   get redirectUri(): string {
     return this.app.redirectUri;
   }
@@ -164,7 +179,7 @@ export class XeroClient {
   }
 
   private async send(url: string, init: RequestInit): Promise<Response> {
-    const timeout = this.deps.timeoutMs ?? 20_000;
+    const timeout = this.timeoutMs;
     try {
       return await this.deps.fetch(url, { ...init, redirect: "error", signal: AbortSignal.timeout(timeout) });
     } catch {
@@ -228,7 +243,14 @@ export class XeroClient {
       const res = await this.send(url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
       if (res.ok) {
         if (res.status === 204) return null;
-        return res.json().catch(() => null);
+        const text = await res.text().catch(() => null);
+        if (text === null) throw new XeroError("transient", res.status, "Xero's answer could not be read. It will be checked again.");
+        if (text === "") return null;
+        try {
+          return JSON.parse(text) as unknown;
+        } catch {
+          throw new XeroError("transient", res.status, "Xero's answer could not be read. It will be checked again.");
+        }
       }
       const retryAfter = retryAfterOf(res);
       const transient = res.status === 429 || res.status >= 500;
@@ -244,8 +266,7 @@ export class XeroClient {
       if (res.status >= 500) throw new XeroError("transient", res.status, "Xero had a problem and could not take this right now.", { retryAfterSeconds: retryAfter });
       if (res.status === 401) throw new XeroError("auth", 401, "Xero did not accept the sign-in token.", { unauthorized: true });
       if (res.status === 403) throw new XeroError("auth", 403, "Xero refused access – the connection may have been removed in Xero.");
-      const text = validationText(parsed);
-      throw new XeroError("validation", res.status, text || (res.status === 404 ? "Xero could not find that record." : "Xero did not accept the record."));
+      throw new XeroError("validation", res.status, xeroMessageText(validationText(parsed) || (res.status === 404 ? "not found" : "")));
     }
   }
 
@@ -266,9 +287,16 @@ export class XeroClient {
     await this.apiCall(accessToken, null, "DELETE", `${this.urls.connections}/${encodeURIComponent(connectionId)}`);
   }
 
-  /** The Accounting API for one organisation. */
-  org(accessToken: string, xeroTenantId: string): XeroOrgApi {
-    return new XeroOrgApi((method, path, body, key) => this.apiCall(accessToken, xeroTenantId, method, `${this.urls.api}${path}`, body, key));
+  /**
+   * The Accounting API for one organisation. `deadline` (ms, by `now`): a call that could not finish before it is not
+   * started (XeroDeferred) – the run never outlives its function or an item's lease.
+   */
+  org(accessToken: string, xeroTenantId: string, limits: { deadline?: number; now?: () => number } = {}): XeroOrgApi {
+    const now = limits.now ?? (() => Date.now());
+    return new XeroOrgApi((method, path, body, key) => {
+      if (limits.deadline !== undefined && now() + this.timeoutMs > limits.deadline) return Promise.reject(new XeroDeferred());
+      return this.apiCall(accessToken, xeroTenantId, method, `${this.urls.api}${path}`, body, key);
+    });
   }
 }
 
@@ -286,12 +314,27 @@ function whereEq(field: string, value: string): string {
 /** The first created record's id from a PUT answer, or a validation error when Xero flagged the element. */
 function created(answer: unknown, key: string, idField: string): { id: string; number: string | null; raw: Record<string, unknown> } {
   const first = list(answer, key)[0];
-  if (!first) throw new XeroError("validation", 200, "Xero's answer did not include the record.");
+  // An accepted call whose answer we cannot read may still have created the record: TRANSIENT (same Idempotency-Key,
+  // and the look-ups before the next create), never "blocked" – a blocked item is retried under a new key.
+  if (!first) throw new XeroError("transient", 200, "Xero's answer could not be read. It will be checked again.");
   const errors = Array.isArray(first.ValidationErrors) ? (first.ValidationErrors as { Message?: unknown }[]).map((e) => str(e.Message)).filter(Boolean) : [];
-  if (first.HasValidationErrors === true || (errors.length && !str(first[idField]))) throw new XeroError("validation", 200, errors.join(" ") || "Xero did not accept the record.");
+  if (first.HasValidationErrors === true || (errors.length && !str(first[idField]))) throw new XeroError("validation", 200, xeroMessageText(errors.join(" ")));
   const id = str(first[idField]);
-  if (!id) throw new XeroError("validation", 200, "Xero's answer did not include the record's id.");
+  if (!id) throw new XeroError("transient", 200, "Xero's answer could not be read. It will be checked again.");
   return { id, number: str(first.InvoiceNumber) || str(first.CreditNoteNumber) || null, raw: first };
+}
+
+export interface XeroDocMatch {
+  id: string;
+  type: string;
+  /** Pounds. */
+  total: number | null;
+  contactId: string | null;
+}
+
+function docMatch(d: Record<string, unknown>, idField: string): XeroDocMatch {
+  const contact = d.Contact && typeof d.Contact === "object" ? str((d.Contact as Record<string, unknown>).ContactID) : "";
+  return { id: str(d[idField]), type: str(d.Type), total: typeof d.Total === "number" ? d.Total : null, contactId: contact || null };
 }
 
 export class XeroOrgApi {
@@ -331,9 +374,10 @@ export class XeroOrgApi {
     }));
   }
 
-  async findContactByNumber(contactNumber: string): Promise<string | null> {
+  /** The active contact with this ContactNumber (its id and name), or null. */
+  async findContactByNumber(contactNumber: string): Promise<{ id: string; name: string } | null> {
     const hit = list(await this.call("GET", `/Contacts?${whereEq("ContactNumber", contactNumber)}`), "Contacts").find((c) => str(c.ContactNumber) === contactNumber && str(c.ContactStatus) !== "ARCHIVED");
-    return hit ? str(hit.ContactID) || null : null;
+    return hit && str(hit.ContactID) ? { id: str(hit.ContactID), name: str(hit.Name) } : null;
   }
 
   /** An active contact whose name is exactly `name` (case-insensitive) – Xero keeps contact names unique. */
@@ -348,9 +392,10 @@ export class XeroOrgApi {
     return created(await this.call("PUT", "/Contacts", { Contacts: [body] }, idempotencyKey), "Contacts", "ContactID").id;
   }
 
-  async findInvoiceByNumber(number: string): Promise<string | null> {
+  /** A live document with this invoice number: what it is, its total and its contact (to check it is OURS). */
+  async findInvoiceByNumber(number: string): Promise<XeroDocMatch | null> {
     const hit = list(await this.call("GET", `/Invoices?InvoiceNumbers=${encodeURIComponent(number)}`), "Invoices").find((i) => str(i.InvoiceNumber) === number && str(i.Status) !== "DELETED" && str(i.Status) !== "VOIDED");
-    return hit ? str(hit.InvoiceID) || null : null;
+    return hit && str(hit.InvoiceID) ? docMatch(hit, "InvoiceID") : null;
   }
 
   async createInvoice(body: unknown, idempotencyKey: string): Promise<{ id: string; number: string | null }> {
@@ -358,15 +403,25 @@ export class XeroOrgApi {
     return { id: r.id, number: r.number };
   }
 
-  /** The amount still due on an invoice in Xero (pounds). */
-  async invoiceAmountDue(invoiceId: string): Promise<number | null> {
+  /** An invoice's amount due (pounds) and its payments (to find one we sent whose answer was lost). */
+  async invoiceState(invoiceId: string): Promise<{ amountDue: number | null; payments: { id: string; reference: string; amount: number }[] }> {
     const inv = list(await this.call("GET", `/Invoices/${encodeURIComponent(invoiceId)}`), "Invoices")[0];
-    return inv && typeof inv.AmountDue === "number" ? inv.AmountDue : null;
+    if (!inv) return { amountDue: null, payments: [] };
+    const payments = (Array.isArray(inv.Payments) ? (inv.Payments as Record<string, unknown>[]) : [])
+      .filter((p) => str(p.Status) !== "DELETED")
+      .map((p) => ({ id: str(p.PaymentID), reference: str(p.Reference), amount: typeof p.Amount === "number" ? p.Amount : Number(p.Amount) }));
+    return { amountDue: typeof inv.AmountDue === "number" ? inv.AmountDue : null, payments };
   }
 
-  async findCreditNoteByNumber(number: string): Promise<string | null> {
+  async findCreditNoteByNumber(number: string): Promise<XeroDocMatch | null> {
     const hit = list(await this.call("GET", `/CreditNotes?${whereEq("CreditNoteNumber", number)}`), "CreditNotes").find((c) => str(c.CreditNoteNumber) === number && str(c.Status) !== "DELETED" && str(c.Status) !== "VOIDED");
-    return hit ? str(hit.CreditNoteID) || null : null;
+    return hit && str(hit.CreditNoteID) ? docMatch(hit, "CreditNoteID") : null;
+  }
+
+  /** What is left of a credit note to allocate (pounds), or null when Xero did not say. */
+  async creditNoteRemaining(creditNoteId: string): Promise<number | null> {
+    const cn = list(await this.call("GET", `/CreditNotes/${encodeURIComponent(creditNoteId)}`), "CreditNotes")[0];
+    return cn && typeof cn.RemainingCredit === "number" ? cn.RemainingCredit : null;
   }
 
   async createCreditNote(body: unknown, idempotencyKey: string): Promise<{ id: string; number: string | null }> {

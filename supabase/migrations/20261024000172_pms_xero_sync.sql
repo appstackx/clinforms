@@ -10,6 +10,7 @@
 create table if not exists public.pms_xero_connections (
   tenant_id text not null primary key,
   rev integer not null default 1 check (rev > 0),
+  token_rev integer not null default 1 check (token_rev > 0),
   enabled integer not null default 0 check (enabled in (0, 1)),
   status text not null default 'not_connected' check (status in ('not_connected', 'connected', 'paused', 'disconnected')),
   xero_tenant_id text check (xero_tenant_id is null or length(xero_tenant_id) <= 64),
@@ -26,6 +27,7 @@ create table if not exists public.pms_xero_connections (
   state_session text,
   state_user text,
   state_expires_at timestamptz,
+  last_run_at timestamptz,
   last_error text check (last_error is null or length(last_error) <= 500),
   connected_by text,
   connected_at timestamptz,
@@ -35,6 +37,7 @@ create table if not exists public.pms_xero_connections (
   foreign key (tenant_id) references public.pms_billing_settings (tenant_id) on delete cascade
 );
 create index if not exists pms_xero_connections_active on public.pms_xero_connections (status, enabled);
+create index if not exists pms_xero_connections_org on public.pms_xero_connections (xero_tenant_id);
 
 create table if not exists public.pms_xero_mappings (
   tenant_id text not null,
@@ -51,6 +54,7 @@ create table if not exists public.pms_xero_mappings (
 
 create table if not exists public.pms_xero_links (
   tenant_id text not null,
+  id text not null check (length(id) between 1 and 120),
   local_type text not null check (local_type in ('patient', 'referrer', 'invoice', 'credit_note', 'allocation')),
   local_id text not null,
   xero_id text not null check (length(xero_id) between 1 and 64),
@@ -59,9 +63,10 @@ create table if not exists public.pms_xero_links (
   pushed_at timestamptz not null,
   created_at timestamptz not null,
   updated_at timestamptz not null,
-  primary key (tenant_id, local_type, local_id),
+  primary key (tenant_id, id),
   foreign key (tenant_id) references public.pms_xero_connections (tenant_id) on delete cascade
 );
+create unique index if not exists pms_xero_links_local on public.pms_xero_links (tenant_id, local_type, local_id);
 
 create table if not exists public.pms_xero_sync_items (
   tenant_id text not null,
@@ -74,6 +79,7 @@ create table if not exists public.pms_xero_sync_items (
   payload_version integer not null default 1 check (payload_version > 0),
   next_attempt_at timestamptz not null,
   lease_until timestamptz,
+  lease_token text check (lease_token is null or length(lease_token) <= 64),
   error_class text check (error_class is null or error_class in ('transient', 'validation', 'auth', 'waiting')),
   error_message text check (error_message is null or length(error_message) <= 500),
   xero_id text check (xero_id is null or length(xero_id) <= 64),

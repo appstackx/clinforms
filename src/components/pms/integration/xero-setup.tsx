@@ -330,9 +330,11 @@ function SendList({ view }: { view: XeroScreenView }) {
                   </p>
                 </div>
                 <div className="flex shrink-0 gap-2">
-                  <PmsButton size="sm" variant="secondary" loading={busy === p.id} onClick={() => act(p.id, "retry")}>
-                    Retry
-                  </PmsButton>
+                  {p.status !== "pending" ? (
+                    <PmsButton size="sm" variant="secondary" loading={busy === p.id} onClick={() => act(p.id, "retry")}>
+                      Retry
+                    </PmsButton>
+                  ) : null}
                   <PmsButton size="sm" variant="ghost" disabled={busy === p.id} onClick={() => act(p.id, "skip")}>
                     Skip
                   </PmsButton>

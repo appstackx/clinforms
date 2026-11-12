@@ -21,9 +21,10 @@ import { TokenSession } from "./sync";
 
 export { xeroAvailable };
 
-/** Owners and admins (with the set-up permission) connect Xero and choose the mappings. */
-export function mayManageXero(actor: Pick<ClinicActor, "role" | "can">): boolean {
-  return (actor.role === "owner" || actor.role === "admin") && actor.can("settings.setup");
+/** Owners and admins (with the set-up permission) who work at every site connect Xero and choose the mappings. */
+export function mayManageXero(actor: Pick<ClinicActor, "role" | "can" | "siteIds">): boolean {
+  // Clinic-wide (every site's invoices and payments): never a member limited to some sites.
+  return (actor.role === "owner" || actor.role === "admin") && actor.can("settings.setup") && actor.siteIds === null;
 }
 
 export type { XeroLists, XeroOption, XeroScreenView };
@@ -73,7 +74,7 @@ export async function xeroScreenFor(actor: ClinicActor, client: XeroClient | nul
     listServices(ctx, t),
     listSites(ctx, t),
     syncCounts(ctx, t),
-    listSyncItems(ctx, t, { statuses: ["failed", "blocked"], limit: 50 }),
+    listSyncItems(ctx, t, { statuses: ["failed", "blocked"], withWaiting: true, limit: 50 }),
     listSyncItems(ctx, t, { limit: 15 }),
     ctx.db.selectFrom("pms_billing_settings").select("vat_registered").where("tenant_id", "=", t).executeTakeFirst(),
     ctx.db.selectFrom("pms_payments").select("method").distinct().where("tenant_id", "=", t).where("kind", "=", "payment").limit(20).execute(),

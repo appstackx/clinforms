@@ -12,18 +12,27 @@
  * - TENANT ISOLATION: everything is read with the clinic's id; the Xero organisation id comes from that clinic's own
  *   connection row only.
  *
- * Nothing is read back from Xero except look-ups that stop a duplicate and an invoice's amount due (to allocate a
- * credit note no further than Xero allows).
+ * - ORDER: a credit note waits until every earlier payment on its invoice is in Xero (or skipped), so Xero sees the
+ *   events in the order they happened (a credit allocated first could make an earlier payment "too much").
+ * - TIME: every Xero call checks the run's deadline first (XeroDeferred → back on the list untouched); only the
+ *   worker holding an item's lease token records its outcome.
+ *
+ * Nothing is read back from Xero except look-ups that stop a duplicate (documents by number – accepted only when type,
+ * total and contact match; payments by the marker in their Reference; a credit note's remaining credit) and an
+ * invoice's amount due (to allocate a credit note no further than Xero allows).
  */
 import "server-only";
 import { PAYMENT_METHOD_LABELS } from "../../../../modules/pms/billing/copy";
-import { XERO_ACCESS_SKEW_SECONDS, XERO_ITEMS_PER_RUN, XERO_COPY, idempotencyKeyFor } from "../../../../modules/pms/integration/xero";
+import { formatDocumentNumber } from "../../../../modules/pms/billing/numbers";
+import { XERO_ACCESS_SKEW_SECONDS, XERO_ITEMS_PER_RUN, XERO_COPY, idempotencyKeyFor, syncItemId } from "../../../../modules/pms/integration/xero";
 import {
   allocationToXero,
   contactNumberFor,
   contactToXero,
   creditNoteToXero,
   invoiceToXero,
+  invoiceUsesVat,
+  paymentMarker,
   pounds,
   type XeroContactSource,
   type XeroCreditNoteSource,
@@ -41,6 +50,7 @@ import {
   finishItem,
   getLink,
   getXeroMaps,
+  itemStatus,
   openConnection,
   pauseXero,
   putLink,
@@ -53,7 +63,7 @@ import {
   type SyncItem,
 } from "../../../repos/pms/integration/xero";
 import { londonDate } from "../../../../modules/pms/diary/time";
-import { XeroError, type XeroClient, type XeroOrgApi } from "./client";
+import { XeroDeferred, XeroError, type XeroClient, type XeroDocMatch, type XeroOrgApi } from "./client";
 
 const ALLOCATED = sha256Hex("credit-note-allocated");
 
@@ -70,6 +80,7 @@ export class TokenSession {
     private readonly tenantId: string,
     private readonly client: XeroClient,
     private conn: OpenConnection,
+    private readonly limits: { deadline?: number; now?: () => number } = {},
   ) {}
 
   get xeroTenantId(): string {
@@ -81,9 +92,15 @@ export class TokenSession {
     return left > XERO_ACCESS_SKEW_SECONDS * 1000;
   }
 
+  private checkTime(): void {
+    const now = this.limits.now ?? (() => Date.now());
+    if (this.limits.deadline !== undefined && now() + this.client.timeoutMs > this.limits.deadline) throw new XeroDeferred();
+  }
+
   async accessToken(force = false): Promise<string> {
     if (!force && this.fresh()) return this.conn.tokens.accessToken;
-    const claimed = await claimTokenRefresh(this.ctx, this.tenantId, this.conn.rev);
+    this.checkTime();
+    const claimed = await claimTokenRefresh(this.ctx, this.tenantId, this.conn.tokenRev);
     if (claimed === null) {
       // Someone else refreshed (or is refreshing): use theirs if it is there.
       const again = await openConnection(this.ctx, this.tenantId);
@@ -107,18 +124,22 @@ export class TokenSession {
     const expiresAt = new Date(Date.parse(nowIso(this.ctx)) + next.expiresIn * 1000).toISOString();
     const stored = await storeRefreshedTokens(this.ctx, this.tenantId, claimed, { accessToken: next.accessToken, refreshToken: next.refreshToken }, expiresAt);
     if (!stored) throw new XeroError("transient", 0, "Xero sign-in changed meanwhile – trying again shortly.");
-    this.conn = { ...this.conn, tokens: { accessToken: next.accessToken, refreshToken: next.refreshToken }, accessExpiresAt: expiresAt, rev: claimed + 1, refreshLockUntil: null };
+    this.conn = { ...this.conn, tokens: { accessToken: next.accessToken, refreshToken: next.refreshToken }, accessExpiresAt: expiresAt, tokenRev: claimed + 1, refreshLockUntil: null };
     return next.accessToken;
+  }
+
+  private api(token: string): XeroOrgApi {
+    return this.client.org(token, this.conn.xeroTenantId, this.limits);
   }
 
   /** Runs `work` against the organisation; a 401 refreshes once and tries once more. */
   async withApi<T>(work: (api: XeroOrgApi) => Promise<T>): Promise<T> {
-    const api = this.client.org(await this.accessToken(), this.conn.xeroTenantId);
+    const api = this.api(await this.accessToken());
     try {
       return await work(api);
     } catch (err) {
       if (!(err instanceof XeroError) || !err.unauthorized) throw err;
-      const retry = this.client.org(await this.accessToken(true), this.conn.xeroTenantId);
+      const retry = this.api(await this.accessToken(true));
       try {
         return await work(retry);
       } catch (err2) {
@@ -194,8 +215,7 @@ async function loadInvoice(ctx: RepoContext, tenantId: string, invoiceId: string
     .where("id", "=", invoiceId)
     .executeTakeFirst();
   if (!inv || inv.status !== "issued" || !inv.issued_on || inv.number_seq === null) return null;
-  const [settings, lines, contact, auth] = await Promise.all([
-    ctx.db.selectFrom("pms_billing_settings").select("vat_registered").where("tenant_id", "=", tenantId).executeTakeFirst(),
+  const [lines, contact, auth] = await Promise.all([
     loadLines(ctx, tenantId, invoiceId),
     loadContact(ctx, tenantId, inv),
     inv.authorisation_id ? ctx.db.selectFrom("pms_authorisations").select("code").where("tenant_id", "=", tenantId).where("id", "=", inv.authorisation_id).executeTakeFirst() : Promise.resolve(undefined),
@@ -203,11 +223,13 @@ async function loadInvoice(ctx: RepoContext, tenantId: string, invoiceId: string
   if (!contact) return null;
   return {
     id: inv.id,
-    number: `${inv.number_prefix ?? ""}${num(inv.number_seq)}`,
+    // The number exactly as ClinDesk shows and prints it ("RIV00042").
+    number: formatDocumentNumber(inv.number_prefix, num(inv.number_seq)) ?? "",
     issuedOn: inv.issued_on,
     dueOn: inv.due_on,
     pricesIncludeVat: num(inv.prices_include_vat) === 1,
-    vatRegistered: num(settings?.vat_registered ?? 0) === 1,
+    // From the invoice's own lines (frozen at issue), not today's setting.
+    vatRegistered: invoiceUsesVat(lines),
     siteId: inv.site_id,
     reference: auth?.code ?? (contact.kind === "patient" ? `P${contact.key}` : ""),
     totalPence: num(inv.total_pence),
@@ -229,8 +251,26 @@ interface RunCtx {
   key: (suffix: string) => string;
 }
 
+const NUMBER_TAKEN = "This number is already used by a different record in Xero (another type, total or contact). Check it in Xero, then press Retry or Skip.";
+
 function blocked(missing: string[]): ItemOutcome {
   return { kind: "validation", message: `${XERO_COPY.mappingsMissing} ${missing.join(", ")}.` };
+}
+
+/** A document found by its number is OURS only when its type, total and contact match. */
+function sameDoc(found: XeroDocMatch, type: string, totalPence: number, contactId: string): boolean {
+  return found.type === type && found.total !== null && Math.round(found.total * 100) === totalPence && found.contactId === contactId;
+}
+
+/**
+ * The parent invoice of a credit note or payment, when it is not in Xero (yet): skipped → the child is skipped too
+ * (said so); blocked / failed → the child waits, listed with the reason; otherwise it just waits.
+ */
+async function parentNotSent(run: RunCtx, invoiceId: string): Promise<ItemOutcome> {
+  const status = await itemStatus(run.ctx, run.tenantId, syncItemId("invoice", "create", invoiceId));
+  if (status === "skipped") return { kind: "skipped", message: "Not sent: its invoice was skipped. Record it in Xero by hand if it belongs there." };
+  if (status === "blocked" || status === "failed") return { kind: "waiting", message: "Waiting: its invoice needs a fix first (see the invoice above)." };
+  return { kind: "waiting", message: "Waiting for its invoice to be sent first." };
 }
 
 async function ensureContact(run: RunCtx, contact: LoadedInvoice["contact"]): Promise<string> {
@@ -239,8 +279,16 @@ async function ensureContact(run: RunCtx, contact: LoadedInvoice["contact"]): Pr
   const body = contactToXero(contact, run.withDetails);
   const number = contactNumberFor(contact.kind, contact.key);
   const id = await run.session.withApi(async (api) => {
-    const found = (await api.findContactByNumber(number)) ?? (contact.kind === "referrer" ? await api.findContactByName(contact.name) : null);
-    return found ?? (await api.createContact(body, idempotencyKeyFor(run.tenantId, `contact:${contact.localType}:${contact.localId}`, 1, sha256Hex)));
+    const byNumber = await api.findContactByNumber(number);
+    if (byNumber) {
+      // Ours only when it carries the name ClinDesk gives it; another contact using the number is never taken over.
+      if (byNumber.name.trim().toLowerCase() !== body.Name.toLowerCase()) {
+        throw new XeroError("validation", 200, `A different Xero contact already uses contact number ${number}. Change that contact's number in Xero, then press Retry.`);
+      }
+      return byNumber.id;
+    }
+    const byName = contact.kind === "referrer" ? await api.findContactByName(contact.name) : null;
+    return byName ?? (await api.createContact(body, idempotencyKeyFor(run.tenantId, `contact:${contact.localType}:${contact.localId}`, 1, sha256Hex)));
   });
   return putLink(run.ctx, run.tenantId, contact.localType, contact.localId, id, number, sha256Hex(JSON.stringify(body)));
 }
@@ -256,26 +304,59 @@ async function sendInvoice(run: RunCtx, item: SyncItem): Promise<ItemOutcome> {
   const contactId = await ensureContact(run, inv.contact);
   const mapped = invoiceToXero(inv, contactId, run.maps);
   if (!mapped.ok) return blocked(mapped.missing);
-  const xeroId = await run.session.withApi(async (api) => (await api.findInvoiceByNumber(inv.number)) ?? (await api.createInvoice(mapped.body, run.key("")) ).id);
+  const xeroId = await run.session.withApi(async (api) => {
+    const found = await api.findInvoiceByNumber(inv.number);
+    if (found) {
+      if (!sameDoc(found, "ACCREC", inv.totalPence, contactId)) throw new XeroError("validation", 200, NUMBER_TAKEN);
+      return found.id;
+    }
+    return (await api.createInvoice(mapped.body, run.key(""))).id;
+  });
   return { kind: "done", xeroId: await putLink(run.ctx, run.tenantId, "invoice", inv.id, xeroId, inv.number, null) };
+}
+
+/** Earlier payments on the invoice (allocated before the credit note) that are not in Xero yet and not skipped. */
+async function earlierPaymentsPending(run: RunCtx, invoiceId: string, before: string): Promise<boolean> {
+  const allocs = await run.ctx.db
+    .selectFrom("pms_payment_allocations as a")
+    .innerJoin("pms_payments as p", (j) => j.onRef("p.tenant_id", "=", "a.tenant_id").onRef("p.id", "=", "a.payment_id"))
+    .select("a.id")
+    .where("a.tenant_id", "=", run.tenantId)
+    .where("a.invoice_id", "=", invoiceId)
+    .where("a.amount_pence", ">", 0)
+    .where("a.reversed", "=", 0)
+    .where("p.status", "=", "recorded")
+    .where("p.kind", "=", "payment")
+    .where("a.created_at", "<=", before)
+    .limit(200)
+    .execute();
+  for (const a of allocs) {
+    if (await getLink(run.ctx, run.tenantId, "allocation", a.id)) continue;
+    const st = await itemStatus(run.ctx, run.tenantId, syncItemId("allocation", "create", a.id));
+    if (st !== "skipped" && st !== "done") return true;
+  }
+  return false;
 }
 
 async function sendCreditNote(run: RunCtx, item: SyncItem): Promise<ItemOutcome> {
   const { ctx, tenantId } = run;
   const cn = await ctx.db
     .selectFrom("pms_credit_notes")
-    .select(["id", "invoice_id", "number_prefix", "number_seq", "issued_on", "kind", "total_pence"])
+    .select(["id", "invoice_id", "number_prefix", "number_seq", "issued_on", "kind", "total_pence", "created_at"])
     .where("tenant_id", "=", tenantId)
     .where("id", "=", item.localId)
     .executeTakeFirst();
   if (!cn) return { kind: "skipped", message: "This credit note no longer exists – nothing to send." };
   const invLink = await getLink(ctx, tenantId, "invoice", cn.invoice_id);
-  if (!invLink) return { kind: "waiting", message: "Waiting for its invoice to be sent first." };
+  if (!invLink) return parentNotSent(run, cn.invoice_id);
   const inv = await loadInvoice(ctx, tenantId, cn.invoice_id);
   if (!inv) return { kind: "skipped", message: "Its invoice is no longer issued – nothing to send." };
-  const number = `${cn.number_prefix}${num(cn.number_seq)}`;
+  const number = formatDocumentNumber(cn.number_prefix, num(cn.number_seq)) ?? "";
   let link = await getLink(ctx, tenantId, "credit_note", cn.id);
   if (!link) {
+    // Event order: every payment taken on the invoice before this credit goes first.
+    const createdAt = new Date(cn.created_at as unknown as string | Date).toISOString();
+    if (await earlierPaymentsPending(run, cn.invoice_id, createdAt)) return { kind: "waiting", message: "Waiting for an earlier payment on its invoice to be sent first." };
     const cnLines = await ctx.db.selectFrom("pms_credit_note_lines").select(["invoice_line_id", "net_pence", "vat_pence", "total_pence"]).where("tenant_id", "=", tenantId).where("credit_note_id", "=", cn.id).limit(500).execute();
     const byId = new Map(inv.lines.map((l) => [l.id, l]));
     const src: XeroCreditNoteSource = {
@@ -293,21 +374,31 @@ async function sendCreditNote(run: RunCtx, item: SyncItem): Promise<ItemOutcome>
     const contactId = await ensureContact(run, inv.contact);
     const mapped = creditNoteToXero(src, contactId, run.maps);
     if (!mapped.ok) return blocked(mapped.missing);
-    const xeroId = await run.session.withApi(async (api) => (await api.findCreditNoteByNumber(number)) ?? (await api.createCreditNote(mapped.body, run.key(""))).id);
+    const xeroId = await run.session.withApi(async (api) => {
+      const found = await api.findCreditNoteByNumber(number);
+      if (found) {
+        if (!sameDoc(found, "ACCRECCREDIT", num(cn.total_pence), contactId)) throw new XeroError("validation", 200, NUMBER_TAKEN);
+        return found.id;
+      }
+      return (await api.createCreditNote(mapped.body, run.key(""))).id;
+    });
     await putLink(ctx, tenantId, "credit_note", cn.id, xeroId, number, null);
     link = { xeroId, sentHash: null };
   }
+  const cnXeroId = link.xeroId;
   if (link.sentHash !== ALLOCATED) {
-    // Allocate to its invoice, no further than Xero says is still due (anything left stays on the credit note).
+    // Allocate to its invoice, no further than Xero says is still due and still left on the credit note (a lost
+    // answer of an earlier allocation shows as nothing left – treated as allocated).
     const total = num(cn.total_pence);
     await run.session.withApi(async (api) => {
-      const due = await api.invoiceAmountDue(invLink.xeroId);
-      const amount = Math.min(pounds(total), due ?? pounds(total));
-      if (amount > 0) await api.allocateCreditNote(link.xeroId, invLink.xeroId, Math.round(amount * 100) / 100, cn.issued_on, run.key(":allocate"));
+      const remaining = await api.creditNoteRemaining(cnXeroId);
+      const { amountDue } = await api.invoiceState(invLink.xeroId);
+      const amount = Math.min(pounds(total), remaining ?? pounds(total), amountDue ?? pounds(total));
+      if (amount > 0) await api.allocateCreditNote(cnXeroId, invLink.xeroId, Math.round(amount * 100) / 100, cn.issued_on, run.key(":allocate"));
     });
     await ctx.db.updateTable("pms_xero_links").set({ sent_hash: ALLOCATED, updated_at: nowIso(ctx) }).where("tenant_id", "=", tenantId).where("local_type", "=", "credit_note").where("local_id", "=", cn.id).execute();
   }
-  return { kind: "done", xeroId: link.xeroId };
+  return { kind: "done", xeroId: cnXeroId };
 }
 
 async function sendAllocation(run: RunCtx, item: SyncItem): Promise<ItemOutcome> {
@@ -323,11 +414,16 @@ async function sendAllocation(run: RunCtx, item: SyncItem): Promise<ItemOutcome>
     .executeTakeFirst();
   if (!a || num(a.reversed) === 1 || a.status !== "recorded") return { kind: "skipped", message: "Taken off or reversed before it was sent – nothing to send." };
   const invLink = await getLink(ctx, tenantId, "invoice", a.invoice_id);
-  if (!invLink) return { kind: "waiting", message: "Waiting for its invoice to be sent first." };
+  if (!invLink) return parentNotSent(run, a.invoice_id);
   const label = PAYMENT_METHOD_LABELS[a.method as keyof typeof PAYMENT_METHOD_LABELS] ?? a.method;
-  const mapped = allocationToXero({ id: a.id, amountPence: num(a.amount_pence), receivedOn: a.received_on, method: a.method, siteId: a.site_id, reference: a.reference }, invLink.xeroId, run.maps, label);
+  const marker = paymentMarker(a.id);
+  const mapped = allocationToXero({ id: a.id, marker, amountPence: num(a.amount_pence), receivedOn: a.received_on, method: a.method, siteId: a.site_id, reference: a.reference }, invLink.xeroId, run.maps, label);
   if (!mapped.ok) return blocked(mapped.missing);
-  const xeroId = await run.session.withApi((api) => api.createPayment(mapped.body, run.key("")));
+  const xeroId = await run.session.withApi(async (api) => {
+    // A payment ClinDesk sent whose answer was lost carries our marker on the invoice: link it, never post again.
+    const existing = (await api.invoiceState(invLink.xeroId)).payments.find((p) => p.reference.includes(marker));
+    return existing ? existing.id : await api.createPayment(mapped.body, run.key(""));
+  });
   return { kind: "done", xeroId: await putLink(ctx, tenantId, "allocation", a.id, xeroId, null, null) };
 }
 
@@ -345,6 +441,7 @@ async function sendItem(run: RunCtx, item: SyncItem): Promise<ItemOutcome> {
     if (item.op === "delete") return await removeAllocation(run, item);
     return await sendAllocation(run, item);
   } catch (err) {
+    if (err instanceof XeroDeferred) return { kind: "deferred" };
     if (err instanceof AuthStop) return { kind: "auth", message: err.message };
     if (err instanceof XeroError) {
       if (err.errorClass === "auth") {
@@ -372,12 +469,16 @@ export interface ClinicRunResult {
   blocked: number;
   failed: number;
   skipped: number;
+  deferred: number;
   paused: boolean;
 }
 
 export interface ClinicRunOptions {
   maxItems?: number;
+  /** No new item is started after this long. */
   budgetMs?: number;
+  /** Extra time an item already started may use (no Xero call starts past budget + grace). */
+  graceMs?: number;
   /** Who started it (Send now); the scheduled run is nobody. */
   actor?: PmsActor;
   nowMs?: () => number;
@@ -385,7 +486,7 @@ export interface ClinicRunOptions {
 
 /** One clinic's run. Never throws for Xero's sake: what happened is on each item. */
 export async function sendForClinic(ctx: RepoContext, tenantId: string, client: XeroClient, options: ClinicRunOptions = {}): Promise<ClinicRunResult> {
-  const result: ClinicRunResult = { connected: false, queued: 0, attempted: 0, done: 0, waiting: 0, retrying: 0, blocked: 0, failed: 0, skipped: 0, paused: false };
+  const result: ClinicRunResult = { connected: false, queued: 0, attempted: 0, done: 0, waiting: 0, retrying: 0, blocked: 0, failed: 0, skipped: 0, deferred: 0, paused: false };
   const conn = await openConnection(ctx, tenantId);
   if (!conn) return result;
   result.connected = true;
@@ -393,26 +494,24 @@ export async function sendForClinic(ctx: RepoContext, tenantId: string, client: 
   const clock = options.nowMs ?? (() => Date.now());
   const started = clock();
   const budget = options.budgetMs ?? 20_000;
-  const session = new TokenSession(ctx, tenantId, client, conn);
-  const run: RunCtx = {
-    ctx,
-    tenantId,
-    session,
-    maps: await getXeroMaps(ctx, tenantId),
-    withDetails: conn.sendContactDetails,
-    key: () => "",
-  };
+  const deadline = started + budget + (options.graceMs ?? 12_000);
+  const session = new TokenSession(ctx, tenantId, client, conn, { deadline, now: clock });
+  const run: RunCtx = { ctx, tenantId, session, maps: await getXeroMaps(ctx, tenantId), withDetails: conn.sendContactDetails, key: () => "" };
   for (const item of await dueItems(ctx, tenantId, options.maxItems ?? XERO_ITEMS_PER_RUN)) {
     if (clock() - started > budget) break;
-    if (!(await claimItem(ctx, tenantId, item.id))) continue;
+    const lease = await claimItem(ctx, tenantId, item.id);
+    if (!lease) continue;
     result.attempted++;
     run.key = (suffix: string) => idempotencyKeyFor(tenantId, `${item.id}${suffix}`, item.payloadVersion, sha256Hex);
     const outcome = await sendItem(run, item);
-    const status = await finishItem(ctx, tenantId, item, outcome);
+    const status = await finishItem(ctx, tenantId, item, lease, outcome);
     if (outcome.kind === "done") result.done++;
     else if (outcome.kind === "skipped") result.skipped++;
     else if (outcome.kind === "waiting") result.waiting++;
-    else if (outcome.kind === "auth") {
+    else if (outcome.kind === "deferred") {
+      result.deferred++;
+      break;
+    } else if (outcome.kind === "auth") {
       result.paused = true;
       break;
     } else if (status === "failed") result.failed++;

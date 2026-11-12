@@ -167,22 +167,32 @@ export function idempotencyKeyFor(tenantId: string, itemId: string, payloadVersi
 }
 
 /**
- * An error message fit to store and show: one line, at most 300 characters, every quoted value removed (Xero quotes
- * names, numbers and e-mail addresses in its messages – those may be a patient's), long digit runs and e-mail
- * addresses masked.
+ * Xero's own message → a FIXED plain-English text. Xero's free text is never stored or shown: it can quote a contact
+ * (a patient's name), a number or an e-mail address, with or without quotation marks. Known messages map to their
+ * own fixed text; anything else gets one generic line.
  */
-export function redactXeroMessage(message: unknown): string {
+const XERO_MESSAGE_MAP: readonly (readonly [RegExp, string])[] = [
+  [/account\s*code|AccountCode|not a valid (account|code)/i, "An account chosen on the Xero page is not valid in Xero (it may be archived). Choose another and press Retry."],
+  [/tax\s*type|tax rate|TaxType/i, "A tax rate chosen on the Xero page cannot be used in Xero. Choose another and press Retry."],
+  [/lock date|period.*(locked|closed)|(locked|closed).*period|financial year/i, "The date falls in a period that is locked in Xero. Ask your accountant to unlock it, then press Retry."],
+  [/contact.*archiv|archived contact/i, "The contact is archived in Xero. Restore it in Xero, then press Retry."],
+  [/must be unique|already (been )?(used|assigned|exists)|duplicate/i, "This number is already used by another record in Xero. Check that record in Xero, then press Retry or Skip."],
+  [/exceed|more than the amount|amount outstanding|amount due|overpay/i, "The amount is more than Xero says is still owed on the invoice. Check the invoice in Xero, then press Retry or Skip."],
+  [/payments cannot be made|EnablePayments|enable payments/i, "The account chosen for this kind of payment does not accept payments in Xero. Tick Enable payments on it in Xero or choose another, then press Retry."],
+  [/already (been )?deleted|has been deleted|is deleted|voided/i, "Xero says this record is already deleted or voided."],
+  [/not (be )?found|could not be found|does not exist/i, "Xero could not find a record this depends on. Check it in Xero, then press Retry or Skip."],
+];
+export const XERO_GENERIC_REFUSAL = "Xero did not accept this record. Check it in Xero, then press Retry or Skip.";
+
+export function xeroMessageText(message: unknown): string {
   const text = typeof message === "string" ? message : "";
-  return (
-    text
-      .replace(/[\r\n\t]+/g, " ")
-      .replace(/"[^"]*"|'[^']*'|“[^”]*”|‘[^’]*’/g, "[…]")
-      .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[…]")
-      .replace(/\d{6,}/g, "[…]")
-      .replace(/\s{2,}/g, " ")
-      .trim()
-      .slice(0, 300) || "Xero did not say why."
-  );
+  for (const [re, fixed] of XERO_MESSAGE_MAP) if (re.test(text)) return fixed;
+  return XERO_GENERIC_REFUSAL;
+}
+
+/** One stored line, at most 300 characters, for messages ClinDesk wrote itself (never Xero's free text). */
+export function oneLine(message: string): string {
+  return message.replace(/[\r\n\t]+/g, " ").replace(/\s{2,}/g, " ").trim().slice(0, 300);
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -229,6 +239,7 @@ export const XERO_CONNECT_ERRORS: Readonly<Record<string, string>> = {
   many_orgs: "More than one Xero organisation was chosen. Please try again and choose only one.",
   currency: "That Xero organisation does not keep its books in pounds (GBP). Only a GBP organisation can be connected.",
   other_org: "This clinic already sent records to a different Xero organisation. Connect that organisation again (or ask support to start afresh).",
+  org_in_use: "That Xero organisation is already connected to another clinic. Each organisation can be connected to one clinic only.",
   off: "Xero is switched off for this clinic.",
   forbidden: "Only the clinic's owner or an admin can connect Xero.",
   error: "Something went wrong while connecting Xero. Please try again.",
