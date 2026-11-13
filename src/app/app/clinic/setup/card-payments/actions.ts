@@ -12,12 +12,7 @@ import { cardPaymentsAvailable } from "@/server/pms/billing/connect/screen";
 const PATH = "/app/clinic/setup/card-payments";
 type Answer<T> = { ok: true; value: T } | { ok: false; error: string; fieldErrors?: Record<string, string> };
 
-async function owner() {
-  const actor = await clinicActionActor({ permission: "settings.owner" });
-  if ("error" in actor) return { error: actorErrorMessage(actor.error) } as const;
-  if (!cardPaymentsAvailable()) return { error: "Card payments are not switched on for this system." } as const;
-  return { actor } as const;
-}
+const OFF = "Card payments are not switched on for this system.";
 
 function done<T>(r: { ok: true; value: T } | { ok: false; error: string; fieldErrors?: Record<string, string> }): Answer<T> {
   if (r.ok) revalidatePath(PATH);
@@ -25,44 +20,51 @@ function done<T>(r: { ok: true; value: T } | { ok: false; error: string; fieldEr
 }
 
 export async function refreshCardAccountAction(): Promise<Answer<{ status: string }>> {
-  const a = await owner();
-  if ("error" in a) return { ok: false, error: a.error as string };
-  return done(await refreshAccountFor(a.actor));
+  const actor = await clinicActionActor({ permission: "settings.owner" });
+  if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
+  if (!cardPaymentsAvailable()) return { ok: false, error: OFF };
+  return done(await refreshAccountFor(actor));
 }
 
 export async function setCardPaymentsEnabledAction(enabled: boolean): Promise<Answer<{ enabled: boolean }>> {
-  const a = await owner();
-  if ("error" in a) return { ok: false, error: a.error as string };
-  return done(await setCardPaymentsEnabledFor(a.actor, enabled === true));
+  const actor = await clinicActionActor({ permission: "settings.owner" });
+  if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
+  if (!cardPaymentsAvailable()) return { ok: false, error: OFF };
+  return done(await setCardPaymentsEnabledFor(actor, enabled === true));
 }
 
 export async function setNoShowPolicyAction(input: { enabled: boolean; policy: string }): Promise<Answer<{ enabled: boolean }>> {
-  const a = await owner();
-  if ("error" in a) return { ok: false, error: a.error as string };
-  return done(await setNoShowPolicyFor(a.actor, { enabled: input?.enabled === true, policy: String(input?.policy ?? "") }));
+  const actor = await clinicActionActor({ permission: "settings.owner" });
+  if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
+  if (!cardPaymentsAvailable()) return { ok: false, error: OFF };
+  return done(await setNoShowPolicyFor(actor, { enabled: input?.enabled === true, policy: String(input?.policy ?? "") }));
 }
 
 export async function addReaderAction(input: { siteId: string; label: string; registrationCode: string; line1: string; city: string; postcode: string }): Promise<Answer<{ id: string }>> {
-  const a = await owner();
-  if ("error" in a) return { ok: false, error: a.error as string };
+  const actor = await clinicActionActor({ permission: "settings.owner" });
+  if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
+  if (!cardPaymentsAvailable()) return { ok: false, error: OFF };
   const s = (v: unknown) => String(v ?? "").slice(0, 120);
-  return done(await addReaderFor(a.actor, { siteId: s(input?.siteId), label: s(input?.label), registrationCode: s(input?.registrationCode), line1: s(input?.line1), city: s(input?.city), postcode: s(input?.postcode) }));
+  return done(await addReaderFor(actor, { siteId: s(input?.siteId), label: s(input?.label), registrationCode: s(input?.registrationCode), line1: s(input?.line1), city: s(input?.city), postcode: s(input?.postcode) }));
 }
 
 export async function removeReaderAction(id: string): Promise<Answer<{ removed: boolean }>> {
-  const a = await owner();
-  if ("error" in a) return { ok: false, error: a.error as string };
-  return done(await removeReaderFor(a.actor, String(id ?? "")));
+  const actor = await clinicActionActor({ permission: "settings.owner" });
+  if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
+  if (!cardPaymentsAvailable()) return { ok: false, error: OFF };
+  return done(await removeReaderFor(actor, String(id ?? "")));
 }
 
 export async function createPlanAction(input: { name: string; pricePence: number }): Promise<Answer<{ id: string }>> {
-  const a = await owner();
-  if ("error" in a) return { ok: false, error: a.error as string };
-  return done(await createPlanFor(a.actor, { name: String(input?.name ?? ""), pricePence: Number(input?.pricePence) }));
+  const actor = await clinicActionActor({ permission: "settings.owner" });
+  if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
+  if (!cardPaymentsAvailable()) return { ok: false, error: OFF };
+  return done(await createPlanFor(actor, { name: String(input?.name ?? ""), pricePence: Number(input?.pricePence) }));
 }
 
 export async function setPlanActiveAction(id: string, active: boolean): Promise<Answer<{ changed: boolean }>> {
-  const a = await owner();
-  if ("error" in a) return { ok: false, error: a.error as string };
-  return done(await setPlanActiveFor(a.actor, String(id ?? ""), active === true));
+  const actor = await clinicActionActor({ permission: "settings.owner" });
+  if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
+  if (!cardPaymentsAvailable()) return { ok: false, error: OFF };
+  return done(await setPlanActiveFor(actor, String(id ?? ""), active === true));
 }
