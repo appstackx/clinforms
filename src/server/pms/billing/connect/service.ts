@@ -359,7 +359,9 @@ export async function connectAccountFor(actor: CardActor, urls: { refreshUrl: st
     const s = await getCardSettings(ctx, t);
     let account = s.accountMode === u.config.mode && s.status !== "closed" ? s.accountRef : null;
     if (!account) {
-      const made = await u.config.api.createAccount({ tenantId: t, clinicName: actor.clinicName ?? "Clinic", email: actor.email ?? null }, `clindesk-account-${u.config.mode}-${t}`);
+      // The idempotency key includes the settings' revision: two clicks at once make one account, and a clinic whose
+      // account was closed gets a new one (not the closed one replayed).
+      const made = await u.config.api.createAccount({ tenantId: t, clinicName: actor.clinicName ?? "Clinic", email: actor.email ?? null }, `clindesk-account-${u.config.mode}-${t}-${s.rev}`);
       await saveConnectedAccount(ctx, t, { accountRef: made.id, mode: u.config.mode, state: accountStateOf(made.raw) }, actor.actor);
       account = made.id;
     }
@@ -843,21 +845,27 @@ export async function startSaveCard(
  * Finishes saving a card once the provider says the set-up succeeded (the return page, the webhook – either first,
  * once). The set-up intent must belong to this clinic's account and carry this mandate's id.
  */
-export async function completeSaveCard(ctx: RepoContext, tenantId: string, api: ConnectApi, account: string, mandateId: string, actor: PmsActor = SYSTEM_ACTOR): Promise<"active" | "pending" | "failed" | "refused"> {
+export async function completeSaveCard(ctx: RepoContext, tenantId: string, api: ConnectApi, account: string, mandateId: string, actor: PmsActor = SYSTEM_ACTOR, setupIntentId?: string): Promise<"active" | "pending" | "failed" | "refused"> {
   const m = await getMandate(ctx, tenantId, mandateId);
   if (!m) return "refused";
   if (m.status === "active") return "active";
   if (m.status !== "pending" || !m.setupRef) return "refused";
-  const cs = await api.getCheckout(account, m.setupRef);
-  if (cs.metadata.tenant_id !== tenantId || cs.metadata.mandate_id !== m.id) return "refused";
-  if (cs.status === "expired") {
-    await removeMandate(ctx, tenantId, m.id, actor, "failed");
-    return "failed";
+  let seti = setupIntentId ?? null;
+  if (!seti) {
+    const cs = await api.getCheckout(account, m.setupRef);
+    if (cs.metadata.tenant_id !== tenantId || cs.metadata.mandate_id !== m.id) return "refused";
+    if (cs.status === "expired") {
+      await removeMandate(ctx, tenantId, m.id, actor, "failed");
+      return "failed";
+    }
+    seti = cs.setupIntent;
   }
-  if (!cs.setupIntent) return "pending";
-  const si = await api.getSetupIntent(account, cs.setupIntent);
+  if (!seti) return "pending";
+  const si = await api.getSetupIntent(account, seti);
+  // The set-up must be ours for THIS card on file: our metadata, the patient's own customer on this account.
+  if (si.metadata.tenant_id !== tenantId || si.metadata.mandate_id !== m.id) return "refused";
+  if (si.customer !== m.customerRef) return "refused";
   if (si.status !== "succeeded" || !si.paymentMethod) return "pending";
-  if (si.customer && si.customer !== m.customerRef) return "refused";
   const card = await api.getCard(account, si.paymentMethod);
   await activateMandate(ctx, tenantId, m.id, { methodRef: si.paymentMethod, brand: card.brand, last4: card.last4, expMonth: card.expMonth, expYear: card.expYear }, actor);
   const intent = await findIntentByRef(ctx, tenantId, m.setupRef);

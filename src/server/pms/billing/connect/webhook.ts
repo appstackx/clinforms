@@ -169,7 +169,7 @@ async function dispatch(ctx: RepoContext, tenantId: string, account: string, typ
   if (type === "setup_intent.succeeded") {
     const si = await api.getSetupIntent(account, objectId);
     if (si.metadata.tenant_id !== tenantId || !si.metadata.mandate_id) return "ignored";
-    return `card_${await completeSaveCard(ctx, tenantId, api, account, si.metadata.mandate_id)}`;
+    return `card_${await completeSaveCard(ctx, tenantId, api, account, si.metadata.mandate_id, SYSTEM_ACTOR, si.id)}`;
   }
 
   if (type.startsWith("refund.")) {
