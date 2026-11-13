@@ -113,6 +113,16 @@ const ALLOW: AllowEntry[] = [
     text: /^On unless you turn it off\. We count visits and clicks/,
     reason: "Owner decided (Khuram, 08/11/2026) to name the website-statistics provider (PostHog, EU) where the cookieless usage statistics are disclosed.",
   },
+  {
+    file: "src/components/pms/billing/card-payments-setup.tsx",
+    text: /^Setting up happens on the payment provider&apos;s \(Stripe&apos;s\) own secure pages/,
+    reason: "Card payments (13/11/2026, owner's brief): Stripe is the clinic's own payment provider and the merchant's contract is with Stripe – the owner connecting the clinic's account must know whose pages they are sent to.",
+  },
+  {
+    file: "src/modules/pms/billing/card-payments.ts",
+    text: /may keep my card details with its payment provider, Stripe, and charge this card for/,
+    reason: "Card payments (13/11/2026, owner's brief): the patient's consent to keeping a card on file names who holds the card (Stripe, the clinic's payment provider) – required for informed consent.",
+  },
 ];
 
 export interface ExtractedString {
