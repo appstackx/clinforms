@@ -68,15 +68,16 @@ when that card was saved**. Otherwise ClinDesk refuses and you take the payment 
 ## 6. Refunds
 
 Open the invoice → **Paid by card → Refund to card**. Enter the amount (up to what is left of that payment) and the
-reason. The invoice is credited first (a credit note), then the money goes back to the same card – usually within
-5–10 days for the patient. Only owners and administrators can refund (Set-up → Member access can change this).
+reason. The money goes back to the same card – usually within 5–10 days for the patient – and the invoice is
+credited to match (a credit note). If the screen says the payment provider did not answer, wait a minute and refund
+the same amount again: it finishes that refund and never pays it twice. Only owners and administrators can refund (Set-up → Member access can change this).
 
 ## 7. Memberships
 
 Owner: **Set-up → Card payments → Membership plans** – a name and a monthly price.
 On the patient's **Invoices** tab → **Memberships**: choose the plan, the saved card and the day of the month, read
-the words to the patient, tick that they agreed and **Start membership**. Each month ClinDesk issues an invoice and
-charges the card once. If the card is declined it tries again the next two days, then marks the membership
+the words to the patient, tick that they agreed and **Start membership**. The first month is charged that night,
+then each month on the chosen day ClinDesk issues an invoice and charges the card once. If the card is declined it tries again the next two days, then marks the membership
 *Payment failed* and leaves the invoice open for you to collect another way.
 
 ## 8. Patients paying online

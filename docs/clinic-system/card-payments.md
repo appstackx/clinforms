@@ -25,12 +25,15 @@ All flows write an **intent row first** (`pms_card_intents`), use its id as the 
    the v2 account once (idempotency key = clinic + mode + settings revision) and redirects to a fresh single-use
    onboarding link. Return URL `?returned=1` re-reads the account; *Refresh status*; the webhook keeps it current.
    Status: `pending` (not finished / provider reviewing), `active` (card_payments active), `restricted`, `closed`.
+   Readers, saved cards and customers belong to the account they were made on (`account_ref`): moving from a test
+   account to a live one never reuses a test location, customer or card.
 2. **Desk – card reader (cp03).** Owner registers a reader per site (a Terminal **location** per site on the clinic's
    account, made once; test mode registers the provider's **simulated** reader `simulated-wpe`). Invoice → *Send to
    card reader* → PaymentIntent (`allowed_payment_method_types[]=card_present`, automatic capture) →
    `process_payment_intent` → patient taps → *Check payment* (or the webhook) records it. *Cancel on the reader*
    cancels (if it went through meanwhile it is recorded instead). Test mode: *Tap a test card* / *declined card*.
-   One open reader payment per invoice.
+   One open desk payment (reader or saved card) per invoice – a unique partial index, so two members at once cannot
+   both start one.
 3. **Saved cards (cp04).** Consent first: the member reads the exact words (`cardConsentWording`, version
    `card-on-file-1`) and ticks that the patient agreed (or the patient ticks in the portal); the mandate row stores
    the **words, version, channel (desk/portal), who recorded it and when**, and whether missed-appointment charges
@@ -40,15 +43,21 @@ All flows write an **intent row first** (`pms_card_intents`), use its id as the 
    the saved PaymentMethod. Customers on the clinic's account carry only our ids (no name, email or address).
 4. **Missed-appointment / late-cancellation fees.** An invoice with a `did_not_attend` / `late_cancellation` line can
    be charged to a saved card only when the clinic's policy is on (with its wording) **and** that card's consent
-   included such charges (`noShowChargeRefusal`).
+   included such charges (`noShowChargeRefusal`). A saved-card charge is *processing* before the provider is asked; a
+   lost answer keeps the invoice's desk payment busy until *Check payment* finds it at the provider (search by our
+   intent id) or, after 10 minutes with nothing found, marks it failed.
 5. **Refunds (cp06).** Invoice → *Refund to card* (billing.refund: owners and admins by default), full or partial,
-   reason required (encrypted in the refund's notes), audited. Order: claim the amount (the refund intent's INSERT
-   refuses more than is left of that payment – checked **in the database**, so two simultaneous refunds cannot
-   exceed it) → credit note for what the invoice does not already owe back → provider refund (idempotency key = refund
-   intent) → refund recorded (`kind=refund`, allocated to the invoice). A provider failure leaves the credit note and
-   the refund intent *failed* – retry or refund another way. `refund.failed` later → the recorded refund is
-   **reversed**. A refund made in the clinic's own Stripe Dashboard is recorded too (on the patient's account, audit
-   `pms.card_refund.outside`).
+   reason required (encrypted in the refund's notes), audited. Order: (1) claim the amount – the refund intent's
+   INSERT refuses more than is left of that payment, in the same batch as a lock on the payment's row, so two
+   simultaneous refunds cannot exceed it on D1 or Postgres; (2) the **provider refund first** (idempotency key = the
+   refund intent; a refused refund changes nothing in the books); (3) a credit note for the part of THIS payment that
+   paid the invoice (a part of the payment that sits on the patient's account is refunded first and is never credited
+   on the invoice); (4) the refund recorded (`kind=refund`, allocated up to that part). A refund whose answer is lost
+   stays *processing*: refunding the same amount again resumes it with the same key (never twice), any other amount is
+   refused until it is confirmed, and its event records it after a 5-minute grace (the webhook answers 409 meanwhile so
+   the provider retries). `refund.failed` later → the recorded refund is **reversed**. A refund made in the clinic's
+   own Stripe Dashboard is recorded too (on the patient's account, audit `pms.card_refund.outside`; its reference is in
+   the claiming INSERT, so duplicate deliveries record it once).
 6. **Portal pay button (l04).** Portal home → *Payments*: the patient's issued, patient-billed invoices with a balance
    ≥ £0.30 → *Pay now* → hosted payment-mode Checkout on the clinic's account (an open one for the same amount is
    reused). Return `?paid=<intent>` re-reads; the webhook also records; once.
@@ -59,7 +68,11 @@ All flows write an **intent row first** (`pms_card_intents`), use its id as the 
    and SCA re-authentication is not automated (a card that needs the patient's confirmation is a decline → the
    patient pays in the portal). Daily cron (after the expiry sweep): per due membership, the month is **claimed**
    (unique `(membership, period)`), an invoice is issued once (linked on the intent), the card charged off-session; a
-   charge whose answer was lost is found by searching the provider for the intent id before any retry.
+   charge whose answer was lost is found by searching the provider for the intent id before any retry (and a payment
+   still in flight is never charged again). The invoice is made as a draft and linked to the month's intent BEFORE it is
+   issued (no second invoice after a crash). A month cancelled at the provider marks the membership *payment failed*.
+   Plans are VAT-exempt (the price the patient agrees to is exactly what is charged); one active membership per plan
+   per patient; the first month is charged on the start date (the consent words say so).
 8. **Payouts and fees (cp05).** Billing → *Card payouts and fees* (billing.refund): balance, payouts, balance
    transactions per payout with provider fee / platform fee / net, matched to the clinic's invoices through its own
    intents. Read live, nothing stored.
@@ -142,6 +155,11 @@ the loser reads the winner's row back. Allocation never takes an invoice below z
 
 ## 8. Known limits
 
+- Test-mode card payments are recorded like real ones (reference "TEST – …"): use test mode on a demo or internal
+  clinic only.
+- Two portal *Pay now* clicks at the same moment can open two payment pages; if both are paid, the second payment is
+  recorded once and kept on the patient's account (refund it).
+- A lost dispute is not taken off takings automatically (audit only) – record it by hand until this is built.
 - Membership SCA: a card needing the patient's confirmation fails the off-session charge (no e-mail link yet).
 - Disputes are noted (audit) only – the clinic answers them in its own Dashboard.
 - A refund made in the clinic's Stripe Dashboard is recorded on the patient's account, not allocated: credit the
