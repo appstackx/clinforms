@@ -428,7 +428,9 @@ export async function createRefundIntent(ctx: DbContext, tenantId: string, input
   if (!Number.isInteger(input.amountPence) || input.amountPence <= 0) throw new RepoInputError("Enter the amount to refund.");
   const id = pmsId(CARD_ID_PREFIXES.intent, ctx);
   const at = nowIso(ctx);
-  const left = sql<number>`(${input.paymentAmountPence} - (select coalesce(sum(amount_pence), 0) from pms_card_intents where tenant_id = ${tenantId} and kind = 'refund' and parent_ref = ${input.parentRef} and status not in ('failed', 'canceled')))`;
+  const paid = Math.trunc(input.paymentAmountPence);
+  const want = Math.trunc(input.amountPence);
+  const left = sql<number>`(cast(${paid} as integer) - (select coalesce(sum(amount_pence), 0) from pms_card_intents where tenant_id = ${tenantId} and kind = 'refund' and parent_ref = ${input.parentRef} and status not in ('failed', 'canceled')))`;
   await billingBatch(
     ctx,
     [
@@ -441,7 +443,7 @@ export async function createRefundIntent(ctx: DbContext, tenantId: string, input
         parent_ref: input.parentRef,
         invoice_id: input.invoiceId,
         patient_id: input.patientId,
-        amount_pence: sql<number>`(case when ${left} >= ${input.amountPence} then ${input.amountPence} end)`,
+        amount_pence: sql<number>`(case when ${left} >= cast(${want} as integer) then cast(${want} as integer) end)`,
         fee_pence: input.feePence,
         created_by: actor.userId,
         created_at: at,

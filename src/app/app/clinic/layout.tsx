@@ -31,6 +31,7 @@ import { canManageBilling } from "@/server/billing/views";
 import { getDb } from "@/server/db";
 import { bulkEmailAvailable, mayUseBulkEmail } from "@/server/pms/comms/campaigns/service";
 import { clinicApiAvailable, mayManageApi } from "@/server/pms/integration/api/screen";
+import { cardPaymentsAvailable, mayManageCards } from "@/server/pms/billing/connect/screen";
 
 export const dynamic = "force-dynamic";
 
@@ -90,6 +91,10 @@ export default async function ClinicSystemLayout({ children }: { children: React
   // API keys (xt03): without the platform switch the page does not exist; only the owner opens it.
   const apiOn = clinicApiAvailable();
   if (path && /^\/app\/clinic\/setup\/api(?:[/?#]|$)/.test(path) && (!apiOn || !mayManageApi(actor))) notFound();
+  // Card payments: without the platform switch the pages do not exist; only the owner opens Set-up → Card payments.
+  const cardsOn = cardPaymentsAvailable();
+  if (path && /^\/app\/clinic\/setup\/card-payments(?:[/?#]|$)/.test(path) && (!cardsOn || !mayManageCards(actor))) notFound();
+  if (path && /^\/app\/clinic\/billing\/payouts(?:[/?#]|$)/.test(path) && !cardsOn) notFound();
   const report = path?.split(/[?#]/)[0].match(new RegExp(`^${REPORTS_PATH}/([a-z]+)$`))?.[1];
   if (report && report !== "export" && (!isReportId(report) || reportAccess(report, (p) => actor.can(p)) === null)) notFound();
   const brand = currentBrand();
@@ -122,7 +127,7 @@ export default async function ClinicSystemLayout({ children }: { children: React
       homeHref={CLINIC_BASE_PATH}
       clinicName={actor.clinicName}
       user={{ name: actor.name, email: actor.email, roleLabel: clinicRoleLabel(actor.role, roleLabel(actor.role)), sitesSummary: sitesSummary(mySites.length, sites.length) }}
-      nav={withSetupAccountLinks(shellNav(navForDeployment(PMS_NAV, { clinicApi: apiOn }), actor.can, { "comms.messages": { count: replies, label: "replies to answer" } }, reportsSection(actor.can)), account.setup)}
+      nav={withSetupAccountLinks(shellNav(navForDeployment(PMS_NAV, { clinicApi: apiOn, cardPayments: cardsOn }), actor.can, { "comms.messages": { count: replies, label: "replies to answer" } }, reportsSection(actor.can)), account.setup)}
       sites={{ options: mySites.map((s, i) => ({ id: s.id, name: s.name, note: i === 0 ? "Default" : undefined })), value: siteValue, total: sites.length }}
       searchHref={actor.can("patients.view") ? `${CLINIC_BASE_PATH}/patients` : null}
       clinForms={reports ? { href: "/app/studio", label: brand.id === "clinic" ? REPORTS_ADDON_NAME : CLINFORMS_NAME } : null}

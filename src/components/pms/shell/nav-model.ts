@@ -8,6 +8,7 @@ import type { PmsModuleId } from "@/modules/pms/core/modules";
 import type { PmsPermission } from "@/modules/pms/core/permissions";
 import { navAllowed, visibleNav } from "@/modules/pms/core/nav";
 import { CLINIC_API_NAV_ID } from "@/modules/pms/nav/integration";
+import { CARD_PAYMENTS_NAV_ID } from "@/modules/pms/nav/billing";
 
 export type ShellNavIcon =
   | "overview"
@@ -124,6 +125,7 @@ export const SETUP_ORDER: readonly string[] = [
   "reporting.billing",
   "billing.courses",
   "billing.products",
+  "billing.card-payments",
   "comms.settings",
   "comms.credits",
   "reporting.targets",
@@ -257,14 +259,14 @@ export function clinicRoleLabel(role: string, fallback: string): string {
 
 /**
  * The navigation entries switched off on this deployment left out: API keys (integration.api) only while
- * CLINFORMS_CLINIC_API=on. Used by the clinic layout and the Set-up landing page, so neither offers it while it is off.
+ * CLINFORMS_CLINIC_API=on; Card payments (billing.card-payments) only while CLINFORMS_CARD_PAYMENTS=on. Used by the clinic layout and the Set-up landing page, so neither offers it while it is off.
  */
-export function navForDeployment(entries: readonly PmsNavEntry[], switches: { clinicApi: boolean }): readonly PmsNavEntry[] {
-  return switches.clinicApi ? entries : entries.filter((e) => e.id !== CLINIC_API_NAV_ID);
+export function navForDeployment(entries: readonly PmsNavEntry[], switches: { clinicApi: boolean; cardPayments?: boolean }): readonly PmsNavEntry[] {
+  return entries.filter((e) => (switches.clinicApi || e.id !== CLINIC_API_NAV_ID) && (switches.cardPayments === true || e.id !== CARD_PAYMENTS_NAV_ID));
 }
 
 /** Set-up's start (/app/clinic/setup): the first set-up page, in the design's order, this member may open. */
-export function firstSetupEntry(entries: readonly PmsNavEntry[], can: (p: PmsPermission) => boolean, switches: { clinicApi: boolean }): PmsNavEntry | null {
+export function firstSetupEntry(entries: readonly PmsNavEntry[], can: (p: PmsPermission) => boolean, switches: { clinicApi: boolean; cardPayments?: boolean }): PmsNavEntry | null {
   const allowed = navForDeployment(entries, switches).filter((e) => e.group === "manage" && navAllowed(e, can) && e.id !== "diary.rotas");
   return SETUP_ORDER.map((id) => allowed.find((e) => e.id === id)).find((e): e is PmsNavEntry => Boolean(e)) ?? allowed[0] ?? null;
 }

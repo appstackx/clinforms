@@ -25,6 +25,8 @@ export const PAGE_PERMISSIONS: readonly (readonly [string, PmsPermission])[] = [
   ["/billing/gift-cards", "billing.view"],
   ["/billing/stock", "billing.view"],
   ["/billing/payers", "billing.view"],
+  // Card payouts and fees (card payments): also behind CLINFORMS_CARD_PAYMENTS=on – the clinic layout checks it.
+  ["/billing/payouts", "billing.refund"],
   ["/billing/remittances/new", "billing.pay"],
   ["/billing/statements/print", "billing.view"],
   ["/billing/visits", "billing.edit"],
@@ -77,6 +79,8 @@ export const PAGE_PERMISSIONS: readonly (readonly [string, PmsPermission])[] = [
   ["/setup/api", "settings.owner"],
   ["/setup/audit", "settings.members"],
   ["/setup/billing", "settings.setup"],
+  // Card payments: also behind CLINFORMS_CARD_PAYMENTS=on and the owner only – the clinic layout checks both.
+  ["/setup/card-payments", "settings.owner"],
   ["/setup/courses", "settings.setup"],
   ["/setup/import/[batchId]", "settings.import"],
   ["/setup/import", "settings.import"],
