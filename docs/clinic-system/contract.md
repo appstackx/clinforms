@@ -91,6 +91,9 @@ fixes (handover §20): portal `0190` (clinic-device pairing).
 M10 performance (handover §20.4, additive indexes only, 0210–0219): diary `0210`, records `0211`, billing `0212`,
 foundation `0213`. Healthcode e-billing groundwork (11/2026, `docs/clinic-system/healthcode.md`): billing `0220`–`0229`.
 Public clinic API v1 (xt03, 11/2026, `docs/clinic-system/api.md`): integration `0171` (reserved in `modules.ts`).
+Courses, gift cards and products (PK, 11/2026): billing `0231`–`0239`. Card payments through each clinic's own connected
+account (11/2026, `docs/clinic-system/card-payments.md`): billing `0226`–`0229`, `0239`, `0240`–`0241` (block
+`0240`–`0249` reserved for billing).
 
 Postgres twin of `0NNN_name.sql` = `supabase/migrations/20261024000NNN_name.sql` (`2026102400` + the 4 digits + same
 name). Single source: `src/modules/pms/core/modules.ts`; `scripts/pms/contract.test.ts` fails on a number outside a

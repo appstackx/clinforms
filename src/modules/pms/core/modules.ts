@@ -27,6 +27,9 @@ export interface PmsModuleInfo {
    * comms 0146 (inside comms' own range – reserved here so no other comms branch takes it; 0147–0149 stay free).
    * Public clinic API v1 (xt03, 11/2026, docs/clinic-system/api.md): integration 0171 (inside integration's own range –
    * reserved here; 0172–0179 stay free).
+   * Card payments through each clinic's own connected account (cp, 11/2026, docs/clinic-system/card-payments.md):
+   * billing 0226–0229 (inside the Healthcode block's free tail) and 0239 (the courses block's free tail), plus the new
+   * billing block 0240–0249 (0240–0241 used, 0242–0249 reserved for card payments' follow-ups).
    */
   extra?: readonly (readonly [number, number])[];
 }
@@ -35,7 +38,7 @@ export const PMS_MODULES: Readonly<Record<PmsModuleId, PmsModuleInfo>> = {
   foundation: { id: "foundation", title: "Foundation: entitlements, shell, shared patient record", sqlite: [100, 109], postgresPrefix: "2026102400", extra: [[213, 213]] },
   diary: { id: "diary", title: "Multi-site diary", sqlite: [110, 119], postgresPrefix: "2026102400", extra: [[180, 181], [189, 189], [210, 210]] },
   records: { id: "records", title: "Patient record screens and clinical notes", sqlite: [120, 129], postgresPrefix: "2026102400", extra: [[188, 188], [211, 211], [230, 230]] },
-  billing: { id: "billing", title: "Invoicing, insurer and MLC accounts, payments", sqlite: [130, 139], postgresPrefix: "2026102400", extra: [[212, 212], [220, 229], [231, 239]] },
+  billing: { id: "billing", title: "Invoicing, insurer and MLC accounts, payments", sqlite: [130, 139], postgresPrefix: "2026102400", extra: [[212, 212], [220, 229], [231, 239], [240, 249]] },
   comms: { id: "comms", title: "Reminders, messages, letters", sqlite: [140, 149], postgresPrefix: "2026102400" },
   portal: { id: "portal", title: "Online booking, patient portal, intake forms", sqlite: [150, 159], postgresPrefix: "2026102400", extra: [[182, 185], [190, 190]] },
   reporting: { id: "reporting", title: "Reporting, clinic set-up and administration", sqlite: [160, 169], postgresPrefix: "2026102400", extra: [[186, 187]] },
