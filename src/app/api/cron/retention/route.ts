@@ -10,6 +10,8 @@
  * their expiry date (src/server/cron/expiry.ts) – idempotent, so a retried run changes nothing more. Order: retention,
  * then the billing extras (money owed to us first), then the sweep with its own time budget (~20 s; the rest the next
  * night). Nothing after the retention pass can throw: the route always returns the retention pass's response.
+ *
+ * 13/11/2026 (card payments, pk03): last, the monthly membership charges (only with CLINFORMS_CARD_PAYMENTS=on).
  */
 import "server-only";
 import { getDb } from "@/server/db";
@@ -17,6 +19,9 @@ import { handleRetentionCron } from "@/server/cron/retention";
 import { billExtrasFromCron } from "@/server/billing/extras";
 import { subscriptionPaymentsFromEnv } from "@/server/billing/payments";
 import { afterRetentionCron, expirySweepFromCron } from "@/server/cron/expiry";
+import { getDataCipher } from "@/server/crypto";
+import { membershipRunFromCron } from "@/server/pms/billing/connect/memberships-run";
+import { cardDeps } from "@/server/pms/billing/connect/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,6 +37,8 @@ export async function GET(req: Request): Promise<Response> {
       if (p.ok) console.info(JSON.stringify({ event: "cron.billing_extras.done", ...(await billExtrasFromCron({ db: getDb() }, p.payments)) }));
     },
     expirySweep: () => expirySweepFromCron(() => ({ db: getDb() })),
+    // Card payments (pk03): membership charges – a no-op unless CLINFORMS_CARD_PAYMENTS=on.
+    memberships: () => membershipRunFromCron(() => ({ db: getDb(), cipher: getDataCipher() }), cardDeps()),
   });
   return res;
 }
