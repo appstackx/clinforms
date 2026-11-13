@@ -21,7 +21,8 @@ import type { RepoContext } from "../../../../repos/context";
 import { createService, createSite } from "../../../../repos/pms/directory";
 import { createPatient } from "../../../../repos/pms/patients";
 import { createDraftInvoice, getInvoice, issueInvoice } from "../../../../repos/pms/billing/invoices";
-import { getCardSettings, getIntent, getMandate, getMembership, listMandates } from "../../../../repos/pms/billing/card-payments";
+import { createRefundIntent, getCardSettings, getIntent, getMandate, getMembership, listMandates } from "../../../../repos/pms/billing/card-payments";
+import { recordPayment } from "../../../../repos/pms/billing/payments";
 import { unscopedStatements, type QueryLog } from "../../../../repos/pms/testing/guarded-db";
 import { signWebhookPayload } from "../../../comms/credits/card-payments";
 import { countPmsRows, deletePmsQueries } from "../../../offboard";
@@ -180,7 +181,7 @@ export function defineCardPaymentsSuite(label: string, factory: () => Promise<Ca
       refused(await startReaderPaymentFor(clinician(), { invoiceId: id.inv1, readerId: id.reader }, deps));
       refused(await startReaderPaymentFor(reception(), { invoiceId: id.inv1, readerId: id.reader, amountPence: 9999 }, deps), /owes only/);
       const started = okv(await startReaderPaymentFor(reception(), { invoiceId: id.inv1, readerId: id.reader }, deps));
-      refused(await startReaderPaymentFor(reception(), { invoiceId: id.inv1, readerId: id.reader2 }, deps), /already waiting/);
+      refused(await startReaderPaymentFor(reception(), { invoiceId: id.inv1, readerId: id.reader2 }, deps), /already in progress/);
       const view = okv(await invoiceCardViewFor(reception(), id.inv1, deps));
       assert.equal(view?.pendingReader?.intentId, started.intentId);
       assert.equal(okv(await checkCardPaymentFor(reception(), started.intentId, deps)).status, "processing");
@@ -314,6 +315,74 @@ export function defineCardPaymentsSuite(label: string, factory: () => Promise<Ca
       assert.ok(audit.some((e) => e.action === "pms.card_refund.outside"));
     });
 
+    it("review: a refund whose answer is lost is finished by the same refund, never made twice", async () => {
+      const inv = await newInvoice(A, id.owen, 4000);
+      okv(await chargeSavedCardFor(reception(), { invoiceId: inv, mandateId: id.mandateOwen }, deps));
+      const view = okv(await invoiceCardViewFor(admin(), inv, deps))!;
+      const pay = view.cardPayments[0];
+      fake.loseRefundAnswers = 1;
+      refused(await refundCardPaymentFor(admin(), { invoiceId: inv, paymentId: pay.paymentId, amountPence: 1000, reason: "Lost answer" }, deps), /did not answer/);
+      assert.equal(Array.from(fake.refunds.values()).filter((r) => r.paymentIntent === pay.intentRef).length, 1, "the provider made it once");
+      assert.equal((await getInvoice(ctx, A, inv))!.creditedPence, 0, "nothing credited before the refund is confirmed");
+      refused(await refundCardPaymentFor(admin(), { invoiceId: inv, paymentId: pay.paymentId, amountPence: 1500, reason: "Other amount" }, deps), /still being confirmed/);
+      okv(await refundCardPaymentFor(admin(), { invoiceId: inv, paymentId: pay.paymentId, amountPence: 1000, reason: "Lost answer" }, deps));
+      assert.equal(Array.from(fake.refunds.values()).filter((r) => r.paymentIntent === pay.intentRef).length, 1, "still once at the provider");
+      assert.equal((await allConnectPayments(A)).filter((x) => x.kind === "refund" && fake.refunds.get(x.provider_ref as string)?.paymentIntent === pay.intentRef).length, 1);
+      const after = (await getInvoice(ctx, A, inv))!;
+      assert.equal(after.creditedPence, 1000);
+      assert.equal(after.balancePence, 0);
+    });
+
+    it("review: two members charging the same invoice's saved card at once – charged once", async () => {
+      const inv = await newInvoice(A, id.owen, 2000);
+      const both = await Promise.all([chargeSavedCardFor(reception(), { invoiceId: inv, mandateId: id.mandateOwen }, deps), chargeSavedCardFor(admin(), { invoiceId: inv, mandateId: id.mandateOwen }, deps)]);
+      assert.equal(both.filter((r) => r.ok).length, 1);
+      assert.equal(Array.from(fake.intents.values()).filter((p) => p.metadata.invoice_id === inv && p.status === "succeeded").length, 1);
+      assert.equal((await getInvoice(ctx, A, inv))!.paidPence, 2000);
+    });
+
+    it("review: a saved-card charge whose answer is lost blocks a second charge and is found by Check payment", async () => {
+      const inv = await newInvoice(A, id.owen, 2500);
+      fake.loseAnswers = 1;
+      refused(await chargeSavedCardFor(reception(), { invoiceId: inv, mandateId: id.mandateOwen }, deps), /did not answer/);
+      refused(await chargeSavedCardFor(reception(), { invoiceId: inv, mandateId: id.mandateOwen }, deps), /in progress/);
+      const view = okv(await invoiceCardViewFor(reception(), inv, deps))!;
+      assert.ok(view.pendingReader && !view.pendingReader.onReader, "shown as in progress");
+      assert.equal(okv(await checkCardPaymentFor(reception(), view.pendingReader.intentId, deps)).status, "succeeded");
+      assert.equal(Array.from(fake.intents.values()).filter((p) => p.metadata.invoice_id === inv && p.status === "succeeded").length, 1, "charged once");
+      assert.equal((await getInvoice(ctx, A, inv))!.balancePence, 0);
+    });
+
+    it("review: refunding the part of a card payment that sits on account does not credit the invoice", async () => {
+      const inv = await newInvoice(A, id.megan, 5000);
+      const s = okv(await startReaderPaymentFor(reception(), { invoiceId: inv, readerId: id.reader }, deps));
+      await recordPayment(ctx, A, { payerKind: "patient", patientId: id.megan, receivedOn: "2026-11-10", method: "cash", amountPence: 2000, allocations: [{ invoiceId: inv, amountPence: 2000 }] }, SEED);
+      okv(await simulateReaderTapFor(reception(), s.intentId, undefined, deps));
+      const pay = okv(await invoiceCardViewFor(admin(), inv, deps))!.cardPayments[0];
+      assert.equal(pay.amountPence, 5000);
+      okv(await refundCardPaymentFor(admin(), { invoiceId: inv, paymentId: pay.paymentId, amountPence: 2000, reason: "Overpaid – the cash part" }, deps));
+      const after = (await getInvoice(ctx, A, inv))!;
+      assert.equal(after.creditedPence, 0, "the invoice keeps its revenue");
+      assert.equal(after.balancePence, 0);
+    });
+
+    it("review: duplicate deliveries of a dashboard refund record it once (no orphan claim); a failed refund before ours is recorded is retried", async () => {
+      const view = okv(await invoiceCardViewFor(admin(), id.inv3, deps))!;
+      const card = view.cardPayments[0];
+      const r = fake.dashboardRefund(id.acctA, card.intentRef, 300);
+      const results = await Promise.all([post(event("refund.created", r.id, id.acctA)), post(event("refund.updated", r.id, id.acctA))]);
+      assert.ok(results.every((x) => x.status === 200), JSON.stringify(results));
+      assert.equal((await paymentsOn(A, r.id)).length, 1);
+      const open = await ctx.db.selectFrom("pms_card_intents").select("id").where("tenant_id", "=", A).where("kind", "=", "refund").where("parent_ref", "=", card.intentRef).where("status", "in", ["open", "processing"]).execute();
+      assert.equal(open.length, 0, "no claim left holding back the rest");
+      // Our own refund still being finished by the screen, and the provider already says it failed: retried later.
+      const own = await createRefundIntent(ctx, A, { parentRef: card.intentRef, paymentId: card.paymentId, paymentAmountPence: card.amountPence, amountPence: 100, invoiceId: id.inv3, patientId: id.owen, feePence: 0 }, SEED);
+      const failed = fake.dashboardRefund(id.acctA, card.intentRef, 100);
+      failed.metadata = { tenant_id: A, card_intent_id: own.id };
+      failed.status = "failed";
+      assert.equal((await post(event("refund.failed", failed.id, id.acctA))).status, 409);
+    });
+
     it("portal: pay button lists only the patient's payable invoices; payment recorded once (return page + webhook)", async () => {
       const inv = await newInvoice(A, id.megan, 7000);
       const list = await portalInvoices(ctx, A, id.megan, deps);
@@ -342,7 +411,7 @@ export function defineCardPaymentsSuite(label: string, factory: () => Promise<Ca
       refused(await startMembershipFor(reception(), { patientId: id.megan, planId: plan, mandateId: id.mandateOwen, chargeDay: 10, consentConfirmed: true }, deps), /saved cards/);
       const msId = okv(await startMembershipFor(reception(), { patientId: id.owen, planId: plan, mandateId: id.mandateOwen, chargeDay: 10, consentConfirmed: true }, deps)).id;
       const ms = (await getMembership(ctx, A, msId))!;
-      assert.match(ms.consentWording, /£45\.00 every month on day 10/);
+      assert.match(ms.consentWording, /£45\.00 today and then on day 10 of every month/);
       const r1 = await Promise.all([runMembershipCharges(ctx, deps), runMembershipCharges(ctx, deps)]);
       assert.equal(r1.reduce((a, r) => a + r.charged, 0), 1, "two runs at once charge once");
       assert.equal((await runMembershipCharges(ctx, deps)).charged, 0, "a second run the same day charges nothing");
@@ -355,7 +424,8 @@ export function defineCardPaymentsSuite(label: string, factory: () => Promise<Ca
       now = new Date("2026-12-10T10:00:00.000Z");
       fake.loseAnswers = 1;
       const lost = await runMembershipCharges(ctx, deps);
-      assert.equal(lost.charged + lost.errors + lost.declined, 1);
+      assert.equal(lost.charged, 0, "an unanswered charge is not counted");
+      assert.equal(lost.skipped, 1, "…and is looked up next run, never charged again blindly");
       now = new Date("2026-12-10T10:30:00.000Z");
       await runMembershipCharges(ctx, deps);
       const dec = await ctx.db.selectFrom("pms_card_intents").select(["id", "status", "intent_ref"]).where("tenant_id", "=", A).where("membership_id", "=", msId).where("period", "=", "2026-12").execute();

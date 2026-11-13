@@ -235,6 +235,8 @@ export async function setPlatformFee(ctx: DbContext, tenantId: string, input: { 
 export interface CardReader {
   id: string;
   siteId: string;
+  /** The connected account the reader is registered on (a reader never moves between accounts or modes). */
+  accountRef: string;
   locationRef: string;
   readerRef: string;
   label: string;
@@ -243,7 +245,7 @@ export interface CardReader {
   status: "active" | "removed";
 }
 
-export async function addReader(ctx: DbContext, tenantId: string, input: { siteId: string; locationRef: string; readerRef: string; label: string; deviceType: string | null; simulated: boolean }, actor: PmsActor): Promise<CardReader> {
+export async function addReader(ctx: DbContext, tenantId: string, input: { siteId: string; accountRef: string; locationRef: string; readerRef: string; label: string; deviceType: string | null; simulated: boolean }, actor: PmsActor): Promise<CardReader> {
   assertTenantId(tenantId);
   assertId(input.siteId, "site id");
   const label = input.label.trim();
@@ -258,6 +260,7 @@ export async function addReader(ctx: DbContext, tenantId: string, input: { siteI
         tenant_id: tenantId,
         id,
         site_id: input.siteId,
+        account_ref: input.accountRef,
         location_ref: input.locationRef,
         reader_ref: input.readerRef,
         label,
@@ -272,13 +275,14 @@ export async function addReader(ctx: DbContext, tenantId: string, input: { siteI
     ],
     { unique: "That reader is already registered.", foreignKey: "That site does not exist in this clinic." },
   );
-  return { id, siteId: input.siteId, locationRef: input.locationRef, readerRef: input.readerRef, label, deviceType: input.deviceType, simulated: input.simulated, status: "active" };
+  return { id, siteId: input.siteId, accountRef: input.accountRef, locationRef: input.locationRef, readerRef: input.readerRef, label, deviceType: input.deviceType, simulated: input.simulated, status: "active" };
 }
 
 function toReader(r: Record<string, unknown>): CardReader {
   return {
     id: String(r.id),
     siteId: String(r.site_id),
+    accountRef: String(r.account_ref),
     locationRef: String(r.location_ref),
     readerRef: String(r.reader_ref),
     label: String(r.label),
@@ -288,11 +292,12 @@ function toReader(r: Record<string, unknown>): CardReader {
   };
 }
 
-export async function listReaders(ctx: DbContext, tenantId: string, options: { activeOnly?: boolean } = {}): Promise<CardReader[]> {
+export async function listReaders(ctx: DbContext, tenantId: string, options: { activeOnly?: boolean; accountRef?: string | null } = {}): Promise<CardReader[]> {
   assertTenantId(tenantId);
   return readOrEmpty(READERS, [] as CardReader[], async () => {
     let q = ctx.db.selectFrom(READERS).selectAll().where("tenant_id", "=", tenantId);
     if (options.activeOnly) q = q.where("status", "=", "active");
+    if (options.accountRef !== undefined) q = q.where("account_ref", "=", options.accountRef ?? "-");
     return (await q.orderBy("created_at").execute()).map((r) => toReader(r as unknown as Record<string, unknown>));
   });
 }
@@ -423,7 +428,12 @@ export async function createIntent(ctx: DbContext, tenantId: string, input: NewI
  * (its amount less every refund not failed or cancelled) covers it. The check runs IN the insert: a NULL amount
  * refuses the statement, so two members refunding at the same moment can never refund more than was paid.
  */
-export async function createRefundIntent(ctx: DbContext, tenantId: string, input: { parentRef: string; paymentAmountPence: number; amountPence: number; invoiceId: string; patientId: string | null; feePence: number }, actor: PmsActor): Promise<CardIntent> {
+export async function createRefundIntent(
+  ctx: DbContext,
+  tenantId: string,
+  input: { parentRef: string; paymentId: string | null; paymentAmountPence: number; amountPence: number; invoiceId: string; patientId: string | null; feePence: number; intentRef?: string | null },
+  actor: PmsActor,
+): Promise<CardIntent> {
   assertTenantId(tenantId);
   if (!Number.isInteger(input.amountPence) || input.amountPence <= 0) throw new RepoInputError("Enter the amount to refund.");
   const id = pmsId(CARD_ID_PREFIXES.intent, ctx);
@@ -434,6 +444,8 @@ export async function createRefundIntent(ctx: DbContext, tenantId: string, input
   await billingBatch(
     ctx,
     [
+      // First: lock the payment's row (Postgres) so two refunds of the same payment are checked one after the other.
+      ...(input.paymentId ? [ctx.db.updateTable("pms_payments").set((eb) => ({ updated_at: eb.ref("updated_at") })).where("tenant_id", "=", tenantId).where("id", "=", input.paymentId)] : []),
       ctx.db.insertInto(INTENTS).values({
         tenant_id: tenantId,
         id,
@@ -441,6 +453,7 @@ export async function createRefundIntent(ctx: DbContext, tenantId: string, input
         purpose: "refund",
         status: "open",
         parent_ref: input.parentRef,
+        intent_ref: input.intentRef ?? null,
         invoice_id: input.invoiceId,
         patient_id: input.patientId,
         amount_pence: sql<number>`(case when ${left} >= cast(${want} as integer) then cast(${want} as integer) end)`,
@@ -450,7 +463,7 @@ export async function createRefundIntent(ctx: DbContext, tenantId: string, input
         updated_at: at,
       }),
     ],
-    { notNull: "That is more than is left to refund on this card payment." },
+    { notNull: "That is more than is left to refund on this card payment.", unique: "That refund is already recorded." },
   );
   return (await getIntent(ctx, tenantId, id)) as CardIntent;
 }
@@ -488,14 +501,15 @@ export async function listOpenIntents(ctx: DbContext, tenantId: string, limit = 
 }
 
 /** The provider's references once known (never overwritten with another value). */
-export async function setIntentRefs(ctx: DbContext, tenantId: string, id: string, refs: { intentRef?: string; checkoutRef?: string }): Promise<void> {
+export async function setIntentRefs(ctx: DbContext, tenantId: string, id: string, refs: { intentRef?: string; checkoutRef?: string }, options: { replace?: boolean } = {}): Promise<void> {
   assertTenantId(tenantId);
   const at = nowIso(ctx);
   const set: Record<string, unknown> = { updated_at: at };
   if (refs.intentRef) set.intent_ref = refs.intentRef;
   if (refs.checkoutRef) set.checkout_ref = refs.checkoutRef;
   let q = ctx.db.updateTable(INTENTS).set(set).where("tenant_id", "=", tenantId).where("id", "=", id);
-  if (refs.intentRef) q = q.where((eb) => eb.or([eb("intent_ref", "is", null), eb("intent_ref", "=", refs.intentRef as string)]));
+  if (refs.intentRef && !options.replace) q = q.where((eb) => eb.or([eb("intent_ref", "is", null), eb("intent_ref", "=", refs.intentRef as string)]));
+  if (refs.intentRef && options.replace) q = q.where("status", "!=", "succeeded");
   if (refs.checkoutRef) q = q.where((eb) => eb.or([eb("checkout_ref", "is", null), eb("checkout_ref", "=", refs.checkoutRef as string)]));
   await billingBatch(ctx, [q], { unique: "That payment reference is already used." });
 }
@@ -532,7 +546,9 @@ export function intentSucceededQuery(ctx: DbContext, tenantId: string, id: strin
     .set({ status: "succeeded", payment_id: paymentId, intent_ref: intentRef, failure_code: null, updated_at: at })
     .where("tenant_id", "=", tenantId)
     .where("id", "=", id)
-    .where((eb) => eb.or([eb("intent_ref", "is", null), eb("intent_ref", "=", intentRef)]));
+    // Never moves an intent already succeeded with another payment; a retried charge (a new provider reference after
+    // a decline) replaces the declined one's reference.
+    .where("status", "!=", "succeeded");
 }
 
 /** Marks an intent succeeded when its payment was recorded by an earlier call (idempotent). */
@@ -571,6 +587,8 @@ export interface CardMandate {
   id: string;
   patientId: string;
   status: MandateStatus;
+  /** The connected account the card was saved on (it can only be charged there). */
+  accountRef: string;
   customerRef: string;
   methodRef: string | null;
   setupRef: string | null;
@@ -592,6 +610,7 @@ function toMandate(r: Record<string, unknown>): CardMandate {
     id: String(r.id),
     patientId: String(r.patient_id),
     status: r.status as MandateStatus,
+    accountRef: String(r.account_ref),
     customerRef: String(r.customer_ref),
     methodRef: (r.method_ref as string | null) ?? null,
     setupRef: (r.setup_ref as string | null) ?? null,
@@ -619,7 +638,7 @@ export function mandateLabel(m: Pick<CardMandate, "brand" | "last4" | "expMonth"
 export async function createMandate(
   ctx: DbContext,
   tenantId: string,
-  input: { patientId: string; customerRef: string; consentWording: string; channel: ConsentChannel; allowsNoShow: boolean },
+  input: { patientId: string; accountRef: string; customerRef: string; consentWording: string; channel: ConsentChannel; allowsNoShow: boolean },
   actor: PmsActor,
 ): Promise<CardMandate> {
   assertTenantId(tenantId);
@@ -635,6 +654,7 @@ export async function createMandate(
         id,
         patient_id: input.patientId,
         status: "pending",
+        account_ref: input.accountRef,
         customer_ref: input.customerRef,
         consent_wording: input.consentWording,
         consent_version: CARD_CONSENT_VERSION,
@@ -712,10 +732,10 @@ export async function listMandates(ctx: DbContext, tenantId: string, patientId: 
   );
 }
 
-/** The provider customer already made for this patient on this account (reused for every card). */
-export async function customerRefFor(ctx: DbContext, tenantId: string, patientId: string): Promise<string | null> {
+/** The provider customer already made for this patient on THIS account (reused for every card). */
+export async function customerRefFor(ctx: DbContext, tenantId: string, patientId: string, accountRef: string): Promise<string | null> {
   assertTenantId(tenantId);
-  const r = await ctx.db.selectFrom(MANDATES).select("customer_ref").where("tenant_id", "=", tenantId).where("patient_id", "=", patientId).orderBy("created_at", "desc").executeTakeFirst();
+  const r = await ctx.db.selectFrom(MANDATES).select("customer_ref").where("tenant_id", "=", tenantId).where("patient_id", "=", patientId).where("account_ref", "=", accountRef).orderBy("created_at", "desc").executeTakeFirst();
   return r?.customer_ref ?? null;
 }
 

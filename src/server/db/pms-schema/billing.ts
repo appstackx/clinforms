@@ -532,6 +532,7 @@ export interface PmsCardReadersTable {
   tenant_id: string;
   id: string;
   site_id: string;
+  account_ref: string;
   location_ref: string;
   reader_ref: string;
   label: string;
@@ -592,6 +593,7 @@ export interface PmsCardMandatesTable {
   patient_id: string;
   /** "pending" | "active" | "removed" | "failed" */
   status: WithDefault<string>;
+  account_ref: string;
   customer_ref: string;
   method_ref: string | null;
   setup_ref: string | null;

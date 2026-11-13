@@ -13,6 +13,7 @@ create table if not exists public.pms_card_mandates (
   id text not null,
   patient_id text not null,
   status text not null default 'pending' check (status in ('pending', 'active', 'removed', 'failed')),
+  account_ref text not null,
   customer_ref text not null,
   method_ref text,
   setup_ref text,

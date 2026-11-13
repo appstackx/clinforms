@@ -30,7 +30,12 @@ import {
   syncAccountState,
 } from "../../../repos/pms/billing/card-payments";
 import type { ConnectConfig } from "./client";
-import { SYSTEM_ACTOR, completeSaveCard, recordIntentRefund, refundFailed, settleIntent } from "./service";
+import { SYSTEM_ACTOR, completeSaveCard, paymentByRef, recordIntentRefund, refundFailed, settleIntent } from "./service";
+
+/** Thrown by dispatch for an event that arrived before our own flow finished: answered 409 so the provider retries. */
+class RetryLater extends Error {}
+/** How long our own screen flow gets to record a refund before its event records it instead. */
+const OWN_FLOW_GRACE_MS = 5 * 60_000;
 
 export const CONNECT_WEBHOOK_PATH = "/api/billing/connect-webhook";
 const MAX_BODY = 256 * 1024;
@@ -118,6 +123,10 @@ export async function handleConnectWebhook(req: Request, deps: ConnectWebhookDep
   try {
     result = await dispatch(ctx, tenantId, accountRef, type, objectId, thin, cfg);
   } catch (err) {
+    if (err instanceof RetryLater) {
+      log({ outcome: "retry_later", type });
+      return json(409, { error: "retry_later" });
+    }
     if (err instanceof CardPaymentsError) {
       log({ outcome: "provider_error", type, code: err.code });
       return json(502, { error: "provider_unavailable" });
@@ -147,6 +156,9 @@ async function dispatch(ctx: RepoContext, tenantId: string, account: string, typ
     if (pi.metadata.tenant_id !== tenantId || !intentId) return "ignored";
     const intent = await getIntent(ctx, tenantId, intentId);
     if (!intent || intent.kind !== "payment") return "ignored";
+    // An earlier, declined attempt of an intent that has been retried since: nothing to do (unless it succeeded –
+    // then it is real money and is recorded like any other).
+    if (intent.intentRef && intent.intentRef !== pi.id && pi.status !== "succeeded") return "ignored";
     if (!intent.intentRef) await setIntentRefs(ctx, tenantId, intent.id, { intentRef: pi.id });
     const r = await settleIntent(ctx, tenantId, api, account, { ...intent, intentRef: pi.id });
     return r.outcome ? r.outcome.status : `intent_${r.intent.status}`;
@@ -174,7 +186,15 @@ async function dispatch(ctx: RepoContext, tenantId: string, account: string, typ
 
   if (type.startsWith("refund.")) {
     const refund = await api.getRefund(account, objectId);
-    if (refund.status === "failed" || refund.status === "canceled") return (await refundFailed(ctx, tenantId, refund.id)) ? "refund_reversed" : "refund_failed";
+    const own = refund.metadata.card_intent_id && refund.metadata.tenant_id === tenantId ? await getIntent(ctx, tenantId, refund.metadata.card_intent_id) : null;
+    const ownInFlight = own && own.kind === "refund" && (own.status === "open" || own.status === "processing") && !(await paymentByRef(ctx, tenantId, refund.id));
+    if (refund.status === "failed" || refund.status === "canceled") {
+      // Our own refund not recorded yet: let the screen flow finish (it sees the failure itself), else retry.
+      if (ownInFlight) throw new RetryLater();
+      return (await refundFailed(ctx, tenantId, refund.id)) ? "refund_reversed" : "refund_failed";
+    }
+    // Our own refund still being finished by the screen (credit note, then the record): give it a few minutes.
+    if (ownInFlight && own && Date.now() - Date.parse(own.updatedAt) < OWN_FLOW_GRACE_MS) throw new RetryLater();
     if (!refund.paymentIntent) return "ignored";
     // Our refund (from the invoice screen): its intent row is named in the metadata.
     let intent = refund.metadata.card_intent_id && refund.metadata.tenant_id === tenantId ? await getIntent(ctx, tenantId, refund.metadata.card_intent_id) : null;
@@ -192,9 +212,16 @@ async function dispatch(ctx: RepoContext, tenantId: string, account: string, typ
           if ((await getIntent(ctx, tenantId, parent.id))?.status !== "succeeded") return "ignored";
         }
         const pi = await api.getPaymentIntent(account, refund.paymentIntent);
-        intent = await createRefundIntent(ctx, tenantId, { parentRef: refund.paymentIntent, paymentAmountPence: pi.amountReceived, amountPence: refund.amount, invoiceId: parent.invoiceId, patientId: parent.patientId, feePence: 0 }, SYSTEM_ACTOR);
-        await setIntentRefs(ctx, tenantId, intent.id, { intentRef: refund.id });
-        await pmsAudit(ctx, tenantId, SYSTEM_ACTOR, { action: "pms.card_refund.outside", targetType: "pms_invoice", targetId: parent.invoiceId ?? tenantId, detail: { amountPence: refund.amount } });
+        try {
+          // The refund's reference goes in the same INSERT: a second delivery of the same refund is refused by the
+          // unique index (no orphan intent holding back what is left to refund).
+          intent = await createRefundIntent(ctx, tenantId, { parentRef: refund.paymentIntent, paymentId: await paymentByRef(ctx, tenantId, refund.paymentIntent), paymentAmountPence: pi.amountReceived, amountPence: refund.amount, invoiceId: parent.invoiceId, patientId: parent.patientId, feePence: 0, intentRef: refund.id }, SYSTEM_ACTOR);
+          await pmsAudit(ctx, tenantId, SYSTEM_ACTOR, { action: "pms.card_refund.outside", targetType: "pms_invoice", targetId: parent.invoiceId, detail: { amountPence: refund.amount } });
+        } catch (err) {
+          const again = await findIntentByRef(ctx, tenantId, refund.id);
+          if (!again) throw err;
+          intent = again;
+        }
       }
     } else if (!intent.intentRef) {
       await setIntentRefs(ctx, tenantId, intent.id, { intentRef: refund.id });

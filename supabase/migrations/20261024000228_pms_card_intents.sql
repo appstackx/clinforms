@@ -6,7 +6,7 @@
 -- hosted checkout (cs_...), parent_ref = the payment a refund belongs to. payment_id = the pms_payments row recorded
 -- for it (no foreign key - a payment is never deleted, and pms_payments stays the one record of money: a payment is
 -- recorded once because its provider reference is unique per clinic). membership_id + period: one monthly charge per
--- membership and month (unique). Hangs off pms_card_settings, its invoice and patient (ON DELETE CASCADE, offboarding).
+-- membership and month (unique). At most ONE desk payment (reader or saved card) open or processing per invoice. Hangs off pms_card_settings, its invoice and patient (ON DELETE CASCADE, offboarding).
 -- Kept in step with db/migrations/sqlite/0228_pms_card_intents.sql (db/parity.test.ts).
 -- RLS on, no policies, Data API roles revoked. Idempotent.
 
@@ -41,6 +41,7 @@ create table if not exists public.pms_card_intents (
 create unique index if not exists pms_card_intents_intent on public.pms_card_intents (tenant_id, intent_ref);
 create unique index if not exists pms_card_intents_checkout on public.pms_card_intents (tenant_id, checkout_ref);
 create unique index if not exists pms_card_intents_period on public.pms_card_intents (tenant_id, membership_id, period) where kind = 'payment' and membership_id is not null;
+create unique index if not exists pms_card_intents_desk_busy on public.pms_card_intents (tenant_id, invoice_id) where kind = 'payment' and purpose in ('reader', 'saved_card') and status in ('open', 'processing');
 create index if not exists pms_card_intents_invoice on public.pms_card_intents (tenant_id, invoice_id);
 create index if not exists pms_card_intents_parent on public.pms_card_intents (tenant_id, parent_ref);
 create index if not exists pms_card_intents_status on public.pms_card_intents (tenant_id, status, updated_at);

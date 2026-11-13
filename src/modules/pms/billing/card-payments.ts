@@ -134,7 +134,7 @@ export function cardConsentWording(input: ConsentWordingInput): string {
 export function membershipConsentWording(input: { clinicName: string; planName: string; pricePence: number; chargeDay: number }): string {
   const clinic = input.clinicName.trim() || "the clinic";
   return (
-    `I agree that ${clinic} may charge my saved card ${penceText(input.pricePence)} every month on day ${input.chargeDay} ` +
+    `I agree that ${clinic} may charge my saved card ${penceText(input.pricePence)} today and then on day ${input.chargeDay} of every month ` +
     `for my "${input.planName.trim()}" membership, until I or the clinic cancel it. Each charge comes with an invoice.`
   );
 }
@@ -257,8 +257,8 @@ export interface InvoiceCardView {
   noShowPolicyOn: boolean;
   /** Payments taken through the clinic's account on this invoice, with what can still be refunded. */
   cardPayments: { paymentId: string; intentRef: string; label: string; amountPence: number; refundedPence: number; refundablePence: number; receivedOn: string }[];
-  /** An open reader payment waiting at the desk. */
-  pendingReader: { intentId: string; readerLabel: string; amountPence: number } | null;
+  /** A desk payment still in progress (on a reader, or a saved-card charge whose answer is being confirmed). */
+  pendingReader: { intentId: string; readerLabel: string; amountPence: number; onReader: boolean } | null;
   can: { pay: boolean; refund: boolean };
 }
 

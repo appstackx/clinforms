@@ -9,6 +9,7 @@ create table if not exists public.pms_card_readers (
   tenant_id text not null,
   id text not null,
   site_id text not null,
+  account_ref text not null,
   location_ref text not null,
   reader_ref text not null,
   label text not null check (length(label) between 1 and 60),

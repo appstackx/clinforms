@@ -132,6 +132,11 @@ async function readyFor(ctx: RepoContext, tenantId: string, deps: CardDeps): Pro
   return { ok: true, ready: { api: u.config.api, mode: u.config.mode, settings, account: settings.accountRef } };
 }
 
+/** A provider error after which the request MAY have been carried out (no answer, or the provider's own failure). */
+function uncertain(err: unknown): boolean {
+  return err instanceof CardPaymentsError && (err.code === "unreachable" || /^http_5\d\d$/.test(err.code));
+}
+
 function providerFailure(err: unknown): Result<never> | null {
   if (err instanceof CardPaymentsError) return fail("invalid", err.message);
   return null;
@@ -162,7 +167,7 @@ const today = (ctx: RepoContext) => ukToday(ctx.now ? ctx.now() : pmsNow());
 
 export type RecordOutcome = { status: "recorded" | "already"; paymentId: string } | { status: "not_paid" | "refused"; why: string };
 
-async function paymentByRef(ctx: RepoContext, tenantId: string, ref: string): Promise<string | null> {
+export async function paymentByRef(ctx: RepoContext, tenantId: string, ref: string): Promise<string | null> {
   const r = await ctx.db.selectFrom("pms_payments").select("id").where("tenant_id", "=", tenantId).where("provider", "=", CONNECT_PROVIDER).where("provider_ref", "=", ref).executeTakeFirst();
   return r?.id ?? null;
 }
@@ -177,7 +182,8 @@ export async function recordIntentPayment(ctx: RepoContext, tenantId: string, in
   if (intent.kind !== "payment") return { status: "refused", why: "not_a_payment" };
   if (pi.metadata.tenant_id !== tenantId || pi.metadata.card_intent_id !== intent.id) return { status: "refused", why: "metadata_mismatch" };
   if (pi.status !== "succeeded" || pi.currency !== "gbp" || pi.amountReceived <= 0) return { status: "not_paid", why: pi.status || "unknown" };
-  if (intent.intentRef && intent.intentRef !== pi.id) return { status: "refused", why: "other_intent" };
+  // (A retried charge has a new provider reference: every succeeded intent carrying our ids is real money and is
+  // recorded – its reference is unique, so never twice.)
   const existing = await paymentByRef(ctx, tenantId, pi.id);
   if (existing) {
     if (intent.status !== "succeeded" || intent.paymentId !== existing) await markIntentSucceeded(ctx, tenantId, intent.id, existing, pi.id);
@@ -189,7 +195,8 @@ export async function recordIntentPayment(ctx: RepoContext, tenantId: string, in
   const allocatable = inv && inv.status === "issued" && inv.billTo === "patient" && inv.patientId === patientId ? Math.max(0, Math.min(pi.amountReceived, inv.balancePence)) : 0;
   const paidOn = pi.createdAt ? ukToday(new Date(pi.createdAt * 1000)) : today(ctx);
   const receivedOn = paidOn > today(ctx) ? today(ctx) : paidOn;
-  const reference = (pi.card ? `${pi.card.brand.charAt(0).toUpperCase()}${pi.card.brand.slice(1)} ending ${pi.card.last4}` : "Card payment").slice(0, 80);
+  // Test-mode payments say so on the payment itself (they are never real money).
+  const reference = `${pi.livemode ? "" : "TEST – "}${pi.card ? `${pi.card.brand.charAt(0).toUpperCase()}${pi.card.brand.slice(1)} ending ${pi.card.last4}` : "Card payment"}`.slice(0, 80);
   const write = (allocate: number) =>
     recordPayment(
       ctx,
@@ -228,6 +235,19 @@ export async function recordIntentPayment(ctx: RepoContext, tenantId: string, in
 /** Reads the intent's provider object again and records it if it succeeded (the "Check" buttons, return pages). */
 export async function settleIntent(ctx: RepoContext, tenantId: string, api: ConnectApi, account: string, intent: CardIntent, actor: PmsActor = SYSTEM_ACTOR): Promise<{ intent: CardIntent; outcome: RecordOutcome | null; providerStatus: string | null }> {
   let ref = intent.intentRef;
+  if (!ref && !intent.checkoutRef && intent.kind === "payment") {
+    // A charge whose answer was lost (timeout, crash): ask the provider for payments carrying this intent's id.
+    const found = await api.findPaymentsForIntent(account, intent.id);
+    const paid = found.find((p) => p.status === "succeeded");
+    const inFlight = found.find((p) => p.status === "processing" || p.status === "requires_capture" || p.status === "requires_confirmation" || p.status === "requires_action");
+    if (paid) {
+      const outcome = await recordIntentPayment(ctx, tenantId, intent, paid, actor);
+      return { intent: (await getIntent(ctx, tenantId, intent.id)) ?? intent, outcome, providerStatus: paid.status };
+    }
+    const age = (ctx.now ? ctx.now() : pmsNow()).getTime() - Date.parse(intent.updatedAt);
+    if (!inFlight && age > 10 * 60_000) await moveIntent(ctx, tenantId, intent.id, ["open", "processing"], "failed", { failureCode: "interrupted", bumpAttempts: true });
+    return { intent: (await getIntent(ctx, tenantId, intent.id)) ?? intent, outcome: null, providerStatus: inFlight?.status ?? null };
+  }
   if (!ref && intent.checkoutRef) {
     const cs = await api.getCheckout(account, intent.checkoutRef);
     if (cs.paymentIntent) {
@@ -251,7 +271,16 @@ export async function settleIntent(ctx: RepoContext, tenantId: string, api: Conn
  * the invoice when the invoice owes the money back (a credit note was issued first); otherwise kept on the patient's
  * account so takings stay true and the screen shows the difference.
  */
-export async function recordIntentRefund(ctx: RepoContext, tenantId: string, intent: CardIntent, refund: { id: string; status: string; amount: number }, reason: string | null, actor: PmsActor = SYSTEM_ACTOR): Promise<RecordOutcome> {
+export async function recordIntentRefund(
+  ctx: RepoContext,
+  tenantId: string,
+  intent: CardIntent,
+  refund: { id: string; status: string; amount: number },
+  reason: string | null,
+  actor: PmsActor = SYSTEM_ACTOR,
+  /** At most this much is allocated to the invoice (the part of the payment that paid it); default: what it owes back. */
+  allocateMax?: number,
+): Promise<RecordOutcome> {
   if (intent.kind !== "refund") return { status: "refused", why: "not_a_refund" };
   if (refund.status === "failed" || refund.status === "canceled") {
     await moveIntent(ctx, tenantId, intent.id, ["open", "processing"], "failed", { failureCode: refund.status });
@@ -265,7 +294,7 @@ export async function recordIntentRefund(ctx: RepoContext, tenantId: string, int
   if (!intent.patientId) return { status: "refused", why: "no_patient" };
   const inv = intent.invoiceId ? await getInvoice(ctx, tenantId, intent.invoiceId) : null;
   const owedBack = inv && inv.status === "issued" && inv.billTo === "patient" ? Math.max(0, -inv.balancePence) : 0;
-  const allocate = Math.min(owedBack, refund.amount);
+  const allocate = Math.max(0, Math.min(owedBack, refund.amount, allocateMax ?? refund.amount));
   const write = (a: number) =>
     recordPayment(
       ctx,
@@ -319,7 +348,9 @@ export async function cardSetupFor(actor: CardActor, deps: CardDeps = cardDeps()
     const t = actor.tenantId;
     const u = usable(deps);
     const keyMode = deps.config.ok ? deps.config.config.mode : "test";
-    const [s, sites, readers, plans, members] = await Promise.all([getCardSettings(ctx, t), listSites(ctx, t), listReaders(ctx, t, { activeOnly: true }), listPlans(ctx, t), countMembersByPlan(ctx, t)]);
+    const s = await getCardSettings(ctx, t);
+    const current = s.accountMode === keyMode ? s.accountRef : null;
+    const [sites, readers, plans, members] = await Promise.all([listSites(ctx, t), listReaders(ctx, t, { activeOnly: true, accountRef: current }), listPlans(ctx, t), countMembersByPlan(ctx, t)]);
     const siteName = new Map(sites.map((x) => [x.id, x.name]));
     const sameMode = s.accountMode === keyMode;
     return ok({
@@ -426,17 +457,18 @@ export async function addReaderFor(actor: CardActor, input: { siteId: string; la
     const simulated = u.config.mode === "test";
     const code = simulated ? SIMULATED_READER_CODE : String(input.registrationCode ?? "").trim();
     if (!simulated && !/^[a-z0-9-]{3,40}$/i.test(code)) return fail("invalid", "Enter the pairing code shown on the reader.", { fieldErrors: { registrationCode: "Required" } });
-    const existing = (await listReaders(ctx, t)).find((r) => r.siteId === site.id);
+    // A site's location is made once per account (a reader of a test account never lends its location to live).
+    const existing = (await listReaders(ctx, t, { accountRef: s.accountRef })).find((r) => r.siteId === site.id);
     let location = existing?.locationRef ?? null;
     if (!location) {
       const line1 = String(input.line1 ?? "").trim();
       const city = String(input.city ?? "").trim();
       const postcode = String(input.postcode ?? "").trim().toUpperCase();
       if (!line1 || !city || !/^[A-Z0-9 ]{5,8}$/.test(postcode)) return fail("invalid", "Enter the site's address (first line, town and postcode) – the payment provider needs it for the reader.");
-      location = await u.config.api.createLocation(s.accountRef, { displayName: site.name, line1, city, postcode }, `clindesk-location-${t}-${site.id}`);
+      location = await u.config.api.createLocation(s.accountRef, { displayName: site.name, line1, city, postcode }, `clindesk-location-${s.accountRef}-${site.id}`);
     }
     const reader = await u.config.api.registerReader(s.accountRef, { registrationCode: code, location, label });
-    const saved = await addReader(ctx, t, { siteId: site.id, locationRef: location, readerRef: reader.id, label, deviceType: reader.deviceType, simulated }, actor.actor);
+    const saved = await addReader(ctx, t, { siteId: site.id, accountRef: s.accountRef, locationRef: location, readerRef: reader.id, label, deviceType: reader.deviceType, simulated }, actor.actor);
     return ok({ id: saved.id });
   });
 }
@@ -457,7 +489,9 @@ export async function removeReaderFor(actor: CardActor, readerId: string, deps: 
 export async function createPlanFor(actor: CardActor, input: { name: string; pricePence: number; vatCode?: "exempt" | "standard" | "reduced" | "zero" }, deps: CardDeps = cardDeps()): Promise<Result<{ id: string }>> {
   if (!actor.can("settings.setup")) return forbidden();
   if (!deps.switchOn) return fail("invalid", CARD_COPY.off);
-  return guarded("card.create_plan", async () => ok({ id: (await createPlan(actor.repo(), actor.tenantId, { name: String(input.name ?? ""), pricePence: Number(input.pricePence), vatCode: input.vatCode }, actor.actor)).id }));
+  // Plans are VAT-exempt (healthcare): the price the patient agrees to is exactly what each month's invoice charges.
+  void input.vatCode;
+  return guarded("card.create_plan", async () => ok({ id: (await createPlan(actor.repo(), actor.tenantId, { name: String(input.name ?? ""), pricePence: Number(input.pricePence), vatCode: "exempt" }, actor.actor)).id }));
 }
 
 export async function setPlanActiveFor(actor: CardActor, planId: string, active: boolean, deps: CardDeps = cardDeps()): Promise<Result<{ changed: boolean }>> {
@@ -506,28 +540,43 @@ export async function invoiceCardViewFor(actor: CardActor, invoiceId: string, de
     const ready = deps.config.ok && cardPaymentsReady({ enabled: s.enabled, accountRef: s.accountRef, status: s.status, mode: s.accountMode, keyMode });
     const intents = await listIntentsForInvoice(ctx, t, inv.id);
     if (!ready && intents.length === 0) return ok(null);
-    const [readers, mandates] = await Promise.all([listReaders(ctx, t, { activeOnly: true }), inv.billTo === "patient" ? listMandates(ctx, t, inv.patientId) : Promise.resolve([])]);
+    const current = s.accountMode === keyMode ? s.accountRef : null;
+    const [readers, mandates] = await Promise.all([listReaders(ctx, t, { activeOnly: true, accountRef: current }), inv.billTo === "patient" ? listMandates(ctx, t, inv.patientId) : Promise.resolve([])]);
     const scope = actor.siteIds ?? null;
+    // The card payments ON this invoice (the books are the source: payments through the clinic's account allocated
+    // to it), with what is left to refund of each (its refunds not failed or cancelled).
+    const paid = await ctx.db
+      .selectFrom("pms_payment_allocations as a")
+      .innerJoin("pms_payments as p", (j) => j.onRef("p.tenant_id", "=", "a.tenant_id").onRef("p.id", "=", "a.payment_id"))
+      .select(["p.id", "p.provider_ref", "p.reference", "p.amount_pence", "p.received_on"])
+      .where("a.tenant_id", "=", t)
+      .where("a.invoice_id", "=", inv.id)
+      .where("a.reversed", "=", 0)
+      .where("p.kind", "=", "payment")
+      .where("p.status", "=", "recorded")
+      .where("p.provider", "=", CONNECT_PROVIDER)
+      .orderBy("p.created_at")
+      .execute();
     const payments: InvoiceCardView["cardPayments"] = [];
-    for (const i of intents.filter((x) => x.kind === "payment" && x.status === "succeeded" && x.paymentId && x.intentRef)) {
-      const p = await getPayment(ctx, t, i.paymentId as string);
-      if (!p || p.status !== "recorded") continue;
-      const refunded = (await listRefundIntents(ctx, t, i.intentRef as string)).filter((r) => r.status !== "failed" && r.status !== "canceled").reduce((a, r) => a + r.amountPence, 0);
-      payments.push({ paymentId: p.id, intentRef: i.intentRef as string, label: p.reference ?? "Card payment", amountPence: p.amountPence, refundedPence: refunded, refundablePence: Math.max(0, p.amountPence - refunded), receivedOn: p.receivedOn });
+    for (const p of paid) {
+      if (!p.provider_ref) continue;
+      const refunded = (await listRefundIntents(ctx, t, p.provider_ref)).filter((r) => r.status !== "failed" && r.status !== "canceled").reduce((a, r) => a + r.amountPence, 0);
+      const amount = Number(p.amount_pence);
+      payments.push({ paymentId: p.id, intentRef: p.provider_ref, label: p.reference ?? "Card payment", amountPence: amount, refundedPence: refunded, refundablePence: Math.max(0, amount - refunded), receivedOn: p.received_on });
     }
-    const pending = intents.find((x) => x.purpose === "reader" && (x.status === "open" || x.status === "processing"));
-    const readerLabel = pending?.readerId ? readers.find((r) => r.id === pending.readerId)?.label ?? "Card reader" : "Card reader";
+    const pending = intents.find((x) => (x.purpose === "reader" || x.purpose === "saved_card") && (x.status === "open" || x.status === "processing"));
+    const readerLabel = pending?.purpose === "saved_card" ? "the saved card" : pending?.readerId ? (readers.find((r) => r.id === pending.readerId)?.label ?? "Card reader") : "Card reader";
     return ok({
       ready,
       testMode: keyMode === "test",
       invoiceId: inv.id,
       balancePence: inv.balancePence,
       noShow: isNoShowInvoice(inv),
-      readers: readers.filter((r) => scope === null || scope.has(r.siteId)).filter((r) => !inv.siteId || r.siteId === inv.siteId || readers.length === 1 || true).map((r) => ({ id: r.id, label: r.label, simulated: r.simulated })),
-      savedCards: mandates.filter((m) => m.status === "active").map((m) => ({ id: m.id, label: mandateLabel(m), allowsNoShow: m.allowsNoShow })),
+      readers: readers.filter((r) => scope === null || scope.has(r.siteId)).map((r) => ({ id: r.id, label: r.label, simulated: r.simulated })),
+      savedCards: mandates.filter((m) => m.status === "active" && m.accountRef === current).map((m) => ({ id: m.id, label: mandateLabel(m), allowsNoShow: m.allowsNoShow })),
       noShowPolicyOn: s.noShowEnabled,
       cardPayments: payments,
-      pendingReader: pending ? { intentId: pending.id, readerLabel, amountPence: pending.amountPence } : null,
+      pendingReader: pending ? { intentId: pending.id, readerLabel, amountPence: pending.amountPence, onReader: pending.purpose === "reader" } : null,
       can: { pay: actor.can("billing.pay"), refund: actor.can("billing.refund") },
     });
   });
@@ -551,16 +600,21 @@ export async function startReaderPaymentFor(actor: CardActor, input: { invoiceId
     if (!reader || reader.status !== "active") return fail("invalid", "Choose one of the clinic's card readers.");
     if (actor.siteIds && !actor.siteIds.has(reader.siteId)) return fail("invalid", "Choose a card reader at one of your sites.");
     // One payment at a time per invoice at the desk: an open one is shown, not doubled.
-    const open = (await listIntentsForInvoice(ctx, t, inv.id)).find((x) => x.purpose === "reader" && (x.status === "open" || x.status === "processing"));
-    if (open) return fail("invalid", "A card payment for this invoice is already waiting on a reader. Check it or cancel it first.");
+    // (The database refuses a second one too: a unique index on the invoice's open desk payment.)
+    const open = (await listIntentsForInvoice(ctx, t, inv.id)).find((x) => (x.purpose === "reader" || x.purpose === "saved_card") && (x.status === "open" || x.status === "processing"));
+    if (open) return fail("invalid", "A card payment for this invoice is already in progress. Check it or cancel it first.");
     const fee = platformFeePence(amount, { bps: r.ready.settings.feeBps, fixedPence: r.ready.settings.feeFixedPence });
     const intent = await createIntent(ctx, t, { kind: "payment", purpose: "reader", amountPence: amount, feePence: fee, invoiceId: inv.id, patientId: inv.patientId, readerId: reader.id }, actor.actor);
+    let piId: string | null = null;
     try {
       const pi = await r.ready.api.createReaderPayment(r.ready.account, { amountPence: amount, feePence: fee, description: `Invoice ${inv.number ?? ""}`.trim(), metadata: { tenant_id: t, card_intent_id: intent.id, invoice_id: inv.id } }, intent.id);
+      piId = pi.id;
       await setIntentRefs(ctx, t, intent.id, { intentRef: pi.id });
       await r.ready.api.processOnReader(r.ready.account, reader.readerRef, pi.id);
       await moveIntent(ctx, t, intent.id, ["open"], "processing");
     } catch (err) {
+      // Nothing can be taken without a card on the reader: the payment is cancelled at the provider (best effort).
+      if (piId) await r.ready.api.cancelPaymentIntent(r.ready.account, piId).catch(() => undefined);
       await moveIntent(ctx, t, intent.id, ["open", "processing"], "failed", { failureCode: err instanceof CardPaymentsError ? err.code : "error" });
       throw err;
     }
@@ -589,7 +643,9 @@ export async function checkCardPaymentFor(actor: CardActor, intentId: string, de
           ? "The card was declined or the payment did not finish. Nothing was taken."
           : status === "canceled"
             ? "The card payment was cancelled. Nothing was taken."
-            : "Still waiting for the card on the reader.";
+            : intent.purpose === "saved_card"
+              ? "The payment provider has not confirmed the charge yet. Check again in a minute – do not charge again."
+              : "Still waiting for the card on the reader.";
     return ok({ status, message });
   });
 }
@@ -601,11 +657,20 @@ export async function cancelReaderPaymentFor(actor: CardActor, intentId: string,
     const ctx = actor.repo();
     const t = actor.tenantId;
     const intent = await getIntent(ctx, t, String(intentId ?? ""));
-    if (!intent || intent.purpose !== "reader" || !intent.invoiceId || !(await invoiceInScope(actor, intent.invoiceId))) return notFound();
+    if (!intent || (intent.purpose !== "reader" && intent.purpose !== "saved_card") || !intent.invoiceId || !(await invoiceInScope(actor, intent.invoiceId))) return notFound();
     const u = usable(deps);
     if (!u.ok) return fail("invalid", u.error);
     const s = await getCardSettings(ctx, t);
     if (!s.accountRef) return fail("invalid", CARD_COPY.notReady);
+    if (intent.purpose === "saved_card") {
+      // A saved-card charge has no reader action: look at the provider first; only a charge that never went through
+      // (none found, nothing in flight) is cancelled.
+      const r = await settleIntent(ctx, t, u.config.api, s.accountRef, intent, actor.actor);
+      if (r.intent.status === "succeeded") return ok({ status: "succeeded" });
+      if (r.providerStatus && r.providerStatus !== "requires_payment_method" && r.providerStatus !== "canceled") return fail("invalid", "The charge is still being processed by the payment provider. Check again in a minute.");
+      await moveIntent(ctx, t, intent.id, ["open", "processing", "failed"], "canceled");
+      return ok({ status: "canceled" });
+    }
     const reader = intent.readerId ? await getReader(ctx, t, intent.readerId) : null;
     if (reader) await u.config.api.cancelReaderAction(s.accountRef, reader.readerRef).catch(() => undefined);
     if (intent.intentRef) {
@@ -664,12 +729,13 @@ export async function chargeSavedCardFor(actor: CardActor, input: { invoiceId: s
     if (typeof amount === "string") return fail("invalid", amount, { fieldErrors: { amountPence: amount } });
     const m = await getMandate(ctx, t, String(input.mandateId ?? ""));
     if (!m || m.patientId !== inv.patientId || m.status !== "active" || !m.methodRef) return fail("invalid", "That saved card is not this patient's.");
+    if (m.accountRef !== r.ready.account) return fail("invalid", "That card was saved on the clinic's previous payment account. Ask the patient to save it again.");
     if (isNoShowInvoice(inv)) {
       const no = noShowChargeRefusal({ policyOn: r.ready.settings.noShowEnabled, mandateAllowsNoShow: m.allowsNoShow });
       if (no) return fail("invalid", no);
     }
-    const busy = (await listIntentsForInvoice(ctx, t, inv.id)).find((x) => x.kind === "payment" && (x.status === "open" || x.status === "processing"));
-    if (busy) return fail("invalid", "Another card payment for this invoice is still in progress. Check it first.");
+    const busy = (await listIntentsForInvoice(ctx, t, inv.id)).find((x) => (x.purpose === "reader" || x.purpose === "saved_card") && (x.status === "open" || x.status === "processing"));
+    if (busy) return fail("invalid", "Another card payment for this invoice is still in progress. Check it or cancel it first.");
     return chargeMandate(ctx, t, r.ready, { inv, mandate: m, amount, purpose: "saved_card", actor: actor.actor });
   });
 }
@@ -689,7 +755,12 @@ async function chargeMandate(
       { kind: "payment", purpose: input.purpose, amountPence: input.amount, feePence: fee, invoiceId: input.inv.id, patientId: input.inv.patientId, mandateId: input.mandate.id, membershipId: input.membershipId ?? null, period: input.period ?? null },
       input.actor,
     ));
-  const outcome = await ready.api.chargeSavedCard(
+  // Processing BEFORE the provider is asked: a charge whose answer is lost stays visible (and blocks a second one)
+  // until it is checked with the provider (settleIntent searches for it).
+  if (intent.status !== "processing") await moveIntent(ctx, t, intent.id, ["open", "failed"], "processing");
+  let outcome;
+  try {
+    outcome = await ready.api.chargeSavedCard(
     ready.account,
     {
       amountPence: intent.amountPence,
@@ -702,7 +773,13 @@ async function chargeMandate(
     // A retry of the same intent (membership's next attempt) needs a new key; the intent id + attempt makes it unique.
     `${intent.id}-${intent.attempts}`,
   );
-  if (outcome.intent?.id) await setIntentRefs(ctx, t, intent.id, { intentRef: outcome.intent.id }).catch(() => undefined);
+  } catch (err) {
+    if (uncertain(err)) return fail("error", "The payment provider did not answer. The charge may have gone through – press Check payment in a minute before trying again.");
+    await moveIntent(ctx, t, intent.id, ["processing"], "failed", { failureCode: err instanceof CardPaymentsError ? err.code : "error", bumpAttempts: true });
+    throw err;
+  }
+  // A retry replaces the declined attempt's reference.
+  if (outcome.intent?.id) await setIntentRefs(ctx, t, intent.id, { intentRef: outcome.intent.id }, { replace: true }).catch(() => undefined);
   if (outcome.ok) {
     const rec = await recordIntentPayment(ctx, t, { ...intent, intentRef: outcome.intent.id }, outcome.intent, input.actor);
     if (rec.status === "recorded" || rec.status === "already") return ok({ status: "succeeded", message: `${formatPence(outcome.intent.amountReceived)} taken from the saved card and recorded on the invoice.` });
@@ -715,8 +792,11 @@ async function chargeMandate(
 
 /**
  * Refunds (part of) a card payment taken through the clinic's account, back to the same card. Audited; at most what
- * is left of that payment (checked in the database). The invoice is credited first for what it does not already owe
- * back, so the books always agree with the refund.
+ * is left of that payment (checked in the database, the payment's row locked). The money goes back FIRST (a refused
+ * refund changes nothing in the books); then the invoice is credited for the part of this payment that paid it
+ * (the rest of a payment sits on the patient's account and is not invoice revenue), then the refund is recorded.
+ * A refund whose answer is lost stays "processing" and is finished by the next attempt (same idempotency key) or by
+ * the provider's event – never made twice.
  */
 export async function refundCardPaymentFor(actor: CardActor, input: { invoiceId: string; paymentId: string; amountPence: number; reason: string }, deps: CardDeps = cardDeps()): Promise<Result<{ refundedPence: number }>> {
   if (!actor.can("billing.view") || !actor.can("billing.refund")) return forbidden();
@@ -737,31 +817,50 @@ export async function refundCardPaymentFor(actor: CardActor, input: { invoiceId:
     if (!p || p.kind !== "payment" || p.status !== "recorded" || p.provider !== CONNECT_PROVIDER || !p.providerRef || !p.allocations.some((a) => a.invoiceId === inv.id)) {
       return fail("invalid", "That card payment is not on this invoice.");
     }
-    const owedBack = Math.max(0, -inv.balancePence);
-    if (amount > owedBack && amount - owedBack > inv.totalPence - inv.creditedPence) return fail("invalid", "That is more than can be credited on this invoice.");
-    const parentIntent = await findIntentByRef(ctx, t, p.providerRef);
-    // 1. Claim the amount (refused in the database beyond what is left of this payment).
-    const refundIntent = await createRefundIntent(ctx, t, { parentRef: p.providerRef, paymentAmountPence: p.amountPence, amountPence: amount, invoiceId: inv.id, patientId: p.patientId, feePence: 0 }, actor.actor);
-    // 2. Credit the invoice for what it does not already owe back.
-    if (amount > owedBack) {
-      try {
-        await createCreditNote(ctx, t, { invoiceId: inv.id, lines: spreadOverLines(inv, amount - owedBack), reason }, actor.actor);
-      } catch (err) {
-        await moveIntent(ctx, t, refundIntent.id, ["open"], "canceled");
-        throw err;
-      }
+    const parentRef = p.providerRef;
+    const refunds = await listRefundIntents(ctx, t, parentRef);
+    const unsettled = refunds.find((r) => r.status === "open" || r.status === "processing");
+    if (unsettled && unsettled.amountPence !== amount) {
+      return fail("invalid", `A refund of ${formatPence(unsettled.amountPence)} of this payment is still being confirmed by the payment provider. Refund that amount to finish it, or check again in a minute.`);
     }
-    // 3. The refund at the provider (its idempotency key is the refund intent).
+    // Which part of THIS payment comes back: first what of it sits on the patient's account (never invoice revenue),
+    // then the part that paid this invoice – only that part is credited on the invoice.
+    const allocatedHere = p.allocations.filter((a) => a.invoiceId === inv.id).reduce((a, x) => a + x.amountPence, 0);
+    const refundedBefore = refunds.filter((r) => r.status === "succeeded").reduce((a, r) => a + r.amountPence, 0);
+    const onAccount = Math.max(0, p.amountPence - p.allocatedPence);
+    const fromAccountBefore = Math.min(refundedBefore, onAccount);
+    const fromAccount = Math.max(0, Math.min(amount, onAccount - fromAccountBefore));
+    const invoicePart = Math.max(0, Math.min(amount - fromAccount, allocatedHere - (refundedBefore - fromAccountBefore)));
+    const owedBack = Math.max(0, -inv.balancePence);
+    const toCredit = Math.max(0, invoicePart - owedBack);
+    if (toCredit > inv.totalPence - inv.creditedPence) return fail("invalid", "That is more than can be credited on this invoice.");
+    const parentIntent = await findIntentByRef(ctx, t, parentRef);
+    // 1. Claim the amount (refused in the database beyond what is left of this payment) – or resume the unsettled one.
+    const refundIntent = unsettled ?? (await createRefundIntent(ctx, t, { parentRef, paymentId: p.id, paymentAmountPence: p.amountPence, amountPence: amount, invoiceId: inv.id, patientId: p.patientId, feePence: 0 }, actor.actor));
+    await moveIntent(ctx, t, refundIntent.id, ["open"], "processing");
+    // 2. The money back to the card (idempotency key = the refund intent: a resumed refund is the same refund).
     let refund;
     try {
-      refund = await u.config.api.createRefund(s.accountRef, { paymentIntent: p.providerRef, amountPence: amount, refundPlatformFee: (parentIntent?.feePence ?? 0) > 0, metadata: { tenant_id: t, card_intent_id: refundIntent.id, invoice_id: inv.id } }, refundIntent.id);
+      refund = await u.config.api.createRefund(s.accountRef, { paymentIntent: parentRef, amountPence: amount, refundPlatformFee: (parentIntent?.feePence ?? 0) > 0, metadata: { tenant_id: t, card_intent_id: refundIntent.id, invoice_id: inv.id } }, refundIntent.id);
     } catch (err) {
-      await moveIntent(ctx, t, refundIntent.id, ["open"], "failed", { failureCode: err instanceof CardPaymentsError ? err.code : "error" });
-      if (err instanceof CardPaymentsError) return fail("invalid", "The payment provider refused the refund. The invoice was credited; nothing was returned to the card yet – try again, or refund another way.");
+      if (uncertain(err)) return fail("error", "The payment provider did not answer. The refund may have gone through – it will show here once confirmed. To finish it, refund the same amount again in a minute (it is never made twice).");
+      await moveIntent(ctx, t, refundIntent.id, ["open", "processing"], "failed", { failureCode: err instanceof CardPaymentsError ? err.code : "error" });
+      if (err instanceof CardPaymentsError) return fail("invalid", "The payment provider refused the refund. Nothing was refunded and the invoice is unchanged.");
       throw err;
     }
+    if (refund.status === "failed" || refund.status === "canceled") {
+      await moveIntent(ctx, t, refundIntent.id, ["open", "processing"], "failed", { failureCode: refund.status });
+      return fail("invalid", "The payment provider could not make the refund. Nothing was returned to the card.");
+    }
     await setIntentRefs(ctx, t, refundIntent.id, { intentRef: refund.id });
-    const rec = await recordIntentRefund(ctx, t, { ...refundIntent, intentRef: refund.id }, refund, reason, actor.actor);
+    // 3. Credit the invoice for the invoice's part (only now that the money is going back).
+    if (toCredit > 0) {
+      const fresh = await getInvoice(ctx, t, inv.id);
+      const stillToCredit = fresh ? Math.max(0, invoicePart - Math.max(0, -fresh.balancePence)) : 0;
+      if (fresh && stillToCredit > 0) await createCreditNote(ctx, t, { invoiceId: inv.id, lines: spreadOverLines(fresh, stillToCredit), reason }, actor.actor);
+    }
+    // 4. Record the refund (allocated to the invoice up to its part; the rest comes off the patient's account).
+    const rec = await recordIntentRefund(ctx, t, { ...refundIntent, intentRef: refund.id }, refund, reason, actor.actor, invoicePart);
     if (rec.status === "not_paid") return fail("invalid", "The payment provider could not make the refund. Nothing was returned to the card.");
     return ok({ refundedPence: amount });
   });
@@ -825,9 +924,9 @@ export async function startSaveCard(
   if (!r.ok) return fail("invalid", r.error);
   const noShow = input.allowsNoShow === true && r.ready.settings.noShowEnabled && Boolean(r.ready.settings.noShowPolicy);
   const wording = cardConsentWording({ clinicName: input.clinicName, noShowPolicy: noShow ? r.ready.settings.noShowPolicy : null });
-  let customer = await customerRefFor(ctx, tenantId, input.patientId);
-  if (!customer) customer = await r.ready.api.createCustomer(r.ready.account, { tenantId, patientId: input.patientId }, `clindesk-customer-${tenantId}-${input.patientId}`);
-  const mandate = await createMandate(ctx, tenantId, { patientId: input.patientId, customerRef: customer, consentWording: wording, channel: input.channel, allowsNoShow: noShow }, actor);
+  let customer = await customerRefFor(ctx, tenantId, input.patientId, r.ready.account);
+  if (!customer) customer = await r.ready.api.createCustomer(r.ready.account, { tenantId, patientId: input.patientId }, `clindesk-customer-${r.ready.account}-${input.patientId}`);
+  const mandate = await createMandate(ctx, tenantId, { patientId: input.patientId, accountRef: r.ready.account, customerRef: customer, consentWording: wording, channel: input.channel, allowsNoShow: noShow }, actor);
   const intent = await createIntent(ctx, tenantId, { kind: "setup", purpose: "save_card", amountPence: 0, patientId: input.patientId, mandateId: mandate.id }, actor);
   const sep = (u: string) => (u.includes("?") ? "&" : "?");
   const cs = await r.ready.api.createSetupCheckout(
@@ -930,7 +1029,8 @@ export async function startMembershipFor(actor: CardActor, input: { patientId: s
     const plan = (await listPlans(ctx, t)).find((p) => p.id === input.planId && p.active);
     if (!plan) return fail("invalid", "Choose one of the clinic's membership plans.");
     const m = await getMandate(ctx, t, String(input.mandateId ?? ""));
-    if (!m || m.patientId !== patient.id || m.status !== "active") return fail("invalid", "Choose one of the patient's saved cards.");
+    if (!m || m.patientId !== patient.id || m.status !== "active" || m.accountRef !== r.ready.account) return fail("invalid", "Choose one of the patient's saved cards.");
+    if ((await listMemberships(ctx, t, patient.id)).some((x) => x.planId === plan.id && x.status !== "cancelled")) return fail("invalid", "The patient already has this membership.");
     const day = clampDay(input.chargeDay);
     const start = today(ctx);
     const wording = membershipConsentWording({ clinicName: actor.clinicName ?? "the clinic", planName: plan.name, pricePence: plan.pricePence, chargeDay: day });
@@ -951,23 +1051,27 @@ export async function cancelMembershipFor(actor: CardActor, membershipId: string
 
 /**
  * One membership's charge for the period that is due: an issued invoice for the plan, then the saved card charged
- * off-session. Exactly once per membership and month: the intent row's unique (membership, period) claims the
- * month before anything else happens, the invoice is made once (linked on the intent), and the provider's
- * idempotency key is the intent (+ attempt). A decline is retried the next days, then the membership is marked
- * "payment failed" and the invoice stays open for the patient to pay.
+ * off-session. Exactly once per membership and month: the intent row's unique (membership, period) claims the month
+ * before anything else happens; the invoice is linked to the intent as a DRAFT before it is issued (a run that stops
+ * half-way issues that same draft next time – never a second invoice); the run's turn on the intent is a conditional
+ * move to "processing"; the provider's idempotency key is the intent + attempt, and an interrupted attempt is looked up
+ * at the provider before a new one. A decline is retried the next days, then the membership is "payment failed" and
+ * the invoice stays open for the patient to pay another way.
  */
 export async function chargeMembership(ctx: RepoContext, tenantId: string, ms: Membership, ready: Ready, todayIso: string): Promise<"charged" | "declined" | "skipped" | "failed"> {
   if (!ms.nextChargeOn || ms.nextChargeOn > todayIso || ms.status !== "active") return "skipped";
+  const advance = () => membershipCharged(ctx, tenantId, ms.id, { ok: true, nextChargeOn: nextChargeOn(ms.nextChargeOn as string, ms.chargeDay) });
+  const giveUp = () => membershipCharged(ctx, tenantId, ms.id, { ok: false, giveUp: true });
   const period = periodOf(ms.nextChargeOn);
   const plan = (await listPlans(ctx, tenantId)).find((p) => p.id === ms.planId);
   const mandate = await getMandate(ctx, tenantId, ms.mandateId);
-  if (!plan || !mandate || mandate.status !== "active" || !mandate.methodRef) {
-    await membershipCharged(ctx, tenantId, ms.id, { ok: false, giveUp: true });
+  if (!plan || !mandate || mandate.status !== "active" || !mandate.methodRef || mandate.accountRef !== ready.account) {
+    await giveUp();
     return "failed";
   }
   // 1. Claim the period (or find this period's claim from an earlier run).
   let intent: CardIntent | null = null;
-  const claimed = await ctx.db.selectFrom("pms_card_intents").selectAll().where("tenant_id", "=", tenantId).where("kind", "=", "payment").where("membership_id", "=", ms.id).where("period", "=", period).executeTakeFirst();
+  const claimed = await ctx.db.selectFrom("pms_card_intents").select("id").where("tenant_id", "=", tenantId).where("kind", "=", "payment").where("membership_id", "=", ms.id).where("period", "=", period).executeTakeFirst();
   if (claimed) intent = await getIntent(ctx, tenantId, claimed.id);
   if (!intent) {
     try {
@@ -978,62 +1082,74 @@ export async function chargeMembership(ctx: RepoContext, tenantId: string, ms: M
     }
   }
   if (intent.status === "succeeded") {
-    await membershipCharged(ctx, tenantId, ms.id, { ok: true, nextChargeOn: nextChargeOn(ms.nextChargeOn, ms.chargeDay) });
+    await advance();
     return "charged";
   }
-  // A charge from an earlier run that may have gone through: look before charging again.
-  if (intent.intentRef) {
-    const settled = await settleIntent(ctx, tenantId, ready.api, ready.account, intent);
-    if (settled.intent.status === "succeeded") {
-      await membershipCharged(ctx, tenantId, ms.id, { ok: true, nextChargeOn: nextChargeOn(ms.nextChargeOn, ms.chargeDay) });
+  if (intent.status === "canceled") {
+    // Cancelled at the provider (the clinic's own dashboard) or paid another way: a person looks at it.
+    await giveUp();
+    return "failed";
+  }
+  // An attempt that may have gone through (a known reference, or a run that stopped half-way): ask the provider first.
+  if (intent.intentRef || intent.status === "processing") {
+    if (intent.status === "processing" && (ctx.now ? ctx.now() : pmsNow()).getTime() - Date.parse(intent.updatedAt) < 10 * 60_000) return "skipped";
+    const found = (await ready.api.findPaymentsForIntent(ready.account, intent.id)).concat(intent.intentRef ? [await ready.api.getPaymentIntent(ready.account, intent.intentRef)] : []);
+    const paid = found.find((p) => p.status === "succeeded");
+    if (paid) {
+      await recordIntentPayment(ctx, tenantId, intent, paid);
+      await advance();
       return "charged";
     }
-    intent = settled.intent;
-  }
-  // A run that stopped half-way (status processing, no answer recorded): ask the provider before charging again.
-  if (intent.status === "processing") {
-    const age = (ctx.now ? ctx.now() : pmsNow()).getTime() - Date.parse(intent.updatedAt);
-    if (age < 10 * 60_000) return "skipped";
-    const found = (await ready.api.findPaymentsForIntent(ready.account, intent.id)).find((p) => p.status === "succeeded");
-    if (found) {
-      await recordIntentPayment(ctx, tenantId, { ...intent, intentRef: found.id }, found);
-      await membershipCharged(ctx, tenantId, ms.id, { ok: true, nextChargeOn: nextChargeOn(ms.nextChargeOn, ms.chargeDay) });
-      return "charged";
+    if (found.some((p) => p.status === "processing" || p.status === "requires_capture" || p.status === "requires_confirmation")) return "skipped";
+    if (intent.status === "processing") {
+      await moveIntent(ctx, tenantId, intent.id, ["processing"], "failed", { failureCode: "interrupted", bumpAttempts: true });
+      intent = (await getIntent(ctx, tenantId, intent.id)) as CardIntent;
     }
-    await moveIntent(ctx, tenantId, intent.id, ["processing"], "failed", { failureCode: "interrupted" });
-    intent = (await getIntent(ctx, tenantId, intent.id)) as CardIntent;
   }
-  // 2. Take the run's turn on this intent (exactly one caller moves it to processing).
+  if (intent.attempts >= MEMBERSHIP_MAX_ATTEMPTS) {
+    await giveUp();
+    return "failed";
+  }
+  // 2. The run's turn on this intent (exactly one caller moves it to processing).
   if (!(await moveIntent(ctx, tenantId, intent.id, ["open", "failed"], "processing"))) return "skipped";
-  // 3. The invoice (once – linked on the intent).
-  let invoiceId = intent.invoiceId;
-  if (!invoiceId) {
-    const settings = await getBillingSettings(ctx, tenantId);
-    const { invoice } = await createDraftInvoice(
-      ctx,
-      tenantId,
-      { patientId: ms.patientId, siteId: ms.siteId, lines: [{ kind: "item", description: `${plan.name} – membership ${period}`, unitPricePence: plan.pricePence, quantity: 1, vatCode: settings.vatRegistered ? plan.vatCode : "none" }] },
-      SYSTEM_ACTOR,
-    );
-    const issued = await issueInvoice(ctx, tenantId, invoice.id, invoice.rev, {}, SYSTEM_ACTOR);
-    if (!issued.ok) throw new RepoInputError("The membership invoice could not be issued.");
-    await ctx.db.updateTable("pms_card_intents").set({ invoice_id: invoice.id, amount_pence: issued.invoice.totalPence, updated_at: (ctx.now ? ctx.now() : pmsNow()).toISOString() }).where("tenant_id", "=", tenantId).where("id", "=", intent.id).where("invoice_id", "is", null).execute();
-    invoiceId = invoice.id;
-    intent = (await getIntent(ctx, tenantId, intent.id)) as CardIntent;
+  // 3. The invoice: made as a draft and linked first, then issued (once).
+  try {
+    if (!intent.invoiceId) {
+      const { invoice } = await createDraftInvoice(
+        ctx,
+        tenantId,
+        { patientId: ms.patientId, siteId: ms.siteId, lines: [{ kind: "item", description: `${plan.name} – membership ${period}`, unitPricePence: plan.pricePence, quantity: 1, vatCode: "exempt" }] },
+        SYSTEM_ACTOR,
+      );
+      await ctx.db.updateTable("pms_card_intents").set({ invoice_id: invoice.id, updated_at: (ctx.now ? ctx.now() : pmsNow()).toISOString() }).where("tenant_id", "=", tenantId).where("id", "=", intent.id).where("invoice_id", "is", null).execute();
+      intent = (await getIntent(ctx, tenantId, intent.id)) as CardIntent;
+    }
+    const draft = await getInvoice(ctx, tenantId, intent.invoiceId as string);
+    if (draft && draft.status === "draft") {
+      const issued = await issueInvoice(ctx, tenantId, draft.id, draft.rev, {}, SYSTEM_ACTOR);
+      if (!issued.ok) throw new RepoInputError("The membership invoice could not be issued.");
+    }
+  } catch (err) {
+    await moveIntent(ctx, tenantId, intent.id, ["processing"], "failed", { failureCode: "invoice", bumpAttempts: true });
+    const after = await getIntent(ctx, tenantId, intent.id);
+    await membershipCharged(ctx, tenantId, ms.id, { ok: false, giveUp: (after?.attempts ?? MEMBERSHIP_MAX_ATTEMPTS) >= MEMBERSHIP_MAX_ATTEMPTS });
+    if (err instanceof RepoInputError) return "failed";
+    throw err;
   }
-  const inv = await getInvoice(ctx, tenantId, invoiceId);
-  if (!inv || inv.balancePence <= 0) {
-    // Paid another way meanwhile: nothing to charge.
+  const inv = await getInvoice(ctx, tenantId, intent.invoiceId as string);
+  if (!inv || inv.status !== "issued" || inv.balancePence <= 0) {
+    // Paid another way (or voided) meanwhile: nothing to charge this month.
     await moveIntent(ctx, tenantId, intent.id, ["processing"], "canceled");
-    await membershipCharged(ctx, tenantId, ms.id, { ok: true, nextChargeOn: nextChargeOn(ms.nextChargeOn, ms.chargeDay) });
+    await advance();
     return "skipped";
   }
-  const amount = Math.min(inv.balancePence, intent.amountPence);
-  const r = await chargeMandate(ctx, tenantId, ready, { inv, mandate, amount, purpose: "membership", actor: SYSTEM_ACTOR, existing: { ...intent, amountPence: amount } });
+  const amount = Math.min(inv.balancePence, inv.totalPence);
+  const r = await chargeMandate(ctx, tenantId, ready, { inv, mandate, amount, purpose: "membership", actor: SYSTEM_ACTOR, existing: { ...intent, status: "processing", amountPence: amount } });
   if (r.ok) {
-    await membershipCharged(ctx, tenantId, ms.id, { ok: true, nextChargeOn: nextChargeOn(ms.nextChargeOn, ms.chargeDay) });
+    await advance();
     return "charged";
   }
+  if (r.code === "error") return "skipped"; // the provider did not answer: looked up next run, never charged twice
   const after = await getIntent(ctx, tenantId, intent.id);
   await membershipCharged(ctx, tenantId, ms.id, { ok: false, giveUp: (after?.attempts ?? MEMBERSHIP_MAX_ATTEMPTS) >= MEMBERSHIP_MAX_ATTEMPTS });
   return "declined";

@@ -1,5 +1,6 @@
 -- ClinForms 0239 (SQLite / Cloudflare D1): clinic system, billing - a patient's card kept on file with the clinic's
--- connected account, and the patient's CONSENT to it (cp04). Only the provider's references and what a receipt shows
+-- connected account (account_ref - a card works only on the account it was saved on), and the patient's CONSENT to
+-- it (cp04). Only the provider's references and what a receipt shows
 -- (brand, last 4 digits, expiry) - never a card number. consent_wording = the exact words agreed to, consent_version,
 -- consent_channel (portal / desk / phone), consent_recorded_by (the member who recorded it, NULL = the patient in the
 -- portal), consent_at. allows_no_show = the patient also agreed to missed-appointment charges. Status pending (the
@@ -13,6 +14,7 @@ CREATE TABLE IF NOT EXISTS pms_card_mandates (
   id TEXT NOT NULL,
   patient_id TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'active', 'removed', 'failed')),
+  account_ref TEXT NOT NULL,
   customer_ref TEXT NOT NULL,
   method_ref TEXT,
   setup_ref TEXT,

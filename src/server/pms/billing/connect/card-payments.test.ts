@@ -60,7 +60,7 @@ describe("card payments – pure rules", () => {
     assert.match(plain, /Stripe/);
     assert.doesNotMatch(plain, /missed/);
     assert.match(cardConsentWording({ clinicName: "X", noShowPolicy: "Charged in full." }), /missed appointment.*Charged in full\./);
-    assert.match(membershipConsentWording({ clinicName: "X", planName: "Gold", pricePence: 4500, chargeDay: 3 }), /£45\.00 every month on day 3.*"Gold"/);
+    assert.match(membershipConsentWording({ clinicName: "X", planName: "Gold", pricePence: 4500, chargeDay: 3 }), /£45\.00 today and then on day 3 of every month.*"Gold"/);
   });
 
   it("no-show rules", () => {

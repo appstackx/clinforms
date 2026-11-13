@@ -35,6 +35,8 @@ export interface FakeConnect extends ConnectApi {
   declining: Set<string>;
   /** The next N chargeSavedCard calls succeed at the provider but the answer is lost (a timeout). */
   loseAnswers: number;
+  /** The next N createRefund calls succeed at the provider but the answer is lost (a timeout). */
+  loseRefundAnswers: number;
   /** A refund made in the provider's own dashboard (not through the clinic system). */
   dashboardRefund(account: string, pi: string, amount: number): Rf;
   setAccountStatus(account: string, status: "restricted" | "active"): void;
@@ -95,6 +97,7 @@ export function createFakeConnect(mode: "test" | "live" = "test"): FakeConnect {
     calls,
     declining,
     loseAnswers: 0,
+    loseRefundAnswers: 0,
     async createAccount(input, key) {
       calls.push({ method: "createAccount", account: null, key });
       return once(key, () => {
@@ -253,7 +256,7 @@ export function createFakeConnect(mode: "test" | "live" = "test"): FakeConnect {
     async createRefund(a, input, key) {
       const p = pi(a, input.paymentIntent);
       calls.push({ method: "createRefund", account: a, key });
-      return copy(
+      const out = copy(
         once(key, () => {
           const done = Array.from(refunds.values()).filter((r) => r.paymentIntent === p.id && r.status !== "failed").reduce((x, r) => x + r.amount, 0);
           if (done + input.amountPence > p.amountReceived) throw new CardPaymentsError("The card payment service refused the request.", "charge_already_refunded");
@@ -263,6 +266,11 @@ export function createFakeConnect(mode: "test" | "live" = "test"): FakeConnect {
           return r;
         }),
       );
+      if (api.loseRefundAnswers > 0) {
+        api.loseRefundAnswers -= 1;
+        throw new CardPaymentsError("The card payment service could not be reached. Try again.", "unreachable");
+      }
+      return out;
     },
     async getRefund(a, ref) {
       const r = refunds.get(ref);

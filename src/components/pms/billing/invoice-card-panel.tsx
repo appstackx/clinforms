@@ -70,16 +70,22 @@ export function InvoiceCardPanel({ view }: { view: InvoiceCardView }) {
       {view.pendingReader ? (
         <div className="mb-4 flex flex-col gap-2 rounded-md border border-[#FBD38D] bg-[#FFFBEB] p-3" data-testid="card-pending">
           <p className="text-sm">
-            Waiting for the card on <strong>{view.pendingReader.readerLabel}</strong> – {formatPence(view.pendingReader.amountPence)}.
+            {view.pendingReader.onReader ? (
+              <>
+                Waiting for the card on <strong>{view.pendingReader.readerLabel}</strong> – {formatPence(view.pendingReader.amountPence)}.
+              </>
+            ) : (
+              <>A charge of {formatPence(view.pendingReader.amountPence)} to the saved card is waiting for the payment provider&apos;s answer. Check it before trying again.</>
+            )}
           </p>
           <div className="flex flex-wrap gap-2">
             <PmsButton size="sm" loading={busy === "check"} onClick={() => run("check", () => checkCardPaymentAction(view.invoiceId, view.pendingReader!.intentId))} data-testid="card-check">
               Check payment
             </PmsButton>
             <PmsButton size="sm" variant="secondary" loading={busy === "cancel"} onClick={() => run("cancel", () => cancelReaderPaymentAction(view.invoiceId, view.pendingReader!.intentId), (v) => (v.status === "succeeded" ? "It had already gone through – recorded." : "Cancelled. Nothing was taken."))}>
-              Cancel on the reader
+              {view.pendingReader.onReader ? "Cancel on the reader" : "Cancel"}
             </PmsButton>
-            {view.testMode ? (
+            {view.testMode && view.pendingReader.onReader ? (
               <>
                 <PmsButton size="sm" variant="secondary" loading={busy === "tap"} onClick={() => run("tap", () => simulateReaderTapAction(view.invoiceId, view.pendingReader!.intentId, false))} data-testid="card-test-tap">
                   Tap a test card
