@@ -11,7 +11,8 @@ import type { ClinicAccess } from "../repos/clinic-plan";
 import { trialReportAllowance } from "./allowance";
 
 /** The banner state for the clinic: ClinicAccess plus, for a self-serve trial, its free reports and the plan link. */
-export async function trialBannerState(db: Kysely<Database>, tenantId: string, access: ClinicAccess | null, canChoosePlan: boolean): Promise<TrialBannerState | null> {
+export async function trialBannerState(db: Kysely<Database>, tenantId: string, access: ClinicAccess | null | undefined, canChoosePlan: boolean): Promise<TrialBannerState | null> {
+  if (!access) return null;
   if (!access || access.state === "full") return access;
   try {
     const trial = await readSelfTrial({ db }, tenantId);

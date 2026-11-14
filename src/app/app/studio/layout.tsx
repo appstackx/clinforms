@@ -17,6 +17,7 @@ import { clinicPackages } from "@/server/pms/entitlements";
 import { currentBrand } from "@/server/brand";
 import { activeClinicPackages, notFoundTitle, requireClinicOnItsHost, studioTitleName } from "@/server/brand-home";
 import { TenantHost } from "./tenant-host";
+import { trialBannerState } from "@/server/trial/view";
 
 export const dynamic = "force-dynamic";
 
@@ -65,7 +66,9 @@ export default async function TenantStudioLayout({ children }: { children: React
   await requireClinicOnItsHost(context.tenantId);
   // A clinic with the Reports package switched off (a clinic-system-only clinic) has no Studio.
   // Both packages in one read (src/server/pms/entitlements.ts, never throws: Reports on, clinic system off if unreadable).
-  const [packages, billing] = await Promise.all([clinicPackages(context.tenantId), billingBannerFor(getDb(), context.tenantId, context.member.role === "owner" || context.member.role === "admin")]);
+  const manager = context.member.role === "owner" || context.member.role === "admin";
+  // 13/11/2026: a self-serve free trial's banner adds its free reports and "Choose a plan" (src/server/trial/view.ts).
+  const [packages, billing, trial] = await Promise.all([clinicPackages(context.tenantId), billingBannerFor(getDb(), context.tenantId, manager), trialBannerState(getDb(), context.tenantId, context.trial, manager)]);
   if (!packages.reports) notFound();
   const clinicSystem = packages.clinic;
   // The host brand's contact (src/lib/brand.ts): the trial banner and the Studio's "contact us" lines.
@@ -77,7 +80,7 @@ export default async function TenantStudioLayout({ children }: { children: React
       {clinicSystem ? <ProductSwitchBar clinicSystemName={CLINIC_SYSTEM_NAME} clinicHref="/app/clinic" reportsName={hostBrand.id === "clinic" ? REPORTS_ADDON_NAME : CLINFORMS_NAME} /> : null}
       {/* A demo clinic (made-up data only; clinic_plan.demo_clinic read on the server): the banner, and the header pill. */}
       <DemoClinicBanner on={context.demoClinic} />
-      <TrialBannerBar access={context.trial} contactEmail={contactEmail} />
+      <TrialBannerBar access={trial} contactEmail={contactEmail} />
       <BillingBannerBar banner={billing} />
       <TenantHost
         supportEmail={contactEmail}
