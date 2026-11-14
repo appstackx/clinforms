@@ -2,7 +2,7 @@ import { Fill } from "@/components/clindesk/fill";
 import { LegalFrame } from "@/components/clindesk/legal-frame";
 import { LegalPage, LegalTable } from "@/components/marketing/legal-page";
 import { CLINIC_SYSTEM_NAME } from "@/lib/brand";
-import { CLINDESK_PRIVACY_COOKIES_LAST_UPDATED, CONTACT_EMAIL, clindeskMetadata } from "@/lib/clindesk/site";
+import { CLINDESK_PRIVACY_LAST_UPDATED, CONTACT_EMAIL, clindeskMetadata } from "@/lib/clindesk/site";
 import { COMPANY } from "@/lib/site";
 
 /**
@@ -31,7 +31,7 @@ export default function ClindeskPrivacyPage() {
     <LegalFrame>
       <LegalPage
         title="Privacy policy"
-        lastUpdated={CLINDESK_PRIVACY_COOKIES_LAST_UPDATED}
+        lastUpdated={CLINDESK_PRIVACY_LAST_UPDATED}
         intro={
           <p>
             This policy explains how {COMPANY.legalName} (&ldquo;we&rdquo;, &ldquo;us&rdquo;) uses personal data in
@@ -239,9 +239,11 @@ export default function ClindeskPrivacyPage() {
           </li>
           <li>
             <strong>Retention:</strong> the clinic decides how long its records are kept, in line with{" "}
-            <Fill k="security.retentionGuidance" />. Clinical records are never deleted automatically. Backups are kept for{" "}
-            <Fill k="security.backupRetention" />. When the clinic&rsquo;s agreement ends, all of its data is returned or
-            deleted, as the DPA sets out.
+            <Fill k="security.retentionGuidance" />. Clinical records are never deleted automatically while the clinic&rsquo;s
+            agreement runs. Backups are kept for <Fill k="security.backupRetention" />. When the clinic&rsquo;s agreement
+            ends, all of its data is returned or deleted, as the DPA sets out. If a free trial ends without a paid plan, the
+            clinic&rsquo;s data is kept read-only for 90 days after the trial ends, so that the clinic can choose a plan or
+            export its data. We email the clinic at least 14 days before the data is deleted, and then delete it.
           </li>
         </ul>
 

@@ -204,7 +204,9 @@ export default function PrivacyPage() {
         <li>
           <strong>Retention:</strong> the clinic sets how long reports are kept. Automatic deletion of reports that have
           not changed for that period is being switched on (see <Link href="/security">Security</Link>). All of the clinic&rsquo;s data is returned or deleted when its agreement
-          ends, as the DPA sets out.
+          ends, as the DPA sets out. If a free trial ends without a paid plan, the clinic&rsquo;s data is kept read-only
+          for 90 days after the trial ends, so that the clinic can choose a plan or export its data. We email the clinic
+          at least 14 days before the data is deleted, and then delete it.
         </li>
       </ul>
 

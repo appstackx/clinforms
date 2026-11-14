@@ -146,7 +146,7 @@
       "description": "Which guidance record retention follows, e.g. \"HCPC and Records Management Code guidance\". Security page, Retention. Also the privacy policy, Retention."
     },
     "security.deletionProcess": {
-      "value": "When a clinic leaves, it receives a full export of its data, and the data is then deleted.",
+      "value": "When a clinic leaves, it receives a full export of its data, and the data is then deleted. If a free trial ends without a paid plan, the clinic's data is kept read-only for 90 days after the trial ends, so that the clinic can choose a plan or export its data. We email the clinic at least 14 days before the data is deleted, and then delete it.",
       "description": "One sentence on how records are deleted at the end of the retention period or when a clinic leaves. Security page, Retention."
     },
     "security.auditRetention": {

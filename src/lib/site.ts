@@ -69,7 +69,7 @@ export const TERMS_LAST_UPDATED = "2026-11-14";
  * The privacy policy's own "Last updated" (ISO): it changed on its own for the demo video (section 3, 10/10) and for
  * advertising measurement (31/10); company details 01/11.
  */
-export const PRIVACY_LAST_UPDATED = "2026-11-08";
+export const PRIVACY_LAST_UPDATED = "2026-11-14";
 
 /** The cookie policy's own "Last updated" (ISO): advertising cookies added on 31/10/2026; company name 01/11/2026. */
 export const COOKIES_LAST_UPDATED = "2026-11-08";

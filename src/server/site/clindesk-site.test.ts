@@ -67,7 +67,7 @@ describe("clinforms.co.uk is unchanged", () => {
       { url: "https://clinforms.co.uk/request-access", lastModified: "2026-11-01", changeFrequency: "yearly", priority: 0.8 },
       { url: "https://clinforms.co.uk/security", lastModified: "2026-11-01", changeFrequency: "monthly", priority: 0.7 },
       // 01/11/2026: company name, number and ICO registration on every page (footer) and the legal pages.
-      { url: "https://clinforms.co.uk/privacy", lastModified: "2026-11-08", changeFrequency: "yearly", priority: 0.4 },
+      { url: "https://clinforms.co.uk/privacy", lastModified: "2026-11-14", changeFrequency: "yearly", priority: 0.4 },
       { url: "https://clinforms.co.uk/cookies", lastModified: "2026-11-08", changeFrequency: "yearly", priority: 0.3 },
       // 14/11/2026: the terms' liability limit (£600) and 3-month claim notice.
       { url: "https://clinforms.co.uk/terms", lastModified: "2026-11-14", changeFrequency: "yearly", priority: 0.3 },
@@ -154,6 +154,9 @@ describe("clindesk.co.uk", () => {
     assert.match(res.headers.get("content-type") ?? "", /application\/xml/);
     const body = await res.text();
     const locs = Array.from(body.matchAll(/<loc>([^<]+)<\/loc>/g)).map((m) => m[1]);
+    // 14/11/2026: the privacy policy changed (an unpaid free trial's data), the cookie policy did not.
+    assert.match(body, /<loc>https:\/\/clindesk\.co\.uk\/privacy<\/loc>\s*<lastmod>2026-11-14<\/lastmod>/);
+    assert.match(body, /<loc>https:\/\/clindesk\.co\.uk\/cookies<\/loc>\s*<lastmod>2026-11-08<\/lastmod>/);
     assert.deepEqual(
       locs,
       CLINDESK_PAGES.filter((p) => p.indexed).map((p) => (p.path === "/" ? "https://clindesk.co.uk" : `https://clindesk.co.uk${p.path}`)),
@@ -234,7 +237,8 @@ describe("clindesk.co.uk legal pages", () => {
         assert.ok(!vendor.test(text), `${page}: names a vendor (${vendor})`);
       }
       if (page === "terms") assert.match(text, /Last updated: 14 November 2026/);
-      if (page === "privacy" || page === "cookies") assert.match(text, /Last updated: 8 November 2026/);
+      if (page === "cookies") assert.match(text, /Last updated: 8 November 2026/);
+      if (page === "privacy") assert.match(text, /Last updated: 14 November 2026/); // 14/11/2026: the unpaid free trial's 90 days
     });
   }
 
@@ -272,7 +276,7 @@ describe("clindesk.co.uk legal pages", () => {
       /Your data is stored in the UK \(London\)\. Hosted in UK data centres in London\./,
       /In transit: TLS 1\.2 or later\. At rest: AES-256, with patient files and notes also encrypted per clinic\./,
       /Daily, kept for 7 days, stored in the UK \(London\)\./,
-      /in line with HCPC and CSP record-keeping guidance \(adult records at least 8 years after the last treatment\)\. When a clinic leaves, it receives a full export of its data, and the data is then deleted\./,
+      /in line with HCPC and CSP record-keeping guidance \(adult records at least 8 years after the last treatment\)\. When a clinic leaves, it receives a full export of its data, and the data is then deleted\. If a free trial ends without a paid plan, the clinic's data is kept read-only for 90 days after the trial ends, so that the clinic can choose a plan or export its data\. We email the clinic at least 14 days before the data is deleted, and then delete it\./,
       /Kept for 8 years\./,
       /Security overview \(PDF\)/,
       /Sub-processors list \(PDF\)/,
@@ -327,7 +331,9 @@ describe("clindesk.co.uk legal pages", () => {
     assert.match(text, /Registered with the ICO, number ZC135044\./);
     assert.match(text, /clinic data is stored in the UK \(London\)\./);
     assert.match(text, /available on request as our Sub-processors list \(PDF\) from /);
-    assert.match(text, /in line with HCPC and CSP record-keeping guidance \(adult records at least 8 years after the last treatment\)\. Clinical records are never deleted automatically\. Backups are kept for 7 days\./);
+    // 14/11/2026: the unpaid free trial's exception, in the terms' words.
+    assert.match(text, /in line with HCPC and CSP record-keeping guidance \(adult records at least 8 years after the last treatment\)\. Clinical records are never deleted automatically while the clinic's agreement runs\. Backups are kept for 7 days\./);
+    assert.match(text, /If a free trial ends without a paid plan, the clinic's data is kept read-only for 90 days after the trial ends, so that the clinic can choose a plan or export its data\. We email the clinic at least 14 days before the data is deleted, and then delete it\./);
     assert.ok(!text.includes(TO_CONFIRM), "every fill-in filled (01/11/2026)");
   });
 
