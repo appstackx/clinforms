@@ -75,7 +75,10 @@ const SECRETS = {
   CRON_SECRET: `test-only-cron-${rnd(16)}`,
 };
 const STAMP = Date.now().toString(36);
-const OWNER = { email: `dana.trial.${STAMP}@larkfield-physio.example.com`, name: "Dana Lark", clinic: "Larkfield Physio (fictional)", password: `e2e ${rnd(12)} password` };
+// A clinic name (and so a clinic id) of its own per run: the payment service keeps a created customer's answer for a day
+// under the clinic's id, and this script deletes its test customer at the end.
+const RUN_WORD = Array.from(crypto.randomBytes(6), (b) => "abcdefghijklmnopqrstuvwxyz"[b % 26]).join("");
+const OWNER = { email: `dana.trial.${STAMP}@larkfield-physio.example.com`, name: "Dana Lark", clinic: `Larkfield ${RUN_WORD[0].toUpperCase()}${RUN_WORD.slice(1)} Physio (fictional)`, password: `e2e ${rnd(12)} password` };
 
 /* ------------------------------------------------------------------ results */
 const results = [];
@@ -392,7 +395,7 @@ const banner = async (page) => ((await page.locator("[data-testid=trial-banner]"
       await page.goto(`${DESK}/app/select-clinic`);
       await page
         .locator("form")
-        .filter({ has: page.locator("p", { hasText: /^Larkfield Physio \(fictional\)$/ }) })
+        .filter({ has: page.locator("p", { hasText: new RegExp(`^${OWNER.clinic.replace(/[()]/g, "\\$&")}$`) }) })
         .locator("button:has-text('Open')")
         .click();
       await page.waitForURL((u) => u.pathname.startsWith("/app/clinic"), { timeout: 30000 });
