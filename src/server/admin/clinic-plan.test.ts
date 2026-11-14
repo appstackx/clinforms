@@ -32,7 +32,7 @@ describe("platform page: trial and limit actions are guarded and audited", () =>
     assert.match(clinicLayout, /const trialBanner = await trialBannerState\(getDb\(\), membership\.tenantId, trial, manager\)/);
     assert.match(clinicLayout, /<TrialBannerBar access=\{trialBanner\} contactEmail=\{brand\.contactEmail\} \/>/);
     const studioLayout = fs.readFileSync(path.join(process.cwd(), "src/app/app/studio/layout.tsx"), "utf8");
-    assert.match(studioLayout, /trialBannerState\(getDb\(\), context\.tenantId, context\.trial, manager\)/);
+    assert.match(studioLayout, /trialBannerState\(getDb\(\), context\.tenantId, context\.trial, manager, "reports"\)/);
     assert.match(studioLayout, /<TrialBannerBar access=\{trial\} contactEmail=\{contactEmail\} \/>/);
     // …and the clinic system's shell (the first visit there starts a ClinDesk trial).
     const shell = fs.readFileSync(path.join(process.cwd(), "src/app/app/clinic/layout.tsx"), "utf8");

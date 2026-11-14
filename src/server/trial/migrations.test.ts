@@ -24,7 +24,7 @@ describe("migration 0011_self_trial", () => {
   it("new tables only (CREATE … IF NOT EXISTS), never the lifecycle or sign-up tables, no destructive statement", () => {
     for (const sql of [sqlite, pg]) {
       const body = sql.replace(/^--.*$/gm, "");
-      assert.doesNotMatch(body, /\b(drop|alter\s+table\s+(?!public\.(self_trial|trial_email)\b)|delete|update|insert)\b/i);
+      assert.doesNotMatch(body, /\b(drop|alter\s+table\s+(?!public\.(self_trial|trial_email|trial_report_hold)\b)|delete|update|insert)\b/i);
       assert.doesNotMatch(body, /lifecycle_email|signup_requests|signup_acceptances/);
       assert.match(body, /create table if not exists (public\.)?self_trial/i);
       assert.match(body, /create table if not exists (public\.)?trial_email/i);
