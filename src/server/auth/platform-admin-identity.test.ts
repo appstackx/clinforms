@@ -68,6 +68,16 @@ function defineSuite(name: string, dialect: AuthDialect, setup: () => Promise<Te
       await t?.close();
     });
 
+    it("13/11/2026 (free trial review 10): a SAMPLE clinic is its owner's alone – invitations into it are refused", async () => {
+      const session = await auth.api.getSession({ headers: ownerJar.headers() });
+      const userId = String(session?.user.id);
+      const at = new Date().toISOString();
+      await t.db.insertInto("organization").values({ id: "org-ward-sample", name: "Ward Clinic – sample clinic (fictional)", slug: "ward-clinic-sample", logo: null, createdAt: at, metadata: JSON.stringify({ sampleOf: "ward-clinic" }) }).execute();
+      await t.db.insertInto("member").values({ id: "m-ward-sample", organizationId: "org-ward-sample", userId, role: "owner", createdAt: at }).execute();
+      assert.equal(await apiError(auth.api.createInvitation({ body: { email: "physio@ward.example", role: "clinician", organizationId: "org-ward-sample" }, headers: ownerJar.headers() })), "SAMPLE_CLINIC");
+      assert.equal((await t.db.selectFrom("invitation").select("id").where("organizationId", "=", "org-ward-sample").execute()).length, 0);
+    });
+
     it("a clinic cannot invite a platform administrator's address while it has no account (other addresses: fine)", async () => {
       assert.equal(await apiError(auth.api.createInvitation({ body: { email: PLATFORM_ADMIN, role: "admin" }, headers: ownerJar.headers() })), "PLATFORM_ADMIN_ADDRESS");
       assert.equal(await apiError(auth.api.createInvitation({ body: { email: "BOSS@Platform.example", role: "staff" }, headers: ownerJar.headers() })), "PLATFORM_ADMIN_ADDRESS");

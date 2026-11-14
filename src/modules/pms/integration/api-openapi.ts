@@ -216,7 +216,7 @@ export function clinicApiOpenApi(options: { title: string; serverUrl?: string })
           responses: {
             "201": ok(one("Appointment"), "Booked"),
             "200": ok(one("Appointment"), "Replay of an earlier request with the same Idempotency-Key"),
-            ...errors(...COMMON, "INSUFFICIENT_SCOPE", "SITE_NOT_ALLOWED", "NOT_FOUND", "INVALID_REQUEST", "IDEMPOTENCY_KEY_REQUIRED", "IDEMPOTENCY_MISMATCH", "SLOT_NOT_FREE", "PAYLOAD_TOO_LARGE", "UNSUPPORTED_MEDIA_TYPE"),
+            ...errors(...COMMON, "READ_ONLY", "INSUFFICIENT_SCOPE", "SITE_NOT_ALLOWED", "NOT_FOUND", "INVALID_REQUEST", "IDEMPOTENCY_KEY_REQUIRED", "IDEMPOTENCY_MISMATCH", "SLOT_NOT_FREE", "PAYLOAD_TOO_LARGE", "UNSUPPORTED_MEDIA_TYPE"),
           },
         },
       },

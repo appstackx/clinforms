@@ -496,3 +496,16 @@ export async function isReportCounted(ctx: DbContext, tenantId: string, reportId
     .executeTakeFirst();
   return Boolean(row);
 }
+
+/** Reports of the clinic that counted in `period` BEFORE `before` (a self-serve trial's reports in its converting month). */
+export async function countBillableBefore(ctx: DbContext, tenantId: string, period: string, before: string): Promise<number> {
+  assertTenantId(tenantId);
+  const row = await ctx.db
+    .selectFrom("usage_report")
+    .select((eb) => eb.fn.countAll<number>().as("n"))
+    .where("tenant_id", "=", tenantId)
+    .where("billable_period", "=", period)
+    .where("billable_at", "<", before)
+    .executeTakeFirst();
+  return toInt(row?.n ?? 0);
+}

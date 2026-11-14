@@ -28,12 +28,26 @@ import { runRetention } from "../../repos/maintenance";
 import { FakeSubscriptions, subscription } from "../../billing/testing/billing-suite";
 import { syncSubscription, type BillingNoticeKind } from "../../billing/sync";
 import { emailBillingNotifier } from "../../billing/notify";
-import { pausedByEndedTrial, selfTrialEnded } from "../access";
+import { selfTrialEnded, trialWriteBlock } from "../access";
+import { clinicsWithClinicSystem } from "../../pms/comms/cron";
+import { serve } from "../../pms/integration/api/http";
+import { createApiKey, setApiEnabled } from "../../repos/pms/integration/api-keys";
 import { runTrialEmailSweep, sendTrialEmailNow } from "../emails";
 import { createSampleClinic, declineSampleClinic } from "../sample";
 import { startSelfServeTrial, trialKeys, TRIAL_TEXTS_REASON } from "../start";
 import { trialBannerState } from "../view";
 import { listTrialsForPlatform } from "../platform";
+import { assertTenantMayCreate } from "../../../modules/medreport/auth/clinic-access";
+import { endTrial } from "../../admin/clinic-plan";
+import { billExtraReports } from "../../billing/extras";
+import type { SyncDeps } from "../../billing/sync";
+import { getBillingExtra, getClinicSubscription } from "../../repos/clinic-subscription";
+import { setClinicDraftingLimits } from "../../repos/clinic-plan";
+import { setEntitlement } from "../../repos/pms/entitlements";
+import { releaseTrialReport, reserveTrialReport } from "../../repos/self-trial";
+import { dbUsageRecorder } from "../../usage/recorder";
+import { sendTrialEmail } from "../emails";
+import { clinicShellTrial } from "../view";
 import { updateBookingSettings } from "../../repos/pms/portal/settings";
 import { loadPublicClinic } from "../../pms/portal/public-clinic";
 
@@ -53,6 +67,7 @@ export function defineTrialSuite(label: string, factory: () => Promise<TrialSuit
     const now = () => new Date(clock);
     const sent: EmailMessage[] = [];
     let failSends = false;
+    let failFor: string | null = null;
     let n = 0;
     const cipher = testCipher();
 
@@ -95,7 +110,7 @@ export function defineTrialSuite(label: string, factory: () => Promise<TrialSuit
       setEmailProviderForTests({
         name: "log",
         async send(message) {
-          if (failSends) return { status: "failed", provider: "log" };
+          if (failSends || message.to.email === failFor) return { status: "failed", provider: "log" };
           sent.push(message);
           return { status: "sent", provider: "log" };
         },
@@ -162,15 +177,27 @@ export function defineTrialSuite(label: string, factory: () => Promise<TrialSuit
       assert.deepEqual([bt?.repeatReason, bt?.reportsIncluded, bt?.textsGranted], ["email", 0, 0]);
       assert.equal((await getSmsCreditAccount({ db: t.db }, b.tenantId)).balance, 0);
       assert.equal((await getClinicPlan({ db: t.db }, b.tenantId))?.status, "trial", "still a trial – only the free allowance is withheld");
-      // Network: 2 trials with an allowance per /24 in 30 days; the third gets none; another /24 is fine.
+      // Network (review 9 – the sign-up limits' own rule, ipLimitSubject): an IPv4 address EXACTLY (a port dropped; its
+      // neighbours on a shared mobile network are not caught), an IPv6 address by its /64 (brackets, ports normalised).
+      // 2 trials with an allowance per network in 30 days; the third gets none.
       const n1 = await signedUpClinic("clinic", "one@north-physio.example");
       await start(n1, "clinic", "203.0.113.77");
       const n2 = await signedUpClinic("clinic", "two@south-physio.example");
-      await start(n2, "clinic", "203.0.113.200");
-      assert.equal((await getSelfTrial({ db: t.db }, n2.tenantId))?.repeatReason, "network", "203.0.113.0/24 already had two");
+      await start(n2, "clinic", "203.0.113.77:51234");
+      const n2b = await signedUpClinic("clinic", "twob@south-physio.example");
+      await start(n2b, "clinic", "203.0.113.77");
+      assert.equal((await getSelfTrial({ db: t.db }, n2b.tenantId))?.repeatReason, "network", "the same address (with or without a port) had two");
       const n3 = await signedUpClinic("clinic", "three@east-physio.example");
-      await start(n3, "clinic", "198.18.0.1");
-      assert.equal((await getSelfTrial({ db: t.db }, n3.tenantId))?.repeatReason, null);
+      await start(n3, "clinic", "203.0.113.78");
+      assert.equal((await getSelfTrial({ db: t.db }, n3.tenantId))?.repeatReason, null, "a neighbour address is another network");
+      const v6a = await signedUpClinic("clinic", "v6a@harbour-physio.example");
+      await start(v6a, "clinic", "2001:db8:5:6::1");
+      const v6b = await signedUpClinic("clinic", "v6b@cliff-physio.example");
+      await start(v6b, "clinic", "[2001:0db8:0005:0006:aaaa::9]:443");
+      const v6c = await signedUpClinic("clinic", "v6c@dune-physio.example");
+      await start(v6c, "clinic", "2001:db8:5:6:ffff::2");
+      assert.equal((await getSelfTrial({ db: t.db }, v6c.tenantId))?.repeatReason, "network", "one IPv6 /64, however it is written");
+      assert.equal(trialKeys(SECRET, "a@b.example", "203.0.113.77:443").networkKey, trialKeys(SECRET, "a@b.example", "203.0.113.77").networkKey);
       // A month later the network may start again.
       clock += 31 * DAY;
       const n4 = await signedUpClinic("clinic", "four@west-physio.example");
@@ -246,10 +273,30 @@ export function defineTrialSuite(label: string, factory: () => Promise<TrialSuit
       assert.equal(await selfTrialEnded(t.db, c.tenantId, now()), false);
       const end = Date.parse((await getClinicPlan({ db: t.db }, c.tenantId))?.trialEndsAt ?? "");
       assert.equal(await selfTrialEnded(t.db, c.tenantId, new Date(end + 1000)), true);
-      for (const p of ["patients.view", "diary.view", "clinical.view", "billing.view", "reports.all", "reports.export", "clinic.view"]) assert.equal(pausedByEndedTrial(p), false, p);
-      for (const p of ["patients.edit", "diary.book", "clinical.write", "billing.edit", "billing.pay", "messages.send", "settings.setup", "settings.members"]) assert.equal(pausedByEndedTrial(p), true, p);
-      assert.equal(pausedByEndedTrial("messages.send", true), false, "buying text credits stays possible");
+      assert.equal((await trialWriteBlock(t.db, c.tenantId, "clinic", new Date(end + 1000)))?.reason, "trial_ended");
+      assert.equal(await trialWriteBlock(t.db, c.tenantId, "clinic", now()), null, "while it runs: writes allowed");
       assert.equal(await countPatients(ctx, c.tenantId), 1);
+      // Review 3 – every write path: the messages cron skips it (no reminders, no campaigns) …
+      const later = { db: t.db, cipher, now: () => new Date(end + 1000) };
+      assert.ok((await clinicsWithClinicSystem({ db: t.db, cipher, now })).includes(c.tenantId));
+      assert.ok(!(await clinicsWithClinicSystem(later)).includes(c.tenantId), "no messages for an ended trial");
+      // … and the clinic API: reads still answer, writes are refused (403 READ_ONLY).
+      await setApiEnabled(ctx, c.tenantId, true, { userId: c.userId, sessionId: null });
+      const key = await createApiKey(ctx, c.tenantId, { name: "Website (fictional)", scopes: ["appointments:write", "appointments:read"], siteIds: [], expiresInDays: 30 }, { userId: c.userId, sessionId: null });
+      const endpoint = { scope: "appointments:write" as const, handle: async () => ({ status: 201, body: { data: { ok: true } } }) };
+      const apiCall = async (method: "GET" | "POST", at: number) =>
+        serve(
+          new Request("https://clinic.example.com/api/clinic/v1/appointments", { method, headers: { authorization: `Bearer ${key.key}`, "content-type": "application/json", "x-forwarded-for": "198.51.100.9", "idempotency-key": "trial-test-0001" }, body: method === "POST" ? "{}" : undefined }),
+          {},
+          method === "GET" ? { scope: "appointments:read" as const, handle: async () => ({ body: { data: [] } }) } : endpoint,
+          ["GET", "POST"],
+          { db: () => t.db, cipher: () => cipher, env: { CLINFORMS_CLINIC_API: "on" }, now: () => new Date(at) },
+        );
+      assert.equal((await apiCall("POST", clock)).status, 201, "while it runs");
+      const refused = await apiCall("POST", end + 1000);
+      assert.equal(refused.status, 403);
+      assert.equal(((await refused.json()) as { error: { code: string } }).error.code, "READ_ONLY");
+      assert.equal((await apiCall("GET", end + 1000)).status, 200, "reads still answer");
       const manual = await signedUpClinic("clinforms");
       await setClinicTrial({ db: t.db, now }, manual.tenantId, { days: 1, startOnFirstSignIn: false });
       assert.equal(await selfTrialEnded(t.db, manual.tenantId, new Date(clock + 3 * DAY)), false, "only self-serve trials");
@@ -356,6 +403,10 @@ export function defineTrialSuite(label: string, factory: () => Promise<TrialSuit
       assert.equal((await getClinicPlan({ db: t.db }, c.tenantId))?.status, "paid");
       assert.ok((await getSelfTrial({ db: t.db }, c.tenantId))?.convertedAt);
       assert.equal(await selfTrialEnded(t.db, c.tenantId, now()), false, "read-only lifted at once");
+      // Review 1: the trial's drafting limits (5/min, 60/day) are lifted too – back to the defaults.
+      const limits = await getClinicPlan({ db: t.db }, c.tenantId);
+      assert.deepEqual([limits?.livePerMinute, limits?.livePerDay], [null, null]);
+      assert.equal((await loadClinicProfile(t.db, c.tenantId, now()))?.draftingLimits, undefined);
       assert.equal((await getEntitlement({ db: t.db }, c.tenantId, "clinic"))?.status, "active");
       assert.equal((await getEntitlement({ db: t.db }, c.tenantId, "reports"))?.status, "active");
       const pkg = await getClinicPackage({ db: t.db }, c.tenantId);
@@ -402,6 +453,196 @@ export function defineTrialSuite(label: string, factory: () => Promise<TrialSuit
       assert.equal((await getEntitlement({ db: t.db }, d.tenantId, "clinic"))?.status, "active");
       assert.equal((await getEntitlement({ db: t.db }, d.tenantId, "reports"))?.status, "paused");
       assert.equal(await getClinicPackage({ db: t.db }, d.tenantId), null, "the free Trial package is gone");
+    });
+
+    /** A paid subscription for a clinic (the payment service mocked). */
+    async function pay(tenantId: string, keys: string[], fake = new FakeSubscriptions(), notify: SyncDeps["notify"] = null) {
+      const cus = `cus_test_${tenantId.replace(/-/g, "_")}`;
+      await setCreditCustomer({ db: t.db, now }, tenantId, cus, { userId: null, sessionId: null }, "test");
+      const sub = subscription({ id: `sub_test_${tenantId.replace(/-/g, "_")}_${++n}`, tenantId, customer: cus, keys });
+      fake.subs.set(sub.id, sub);
+      const r = await syncSubscription({ db: t.db, now, env: {}, notify, alert: null }, fake, sub.id);
+      assert.equal(r.status, "synced");
+      return { fake, sub };
+    }
+
+    it("review 1: staff-set drafting limits are kept on conversion; only the trial's own values are lifted", async () => {
+      const c = await signedUpClinic("clinic");
+      await start(c, "clinic");
+      await firstVisit(c);
+      await setClinicDraftingLimits({ db: t.db, now }, c.tenantId, { perMinute: 20, perDay: 900 });
+      await pay(c.tenantId, ["clindesk_small_monthly"]);
+      const plan = await getClinicPlan({ db: t.db }, c.tenantId);
+      assert.deepEqual([plan?.status, plan?.livePerMinute, plan?.livePerDay], ["paid", 20, 900]);
+    });
+
+    it("review 2: a conversion left half-done (a crash, or converted by hand on the platform page) is finished by the next sync", async () => {
+      const c = await signedUpClinic("clinic");
+      await start(c, "clinic");
+      await firstVisit(c);
+      // Converted by hand first: plan "paid", the clinic system still on its free "trial", converted_at empty.
+      await endTrial(t.db, { kind: "script" }, c.tenantId, "paid", now());
+      assert.equal((await getSelfTrial({ db: t.db }, c.tenantId))?.convertedAt, null);
+      const { fake, sub } = await pay(c.tenantId, ["clindesk_small_monthly"]);
+      assert.ok((await getSelfTrial({ db: t.db }, c.tenantId))?.convertedAt, "finished although the plan was already paid");
+      assert.equal((await getEntitlement({ db: t.db }, c.tenantId, "clinic"))?.status, "active");
+      // A crash after the subscription was saved: the packages back to the trial, converted_at empty – the next sync of
+      // the SAME subscription (nothing changed at the payment service) repairs it.
+      await setEntitlement({ db: t.db, now }, c.tenantId, "clinic", { status: "trial", note: "crash simulation" }, { userId: null, sessionId: null });
+      await t.db.updateTable("self_trial").set({ converted_at: null }).where("tenant_id", "=", c.tenantId).execute();
+      await syncSubscription({ db: t.db, now, env: {}, notify: null, alert: null }, fake, sub.id);
+      assert.equal((await getEntitlement({ db: t.db }, c.tenantId, "clinic"))?.status, "active");
+      assert.ok((await getSelfTrial({ db: t.db }, c.tenantId))?.convertedAt);
+    });
+
+    it("review 7: the trial's reports never become extras of the plan's first month", async () => {
+      const startAt = clock;
+      const c = await signedUpClinic("clinic");
+      await start(c, "clinic");
+      await firstVisit(c);
+      const draft = (id: string) => recordUsageEvent({ db: t.db, now }, c.tenantId, { kind: "drafting_call", reportId: id, episodeFp: "fp_trial_episode_0007", succeeded: true, usage: { inputTokens: 10, outputTokens: 10 } });
+      for (let i = 1; i <= 10; i++) await draft(`rpt_trial_x_${i}`);
+      clock += 60_000;
+      const { fake } = await pay(c.tenantId, ["clindesk_small_monthly", "clindesk_reports_25_monthly"]);
+      clock += 60_000;
+      for (let i = 1; i <= 20; i++) await draft(`rpt_paid_x_${i}`); // 30 counted in November, 25 included
+      clock = Date.parse("2026-12-02T10:00:00.000Z");
+      const subRow = await getClinicSubscription({ db: t.db }, c.tenantId);
+      assert.ok(subRow);
+      const out = await billExtraReports({ db: t.db, now }, fake, subRow, null);
+      assert.deepEqual(out.billed, [], "20 paid reports of 25 – no extras (the 10 trial ones were free)");
+      const row = await getBillingExtra({ db: t.db }, c.tenantId, "2026-11");
+      assert.deepEqual([row?.reportsCounted, row?.extraReports, row?.status], [20, 0, "skipped"]);
+      clock = startAt;
+    });
+
+    it("review 8: a product the plan leaves out stays READABLE (read-only, 'add … to keep working on these') when the trial left data in it", async () => {
+      // ClinDesk only: the trial's reports stay readable in the Studio, nothing new.
+      const c = await signedUpClinic("clinic");
+      await start(c, "clinic");
+      await firstVisit(c);
+      // A report made during the trial (an encrypted row as the store writes it – the payload's content does not matter here).
+      const at = now().toISOString();
+      await t.db.insertInto("reports").values({ tenant_id: c.tenantId, id: "rpt_trial_kept", rev: 1, status: "draft", form_id: null, template_id: "ia-v1", payload_enc: "v1.t1.fictional.fictional", created_at: at, updated_at: at, delete_after: null }).execute();
+      await pay(c.tenantId, ["clindesk_small_monthly"]);
+      assert.equal((await getEntitlement({ db: t.db }, c.tenantId, "reports"))?.status, "trial", "kept on (readable), not paused");
+      assert.equal((await trialWriteBlock(t.db, c.tenantId, "reports", now()))?.reason, "read_only");
+      assert.equal(await trialWriteBlock(t.db, c.tenantId, "clinic", now()), null, "the paid product writes as normal");
+      const profile = await loadClinicProfile(t.db, c.tenantId, now());
+      assert.match(profile?.productReadOnly ?? "", /Read-only – these records are from your free trial[\s\S]*Add the Reports add-on/);
+      await assert.rejects(
+        assertTenantMayCreate({ clinicProfile: async () => profile } as never, c.tenantId as never, "report"),
+        (err: unknown) => (err as { init?: { code?: string } }).init?.code === "READ_ONLY",
+      );
+      const banner = await trialBannerState(t.db, c.tenantId, clinicAccessOf(await getClinicPlan({ db: t.db }, c.tenantId), now()), true, "reports");
+      assert.equal(banner?.state, "read_only");
+      // A later sync (any change) never switches the kept product off; buying the add-on makes it active again.
+      const again = await pay(c.tenantId, ["clindesk_small_monthly", "clindesk_reports_25_monthly"]);
+      void again;
+      assert.equal((await getEntitlement({ db: t.db }, c.tenantId, "reports"))?.status, "active");
+      assert.equal(await trialWriteBlock(t.db, c.tenantId, "reports", now()), null);
+      // ClinForms only after a ClinDesk trial with patients: the clinic system stays readable, writes refused.
+      const f = await signedUpClinic("clinic");
+      await start(f, "clinic");
+      await firstVisit(f);
+      await createPatient({ db: t.db, cipher, now }, f.tenantId, { firstName: "Megan", lastName: "Hart" }, { userId: f.userId, sessionId: null });
+      await pay(f.tenantId, ["clinforms_starter_monthly"]);
+      assert.equal((await getEntitlement({ db: t.db }, f.tenantId, "clinic"))?.status, "trial");
+      assert.equal((await trialWriteBlock(t.db, f.tenantId, "clinic", now()))?.reason, "read_only");
+      assert.match((await trialWriteBlock(t.db, f.tenantId, "clinic", now()))?.message ?? "", /Add ClinDesk to your plan/);
+      assert.equal(await countPatients({ db: t.db, cipher, now }, f.tenantId), 1, "the record is kept and readable");
+      assert.ok(!(await clinicsWithClinicSystem({ db: t.db, cipher, now })).includes(f.tenantId), "nothing sent from a read-only clinic system");
+    });
+
+    it("review 5: a trial ClinForms staff set by hand sees nothing new in the clinic system (no visit noted, no banner)", async () => {
+      const manual = await signedUpClinic("clinic");
+      await setClinicTrial({ db: t.db, now }, manual.tenantId, { days: 3, startOnFirstSignIn: true });
+      assert.equal(await clinicShellTrial(t.db, { tenantId: manual.tenantId, userId: manual.userId, role: "owner" }, true), null);
+      const plan = await getClinicPlan({ db: t.db }, manual.tenantId);
+      assert.deepEqual([plan?.trialStartsAt, plan?.ownerFirstSignInAt], [null, null], "the shell did not start it");
+      const self = await signedUpClinic("clinic");
+      await start(self, "clinic");
+      const b = await clinicShellTrial(t.db, { tenantId: self.tenantId, userId: self.userId, role: "owner" }, true);
+      assert.equal(b?.state, "trial");
+      assert.ok((await getClinicPlan({ db: t.db }, self.tenantId))?.trialStartsAt, "a self-serve trial starts there");
+    });
+
+    it("review 6: free reports are reserved atomically – 25 parallel reservations, never more than 10; a release gives one back", async () => {
+      const c = await signedUpClinic("clinic");
+      await start(c, "clinic");
+      const ctx = { db: t.db, now };
+      const results = await Promise.all(Array.from({ length: 25 }, (_, i) => reserveTrialReport(ctx, c.tenantId, `rpt_par_${i}`, "fp_trial_episode_0006")));
+      assert.equal(results.filter((r) => r === "reserved").length, 10);
+      assert.equal(results.filter((r) => r === "full").length, 15);
+      assert.equal((await getSelfTrial({ db: t.db }, c.tenantId))?.reportsReserved, 10);
+      const held = results.findIndex((r) => r === "reserved");
+      assert.equal(await reserveTrialReport(ctx, c.tenantId, `rpt_par_${held}`, "fp_trial_episode_0006"), "held");
+      await releaseTrialReport(ctx, c.tenantId, `rpt_par_${held}`, "fp_trial_episode_0006");
+      await releaseTrialReport(ctx, c.tenantId, `rpt_par_${held}`, "fp_trial_episode_0006"); // twice: once only
+      assert.equal((await getSelfTrial({ db: t.db }, c.tenantId))?.reportsReserved, 9);
+      assert.equal(await reserveTrialReport(ctx, c.tenantId, "rpt_par_new", "fp_trial_episode_0006"), "reserved");
+      assert.equal(await reserveTrialReport(ctx, c.tenantId, "rpt_par_new2", "fp_trial_episode_0006"), "full");
+      // Through the Report API's recorder (the production path).
+      const recorder = dbUsageRecorder(() => t.db, { now });
+      assert.equal(await recorder.reserveTrialReport?.(c.tenantId, "rpt_par_new3", ""), "full");
+    });
+
+    it("review 12: an owner who got an email never gets it again when another owner's send failed; paid meanwhile = skipped", async () => {
+      const c = await signedUpClinic("clinic");
+      const second = { id: `u-trial-second-${n}`, email: `second${n}@larkfield-physio.example` };
+      const at = now().toISOString();
+      const org = await t.db.selectFrom("organization").select("id").where("slug", "=", c.tenantId).executeTakeFirstOrThrow();
+      await t.db.insertInto("user").values({ id: second.id, name: "Sam Second", email: second.email, emailVerified: true, image: null, createdAt: at, updatedAt: at, twoFactorEnabled: true }).execute();
+      await t.db.insertInto("member").values({ id: `m-${second.id}`, organizationId: org.id, userId: second.id, role: "owner", createdAt: at }).execute();
+      await start(c, "clinic");
+      failFor = second.email;
+      await firstVisit(c);
+      failFor = null;
+      assert.equal(kindsSent(c.email).length, 1);
+      assert.equal(kindsSent(second.email).length, 0);
+      await sweep();
+      assert.equal(kindsSent(c.email).length, 1, "the owner who got it: not again");
+      assert.equal(kindsSent(second.email).length, 1, "the other owner: retried");
+      // A payment between the schedule and the send: a trial email that is not "paid" is skipped.
+      const d = await signedUpClinic("clinic");
+      await start(d, "clinic");
+      await firstVisit(d);
+      await t.db.updateTable("self_trial").set({ converted_at: now().toISOString() }).where("tenant_id", "=", d.tenantId).execute();
+      const trial = await getSelfTrial({ db: t.db }, d.tenantId);
+      assert.equal(await sendTrialEmail(t.db, trial!, "four_days", { env: ENV, now }), "skipped");
+      assert.equal(kindsSent(d.email).filter((x) => /4 days/.test(x)).length, 0);
+    });
+
+    it("review 12: the 'paid' email speaks for the product bought (a ClinDesk trial paying for ClinForms → ClinForms)", async () => {
+      const c = await signedUpClinic("clinic");
+      await start(c, "clinic");
+      await firstVisit(c);
+      const notifier = emailBillingNotifier(() => t.db, ENV);
+      await pay(c.tenantId, ["clinforms_starter_monthly"], new FakeSubscriptions(), notifier);
+      const paid = sent.filter((m) => m.to.email === c.email && /paid/.test(m.subject));
+      assert.equal(paid.length, 1);
+      assert.match(paid[0].subject, /You're on a paid ClinForms plan/);
+      assert.equal(paid[0].brand, undefined, "ClinForms' sender");
+      assert.match(paid[0].html, /http:\/\/localhost:3000\/app\/settings\/billing/);
+    });
+
+    it("review 10: the sample clinic is made in short resumable steps (no request runs long) and is its owner's alone", async () => {
+      const c = await signedUpClinic("clinic");
+      await start(c, "clinic");
+      await firstVisit(c);
+      const steps: string[] = [];
+      let r = await createSampleClinic({ db: t.db, cipher, now, patients: 12, budgetMs: 0 }, { tenantId: c.tenantId, userId: c.userId });
+      for (let i = 0; i < 10 && r.status === "in_progress"; i++) {
+        steps.push(`${r.step}/${r.steps}`);
+        r = await createSampleClinic({ db: t.db, cipher, now, patients: 12, budgetMs: 0 }, { tenantId: c.tenantId, userId: c.userId });
+      }
+      assert.equal(r.status, "created");
+      assert.deepEqual(steps, ["1/6", "2/6", "3/6", "4/6", "5/6"], "one step per call");
+      const slug = r.status === "created" ? r.sampleTenantId : "";
+      const org = await t.db.selectFrom("organization").select(["id", "metadata"]).where("slug", "=", slug).executeTakeFirstOrThrow();
+      assert.match(String(org.metadata), /"sampleOf"/, "marked as a sample (invitations and new members are refused – self-signup.test.ts)");
+      assert.equal((await t.db.selectFrom("member").select("id").where("organizationId", "=", org.id).execute()).length, 1);
+      assert.ok((await countPatients({ db: t.db, cipher, now }, slug)) >= 12);
     });
 
     it("platform page: every trial clinic (not the samples) with its state, reports and texts used, emails and conversion", async () => {

@@ -490,23 +490,35 @@ export interface SelfTrialTable {
   domain_key: string | null;
   reports_included: number;
   texts_granted: number;
+  reports_reserved: number;
   /** email | network | domain – why the free allowance was withheld (a repeat trial); null = given. */
   repeat_reason: string | null;
   sample_tenant_id: string | null;
   /** creating | ready | declined */
   sample_state: string | null;
   sample_claimed_at: IsoTimestamp | null;
+  sample_step: number;
   tips_off_at: IsoTimestamp | null;
   converted_at: IsoTimestamp | null;
   created_at: IsoTimestamp;
   updated_at: IsoTimestamp;
 }
 
-/** `trial_email` (migration 0011) – one claimed row per trial email per clinic (never sent twice). */
+/** `trial_report_hold` (migration 0011) – the reports holding a free-report reservation in a self-serve trial. */
+export interface TrialReportHoldTable {
+  tenant_id: string;
+  report_key: string;
+  episode_fp: string;
+  held_at: IsoTimestamp;
+}
+
+/** `trial_email` (migration 0011) – one claimed row per trial email per clinic ('') and per recipient (never sent twice). */
 export interface TrialEmailTable {
   tenant_id: string;
   /** welcome | tips | four_days | last_day | ended | paid */
   kind: string;
+  /** '' = the clinic's row (the schedule); else the owner's user id (one send). */
+  recipient_ref: string;
   /** claimed | sent | failed | skipped */
   status: string;
   attempts: number;
@@ -565,6 +577,7 @@ export interface Database extends PmsDatabase {
   signup_acceptances: SignupAcceptancesTable;
   self_trial: SelfTrialTable;
   trial_email: TrialEmailTable;
+  trial_report_hold: TrialReportHoldTable;
 }
 
 /** Better Auth's tables in foreign-key order (parents first). */
@@ -606,6 +619,7 @@ export const TABLES_IN_FK_ORDER = [
   "signup_acceptances",
   "self_trial",
   "trial_email",
+  "trial_report_hold",
   ...PMS_TABLES_IN_FK_ORDER,
 ] as const satisfies readonly (keyof Database)[];
 
@@ -644,7 +658,8 @@ export const PRIMARY_KEYS: { readonly [T in TableName]: readonly (keyof Database
   signup_requests: ["id"],
   signup_acceptances: ["id"],
   self_trial: ["tenant_id"],
-  trial_email: ["tenant_id", "kind"],
+  trial_email: ["tenant_id", "kind", "recipient_ref"],
+  trial_report_hold: ["tenant_id", "report_key", "episode_fp"],
   ...PMS_PRIMARY_KEYS,
 };
 

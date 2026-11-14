@@ -12,13 +12,15 @@ import { getDataCipher } from "@/server/crypto";
 import { getDb } from "@/server/db";
 import { createSampleClinic, declineSampleClinic } from "@/server/trial/sample";
 
-export type SampleActionResult = { ok: true; next: string } | { ok: false; error: string };
+export type SampleActionResult = { ok: true; next: string } | { ok: "continue"; step: number; steps: number } | { ok: false; error: string };
 
 export async function createSampleClinicAction(): Promise<SampleActionResult> {
   const ctx = await actionContext();
   if ("error" in ctx || ctx.membership.role !== "owner") return { ok: false, error: "Only the clinic's owner can create the sample clinic." };
   try {
     const r = await createSampleClinic({ db: getDb(), cipher: getDataCipher() }, { tenantId: ctx.membership.tenantId, userId: ctx.session.user.id });
+    // Made in short steps (no request runs long): the page calls again until it is ready.
+    if (r.status === "in_progress") return { ok: "continue", step: r.step, steps: r.steps };
     if (r.status === "busy") return { ok: false, error: "The sample clinic is being set up – try again in a minute." };
     if (r.status === "unavailable") return { ok: false, error: "The sample clinic is available during your free trial only." };
     if (!r.organizationId) return { ok: false, error: "Use Switch clinic to open the sample clinic." };

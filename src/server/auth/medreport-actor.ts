@@ -23,6 +23,7 @@ import type { Database } from "../db/schema";
 import { COMPANY } from "../../lib/site";
 import { clinicAccessOf, readClinicPlan, type ClinicPlan } from "../repos/clinic-plan";
 import { trialReportAllowance } from "../trial/allowance";
+import { trialWriteBlock } from "../trial/access";
 import { getClinicProfile } from "../repos/clinic-profile";
 import { getMemberProfile } from "../repos/member-profile";
 import { isPackageOn } from "../repos/pms/entitlements";
@@ -98,12 +99,18 @@ export async function loadClinicProfile(db: Kysely<Database>, tenantId: string, 
   // 31/10/2026: a plan payment overdue past its grace period → nothing new (the module's 403 PAYMENT_OVERDUE).
   // 13/11/2026: a self-serve free trial's reports (drafting stops once they are used – 403 TRIAL_REPORTS_USED).
   const allowance = plan?.status === "trial" ? await trialReportAllowance(db, tenantId) : null;
-  const overdue = { ...(hold.held ? { paymentOverdue: true } : {}), ...(allowance ? { trialReports: allowance } : {}) };
+  // 13/11/2026: after a self-serve trial converted to a plan without Reports – its reports read-only (403 READ_ONLY).
+  const block = plan?.status === "paid" ? await trialWriteBlock(db, tenantId, "reports", now) : null;
+  const overdue = {
+    ...(hold.held ? { paymentOverdue: true } : {}),
+    ...(allowance ? { trialReports: allowance } : {}),
+    ...(block?.reason === "read_only" ? { productReadOnly: block.message } : {}),
+  };
   if (!p) {
     // Security fix 24/10 (authz L1): an ended trial is enforced even without a clinic_profile row – a minimal profile
     // carrying the trial (drafting off, no clinic details) instead of null, which the module reads as "no trial".
     const planView = clinicPlanForModule(plan, now);
-    if (planView.trial?.state !== "ended" && !hold.held && !allowance) return null;
+    if (planView.trial?.state !== "ended" && !hold.held && !allowance && !block) return null;
     return { ...planView, ...overdue, tenantId, displayName: "", addressLines: [], retentionDays: 30, draftingEnabled: false };
   }
   return {

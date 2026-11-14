@@ -68,6 +68,7 @@ const TIMESTAMP_COLUMNS = new Set([
   "tips_off_at",
   "converted_at",
   "sent_at",
+  "held_at",
   // The clinic system's own (src/server/db/pms-schema/<module>.ts *_TIMESTAMP_COLUMNS).
   ...PMS_TIMESTAMP_COLUMNS,
 ]);
@@ -157,7 +158,7 @@ export interface TableSummary {
  * behind CLINFORMS_SELF_SIGNUP) and the self-serve trial's (migration 0011). Absent on the source = empty; absent on the target = skipped, unless the source has
  * rows for it (then the copy refuses: migrate the target first). Every other table must exist on both sides.
  */
-export const OPTIONAL_TABLES: ReadonlySet<TableName> = new Set<TableName>(["signup_requests", "signup_acceptances", "self_trial", "trial_email"]);
+export const OPTIONAL_TABLES: ReadonlySet<TableName> = new Set<TableName>(["signup_requests", "signup_acceptances", "self_trial", "trial_email", "trial_report_hold"]);
 
 const EMPTY_SHA256 = createHash("sha256").digest("hex");
 

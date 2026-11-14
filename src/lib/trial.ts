@@ -13,7 +13,8 @@
  *               automatically.
  *
  * Abuse brakes (a repeat trial gets the trial but no free reports or texts – the platform page shows why): the same
- * owner address (case, +tags and gmail dots ignored) had a trial before; or the network (IPv4 /24, IPv6 /64) started
+ * owner address (case, +tags and gmail dots ignored) had a trial before; or the network (an IPv4 address, an IPv6 /64 –
+ * the sign-up limits' own rule, src/server/signup/client-ip.ts ipLimitSubject) started
  * TRIAL_LIMITS.perNetwork30Days trials in 30 days already; or the address's own (non-webmail) domain did
  * TRIAL_LIMITS.perDomain30Days.
  */
@@ -52,7 +53,7 @@ export function trialTexts(env: Env = process.env): number {
 }
 
 export const TRIAL_LIMITS = {
-  /** Trials with a free allowance per network (IPv4 /24, IPv6 /64) in 30 days; later ones get none. */
+  /** Trials with a free allowance per network (an IPv4 address, an IPv6 /64) in 30 days; later ones get none. */
   perNetwork30Days: 2,
   /** Trials with a free allowance per owner's own email domain (not webmail) in 30 days. */
   perDomain30Days: 3,
@@ -113,26 +114,6 @@ export function ownEmailDomain(email: string): string | null {
   const domain = c.slice(c.lastIndexOf("@") + 1);
   if (!domain || !domain.includes(".")) return null;
   return WEBMAIL_DOMAINS.has(domain) ? null : domain;
-}
-
-/**
- * The network an address belongs to for the per-network brake: an IPv4 address's /24, an IPv6 address's /64 (the
- * sign-up's own limits count single IPv4 addresses; a trial farm usually rotates through one block).
- */
-export function trialNetworkOf(ip: string): string {
-  const s = String(ip ?? "").trim().toLowerCase();
-  const v4 = /^(?:::ffff:)?(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(s);
-  if (v4) return `${v4[1]}.${v4[2]}.${v4[3]}.0/24`;
-  if (s.includes(":")) {
-    const [head] = s.split("%");
-    const parts = head.split("::");
-    const left = parts[0] ? parts[0].split(":") : [];
-    const right = parts.length > 1 && parts[1] ? parts[1].split(":") : [];
-    const missing = Math.max(0, 8 - left.length - right.length);
-    const full = [...left, ...Array(parts.length > 1 ? missing : 0).fill("0"), ...right].map((g) => g.replace(/^0+(?=.)/, "") || "0");
-    return `${full.slice(0, 4).join(":")}::/64`;
-  }
-  return s || "unknown";
 }
 
 /* ------------------------------------------------------------------ the emails' schedule */

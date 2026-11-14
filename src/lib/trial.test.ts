@@ -13,7 +13,6 @@ import {
   londonDaysBetween,
   ownEmailDomain,
   trialDays,
-  trialNetworkOf,
   trialReports,
   trialTexts,
   type TrialEmailFacts,
@@ -36,6 +35,15 @@ describe("trial settings (CLINFORMS_TRIAL_DAYS / _REPORTS / _TEXTS)", () => {
   });
 });
 
+describe("the stop-tips page is a sign-in-type page (review 11)", () => {
+  it("no cookie banner, no analytics on /trial/…; robots.txt unchanged", async () => {
+    const { AUTH_PATHS, isAuthPath } = await import("./site");
+    assert.equal(isAuthPath("/trial/stop-tips"), true);
+    assert.equal(isAuthPath("/trialx"), false);
+    assert.ok(!(AUTH_PATHS as readonly string[]).includes("/trial"), "kept out of robots.txt (byte-for-byte as before)");
+  });
+});
+
 describe("trial abuse brake – address, domain and network forms", () => {
   it("addresses: case, +tags and gmail dots ignored; other domains keep their dots", () => {
     assert.equal(canonicalTrialEmail("Dana.Lark+trial2@Gmail.com"), "danalark@gmail.com");
@@ -44,13 +52,6 @@ describe("trial abuse brake – address, domain and network forms", () => {
     assert.equal(ownEmailDomain("x@larkfield-physio.example"), "larkfield-physio.example");
     assert.equal(ownEmailDomain("x@gmail.com"), null);
     assert.equal(ownEmailDomain("x@nhs.net"), null);
-  });
-  it("networks: IPv4 /24, IPv6 /64", () => {
-    assert.equal(trialNetworkOf("203.0.113.77"), "203.0.113.0/24");
-    assert.equal(trialNetworkOf("::ffff:203.0.113.5"), "203.0.113.0/24");
-    assert.equal(trialNetworkOf("2001:db8:1:2:aaaa::1"), "2001:db8:1:2::/64");
-    assert.equal(trialNetworkOf("2001:0db8:0001:0002:ffff:0:0:9"), "2001:db8:1:2::/64");
-    assert.equal(trialNetworkOf("2001:db8::1"), "2001:db8:0:0::/64");
   });
 });
 

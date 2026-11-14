@@ -68,7 +68,7 @@ export default async function TenantStudioLayout({ children }: { children: React
   // Both packages in one read (src/server/pms/entitlements.ts, never throws: Reports on, clinic system off if unreadable).
   const manager = context.member.role === "owner" || context.member.role === "admin";
   // 13/11/2026: a self-serve free trial's banner adds its free reports and "Choose a plan" (src/server/trial/view.ts).
-  const [packages, billing, trial] = await Promise.all([clinicPackages(context.tenantId), billingBannerFor(getDb(), context.tenantId, manager), trialBannerState(getDb(), context.tenantId, context.trial, manager)]);
+  const [packages, billing, trial] = await Promise.all([clinicPackages(context.tenantId), billingBannerFor(getDb(), context.tenantId, manager), trialBannerState(getDb(), context.tenantId, context.trial, manager, "reports")]);
   if (!packages.reports) notFound();
   const clinicSystem = packages.clinic;
   // The host brand's contact (src/lib/brand.ts): the trial banner and the Studio's "contact us" lines.

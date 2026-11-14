@@ -19,7 +19,8 @@
 import { createHmac } from "node:crypto";
 import type { Kysely } from "kysely";
 import type { BrandId } from "../../lib/brand";
-import { TRIAL_LIMITS, canonicalTrialEmail, ownEmailDomain, trialDays, trialNetworkOf, trialReports, trialTexts } from "../../lib/trial";
+import { TRIAL_LIMITS, canonicalTrialEmail, ownEmailDomain, trialDays, trialReports, trialTexts } from "../../lib/trial";
+import { ipLimitSubject } from "../signup/client-ip";
 import type { Database } from "../db/schema";
 import { appendAudit } from "../repos/audit";
 import { getClinicPackage, setClinicPackage } from "../repos/clinic-package";
@@ -59,7 +60,9 @@ export function trialKeys(secret: string, email: string, ip: string): TrialKeys 
   const domain = ownEmailDomain(email);
   return {
     emailKey: keyed(secret, "email", canonicalTrialEmail(email)),
-    networkKey: keyed(secret, "network", trialNetworkOf(ip)),
+    // The sign-up limits' own network rule (review 13/11/2026): an IPv4 address exactly (a port dropped – no /24, so a
+    // shared mobile network's neighbours are not caught), an IPv6 address by its /64 (brackets, zones, ports normalised).
+    networkKey: keyed(secret, "network", ipLimitSubject(ip) || "unknown"),
     domainKey: domain ? keyed(secret, "domain", domain) : null,
   };
 }

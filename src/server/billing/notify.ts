@@ -37,7 +37,7 @@ export function emailBillingNotifier(db: () => Kysely<Database>, env: Readonly<R
   return async (tenantId, n) => {
     // 13/11/2026: a self-serve trial converted – the branded "you're on a paid plan" email (once per clinic).
     if (n.kind === "trial_converted") {
-      await sendTrialEmailNow(db(), tenantId, "paid", { env });
+      await sendTrialEmailNow(db(), tenantId, "paid", { env }, n.product ? { brand: n.product === "clindesk" ? "clinic" : "clinforms" } : {});
       return;
     }
     const ctx = { db: db() };

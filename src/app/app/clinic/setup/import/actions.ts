@@ -82,7 +82,7 @@ export async function cancelImportAction(batchId: string): Promise<Answer<{ ok: 
 }
 
 export async function issuesAction(batchId: string, afterRowNo: number): Promise<Answer<{ rows: ImportIssueRow[]; more: boolean }>> {
-  const actor = await clinicActionActor({ permission: "settings.import" });
+  const actor = await clinicActionActor({ permission: "settings.import", readOnly: true });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
   return answer(await importIssuesFor(actor, batchId, afterRowNo));
 }

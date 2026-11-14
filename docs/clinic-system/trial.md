@@ -12,7 +12,7 @@ default): while it is off no page, link, email or website text changes. Migratio
 | Length | `CLINFORMS_TRIAL_DAYS` (default **14**, 1–366), from the **owner's first sign-in** (the moment is recorded once; a trial never starts before anyone has looked) | same |
 | Card | not needed | not needed |
 | Product | the clinic system (diary, patients, notes, invoicing, messages) and the Reports add-on, both on as **`trial`** | Reports (ClinForms' default) |
-| Reports | `CLINFORMS_TRIAL_REPORTS` (default **10**) free reports for the whole trial – a **Trial** package (`clinic_package`, £0, 10 included). A report counts as before (its first live drafting that cost money, or its approval if nothing was drafted). Once 10 have counted, live drafting for a NEW report is refused: **403 `TRIAL_REPORTS_USED`** "Your free trial includes 10 reports … Buy the Reports add-on under Plan and billing to continue" (ClinForms: "Choose a plan"). A report already inside the 10 may be drafted again. Demo answers never count | same ("Choose a plan") |
+| Reports | `CLINFORMS_TRIAL_REPORTS` (default **10**) free reports for the whole trial – a **Trial** package (`clinic_package`, £0, 10 included). A report counts as before (its first live drafting that cost money, or its approval if nothing was drafted). Before each LIVE drafting call one free report is **reserved atomically** for the report (`self_trial.reports_reserved` by one conditional UPDATE + a `trial_report_hold` row – parallel drafts can never exceed 10; given back when the call failed without cost). Once none are left, live drafting for a NEW report is refused: **403 `TRIAL_REPORTS_USED`** "Your free trial includes 10 reports … Buy the Reports add-on under Plan and billing to continue" (ClinForms: "Choose a plan"). A report already inside the 10, and an amendment of a counted report, may be drafted again. Demo answers never count | same ("Choose a plan") |
 | Texts | `CLINFORMS_TRIAL_TEXTS` (default **10**) text credits, granted once at sign-up as a ledger adjustment labelled **"Trial credits – free test texts for your trial"** (Messages → Text credits). Packs can be bought at any time – during the trial and after it ended (checked: buying was never blocked by a trial; the after-the-trial read-only rule lets it through) | – (texts are a clinic-system feature) |
 | Drafting limits | 5 live drafting calls a minute, 60 a day (`clinic_plan`; ClinForms staff can change them on the platform page) | same |
 | Healthcode | the existing readiness checks work as normal; nothing added, no file export promised | – |
@@ -25,10 +25,14 @@ admins → Plan and billing). Owner direction 24/10/2026 (no real patient data i
 ## 2. When the trial ends
 
 - **Read-only, data kept.** Reports: as before (403 `TRIAL_ENDED` for anything new; everything opens and downloads).
-  **Clinic system (new, self-serve trials only):** every server action / route that WRITES answers "Your free trial has
-  ended, so nothing new can be added or changed. Your data is safe …" (`clinicActionActor` → `trial_ended`,
-  `src/server/trial/access.ts`); every page, list, record, export and download still works. Buying text credits and
-  everything under Plan and billing keep working. A trial ClinForms staff set by hand (platform page) is not affected.
+  **Clinic system (self-serve trials only, `src/server/trial/access.ts trialWriteBlock`):** every server action is a
+  WRITE unless it is marked `readOnly: true` (an audited list of searches and loaders – `src/server/trial/write-paths.test.ts`),
+  whatever its permission – so emailing an invoice, reviewing a form response or starting a referrer form is refused
+  too ("Your free trial has ended, so nothing new can be added or changed. Your data is safe …"); route handlers read on
+  GET / HEAD (downloads – letters, activity CSV, role history – stay open); the clinic API's writes answer 403
+  `READ_ONLY`; the messages cron sends nothing for the clinic (no reminders, no campaigns); public booking and portal
+  pages close. Every page, list, record, export and download still works. Buying text credits and everything under
+  Plan and billing keep working. A trial ClinForms staff set by hand (platform page) is not affected.
 - **Nothing is deleted automatically.** No cron deletes trial clinics; the daily retention job only applies each
   clinic's own report retention (365 days by default) and the sign-up request clean-up, exactly as before (tested: a
   trial that ended 75 days ago keeps its clinic, patients and trial record). The owner decides a retention rule later.
@@ -37,12 +41,20 @@ admins → Plan and billing). Owner direction 24/10/2026 (no real patient data i
 
 ## 3. Paying
 
-The first paid activation (the existing subscription sync, `src/server/billing/sync.ts`) converts the trial at once:
-`clinic_plan` → `paid`, `self_trial.converted_at`, the plan's packages and allowance apply immediately (the clinic
-system `active`, Reports per the plan; the plan's own Reports package replaces the free Trial package; a plan without
-Reports removes it). Every record is kept – patients, notes, invoices, reports, usage, the trial's texts, the sample
-clinic. Guard: a clinic-brand trial that pays for a ClinForms plan only gets the clinic system **paused** (data kept) –
-never free. Then one branded "You're on a paid plan" email. (Tests: `src/server/trial/testing/trial-suite.ts` "paying
+The subscription sync (`src/server/billing/sync.ts finishSelfServeTrial`) converts the trial at once – and checks it
+again on EVERY sync of an active subscription until it is complete (idempotent: a crash part-way, or a conversion by
+hand on the platform page, is finished by the next sync): `clinic_plan` → `paid`, `self_trial.converted_at`, the
+trial's drafting limits (5/min, 60/day) back to the defaults (limits staff changed are kept), the plan's packages and
+allowance apply immediately (the plan's own Reports package replaces the free Trial package; a plan without Reports
+removes it). The trial's reports never count as extras of the first paid month (`billing/extras.ts`). Every record is
+kept – patients, notes, invoices, reports, usage, the trial's texts, the sample clinic.
+
+**A product the plan does not include** (owner: never lose access to data): if the trial left data in it (patients in
+the clinic system, reports in Reports) it stays on as `trial` = **read-only** – readable and downloadable, nothing new,
+with the notice "Read-only – these records are from your free trial … Add ClinDesk / the Reports add-on to your plan to
+keep working on them" (banner, refusals, the Report API's 403 `READ_ONLY`); the sync never switches it off, and buying
+it makes it active again. Without data it is paused. So a ClinForms-only plan never keeps the clinic system writable
+for free. Then one branded "You're on a paid plan" email, in the brand of the product bought. (Tests: `src/server/trial/testing/trial-suite.ts` "paying
 converts the trial …" on SQLite, PGlite, D1 stand-in and real local D1; e2e T9–T10.)
 
 ## 4. Sample data – a separate sample clinic
@@ -58,8 +70,10 @@ query, forever – one forgotten filter mixes fictional patients into a real exp
 - Data: the demonstration clinic's seed (`scripts/pms` – Riverside's made-up sites, practitioners, 40 patients with
   cases, a diary week, notes, invoices; drama-range phone numbers, `@example.com` addresses), the demo flags (banner
   "Demo clinic – made-up data only", a notice on every output).
-- Limits (it must never be a free second clinic): one per trial (one conditional claim; a crashed attempt is resumed
-  after 5 minutes); the **same trial window** (ends with the trial, read-only afterwards, not converted by paying for
+- Made in **short resumable steps** (clinic, patients, set-up, diary, records, billing – ~8 s a call, the page calls
+  again until it is ready; a crashed step is resumed after 2 minutes) – no request runs long.
+- Limits (it must never be a free second clinic): one per trial (one conditional claim); its **owner only** – Better
+  Auth refuses invitations and new members into it (`SAMPLE_CLINIC`); the **same trial window** (ends with the trial, read-only afterwards, not converted by paying for
   the real clinic); no Reports (no drafting cost), no texts, no reminder rules – nothing is ever sent from it.
 
 ## 5. Emails (branded HTML + plain text)
@@ -76,9 +90,11 @@ query, forever – one forgotten filter mixes fictional patients into a real exp
 - Sent by the **existing daily cron** (`/api/cron/retention`, after retention, billing extras and the expiry sweep;
   ~15 s budget; `cron.trial_emails.done` log line with counts) – no queue service. Vercel Hobby runs it once a day at
   03:17 UTC, so day-based emails arrive in the early morning (see open decisions).
-- **Exactly once per clinic per email**: a `trial_email` row is claimed before sending (primary key tenant + kind); a
-  second run, a concurrent run or the request racing the cron does nothing; a send the provider refused is retried
-  (max 3 attempts); a moment that passed is recorded as `skipped`, never sent late. Converted clinics get "paid" only.
+- **Exactly once per clinic and per owner**: a `trial_email` row is claimed for the clinic, then one per owner, before
+  sending; a second run, a concurrent run or the request racing the cron does nothing; a send the provider refused is
+  retried for that owner only (max 3 attempts – an owner who got it never gets it twice); a moment that passed is
+  recorded as `skipped`, never sent late. The clinic's paid status is re-read right before a send: converted clinics
+  get "paid" only (in the brand of the product bought).
   Only clinics with a `self_trial` row (never a sample clinic, a closed clinic or a hand-set trial).
 - To the clinic's owner(s); the brand's sender (ClinDesk → its own MailerSend account when configured), tracking off.
 - Layout (`src/server/email/layout.ts`): tables + inline CSS, max-width 600 with an Outlook ghost table, the brand's
@@ -86,16 +102,23 @@ query, forever – one forgotten filter mixes fictional patients into a real exp
   preheader, plain-text twin. **The existing emails (invitation, password reset, sign-up confirmation, existing account,
   billing and text-credit notices) now use the same layout – words unchanged.**
 - "Stop these tips emails" (welcome and tips only): a signed link to `/trial/stop-tips` (opening it changes nothing –
-  the button does; 404 without a valid signature). Account emails (days left, ended, paid) always go.
+  the button does; 404 without a valid signature; no cookie banner and no analytics there, like the sign-in pages). Account emails (days left, ended, paid) always go.
 - Previews: `npm run trial:email-previews -- --out <folder>` renders every trial email for both brands plus the
   existing emails to HTML + text (fictional data; sends nothing) – open `index.html`.
+
+**Switched off = unchanged.** Every trial path checks for a `self_trial` row first: a trial ClinForms staff set by hand
+(e.g. Blue Heart) sees exactly what it saw before – no banner or visit noted in the clinic system's shell, the same
+banner text in /app and the Studio, no read-only rule, no emails. Only the branded email layout is new for everyone
+(owner's wish).
 
 ## 6. Abuse brakes
 
 On top of sign-up's own limits (3 sign-ups per network per day, 3 emails per address per day, honeypot, signed time
 stamp, disposable domains): a trial gets **no free reports or texts** (still a trial, clearly flagged on the platform
-page) when the same owner address had a trial before (case, `+tags` and Gmail dots ignored), the network (IPv4 /24,
-IPv6 /64) already started 2 trials with an allowance in 30 days, or the address's own (non-webmail) domain 3 in 30
+page) when the same owner address had a trial before (case, `+tags` and Gmail dots ignored), the network (the sign-up
+limits' own rule `ipLimitSubject`: an IPv4 address exactly – ports dropped, no /24 so a shared mobile network's
+neighbours are not caught – an IPv6 address by its /64, brackets and ports normalised) already started 2 trials with an
+allowance in 30 days, or the address's own (non-webmail) domain 3 in 30
 days. Only keyed hashes (HMAC under `BETTER_AUTH_SECRET`) are stored – never the address, IP or domain. The trial's own
 drafting limits and the sample clinic's limits (§4) cap the cost of one trial.
 

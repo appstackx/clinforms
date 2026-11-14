@@ -69,7 +69,7 @@ export interface NativeConnectorDeps {
 }
 
 async function sessionCaller(): Promise<NativeCaller | null> {
-  const a = await clinicActionActor({ permission: "patients.view" });
+  const a = await clinicActionActor({ permission: "patients.view", readOnly: true });
   if ("error" in a) return null;
   return {
     tenantId: a.tenantId,

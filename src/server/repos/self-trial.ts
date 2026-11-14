@@ -23,10 +23,14 @@ export interface SelfTrial {
   domainKey: string | null;
   reportsIncluded: number;
   textsGranted: number;
+  /** Free reports reserved by live drafting so far (never more than reportsIncluded). */
+  reportsReserved: number;
   repeatReason: RepeatReason | null;
   sampleTenantId: string | null;
   sampleState: SampleState | null;
   sampleClaimedAt: string | null;
+  /** How far the sample clinic's creation got (resumable steps). */
+  sampleStep: number;
   tipsOffAt: string | null;
   convertedAt: string | null;
   createdAt: string;
@@ -42,10 +46,12 @@ type Row = {
   domain_key: string | null;
   reports_included: number;
   texts_granted: number;
+  reports_reserved?: number | null;
   repeat_reason: string | null;
   sample_tenant_id: string | null;
   sample_state: string | null;
   sample_claimed_at: string | null;
+  sample_step?: number | null;
   tips_off_at: string | null;
   converted_at: string | null;
   created_at: string;
@@ -62,10 +68,12 @@ function toTrial(r: Row): SelfTrial {
     domainKey: r.domain_key,
     reportsIncluded: toInt(r.reports_included),
     textsGranted: toInt(r.texts_granted),
+    reportsReserved: toInt(r.reports_reserved ?? 0),
     repeatReason: r.repeat_reason === "email" || r.repeat_reason === "network" || r.repeat_reason === "domain" ? r.repeat_reason : null,
     sampleTenantId: r.sample_tenant_id,
     sampleState: r.sample_state === "creating" || r.sample_state === "ready" || r.sample_state === "declined" ? r.sample_state : null,
     sampleClaimedAt: r.sample_claimed_at,
+    sampleStep: toInt(r.sample_step ?? 0),
     tipsOffAt: r.tips_off_at,
     convertedAt: r.converted_at,
     createdAt: r.created_at,
@@ -78,8 +86,8 @@ export function isMissingTrialTable(err: unknown): boolean {
   if (!err || typeof err !== "object") return false;
   const e = err as { code?: unknown; message?: unknown; cause?: unknown };
   const message = typeof e.message === "string" ? e.message : "";
-  if (/no such table: (?:main\.)?(self_trial|trial_email)\b|relation "(?:public\.)?(self_trial|trial_email)" does not exist/i.test(message)) return true;
-  if (e.code === "42P01" && /self_trial|trial_email/.test(message)) return true;
+  if (/no such table: (?:main\.)?(self_trial|trial_email|trial_report_hold)\b|relation "(?:public\.)?(self_trial|trial_email|trial_report_hold)" does not exist/i.test(message)) return true;
+  if (e.code === "42P01" && /self_trial|trial_email|trial_report_hold/.test(message)) return true;
   return e.cause !== undefined && e.cause !== err ? isMissingTrialTable(e.cause) : false;
 }
 
@@ -155,10 +163,12 @@ export async function createSelfTrial(ctx: DbContext, tenantId: string, input: S
       domain_key: input.domainKey ?? null,
       reports_included: input.reportsIncluded,
       texts_granted: input.textsGranted,
+      reports_reserved: 0,
       repeat_reason: input.repeatReason,
       sample_tenant_id: null,
       sample_state: null,
       sample_claimed_at: null,
+      sample_step: 0,
       tips_off_at: null,
       converted_at: null,
       created_at: at,
@@ -224,12 +234,12 @@ export async function markTrialConverted(ctx: DbContext, tenantId: string): Prom
   return Number(r.numUpdatedRows) > 0;
 }
 
-/** How long a "creating" sample claim stays held before another attempt may take it over (a crashed attempt). */
-export const SAMPLE_CLAIM_STALE_MS = 5 * 60_000;
+/** How long one step of the sample clinic's creation may hold its lock before another attempt takes over (a crash). */
+export const SAMPLE_CLAIM_STALE_MS = 2 * 60_000;
 
 /**
- * Claims the right to create the clinic's sample clinic: ONE conditional UPDATE (no sample yet and not declined, or a
- * stale "creating" claim). Two clicks at once: one wins.
+ * Takes the lock for the next step(s) of the clinic's sample clinic: ONE conditional UPDATE – no sample yet (it starts,
+ * with `sampleTenantId`), or a "creating" one whose lock is free or stale. Two clicks at once: one wins.
  */
 export async function claimSampleClinic(ctx: DbContext, tenantId: string, sampleTenantId: string): Promise<boolean> {
   assertTenantId(tenantId);
@@ -244,20 +254,81 @@ export async function claimSampleClinic(ctx: DbContext, tenantId: string, sample
     .where((eb) =>
       eb.or([
         eb("sample_state", "is", null),
-        eb.and([eb("sample_state", "=", "creating"), eb("sample_claimed_at", "<", stale)]),
+        eb.and([eb("sample_state", "=", "creating"), eb("sample_tenant_id", "=", sampleTenantId), eb.or([eb("sample_claimed_at", "is", null), eb("sample_claimed_at", "<", stale)])]),
       ]),
     )
     .executeTakeFirst();
   return Number(r.numUpdatedRows) > 0;
 }
 
+/** Records the step reached, keeping the lock (refreshed). */
+export async function saveSampleStep(ctx: DbContext, tenantId: string, step: number): Promise<void> {
+  assertTenantId(tenantId);
+  const at = nowIso(ctx);
+  await ctx.db.updateTable("self_trial").set({ sample_step: step, sample_claimed_at: at, updated_at: at }).where("tenant_id", "=", tenantId).execute();
+}
+
+/** Records the step reached and frees the lock (the next call carries on from there). */
+export async function releaseSampleClaim(ctx: DbContext, tenantId: string, step: number): Promise<void> {
+  assertTenantId(tenantId);
+  const at = nowIso(ctx);
+  await ctx.db.updateTable("self_trial").set({ sample_step: step, sample_claimed_at: null, updated_at: at }).where("tenant_id", "=", tenantId).execute();
+}
+
 export async function setSampleState(ctx: DbContext, tenantId: string, state: SampleState): Promise<void> {
   assertTenantId(tenantId);
   const at = nowIso(ctx);
-  let q = ctx.db.updateTable("self_trial").set({ sample_state: state, updated_at: at }).where("tenant_id", "=", tenantId).where("sample_of", "is", null);
+  let q = ctx.db.updateTable("self_trial").set({ sample_state: state, updated_at: at, ...(state === "ready" ? { sample_claimed_at: null } : {}) }).where("tenant_id", "=", tenantId).where("sample_of", "is", null);
   // "declined" only while there is no sample; "ready" only for the clinic's own claim.
   if (state === "declined") q = q.where("sample_state", "is", null);
   await q.execute();
+}
+
+/* ------------------------------------------------------------------ free-report reservations */
+
+export type TrialReportReservation = "reserved" | "held" | "full";
+
+/**
+ * Reserves one of the trial's free reports for a report BEFORE its live drafting call (13/11/2026, review): "held" =
+ * this report holds one already (drafted again – no second reservation); "reserved" = one taken now; "full" = none
+ * left. Atomic on every database: the hold row is claimed by its primary key, then ONE conditional UPDATE takes a free
+ * report (reports_reserved < reports_included – a row lock in Postgres, single writer in SQLite / D1), so parallel
+ * drafts can never take more than the allowance; a refused one gives its hold row back.
+ */
+export async function reserveTrialReport(ctx: DbContext, tenantId: string, reportKey: string, episodeFp: string): Promise<TrialReportReservation> {
+  assertTenantId(tenantId);
+  if (!/^[A-Za-z0-9._:@-]{1,160}$/.test(reportKey)) throw new RepoInputError("Invalid report key.");
+  const fp = /^[A-Za-z0-9_-]{0,64}$/.test(episodeFp) ? episodeFp : "";
+  const at = nowIso(ctx);
+  const hold = await ctx.db
+    .insertInto("trial_report_hold")
+    .values({ tenant_id: tenantId, report_key: reportKey, episode_fp: fp, held_at: at })
+    .onConflict((oc) => oc.columns(["tenant_id", "report_key", "episode_fp"]).doNothing())
+    .executeTakeFirst();
+  if (Number(hold.numInsertedOrUpdatedRows ?? 0) === 0) return "held";
+  const take = await ctx.db
+    .updateTable("self_trial")
+    .set((eb) => ({ reports_reserved: eb("reports_reserved", "+", 1), updated_at: at }))
+    .where("tenant_id", "=", tenantId)
+    .where((eb) => eb("reports_reserved", "<", eb.ref("reports_included")))
+    .executeTakeFirst();
+  if (Number(take.numUpdatedRows) > 0) return "reserved";
+  await ctx.db.deleteFrom("trial_report_hold").where("tenant_id", "=", tenantId).where("report_key", "=", reportKey).where("episode_fp", "=", fp).execute();
+  return "full";
+}
+
+/** Gives a reservation back (the live call failed without any cost): the hold row, then the free report. */
+export async function releaseTrialReport(ctx: DbContext, tenantId: string, reportKey: string, episodeFp: string): Promise<void> {
+  assertTenantId(tenantId);
+  const fp = /^[A-Za-z0-9_-]{0,64}$/.test(episodeFp) ? episodeFp : "";
+  const gone = await ctx.db.deleteFrom("trial_report_hold").where("tenant_id", "=", tenantId).where("report_key", "=", reportKey).where("episode_fp", "=", fp).executeTakeFirst();
+  if (Number(gone.numDeletedRows) === 0) return;
+  await ctx.db
+    .updateTable("self_trial")
+    .set((eb) => ({ reports_reserved: eb("reports_reserved", "-", 1), updated_at: nowIso(ctx) }))
+    .where("tenant_id", "=", tenantId)
+    .where("reports_reserved", ">", 0)
+    .execute();
 }
 
 /* ------------------------------------------------------------------ trial_email */
@@ -267,6 +338,8 @@ export type TrialEmailStatus = "claimed" | "sent" | "failed" | "skipped";
 export interface TrialEmailRow {
   tenantId: string;
   kind: TrialEmailKind;
+  /** "" = the clinic's row (the schedule's); else the recipient's user id. */
+  recipientRef: string;
   status: TrialEmailStatus;
   attempts: number;
   recipients: number;
@@ -277,14 +350,18 @@ export interface TrialEmailRow {
 /** Retries of a failed send (the provider refused it) before it is left as failed. */
 export const TRIAL_EMAIL_MAX_ATTEMPTS = 3;
 
-export async function listTrialEmails(ctx: DbContext, tenantId: string): Promise<TrialEmailRow[]> {
+/** The clinic's rows (recipient "" – the schedule) or, with `recipients`, every row. */
+export async function listTrialEmails(ctx: DbContext, tenantId: string, options: { recipients?: boolean } = {}): Promise<TrialEmailRow[]> {
   assertTenantId(tenantId);
-  const rows = await ctx.db.selectFrom("trial_email").selectAll().where("tenant_id", "=", tenantId).execute();
+  let q = ctx.db.selectFrom("trial_email").selectAll().where("tenant_id", "=", tenantId);
+  if (!options.recipients) q = q.where("recipient_ref", "=", "");
+  const rows = await q.execute();
   return rows
     .filter((r) => isTrialEmailKind(r.kind))
     .map((r) => ({
       tenantId: r.tenant_id,
       kind: r.kind as TrialEmailKind,
+      recipientRef: r.recipient_ref,
       status: (["claimed", "sent", "failed", "skipped"].includes(r.status) ? r.status : "claimed") as TrialEmailStatus,
       attempts: toInt(r.attempts),
       recipients: toInt(r.recipients),
@@ -294,18 +371,20 @@ export async function listTrialEmails(ctx: DbContext, tenantId: string): Promise
 }
 
 /**
- * Claims one email for one clinic BEFORE it is sent: true = this caller sends it (or records the skip). A row that
- * exists already wins (sent, claimed by another run, skipped) – except a FAILED send, which is taken back by one
- * conditional UPDATE while it has attempts left. So every email goes at most once per clinic.
+ * Claims one email (recipient "" = for the clinic; a user id = one send to that owner) BEFORE it is sent: true = this
+ * caller sends it (or records the skip). A row that exists already wins (sent, claimed by another run, skipped) –
+ * except a FAILED one, taken back by one conditional UPDATE while it has attempts left. So every email goes at most
+ * once per clinic and per owner.
  */
-export async function claimTrialEmail(ctx: DbContext, tenantId: string, kind: TrialEmailKind, status: "claimed" | "skipped" = "claimed"): Promise<boolean> {
+export async function claimTrialEmail(ctx: DbContext, tenantId: string, kind: TrialEmailKind, status: "claimed" | "skipped" = "claimed", recipientRef = ""): Promise<boolean> {
   assertTenantId(tenantId);
   if (!isTrialEmailKind(kind)) throw new RepoInputError("Unknown trial email.");
+  if (recipientRef !== "" && !/^[A-Za-z0-9_-]{1,80}$/.test(recipientRef)) throw new RepoInputError("Invalid recipient.");
   const at = nowIso(ctx);
   const r = await ctx.db
     .insertInto("trial_email")
-    .values({ tenant_id: tenantId, kind, status, attempts: 1, recipients: 0, claimed_at: at, sent_at: null })
-    .onConflict((oc) => oc.columns(["tenant_id", "kind"]).doNothing())
+    .values({ tenant_id: tenantId, kind, recipient_ref: recipientRef, status, attempts: 1, recipients: 0, claimed_at: at, sent_at: null })
+    .onConflict((oc) => oc.columns(["tenant_id", "kind", "recipient_ref"]).doNothing())
     .executeTakeFirst();
   if (Number(r.numInsertedOrUpdatedRows ?? 0) > 0) return true;
   if (status === "skipped") return false;
@@ -314,6 +393,7 @@ export async function claimTrialEmail(ctx: DbContext, tenantId: string, kind: Tr
     .set((eb) => ({ status: "claimed", attempts: eb("attempts", "+", 1), claimed_at: at }))
     .where("tenant_id", "=", tenantId)
     .where("kind", "=", kind)
+    .where("recipient_ref", "=", recipientRef)
     .where("status", "=", "failed")
     .where("attempts", "<", TRIAL_EMAIL_MAX_ATTEMPTS)
     .executeTakeFirst();
@@ -321,7 +401,13 @@ export async function claimTrialEmail(ctx: DbContext, tenantId: string, kind: Tr
 }
 
 /** The outcome of a claimed send. */
-export async function finishTrialEmail(ctx: DbContext, tenantId: string, kind: TrialEmailKind, outcome: { status: "sent" | "failed" | "skipped"; recipients?: number }): Promise<void> {
+export async function finishTrialEmail(
+  ctx: DbContext,
+  tenantId: string,
+  kind: TrialEmailKind,
+  outcome: { status: "sent" | "failed" | "skipped"; recipients?: number },
+  recipientRef = "",
+): Promise<void> {
   assertTenantId(tenantId);
   const at = nowIso(ctx);
   await ctx.db
@@ -329,6 +415,7 @@ export async function finishTrialEmail(ctx: DbContext, tenantId: string, kind: T
     .set({ status: outcome.status, recipients: outcome.recipients ?? 0, sent_at: outcome.status === "sent" ? at : null })
     .where("tenant_id", "=", tenantId)
     .where("kind", "=", kind)
+    .where("recipient_ref", "=", recipientRef)
     .where("status", "=", "claimed")
     .execute();
 }

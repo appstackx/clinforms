@@ -16,6 +16,8 @@ import { runAllDueMessages, type DispatchDeps, type RunSummary } from "./dispatc
 import { runCampaigns } from "./campaigns/send";
 import { CommsConfigError } from "./providers";
 import { pmsNow, pmsNowMs } from "../../../modules/pms/core/clock";
+import { listSelfTrials } from "../../repos/self-trial";
+import { trialWriteBlock } from "../../trial/access";
 
 export interface CommsCronDeps {
   secret: string | undefined;
@@ -38,14 +40,26 @@ function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
 }
 
-/** Clinics whose clinic system is on (the one cross-clinic read of the run). */
+/**
+ * Clinics whose clinic system is on (the one cross-clinic read of the run). 13/11/2026: without the self-serve trial
+ * clinics whose clinic system is read-only (the trial ended without a plan, or the plan does not include ClinDesk) –
+ * nothing is sent for them (no reminders, no campaigns). Every other clinic exactly as before.
+ */
 export async function clinicsWithClinicSystem(ctx: RepoContext): Promise<string[]> {
   const byTenant = await listEntitlementsByTenant(ctx);
   const now = ctx.now ? ctx.now() : pmsNow();
-  return Array.from(byTenant.entries())
+  const on = Array.from(byTenant.entries())
     .filter(([, rows]) => packageIsOn("clinic", rows.find((r) => r.package === "clinic") ?? null, now))
     .map(([tenantId]) => tenantId)
     .sort();
+  const trials = new Set((await listSelfTrials(ctx, { includeSamples: true }).catch(() => [])).map((t) => t.tenantId));
+  if (trials.size === 0) return on;
+  const out: string[] = [];
+  for (const tenantId of on) {
+    if (trials.has(tenantId) && (await trialWriteBlock(ctx.db, tenantId, "clinic", now))) continue;
+    out.push(tenantId);
+  }
+  return out;
 }
 
 export async function handleCommsCron(req: Request, deps: CommsCronDeps): Promise<Response> {

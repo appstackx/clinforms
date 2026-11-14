@@ -290,6 +290,7 @@ export const PROBLEM_CODES = [
   // 10/2026: the clinic's trial has ended – nothing new is created (auth/clinic-access.ts).
   "TRIAL_ENDED",
   "TRIAL_REPORTS_USED",
+  "READ_ONLY",
   // 31/10/2026: a payment for the clinic's plan is overdue past its grace period – nothing new is created.
   "PAYMENT_OVERDUE",
   // 10/2026: a made-up PH-DEMO number approves in a demo clinic only (sign; core/demo-clinic.ts).

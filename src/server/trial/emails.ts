@@ -27,7 +27,7 @@ import { trialEmail } from "../email/trial-templates";
 import { readClinicPlan } from "../repos/clinic-plan";
 import { readClinicSubscription } from "../repos/clinic-subscription";
 import type { DbContext } from "../repos/context";
-import { claimTrialEmail, finishTrialEmail, listSelfTrials, listTrialEmails, readSelfTrial, type SelfTrial } from "../repos/self-trial";
+import { TRIAL_EMAIL_MAX_ATTEMPTS, claimTrialEmail, finishTrialEmail, listSelfTrials, listTrialEmails, readSelfTrial, type SelfTrial } from "../repos/self-trial";
 import { trialReportAllowance } from "./allowance";
 
 type Env = Readonly<Record<string, string | undefined>>;
@@ -62,8 +62,8 @@ export function checkStopTips(secret: string, tenantId: string, token: string): 
 }
 
 /** Where the clinic's links go, and the brand the email speaks for (the existing brand logic + APP_ORIGIN). */
-async function linkFor(db: Kysely<Database>, tenantId: string, env: Env): Promise<{ origin: string; brand: BrandId }> {
-  const brand = await clinicLinkBrand(db, tenantId);
+async function linkFor(db: Kysely<Database>, tenantId: string, env: Env, brandOverride?: BrandId): Promise<{ origin: string; brand: BrandId }> {
+  const brand = brandOverride ?? (await clinicLinkBrand(db, tenantId));
   if (env.APP_ORIGIN) {
     try {
       return { origin: new URL(env.APP_ORIGIN).origin, brand };
@@ -79,17 +79,17 @@ async function linkFor(db: Kysely<Database>, tenantId: string, env: Env): Promis
 }
 
 /** The clinic's owners (name, address) and its name; null for an unknown or closed clinic. */
-async function ownersOf(db: Kysely<Database>, tenantId: string): Promise<{ clinicName: string; owners: { email: string; name: string | null }[] } | null> {
+async function ownersOf(db: Kysely<Database>, tenantId: string): Promise<{ clinicName: string; owners: { userId: string; email: string; name: string | null }[] } | null> {
   const org = await db.selectFrom("organization").select(["id", "name", "metadata"]).where("slug", "=", tenantId).executeTakeFirst();
   if (!org || (org.metadata && /"offboardedAt"/.test(org.metadata))) return null;
   const rows = await db
     .selectFrom("member")
     .innerJoin("user", "user.id", "member.userId")
-    .select(["user.email as email", "user.name as name"])
+    .select(["user.id as userId", "user.email as email", "user.name as name"])
     .where("member.organizationId", "=", org.id)
     .where("member.role", "=", "owner")
     .execute();
-  return { clinicName: org.name, owners: rows.map((r) => ({ email: String(r.email), name: r.name ? String(r.name) : null })) };
+  return { clinicName: org.name, owners: rows.map((r) => ({ userId: String(r.userId), email: String(r.email), name: r.name ? String(r.name) : null })) };
 }
 
 async function planNameOf(ctx: DbContext, tenantId: string): Promise<string | null> {
@@ -109,11 +109,18 @@ async function planNameOf(ctx: DbContext, tenantId: string): Promise<string | nu
 
 export type TrialSendOutcome = "sent" | "failed" | "skipped" | "not_claimed" | "no_trial";
 
+export interface SendOptions {
+  /** "paid": the product bought decides the brand (13/11/2026 review) – ClinDesk plan → ClinDesk, ClinForms → ClinForms. */
+  brand?: BrandId;
+}
+
 /**
  * Claims and sends ONE trial email to the clinic's owners. "not_claimed": another run has it (or it went already).
- * The trial's facts are re-read here, so the words are right at the moment of sending.
+ * The clinic's row is claimed first (the schedule), then each owner's own row (a send that failed for one owner is
+ * retried for that owner only – never a second copy to an owner who got it). The trial's facts are re-read here, and
+ * a trial email that is not "paid" is skipped if the clinic has paid meanwhile.
  */
-export async function sendTrialEmail(db: Kysely<Database>, trial: SelfTrial, kind: TrialEmailKind, deps: TrialEmailDeps = {}): Promise<TrialSendOutcome> {
+export async function sendTrialEmail(db: Kysely<Database>, trial: SelfTrial, kind: TrialEmailKind, deps: TrialEmailDeps = {}, options: SendOptions = {}): Promise<TrialSendOutcome> {
   const env = deps.env ?? process.env;
   const now = deps.now ? deps.now() : new Date();
   const ctx: DbContext = { db, now: () => now };
@@ -125,12 +132,23 @@ export async function sendTrialEmail(db: Kysely<Database>, trial: SelfTrial, kin
   }
   if (!(await claimTrialEmail(ctx, trial.tenantId, kind))) return "not_claimed";
   try {
-    const [plan, link, allowance] = await Promise.all([readClinicPlan(ctx, trial.tenantId), linkFor(db, trial.tenantId, env), trialReportAllowance(db, trial.tenantId).catch(() => null)]);
+    const [plan, fresh] = await Promise.all([readClinicPlan(ctx, trial.tenantId), readSelfTrial(ctx, trial.tenantId)]);
+    // Paid meanwhile (a payment between the schedule and now): only "paid" goes.
+    if (kind !== "paid" && (plan?.status === "paid" || fresh?.convertedAt)) {
+      await finishTrialEmail(ctx, trial.tenantId, kind, { status: "skipped" });
+      return "skipped";
+    }
+    if (TRIAL_TIPS_KINDS.has(kind) && fresh?.tipsOffAt) {
+      await finishTrialEmail(ctx, trial.tenantId, kind, { status: "skipped" });
+      return "skipped";
+    }
+    const [link, allowance] = await Promise.all([linkFor(db, trial.tenantId, env, kind === "paid" ? options.brand : undefined), trialReportAllowance(db, trial.tenantId).catch(() => null)]);
     const secret = secretOf(env);
     const planName = kind === "paid" ? await planNameOf(ctx, trial.tenantId) : null;
     let sent = 0;
     let failed = 0;
     for (const owner of clinic.owners) {
+      if (!(await claimTrialEmail(ctx, trial.tenantId, kind, "claimed", owner.userId))) continue; // this owner has it
       const message = trialEmail({
         kind,
         to: { email: owner.email, name: owner.name },
@@ -146,14 +164,16 @@ export async function sendTrialEmail(db: Kysely<Database>, trial: SelfTrial, kin
         planName,
         daysToEnd: plan?.trialEndsAt ? londonDaysBetween(now, plan.trialEndsAt) : undefined,
       });
-      const r = await deliverEmail(message);
+      const r = await deliverEmail(message).catch(() => ({ status: "failed" as const }));
       if (r.status === "sent") sent++;
       else if (r.status === "failed") failed++;
+      await finishTrialEmail(ctx, trial.tenantId, kind, { status: r.status === "sent" ? "sent" : r.status === "failed" ? "failed" : "skipped", recipients: r.status === "sent" ? 1 : 0 }, owner.userId);
     }
-    const status = clinic.owners.length === 0 ? "skipped" : sent > 0 ? "sent" : failed > 0 ? "failed" : "skipped";
+    // Any owner failed: the clinic's row is "failed" (retried for those owners only); otherwise done.
+    const status = failed > 0 ? "failed" : sent > 0 ? "sent" : clinic.owners.length === 0 ? "skipped" : "sent";
     await finishTrialEmail(ctx, trial.tenantId, kind, { status, recipients: sent });
     logAuthEvent("trial.email", { kind, status, recipients: sent });
-    return status;
+    return failed > 0 ? "failed" : sent > 0 ? "sent" : "skipped";
   } catch (err) {
     await finishTrialEmail(ctx, trial.tenantId, kind, { status: "failed" }).catch(() => undefined);
     logAuthEvent("trial.email_failed", { kind, error: err instanceof Error ? err.name : "error" });
@@ -164,7 +184,7 @@ export async function sendTrialEmail(db: Kysely<Database>, trial: SelfTrial, kin
 /** What the schedule needs, read for one clinic. */
 async function factsOf(ctx: DbContext, trial: SelfTrial) {
   const [plan, rows] = await Promise.all([readClinicPlan(ctx, trial.tenantId), listTrialEmails(ctx, trial.tenantId)]);
-  const done = new Set(rows.filter((r) => r.status !== "failed" || r.attempts >= 3).map((r) => r.kind));
+  const done = new Set(rows.filter((r) => r.status !== "failed" || r.attempts >= TRIAL_EMAIL_MAX_ATTEMPTS).map((r) => r.kind));
   return {
     plan,
     facts: {
@@ -182,7 +202,7 @@ async function factsOf(ctx: DbContext, trial: SelfTrial) {
  * Sends the emails due for ONE clinic now, at once (the welcome when the trial starts; "paid" when it converts). Only
  * `kind` – and only when the schedule says it is due. Never throws.
  */
-export async function sendTrialEmailNow(db: Kysely<Database>, tenantId: string, kind: TrialEmailKind, deps: TrialEmailDeps = {}): Promise<TrialSendOutcome> {
+export async function sendTrialEmailNow(db: Kysely<Database>, tenantId: string, kind: TrialEmailKind, deps: TrialEmailDeps = {}, options: SendOptions = {}): Promise<TrialSendOutcome> {
   try {
     const now = deps.now ? deps.now() : new Date();
     const ctx: DbContext = { db, now: () => now };
@@ -192,7 +212,7 @@ export async function sendTrialEmailNow(db: Kysely<Database>, tenantId: string, 
     const due = dueTrialEmails(facts, now).find((d) => d.kind === kind);
     if (!due) return "not_claimed";
     if (due.action === "skip") return (await claimTrialEmail(ctx, tenantId, kind, "skipped")) ? "skipped" : "not_claimed";
-    return await sendTrialEmail(db, trial, kind, deps);
+    return await sendTrialEmail(db, trial, kind, deps, options);
   } catch (err) {
     logAuthEvent("trial.email_failed", { kind, error: err instanceof Error ? err.name : "error" });
     return "failed";

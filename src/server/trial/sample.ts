@@ -30,7 +30,7 @@ import { appendAudit } from "../repos/audit";
 import { clinicAccessOf, getClinicPlan, setClinicDemoFlag, setClinicTrialWindow } from "../repos/clinic-plan";
 import type { RepoContext } from "../repos/context";
 import { setEntitlement } from "../repos/pms/entitlements";
-import { claimSampleClinic, createSelfTrial, getSelfTrial, setSampleState, type SelfTrial } from "../repos/self-trial";
+import { claimSampleClinic, createSelfTrial, getSelfTrial, releaseSampleClaim, saveSampleStep, setSampleState, type SelfTrial } from "../repos/self-trial";
 
 /** Patients in a sample clinic: enough to look real in the diary and reports, quick to create. */
 export const SAMPLE_PATIENTS = 40;
@@ -38,6 +38,7 @@ export const SAMPLE_PATIENTS = 40;
 export type SampleOutcome =
   | { status: "created"; sampleTenantId: string; organizationId: string }
   | { status: "exists"; sampleTenantId: string; organizationId: string | null }
+  | { status: "in_progress"; sampleTenantId: string; step: number; steps: number }
   | { status: "busy" }
   | { status: "unavailable"; why: "no_trial" | "not_running" | "declined" | "not_owner" | "not_clinic_brand" };
 
@@ -65,16 +66,28 @@ export interface SampleDeps {
   now?: () => Date;
   /** Seed size (tests use fewer; at least 12 – the diary week needs 10). */
   patients?: number;
+  /**
+   * How long ONE call may keep working (review 13/11/2026 – a request must never time out): after each step the call
+   * returns "in_progress" once this is spent, and the next call carries on from the step reached. Default 8 s; 0 = one
+   * step per call.
+   */
+  budgetMs?: number;
 }
 
+/** The creation's steps, in order (each idempotent – it adds only what is missing). */
+export const SAMPLE_STEPS = ["clinic", "patients", "setup", "diary", "records", "billing"] as const;
+
 /**
- * Creates the trial clinic's sample clinic (or finishes one a crashed attempt left). The caller has checked the
- * member: signed in, two-step done, the OWNER of `tenantId` (re-checked here against the member table).
+ * Creates the trial clinic's sample clinic in short resumable STEPS (or finishes one a crashed attempt left): the caller
+ * calls again while the answer is "in_progress". The caller has checked the member: signed in, two-step done, the OWNER
+ * of `tenantId` (re-checked here against the member table).
  */
 export async function createSampleClinic(deps: SampleDeps, input: { tenantId: string; userId: string }): Promise<SampleOutcome> {
   const now = deps.now ?? (() => new Date());
   const ctx: RepoContext = { db: deps.db, cipher: deps.cipher, now };
   const db = deps.db;
+  const started = Date.now();
+  const budget = deps.budgetMs ?? 8_000;
   const trial: SelfTrial | null = await getSelfTrial(ctx, input.tenantId);
   if (!trial || trial.sampleOf) return { status: "unavailable", why: "no_trial" };
   if (trial.brand !== "clinic") return { status: "unavailable", why: "not_clinic_brand" };
@@ -91,67 +104,83 @@ export async function createSampleClinic(deps: SampleDeps, input: { tenantId: st
     return { status: "exists", sampleTenantId: trial.sampleTenantId, organizationId: s?.id ?? null };
   }
 
-  // One claim: a resumed attempt keeps the id it claimed before.
+  // One lock per call: a resumed creation keeps the id it started with.
   const slug = trial.sampleState === "creating" && trial.sampleTenantId ? trial.sampleTenantId : await freeSampleSlug(db, input.tenantId);
   if (!(await claimSampleClinic(ctx, input.tenantId, slug))) return { status: "busy" };
-
-  // A failure below leaves the claim "creating": the next attempt after SAMPLE_CLAIM_STALE_MS takes it over and resumes
-  // (each step adds only what is missing).
-  {
-    const at = now().toISOString();
-    let sampleOrg = await db.selectFrom("organization").select("id").where("slug", "=", slug).executeTakeFirst();
-    const brand = (() => {
-      try {
-        return org.metadata && (JSON.parse(org.metadata) as Record<string, unknown>)[SIGNUP_BRAND_KEY] === "clinic" ? "clinic" : null;
-      } catch {
-        return null;
-      }
-    })();
-    if (!sampleOrg) {
-      const organizationId = authId();
-      await runBatch(db, [
-        db.insertInto("organization").values({
-          id: organizationId,
-          name: sampleClinicName(org.name),
-          slug,
-          logo: null,
-          createdAt: at,
-          metadata: JSON.stringify({ ...(brand ? { [SIGNUP_BRAND_KEY]: brand } : {}), sampleOf: input.tenantId }),
-        }),
-        db.insertInto("clinic_profile").values({
-          tenant_id: slug,
-          organization_id: organizationId,
-          display_name: sampleClinicName(org.name),
-          legal_name: null,
-          address_json: null,
-          postcode: null,
-          phone: null,
-          email: null,
-          retention_days: 30,
-          drafting_enabled: 0,
-          created_at: at,
-          updated_at: at,
-        }),
-        db.insertInto("member").values({ id: authId(), organizationId, userId: input.userId, role: "owner", createdAt: at }),
-      ]);
-      sampleOrg = { id: organizationId };
-      await appendAudit(ctx, slug, { userId: input.userId, action: "clinic.sample_created", targetType: "organization", targetId: organizationId, detail: { sampleOf: input.tenantId } });
-      await appendAudit(ctx, input.tenantId, { userId: input.userId, action: "clinic.sample_created", targetType: "organization", targetId: organizationId, detail: { sample: slug } });
+  let step = trial.sampleState === "creating" ? trial.sampleStep : 0;
+  const brand = (() => {
+    try {
+      return org.metadata && (JSON.parse(org.metadata) as Record<string, unknown>)[SIGNUP_BRAND_KEY] === "clinic" ? "clinic" : null;
+    } catch {
+      return null;
     }
-    await createSelfTrial(ctx, slug, { brand: trial.brand, sampleOf: input.tenantId, emailKey: trial.emailKey, networkKey: trial.networkKey, reportsIncluded: 0, textsGranted: 0, repeatReason: null });
-    await setClinicTrialWindow(ctx, slug, { days: plan.trialDays, startsAt: plan.trialStartsAt, endsAt: plan.trialEndsAt });
-    await setClinicDemoFlag(ctx, slug, true);
-    await setEntitlement(ctx, slug, "reports", { status: "paused", note: "Sample clinic: no Reports" }, { userId: input.userId, sessionId: null });
-    // The made-up dataset (the clinic system on as "trial", the demo flag on its own settings): directory, patients,
+  })();
+  const run: Record<(typeof SAMPLE_STEPS)[number], () => Promise<void>> = {
+    clinic: async () => {
+      const at = now().toISOString();
+      if (!(await db.selectFrom("organization").select("id").where("slug", "=", slug).executeTakeFirst())) {
+        const organizationId = authId();
+        await runBatch(db, [
+          db.insertInto("organization").values({
+            id: organizationId,
+            name: sampleClinicName(org.name),
+            slug,
+            logo: null,
+            createdAt: at,
+            metadata: JSON.stringify({ ...(brand ? { [SIGNUP_BRAND_KEY]: brand } : {}), sampleOf: input.tenantId }),
+          }),
+          db.insertInto("clinic_profile").values({
+            tenant_id: slug,
+            organization_id: organizationId,
+            display_name: sampleClinicName(org.name),
+            legal_name: null,
+            address_json: null,
+            postcode: null,
+            phone: null,
+            email: null,
+            retention_days: 30,
+            drafting_enabled: 0,
+            created_at: at,
+            updated_at: at,
+          }),
+          db.insertInto("member").values({ id: authId(), organizationId, userId: input.userId, role: "owner", createdAt: at }),
+        ]);
+        await appendAudit(ctx, slug, { userId: input.userId, action: "clinic.sample_created", targetType: "organization", targetId: organizationId, detail: { sampleOf: input.tenantId } });
+        await appendAudit(ctx, input.tenantId, { userId: input.userId, action: "clinic.sample_created", targetType: "organization", targetId: organizationId, detail: { sample: slug } });
+      }
+      await createSelfTrial(ctx, slug, { brand: trial.brand, sampleOf: input.tenantId, emailKey: trial.emailKey, networkKey: trial.networkKey, reportsIncluded: 0, textsGranted: 0, repeatReason: null });
+      await setClinicTrialWindow(ctx, slug, { days: plan.trialDays as number, startsAt: plan.trialStartsAt as string, endsAt: plan.trialEndsAt as string });
+      await setClinicDemoFlag(ctx, slug, true);
+      await setEntitlement(ctx, slug, "reports", { status: "paused", note: "Sample clinic: no Reports" }, { userId: input.userId, sessionId: null });
+    },
+    // The made-up dataset (the clinic system on as "trial", the demo flag on its own settings): directory, patients and
     // cases; then set-up, a diary week, notes and invoices. No messages, portal or forms – nothing is ever sent.
-    await seedDemoClinic(ctx, { tenantId: slug, markDemo: true, resume: true, patients: Math.max(12, deps.patients ?? SAMPLE_PATIENTS), seed: 2026, now: now() });
-    await seedSetup(ctx, slug);
-    await seedDiary(ctx, slug, { now: now() });
-    await seedRecords(ctx, slug, { now: now() });
-    await seedBilling(ctx, slug, { now: now() });
-    await setSampleState(ctx, input.tenantId, "ready");
-    return { status: "created", sampleTenantId: slug, organizationId: sampleOrg.id };
+    patients: async () => {
+      await seedDemoClinic(ctx, { tenantId: slug, markDemo: true, resume: true, patients: Math.max(12, deps.patients ?? SAMPLE_PATIENTS), seed: 2026, now: now() });
+    },
+    setup: async () => void (await seedSetup(ctx, slug)),
+    diary: async () => void (await seedDiary(ctx, slug, { now: now() })),
+    records: async () => void (await seedRecords(ctx, slug, { now: now() })),
+    billing: async () => void (await seedBilling(ctx, slug, { now: now() })),
+  };
+  try {
+    while (step < SAMPLE_STEPS.length) {
+      await run[SAMPLE_STEPS[step]]();
+      step++;
+      await saveSampleStep(ctx, input.tenantId, step);
+      if (step < SAMPLE_STEPS.length && Date.now() - started >= budget) {
+        await releaseSampleClaim(ctx, input.tenantId, step);
+        return { status: "in_progress", sampleTenantId: slug, step, steps: SAMPLE_STEPS.length };
+      }
+    }
+  } catch (err) {
+    // The step reached is kept; the lock is freed so the next call (or a retry) carries on from there.
+    await releaseSampleClaim(ctx, input.tenantId, step).catch(() => undefined);
+    throw err;
   }
+  await setSampleState(ctx, input.tenantId, "ready");
+  const sampleOrg = await db.selectFrom("organization").select("id").where("slug", "=", slug).executeTakeFirstOrThrow();
+  return { status: "created", sampleTenantId: slug, organizationId: sampleOrg.id };
 }
 
 /** "No thanks": the offer is not shown again (only while there is no sample). */

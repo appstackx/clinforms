@@ -50,7 +50,7 @@ function invoicePath(id: string) {
 
 /** The take-payment dialog's data for a patient (billing.pay). */
 export async function loadTakePaymentAction(patientId: string, context: string | null = null): Promise<BillingActionResult<{ view: TakePaymentView }>> {
-  const actor = await clinicActionActor({ permission: "billing.pay" });
+  const actor = await clinicActionActor({ permission: "billing.pay", readOnly: true });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
   const r = await takePaymentViewFor(actor, String(patientId), typeof context === "string" ? context.slice(0, 120) : null);
   return r.ok ? { ok: true, view: r.value } : { ok: false, error: r.error };
@@ -170,7 +170,7 @@ export async function saveTestCardAction(patientId: string): Promise<BillingActi
 }
 
 export async function remittanceInvoicesAction(payerReferrerId: string): Promise<BillingActionResult<{ invoices: RemittanceInvoiceView[] }>> {
-  const actor = await clinicActionActor({ permission: "billing.pay" });
+  const actor = await clinicActionActor({ permission: "billing.pay", readOnly: true });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
   const r = await remittanceInvoicesFor(actor, String(payerReferrerId));
   return r.ok ? { ok: true, invoices: r.value } : { ok: false, error: r.error };
@@ -279,7 +279,7 @@ export async function sellGiftCardAction(patientId: string, input: { amountPence
 
 /** Looks a gift card up by its code (billing.view): the card's id, so the page opens it without the code in the URL. */
 export async function lookUpGiftCardAction(code: string): Promise<BillingActionResult<{ cardId: string }>> {
-  const actor = await clinicActionActor({ permission: "billing.view" });
+  const actor = await clinicActionActor({ permission: "billing.view", readOnly: true });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
   const r = await giftCardsFor(actor, { code: typeof code === "string" ? code.slice(0, 40) : "" });
   if (!r.ok) return { ok: false, error: r.error };

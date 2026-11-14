@@ -10,6 +10,7 @@ import type { UsageRecorder } from "../../modules/medreport/api/deps";
 import type { Database } from "../db/schema";
 import { isReportCounted, newUsageEventId, recordUsageEvent } from "../repos/usage";
 import { isMissingUsageTable, noteMissingUsageTables } from "../repos/usage-period";
+import { releaseTrialReport, reserveTrialReport } from "../repos/self-trial";
 
 export interface UsageRecorderOptions {
   /** Pause before the retry (ms). */
@@ -32,6 +33,12 @@ export function dbUsageRecorder(db: () => Kysely<Database>, opts: UsageRecorderO
         await new Promise((resolve) => setTimeout(resolve, opts.retryDelayMs ?? 200));
         await recordUsageEvent(ctx(), tenantId, event, { eventId });
       }
+    },
+    async reserveTrialReport(tenantId, reportKey, episodeFp) {
+      return reserveTrialReport({ db: db(), ...(opts.now ? { now: opts.now } : {}) }, tenantId, reportKey, episodeFp);
+    },
+    async releaseTrialReport(tenantId, reportKey, episodeFp) {
+      await releaseTrialReport({ db: db(), ...(opts.now ? { now: opts.now } : {}) }, tenantId, reportKey, episodeFp);
     },
     async reportCounted(tenantId, reportId, episodeFp) {
       try {

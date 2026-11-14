@@ -51,7 +51,7 @@ import { hasDemoDraft } from "../../ai/draft-demo";
 import { DraftGenerationError, generateDraftGroup, type DraftErrorCode } from "../../ai/generate";
 import { chooseAiModeForActor } from "../../ai/live-gate";
 import { AUDIT_ACTIONS, assertActorTenant, auditActor, requireActor } from "../../auth/actor";
-import { assertClinicMayCreate, assertTrialReportsLeft } from "../../auth/clinic-access";
+import { assertClinicMayCreate, holdTrialReport } from "../../auth/clinic-access";
 import { MAX_SECTIONS_PER_DRAFT } from "../../config.public";
 import { computeFacts } from "../../core/computed-facts";
 import { formIdFromTemplateId } from "../../core/forms";
@@ -144,8 +144,14 @@ export const handleDrafts: MedreportHandler = async (req, _ctx, deps) => {
     ...(body.amendsReportId ? { amendsReportId: body.amendsReportId } : {}),
     episodeFp: usageEpisodeFp(actor.tenantId, usageEpisodeOfBundle(body.bundle, body.templateId)),
   };
-  // 13/11/2026: a self-serve free trial's reports used up → no live drafting for a report that has not counted yet.
-  if (mode === "live") await assertTrialReportsLeft(actor, deps, usageReport);
+  // 13/11/2026: a self-serve free trial's reports – one reserved atomically before a live call (refused when none are
+  // left); given back when the call fails without cost.
+  const trialHold = mode === "live" ? await holdTrialReport(actor, deps, usageReport) : null;
+  const releaseUnlessCost = async (err: unknown) => {
+    if (!trialHold) return;
+    const u = usageOfError(err).usage;
+    if (!u || u.inputTokens + u.outputTokens + (u.cacheReadInputTokens ?? 0) + (u.cacheCreationInputTokens ?? 0) === 0) await trialHold.release();
+  };
   let failedCallCounted = false;
   const countFailedCall = async (err: unknown) => {
     if (failedCallCounted) return;
@@ -183,6 +189,7 @@ export const handleDrafts: MedreportHandler = async (req, _ctx, deps) => {
       if (!fallback) throw err;
       logEvent("draft_live_fallback", { template: template.id, sections: body.sectionKeys.join("+"), code: err.code, ms: Date.now() - started });
       await countFailedCall(err);
+      await releaseUnlessCost(err);
       result = await run("demo");
     }
     const response = assembleDraft({
@@ -237,6 +244,7 @@ export const handleDrafts: MedreportHandler = async (req, _ctx, deps) => {
     // neutrally (core/wording.ts); the real model id stays in the log line above.
     return json({ ...response, generation: { ...response.generation, model: publicEngineName(response.generation.model) } });
   } catch (err) {
+    await releaseUnlessCost(err);
     if (err instanceof DraftGenerationError) {
       // A live call that failed still went to the drafting service (counted once, also after a fallback).
       if (mode === "live" && err.code !== "NO_DEMO_DRAFT" && err.code !== "LIVE_AI_UNAVAILABLE") await countFailedCall(err);

@@ -22,7 +22,9 @@ export interface SelfServeTrialInfo {
 export type TrialBannerState =
   | { state: "full" }
   | { state: "trial"; daysLeft: number; endsAt: string | null; pending: boolean; selfServe?: SelfServeTrialInfo }
-  | { state: "trial_ended"; endedAt: string; selfServe?: SelfServeTrialInfo };
+  | { state: "trial_ended"; endedAt: string; selfServe?: SelfServeTrialInfo }
+  /** 13/11/2026: a self-serve trial's product the paid plan does not include – its records read-only (the text says so). */
+  | { state: "read_only"; text: string; canChoosePlan: boolean };
 
 export interface TrialBanner {
   tone: "info" | "warning";
@@ -45,6 +47,7 @@ export const PLAN_AND_BILLING_PATH = "/app/settings/billing";
 /** The banner for this state, or null (no trial, or a full account). */
 export function trialBanner(access: TrialBannerState | null | undefined, contactEmail: string): TrialBanner | null {
   if (!access || access.state === "full") return null;
+  if (access.state === "read_only") return { tone: "warning", text: access.text, ...(access.canChoosePlan ? { link: { href: PLAN_AND_BILLING_PATH, label: "Plan and billing" } } : {}) };
   const self = access.selfServe;
   const link = self?.canChoosePlan ? { href: PLAN_AND_BILLING_PATH, label: SELF_SERVE_TRIAL_COPY.choosePlan } : undefined;
   if (access.state === "trial_ended") {

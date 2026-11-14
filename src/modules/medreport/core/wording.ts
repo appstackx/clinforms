@@ -314,6 +314,8 @@ export interface AccessWording {
   paymentOverdueTitle: string;
   paymentOverdue(what: string): string;
   /** 13/11/2026: a self-serve free trial's reports are all used (drafting a new one is refused). */
+  /** 13/11/2026: Reports kept read-only after a self-serve trial (the paid plan has no Reports add-on). */
+  readOnlyTitle: string;
   trialReportsUsedTitle: string;
   trialReportsUsed(included: number, addon: boolean): string;
   /** 25/10/2026: "Complete another form for this patient" – the earlier report (or its record) is not there any more. */
@@ -385,6 +387,7 @@ const ACCESS: AccessWording = {
   paymentOverdueTitle: "A payment is overdue",
   paymentOverdue: (what) =>
     `A payment for your clinic's plan is overdue, so ${what} is not available. Existing reports and forms can still be opened and downloaded. The clinic owner can pay under Plan and billing.`,
+  readOnlyTitle: "Read-only",
   trialReportsUsedTitle: "Your free reports are used up",
   trialReportsUsed: (included, addon) =>
     `Your free trial includes ${included} ${included === 1 ? "report" : "reports"}, and ${included === 1 ? "it has" : "they have all"} been used, so answers for a new report cannot be drafted. ${

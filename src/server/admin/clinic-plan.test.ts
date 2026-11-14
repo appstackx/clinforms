@@ -36,8 +36,9 @@ describe("platform page: trial and limit actions are guarded and audited", () =>
     assert.match(studioLayout, /<TrialBannerBar access=\{trial\} contactEmail=\{contactEmail\} \/>/);
     // …and the clinic system's shell (the first visit there starts a ClinDesk trial).
     const shell = fs.readFileSync(path.join(process.cwd(), "src/app/app/clinic/layout.tsx"), "utf8");
-    assert.match(shell, /noteClinicVisit\(getDb\(\)/);
-    assert.match(shell, /<TrialBannerBar access=\{trial\}/);
+    assert.match(shell, /clinicShellTrial\(getDb\(\), \{ tenantId: actor\.tenantId/);
+    assert.doesNotMatch(shell, /noteClinicVisit\(/, "only through clinicShellTrial (self-serve trials only)");
+    assert.match(shell, /\{trial \? <TrialBannerBar access=\{trial\}/);
     const studioAccess = fs.readFileSync(path.join(process.cwd(), "src/server/auth/studio-access.ts"), "utf8");
     assert.match(studioAccess, /noteClinicVisit\(deps\.db/);
   });

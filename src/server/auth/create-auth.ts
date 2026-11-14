@@ -160,6 +160,13 @@ export function createAuth(input: CreateAuthInput) {
   /** member id → role before an update, from the organization hook to the after hook of the same request. */
   const previousRoles = new Map<string, string>();
 
+  /** 13/11/2026: a self-serve trial's sample clinic (organization metadata "sampleOf") – its owner's alone. */
+  async function isSampleClinic(organizationId: string | null | undefined): Promise<boolean> {
+    if (!organizationId) return false;
+    const row = await db.selectFrom("organization").select("metadata").where("id", "=", organizationId).executeTakeFirst();
+    return Boolean(row?.metadata && /"sampleOf"/.test(row.metadata));
+  }
+
   async function tenantOf(organizationId: string | null | undefined): Promise<string | null> {
     if (!organizationId) return null;
     const cached = slugCache.get(organizationId);
@@ -459,6 +466,10 @@ export function createAuth(input: CreateAuthInput) {
           },
           async beforeCreateInvitation({ invitation }) {
             requireClinicRole(invitation.role);
+            // 13/11/2026: a self-serve trial's SAMPLE clinic (made-up data) is its owner's alone – no invitations.
+            if (await isSampleClinic(invitation.organizationId)) {
+              throw new APIError("FORBIDDEN", { message: "The sample clinic is for its owner only – invite your team to your own clinic.", code: "SAMPLE_CLINIC" });
+            }
             const email = String(invitation.email ?? "").trim().toLowerCase();
             if (platformAdminEmail(email) && !(await db.selectFrom("user").select("id").where("email", "=", email).executeTakeFirst())) {
               throw new APIError("FORBIDDEN", { message: "This address cannot be invited from a clinic.", code: "PLATFORM_ADMIN_ADDRESS" });
@@ -471,6 +482,9 @@ export function createAuth(input: CreateAuthInput) {
           },
           async beforeAddMember({ member }) {
             requireClinicRole(member.role);
+            if (await isSampleClinic(member.organizationId)) {
+              throw new APIError("FORBIDDEN", { message: "The sample clinic is for its owner only.", code: "SAMPLE_CLINIC" });
+            }
           },
           async afterCreateInvitation({ invitation, inviter }) {
             await audit(invitation.organizationId, {
