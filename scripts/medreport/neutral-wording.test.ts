@@ -80,6 +80,8 @@ const CALLS: Record<string, unknown[][]> = {
   "answersCopy.approvedHeader": [["Sarah Reid", "PH-DEMO-01", "09/10/2026"]],
   "payload.recordCaption": [["The record (minimised)", MODEL, "forms-4"]],
   "server.liveLocked": [[3, "use the demo draft"]],
+  // 13/11/2026 (self-serve free trial): the free reports are used up – with and without the Reports add-on to buy.
+  "server.access.trialReportsUsed": [[10, false], [1, true]],
   "server.passcodeRequired": [["draft live from the notes"]],
   "server.liveRateLimited": [[20, "use the demo draft"]],
   "server.sdk.timeout": [["Retry, or use the demo draft."]],

@@ -5,6 +5,8 @@
  * not subscriptions at the provider: the invoice is the clinic system's own (numbering, VAT, takings, statements),
  * nothing is billed twice in two systems, and the provider's subscription product fee is not paid
  * (docs/clinic-system/card-payments.md "Memberships"). Logs counts only. Never throws. Has a time budget.
+ * 14/11/2026 (release merge with the self-serve trial): a clinic whose self-serve trial ended without a plan is read-only
+ * (src/server/trial/access.ts) – its memberships are not charged (counted as skipped), like the messages cron skips it.
  */
 import { cardPaymentsReady } from "../../../../modules/pms/billing/card-payments";
 import { ukToday } from "../../../../modules/pms/core/text";
@@ -12,6 +14,7 @@ import { pmsNow } from "../../../../modules/pms/core/clock";
 import type { RepoContext } from "../../../repos/context";
 import { clinicsWithCardPayments, dueMemberships, getCardSettings } from "../../../repos/pms/billing/card-payments";
 import { chargeMembership, type CardDeps } from "./service";
+import { trialWriteBlock } from "../../../trial/access";
 
 export interface MembershipRunResult {
   clinics: number;
@@ -34,6 +37,10 @@ export async function runMembershipCharges(ctx: RepoContext, deps: CardDeps, opt
   for (const clinic of await clinicsWithCardPayments(ctx)) {
     const settings = await getCardSettings(ctx, clinic.tenantId);
     if (!settings.accountRef || !cardPaymentsReady({ enabled: settings.enabled, accountRef: settings.accountRef, status: settings.status, mode: settings.accountMode, keyMode: cfg.mode })) continue;
+    if (await trialWriteBlock(ctx.db, clinic.tenantId, "clinic", ctx.now ? ctx.now() : pmsNow())) {
+      out.skipped += 1;
+      continue;
+    }
     out.clinics += 1;
     const ready = { api: cfg.api, mode: cfg.mode, settings, account: settings.accountRef };
     for (const ms of await dueMemberships(ctx, clinic.tenantId, today)) {

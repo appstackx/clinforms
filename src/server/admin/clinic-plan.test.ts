@@ -28,9 +28,17 @@ describe("platform page: trial and limit actions are guarded and audited", () =>
   it("the clinic layout and the Studio layout record the visit and show the banner", () => {
     const clinicLayout = fs.readFileSync(path.join(process.cwd(), "src/app/app/(clinic)/layout.tsx"), "utf8");
     assert.match(clinicLayout, /noteClinicVisit\(getDb\(\)/);
-    assert.match(clinicLayout, /<TrialBannerBar access=\{trial\} contactEmail=\{brand\.contactEmail\} \/>/);
+    // 13/11/2026: the banner state adds a self-serve free trial's facts (src/server/trial/view.ts trialBannerState).
+    assert.match(clinicLayout, /const trialBanner = await trialBannerState\(getDb\(\), membership\.tenantId, trial, manager\)/);
+    assert.match(clinicLayout, /<TrialBannerBar access=\{trialBanner\} contactEmail=\{brand\.contactEmail\} \/>/);
     const studioLayout = fs.readFileSync(path.join(process.cwd(), "src/app/app/studio/layout.tsx"), "utf8");
-    assert.match(studioLayout, /<TrialBannerBar access=\{context\.trial\} contactEmail=\{contactEmail\} \/>/);
+    assert.match(studioLayout, /trialBannerState\(getDb\(\), context\.tenantId, context\.trial, manager, "reports"\)/);
+    assert.match(studioLayout, /<TrialBannerBar access=\{trial\} contactEmail=\{contactEmail\} \/>/);
+    // …and the clinic system's shell (the first visit there starts a ClinDesk trial).
+    const shell = fs.readFileSync(path.join(process.cwd(), "src/app/app/clinic/layout.tsx"), "utf8");
+    assert.match(shell, /clinicShellTrial\(getDb\(\), \{ tenantId: actor\.tenantId/);
+    assert.doesNotMatch(shell, /noteClinicVisit\(/, "only through clinicShellTrial (self-serve trials only)");
+    assert.match(shell, /\{trial \? <TrialBannerBar access=\{trial\}/);
     const studioAccess = fs.readFileSync(path.join(process.cwd(), "src/server/auth/studio-access.ts"), "utf8");
     assert.match(studioAccess, /noteClinicVisit\(deps\.db/);
   });

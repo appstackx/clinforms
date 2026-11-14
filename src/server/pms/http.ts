@@ -39,7 +39,8 @@ export function clinicRoute<P = Record<string, string>>(
     if (req.method !== "GET" && req.method !== "HEAD" && !sameOrigin(req)) {
       return json(403, { error: { code: "CROSS_ORIGIN", message: "This request must come from the clinic's own pages." } });
     }
-    const actor = await clinicActionActor({ permission: options.permission });
+    // GET / HEAD only read: downloads (letters, CSVs, role history) stay available after a self-serve trial (13/11/2026).
+    const actor = await clinicActionActor({ permission: options.permission, readOnly: req.method === "GET" || req.method === "HEAD" });
     if ("error" in actor) return json(actorErrorStatus(actor.error), { error: { code: actor.error.toUpperCase(), message: actorErrorMessage(actor.error) } });
     try {
       const res = await handler(req, actor, ctx.params);

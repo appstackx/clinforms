@@ -36,6 +36,7 @@ import { RepoInputError, type RepoContext } from "../../../repos/context";
 import { listEntitlements } from "../../../repos/pms/entitlements";
 import { getApiSettings, recordApiUse, verifyApiKey, type VerifiedApiKey } from "../../../repos/pms/integration/api-keys";
 import { hitRateLimit, peekRateLimit } from "../../../repos/rate-limits";
+import { trialWriteBlock } from "../../../trial/access";
 import { ipLimitSubject, signupClientIp } from "../../../signup/client-ip";
 
 type Env = Readonly<Record<string, string | undefined>>;
@@ -287,6 +288,11 @@ export async function serve<P>(req: Request, params: P, endpoint: ApiEndpoint<P>
       return unauthenticated();
     }
     if (!(await clinicApiOn(ctx, key.tenantId, now))) return apiErrorResponse("API_OFF");
+    // 13/11/2026: a self-serve free trial that ended (or its clinic system not in the paid plan) – reads only.
+    if (req.method !== "GET") {
+      const block = await trialWriteBlock(ctx.db, key.tenantId, "clinic", now);
+      if (block) return apiErrorResponse("READ_ONLY", block.message);
+    }
     const perKey = await hitRateLimit(ctx, `capi:key:${key.tenantId}:${key.id}`, 60_000);
     if (perKey.count > limits.perKeyPerMinute) return apiErrorResponse("RATE_LIMITED", undefined, retryAfter(perKey.resetAt, now));
     if (endpoint.scope && !key.scopes.includes(endpoint.scope)) return apiErrorResponse("INSUFFICIENT_SCOPE", `This API key does not have the "${endpoint.scope}" scope.`);

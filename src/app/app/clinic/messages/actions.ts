@@ -40,7 +40,7 @@ const str = (v: unknown, max = 200) => (typeof v === "string" ? v.slice(0, max) 
 
 /** "To": a quick patient search (name, number, date of birth) for Send a message and New letter. */
 export async function searchPatientsAction(q: string): Promise<CommsActionResult<{ hits: { id: string; name: string; number: number; dateOfBirth: string | null }[] }>> {
-  const actor = await clinicActionActor({ permission: "messages.send" });
+  const actor = await clinicActionActor({ permission: "messages.send", readOnly: true });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
   const text = str(q, 80).trim();
   if (text.length < 2) return { ok: true, hits: [] };
@@ -50,7 +50,7 @@ export async function searchPatientsAction(q: string): Promise<CommsActionResult
 }
 
 export async function loadSendFormAction(patientId: string | null): Promise<CommsActionResult<{ view: SendFormView }>> {
-  const actor = await clinicActionActor({ permission: "messages.send" });
+  const actor = await clinicActionActor({ permission: "messages.send", readOnly: true });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
   const r = await sendFormFor(actor, patientId ? str(patientId, 80) : null);
   return r.ok ? { ok: true, view: r.value } : { ok: false, error: r.error };
@@ -71,7 +71,7 @@ export async function sendMessageAction(input: { patientId: string; channel: "sm
 }
 
 export async function loadThreadAction(replyId: string): Promise<CommsActionResult<{ thread: ReplyThreadView }>> {
-  const actor = await clinicActionActor({ permission: "messages.send" });
+  const actor = await clinicActionActor({ permission: "messages.send", readOnly: true });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
   const r = await replyThreadFor(actor, str(replyId, 80));
   return r.ok ? { ok: true, thread: r.value } : { ok: false, error: r.error };
@@ -105,7 +105,7 @@ export async function retryMessageAction(messageId: string): Promise<CommsAction
 }
 
 export async function loadMessageAction(messageId: string): Promise<CommsActionResult<{ subject: string | null; body: string; to: string | null; summary: string }>> {
-  const actor = await clinicActionActor({ permission: "messages.send" });
+  const actor = await clinicActionActor({ permission: "messages.send", readOnly: true });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
   const r = await messageDetailFor(actor, str(messageId, 80));
   return r.ok ? { ok: true, subject: r.value.message.subject, body: r.value.message.body, to: r.value.message.toAddress, summary: r.value.summary } : { ok: false, error: r.error };

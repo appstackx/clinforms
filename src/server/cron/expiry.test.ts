@@ -74,4 +74,25 @@ describe("expiry sweep from the daily cron", () => {
     );
     assert.deepEqual(warns, ["cron.billing_extras.failed", "cron.expiry.failed"]);
   });
+
+  it("14/11/2026: the unpaid trials' deletions run last and ONLY after a successful retention pass (200), never on a 500", async () => {
+    const order: string[] = [];
+    const steps = {
+      billingExtras: async () => void order.push("billing"),
+      expirySweep: async () => void order.push("sweep"),
+      trialEmails: async () => void order.push("emails"),
+      trialRetention: async () => void order.push("retention"),
+    };
+    await afterRetentionCron(200, steps);
+    assert.deepEqual(order, ["billing", "sweep", "emails", "retention"]);
+    order.length = 0;
+    await afterRetentionCron(500, steps);
+    assert.deepEqual(order, ["sweep", "emails"], "no deletion on a night the database failed");
+    order.length = 0;
+    await afterRetentionCron(401, steps);
+    assert.deepEqual(order, []);
+    const warns: string[] = [];
+    await afterRetentionCron(200, { ...steps, trialRetention: async () => { throw new TypeError("no db"); } }, (e) => warns.push(e));
+    assert.deepEqual(warns, ["cron.trial_retention.failed"]);
+  });
 });

@@ -113,11 +113,12 @@ export const PUBLIC_PAGES = [
 export const AUTH_PATHS = ["/login", "/two-factor", "/accept-invite", "/reset-password"] as const;
 
 /**
- * Self-serve sign-up and its DPA page (12/11/2026, docs/auth.md §1b; 404 unless CLINFORMS_SELF_SIGNUP is on): treated
+ * Self-serve sign-up and its DPA page (12/11/2026, docs/auth.md §1b; 404 unless CLINFORMS_SELF_SIGNUP is on) and the free
+ * trial's /trial/stop-tips page (13/11/2026; 404 without a valid signed link): treated
  * as sign-in pages for the cookie banner and analytics (never a banner over the form, never a page view), but kept out
  * of robots.txt so the public files stay byte-for-byte as before while the switch is off (the pages are noindex).
  */
-export const SIGNUP_AUTH_PATHS = ["/start-trial", "/data-processing-agreement"] as const;
+export const SIGNUP_AUTH_PATHS = ["/start-trial", "/data-processing-agreement", "/trial"] as const;
 
 /**
  * Areas that are never indexed and never show the cookie banner: the signed-in app, the public demo

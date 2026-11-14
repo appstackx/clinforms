@@ -16,6 +16,7 @@ import { currentBrand } from "@/server/brand";
 import { requireClinicOnItsHost } from "@/server/brand-home";
 import { clinicPackages } from "@/server/pms/entitlements";
 import { getDb } from "@/server/db";
+import { trialBannerState } from "@/server/trial/view";
 import { SignOutForm } from "../session-forms";
 
 export const dynamic = "force-dynamic";
@@ -37,6 +38,8 @@ export default async function ClinicLayout({ children }: { children: React.React
     billingBannerFor(getDb(), membership.tenantId, manager),
     listMemberships(getDb(), session.user.id).catch(() => []),
   ]);
+  // 13/11/2026: a self-serve free trial's banner adds its free reports and "Choose a plan" (owners and admins).
+  const trialBanner = await trialBannerState(getDb(), membership.tenantId, trial, manager);
   // 01/11/2026 (Khuram's R1): the reports pages (Plan & usage, API keys) only for a clinic that has Reports or is a
   // ClinForms clinic – a ClinDesk clinic without the add-on sees none of them.
   const reportsArea = packages.reports || ownBrand === "clinforms";
@@ -86,7 +89,7 @@ export default async function ClinicLayout({ children }: { children: React.React
           <AppNav items={items} />
         </div>
       </header>
-      <TrialBannerBar access={trial} contactEmail={brand.contactEmail} />
+      <TrialBannerBar access={trialBanner} contactEmail={brand.contactEmail} />
       <BillingBannerBar banner={billing} />
       <main className="mx-auto max-w-5xl px-4 py-8">{children}</main>
     </>

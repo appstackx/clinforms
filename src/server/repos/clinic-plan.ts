@@ -192,6 +192,25 @@ export async function setClinicTrial(ctx: DbContext, tenantId: string, input: Se
 }
 
 /**
+ * 13/11/2026 – a self-serve trial's SAMPLE clinic (src/server/trial/sample.ts): the same trial window as the real
+ * clinic (started, ending at the same moment), so the sample can never outlive the trial. Creates or replaces the row's
+ * trial; limits and the demo flag are kept.
+ */
+export async function setClinicTrialWindow(ctx: DbContext, tenantId: string, window: { days: number; startsAt: string; endsAt: string }): Promise<ClinicPlan> {
+  assertTenantId(tenantId);
+  const days = assertDays(window.days);
+  if (!Number.isFinite(Date.parse(window.startsAt)) || !Number.isFinite(Date.parse(window.endsAt))) throw new RepoInputError("Invalid trial window.");
+  const at = nowIso(ctx);
+  const values = { status: "trial", trial_days: days, start_on_first_sign_in: 0, trial_starts_at: window.startsAt, trial_ends_at: window.endsAt, ended_at: null };
+  await ctx.db
+    .insertInto("clinic_plan")
+    .values({ tenant_id: tenantId, ...values, owner_first_sign_in_at: at, live_calls_per_minute: null, live_calls_per_day: null, created_at: at, updated_at: at })
+    .onConflict((oc) => oc.column("tenant_id").doUpdateSet({ ...values, updated_at: at }))
+    .execute();
+  return saved(ctx, tenantId);
+}
+
+/**
  * Adds `days` to the trial. A running trial ends `days` later; one that has already ended runs for `days` from
  * now; one waiting for the owner's first visit becomes `days` longer. Refused when the clinic has no trial.
  */

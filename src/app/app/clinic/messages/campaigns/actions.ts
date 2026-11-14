@@ -23,7 +23,7 @@ export async function saveBulkSettingsAction(rev: number, input: { enabled: bool
 }
 
 export async function countAudienceAction(purpose: string, audience: unknown): Promise<CampaignActionResult<{ patients: number; addresses: number }>> {
-  const actor = await clinicActionActor({ permission: "messages.templates" });
+  const actor = await clinicActionActor({ permission: "messages.templates", readOnly: true });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
   const r = await audienceCountFor(actor, purpose, audience);
   return r.ok ? { ok: true, ...r.value } : { ok: false, error: r.error };

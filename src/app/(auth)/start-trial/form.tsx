@@ -83,7 +83,7 @@ export function StartTrialForm({ stamp }: { stamp: string }) {
         <Link href="/privacy" className={linkClass}>
           privacy policy
         </Link>{" "}
-        explains how your details are used. During the trial, use made-up patient data only.
+        explains how your details are used.
       </p>
     </form>
   );
