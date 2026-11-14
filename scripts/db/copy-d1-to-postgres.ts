@@ -24,6 +24,7 @@ import type { PgMigrationClient } from "../../src/server/db/migrations";
 import { PMS_TIMESTAMP_COLUMNS } from "../../src/server/db/pms-schema";
 import { PRIMARY_KEYS, TABLES_IN_FK_ORDER, type Database, type TableName } from "../../src/server/db/schema";
 import { isMissingSignupTable } from "../../src/server/repos/signup";
+import { isMissingTrialTable } from "../../src/server/repos/self-trial";
 import { pgMigrationClient } from "./migrate";
 import { readSecretsFile } from "./provision-gateway-secrets";
 
@@ -62,6 +63,11 @@ const TIMESTAMP_COLUMNS = new Set([
   "completed_at",
   "accepted_at",
   "confirmed_at",
+  // The self-serve trial (migration 0011; timestamptz in Postgres).
+  "sample_claimed_at",
+  "tips_off_at",
+  "converted_at",
+  "sent_at",
   // The clinic system's own (src/server/db/pms-schema/<module>.ts *_TIMESTAMP_COLUMNS).
   ...PMS_TIMESTAMP_COLUMNS,
 ]);
@@ -148,10 +154,10 @@ export interface TableSummary {
 
 /**
  * Tables a database may not have yet (a newer migration not applied on one side): self sign-up's (migration 0010,
- * behind CLINFORMS_SELF_SIGNUP). Absent on the source = empty; absent on the target = skipped, unless the source has
+ * behind CLINFORMS_SELF_SIGNUP) and the self-serve trial's (migration 0011). Absent on the source = empty; absent on the target = skipped, unless the source has
  * rows for it (then the copy refuses: migrate the target first). Every other table must exist on both sides.
  */
-export const OPTIONAL_TABLES: ReadonlySet<TableName> = new Set<TableName>(["signup_requests", "signup_acceptances"]);
+export const OPTIONAL_TABLES: ReadonlySet<TableName> = new Set<TableName>(["signup_requests", "signup_acceptances", "self_trial", "trial_email"]);
 
 const EMPTY_SHA256 = createHash("sha256").digest("hex");
 
@@ -160,7 +166,7 @@ async function summariseOptional(source: SourceReader, table: TableName): Promis
   try {
     return await summarise(source, table);
   } catch (err) {
-    if (OPTIONAL_TABLES.has(table) && isMissingSignupTable(err)) return { table, rows: 0, sha256: EMPTY_SHA256, absent: true };
+    if (OPTIONAL_TABLES.has(table) && (isMissingSignupTable(err) || isMissingTrialTable(err))) return { table, rows: 0, sha256: EMPTY_SHA256, absent: true };
     throw err;
   }
 }

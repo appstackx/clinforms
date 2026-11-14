@@ -465,3 +465,34 @@ export async function purgeUsageEvents(ctx: DbContext, before: string): Promise<
     return 0;
   }
 }
+
+/**
+ * 13/11/2026 – the self-serve free trial: reports of the clinic that have COUNTED (billable) so far, all months (a trial
+ * clinic is new, so this is its trial's count).
+ */
+export async function countBillableReports(ctx: DbContext, tenantId: string): Promise<number> {
+  assertTenantId(tenantId);
+  const row = await ctx.db
+    .selectFrom("usage_report")
+    .select((eb) => eb.fn.countAll<number>().as("n"))
+    .where("tenant_id", "=", tenantId)
+    .where("billable_at", "is not", null)
+    .executeTakeFirst();
+  return toInt(row?.n ?? 0);
+}
+
+/** Whether this report (as the module keys it, with its fingerprint) has counted already. */
+export async function isReportCounted(ctx: DbContext, tenantId: string, reportId: string, episodeFp: string): Promise<boolean> {
+  assertTenantId(tenantId);
+  const id = validReportId(reportId);
+  if (!id) return false;
+  const row = await ctx.db
+    .selectFrom("usage_report")
+    .select("report_id")
+    .where("tenant_id", "=", tenantId)
+    .where("report_id", "=", id)
+    .where("episode_fp", "=", validEpisodeFp(episodeFp))
+    .where("billable_at", "is not", null)
+    .executeTakeFirst();
+  return Boolean(row);
+}

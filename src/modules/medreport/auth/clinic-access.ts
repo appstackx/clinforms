@@ -17,6 +17,7 @@ import "server-only";
  */
 import type { ClinicProfile, MedreportDeps } from "../api/deps";
 import { HttpError, logEvent } from "../api/http";
+import { usageReportKey } from "../api/usage";
 import type { TenantId } from "../core/types";
 import { WORDING } from "../core/wording";
 import type { Actor } from "./actor";
@@ -59,4 +60,27 @@ export async function assertTenantMayCreate(deps: MedreportDeps, tenantId: Tenan
 export async function assertClinicMayCreate(actor: Actor, deps: MedreportDeps, action: ClinicCreateAction): Promise<void> {
   if (actor.via === "demo") return;
   await assertTenantMayCreate(deps, actor.tenantId, action);
+}
+
+/**
+ * 13/11/2026 – a self-serve free trial's reports (ClinicProfile.trialReports): once they are all used, drafting answers
+ * for a report that has not counted yet is refused with 403 TRIAL_REPORTS_USED ("buy the Reports add-on to continue").
+ * A report already inside the allowance may be drafted again (it never counts twice). Only live drafting costs money,
+ * so the caller checks only before a live call. The public demo is never affected.
+ */
+export async function assertTrialReportsLeft(actor: Actor, deps: MedreportDeps, report: { reportId?: string; episodeFp?: string }): Promise<void> {
+  if (actor.via === "demo" || !deps.clinicProfile) return;
+  const profile = await deps.clinicProfile(actor.tenantId);
+  const t = profile?.trialReports;
+  if (!t || t.used < t.included) return;
+  const key = usageReportKey(report.reportId);
+  if (key && deps.usage?.reportCounted) {
+    try {
+      if (await deps.usage.reportCounted(actor.tenantId, key, report.episodeFp ?? "")) return;
+    } catch {
+      // cannot tell: refuse (fail closed – drafting costs money)
+    }
+  }
+  logEvent("clinic_trial_reports_refused", { included: t.included });
+  throw new HttpError(403, WORDING.server.access.trialReportsUsedTitle, { code: "TRIAL_REPORTS_USED", detail: WORDING.server.access.trialReportsUsed(t.included, t.addon) });
 }

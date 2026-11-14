@@ -246,12 +246,14 @@ function defineFlow(label: string, open: () => Promise<TestDb>, dialect: "sqlite
       assert.equal(done.kind, "created");
       if (done.kind !== "created") return;
       assert.match(done.tenantId, /^larkfield-physio-fictional/);
-      // The clinic: created for the clinic brand, Reports paused, as the platform page does.
+      // The clinic: created for the clinic brand (as the platform page does); 13/11/2026: with the free trial, the
+      // clinic system and Reports are on as "trial" (src/server/trial/start.ts).
       const org = await t.db.selectFrom("organization").selectAll().where("slug", "=", done.tenantId).executeTakeFirstOrThrow();
       assert.equal(org.name, "Larkfield Physio (fictional)");
       assert.match(String(org.metadata), /"signupBrand":"clinic"/);
-      const ent = await t.db.selectFrom("clinic_entitlements").selectAll().where("tenant_id", "=", done.tenantId).execute();
-      assert.deepEqual(ent.map((e) => [e.package, e.status]), [["reports", "paused"]]);
+      assert.equal(done.trial, true);
+      const ent = await t.db.selectFrom("clinic_entitlements").selectAll().where("tenant_id", "=", done.tenantId).orderBy("package").execute();
+      assert.deepEqual(ent.map((e) => [e.package, e.status]), [["clinic", "trial"], ["reports", "trial"]]);
       // The owner: account (email verified by the link), owner membership, no two-step yet, a session.
       const user = await t.db.selectFrom("user").selectAll().where("email", "=", f.email as string).executeTakeFirstOrThrow();
       assert.equal(user.name, "Dana Lark");

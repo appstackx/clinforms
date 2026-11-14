@@ -9,7 +9,8 @@
  * 12/11/2026 (PK06): an authorised run (the retention pass done or failed) also expires courses and gift cards past
  * their expiry date (src/server/cron/expiry.ts) – idempotent, so a retried run changes nothing more. Order: retention,
  * then the billing extras (money owed to us first), then the sweep with its own time budget (~20 s; the rest the next
- * night). Nothing after the retention pass can throw: the route always returns the retention pass's response.
+ * night). 13/11/2026: then the self-serve free trial's emails (own time budget ~15 s). Nothing after the retention pass
+ * can throw: the route always returns the retention pass's response.
  */
 import "server-only";
 import { getDb } from "@/server/db";
@@ -17,6 +18,7 @@ import { handleRetentionCron } from "@/server/cron/retention";
 import { billExtrasFromCron } from "@/server/billing/extras";
 import { subscriptionPaymentsFromEnv } from "@/server/billing/payments";
 import { afterRetentionCron, expirySweepFromCron } from "@/server/cron/expiry";
+import { runTrialEmailSweep } from "@/server/trial/emails";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,6 +34,8 @@ export async function GET(req: Request): Promise<Response> {
       if (p.ok) console.info(JSON.stringify({ event: "cron.billing_extras.done", ...(await billExtrasFromCron({ db: getDb() }, p.payments)) }));
     },
     expirySweep: () => expirySweepFromCron(() => ({ db: getDb() })),
+    // 13/11/2026: the self-serve free trial's emails (UK days; each claimed once per clinic – src/server/trial/emails.ts).
+    trialEmails: async () => console.info(JSON.stringify({ event: "cron.trial_emails.done", ...(await runTrialEmailSweep(getDb(), { budgetMs: 15_000 })) })),
   });
   return res;
 }

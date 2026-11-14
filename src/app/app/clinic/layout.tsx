@@ -26,6 +26,9 @@ import { hasPackage } from "@/server/pms/entitlements";
 import { listSites } from "@/server/repos/pms/directory";
 import { patientExists } from "@/server/repos/pms/patients";
 import { BillingBannerBar } from "@/components/account/billing-banner";
+import { TrialBannerBar } from "@/components/account/trial-banner";
+import { noteClinicVisit } from "@/server/admin/clinic-plan";
+import { trialBannerState } from "@/server/trial/view";
 import { billingBannerFor } from "@/server/billing/banner";
 import { canManageBilling } from "@/server/billing/views";
 import { getDb } from "@/server/db";
@@ -101,14 +104,18 @@ export default async function ClinicSystemLayout({ children }: { children: React
       .catch(() => true))) notFound();
   // 01/11/2026: the Studio is offered on either host when the clinic has Reports (the clinic brand calls it the
   // "Reports" add-on – never the ClinForms name on its host).
-  const [reports, sites, scope, replies, billing, memberships] = await Promise.all([
+  // 13/11/2026: the clinic's trial (a self-serve trial starts at the owner's first visit – here, for a ClinDesk clinic,
+  // whose owner lands in the clinic system) and its banner.
+  const [reports, sites, scope, replies, billing, memberships, trialAccess] = await Promise.all([
     hasPackage(actor.tenantId, "reports"),
     listSites(ctx, actor.tenantId),
     resolveDiarySiteScope(actor),
     unansweredRepliesFor(actor),
     billingBannerFor(getDb(), actor.tenantId, actor.role === "owner" || actor.role === "admin"),
     listMemberships(getDb(), actor.userId).catch(() => []),
+    noteClinicVisit(getDb(), { tenantId: actor.tenantId, userId: actor.userId, sessionId: actor.sessionId, role: actor.role }),
   ]);
+  const trial = await trialBannerState(getDb(), actor.tenantId, trialAccess, canManageBilling(actor.role));
   // Owners and admins: the way back to the clinic account (Plan and billing, members, security …) – the billing rule.
   const account = accountAdminLinks(canManageBilling(actor.role));
   // A member of more than one clinic: the way to the clinic chooser (01/11/2026).
@@ -130,6 +137,7 @@ export default async function ClinicSystemLayout({ children }: { children: React
       adminLinks={menu}
       installableApp={currentInstallableApp() !== null}
     >
+      <TrialBannerBar access={trial} contactEmail={brand.contactEmail} className="mb-4 rounded-md border" />
       <BillingBannerBar banner={billing} className="mb-4 rounded-md border" />
       {children}
     </ClinicShell>

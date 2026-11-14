@@ -313,6 +313,9 @@ export interface AccessWording {
   trialEnded(what: string, contactEmail?: string): string;
   paymentOverdueTitle: string;
   paymentOverdue(what: string): string;
+  /** 13/11/2026: a self-serve free trial's reports are all used (drafting a new one is refused). */
+  trialReportsUsedTitle: string;
+  trialReportsUsed(included: number, addon: boolean): string;
   /** 25/10/2026: "Complete another form for this patient" – the earlier report (or its record) is not there any more. */
   reuseGoneTitle: string;
   reuseGoneDetail: string;
@@ -382,6 +385,11 @@ const ACCESS: AccessWording = {
   paymentOverdueTitle: "A payment is overdue",
   paymentOverdue: (what) =>
     `A payment for your clinic's plan is overdue, so ${what} is not available. Existing reports and forms can still be opened and downloaded. The clinic owner can pay under Plan and billing.`,
+  trialReportsUsedTitle: "Your free reports are used up",
+  trialReportsUsed: (included, addon) =>
+    `Your free trial includes ${included} ${included === 1 ? "report" : "reports"}, and ${included === 1 ? "it has" : "they have all"} been used, so answers for a new report cannot be drafted. ${
+      addon ? "Buy the Reports add-on" : "Choose a plan"
+    } under Plan and billing to continue. Existing reports can still be opened, finished and downloaded.`,
   reuseGoneTitle: "The patient's notes are no longer here",
   reuseGoneDetail:
     "This report is not in your clinic's records – it may have been deleted, or removed at the end of your clinic's retention period – so its notes cannot be used again. Upload the patient's notes to complete another form.",

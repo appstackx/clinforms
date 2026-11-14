@@ -8,7 +8,7 @@
 import type { Kysely } from "kysely";
 import type { UsageRecorder } from "../../modules/medreport/api/deps";
 import type { Database } from "../db/schema";
-import { newUsageEventId, recordUsageEvent } from "../repos/usage";
+import { isReportCounted, newUsageEventId, recordUsageEvent } from "../repos/usage";
 import { isMissingUsageTable, noteMissingUsageTables } from "../repos/usage-period";
 
 export interface UsageRecorderOptions {
@@ -31,6 +31,14 @@ export function dbUsageRecorder(db: () => Kysely<Database>, opts: UsageRecorderO
         }
         await new Promise((resolve) => setTimeout(resolve, opts.retryDelayMs ?? 200));
         await recordUsageEvent(ctx(), tenantId, event, { eventId });
+      }
+    },
+    async reportCounted(tenantId, reportId, episodeFp) {
+      try {
+        return await isReportCounted({ db: db() }, tenantId, reportId, episodeFp);
+      } catch (err) {
+        if (isMissingUsageTable(err)) return false;
+        throw err;
       }
     },
   };

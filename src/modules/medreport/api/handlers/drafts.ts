@@ -51,7 +51,7 @@ import { hasDemoDraft } from "../../ai/draft-demo";
 import { DraftGenerationError, generateDraftGroup, type DraftErrorCode } from "../../ai/generate";
 import { chooseAiModeForActor } from "../../ai/live-gate";
 import { AUDIT_ACTIONS, assertActorTenant, auditActor, requireActor } from "../../auth/actor";
-import { assertClinicMayCreate } from "../../auth/clinic-access";
+import { assertClinicMayCreate, assertTrialReportsLeft } from "../../auth/clinic-access";
 import { MAX_SECTIONS_PER_DRAFT } from "../../config.public";
 import { computeFacts } from "../../core/computed-facts";
 import { formIdFromTemplateId } from "../../core/forms";
@@ -144,6 +144,8 @@ export const handleDrafts: MedreportHandler = async (req, _ctx, deps) => {
     ...(body.amendsReportId ? { amendsReportId: body.amendsReportId } : {}),
     episodeFp: usageEpisodeFp(actor.tenantId, usageEpisodeOfBundle(body.bundle, body.templateId)),
   };
+  // 13/11/2026: a self-serve free trial's reports used up → no live drafting for a report that has not counted yet.
+  if (mode === "live") await assertTrialReportsLeft(actor, deps, usageReport);
   let failedCallCounted = false;
   const countFailedCall = async (err: unknown) => {
     if (failedCallCounted) return;

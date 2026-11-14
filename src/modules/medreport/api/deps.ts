@@ -75,6 +75,13 @@ export interface ClinicProfile {
    * existing records stay readable and downloadable. Absent / false = not on hold.
    */
   paymentOverdue?: boolean;
+  /**
+   * 13/11/2026: a self-serve FREE TRIAL's reports (the host's self_trial + its "Trial" package): `included` free
+   * reports, `used` counted so far (the whole trial, not a month). Once used ≥ included, drafting answers for a report
+   * that has not counted yet is refused (auth/clinic-access.ts assertTrialReportsLeft, 403 TRIAL_REPORTS_USED);
+   * `addon` = the refusal points to the Reports add-on (the clinic brand) rather than a plan. Absent = no such cap.
+   */
+  trialReports?: { included: number; used: number; addon: boolean };
 }
 
 /** One fixed window of a shared counter (rate_limits). */
@@ -152,6 +159,11 @@ export type UsageEvent =
 /** The host's usage counters (src/server/usage/recorder.ts). Best effort: the module never lets it fail a request. */
 export interface UsageRecorder {
   record(tenantId: TenantId, event: UsageEvent): Promise<void>;
+  /**
+   * 13/11/2026: whether this report (its usage key and fingerprint, as recorded) has already counted – a report inside
+   * a free trial's allowance may be drafted again once the allowance is used up. Absent: never counted.
+   */
+  reportCounted?(tenantId: TenantId, reportId: string, episodeFp: string): Promise<boolean>;
 }
 
 export interface MedreportDeps {

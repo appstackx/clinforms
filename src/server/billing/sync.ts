@@ -31,7 +31,8 @@ import { deleteClinicPackage, getClinicPackage, setClinicPackage } from "../repo
 import { endClinicTrial, getClinicPlan } from "../repos/clinic-plan";
 import { getClinicSubscription, saveSubscriptionSnapshot, type AppliedEntitlements, type ClinicSubscription, type SubscriptionSnapshot } from "../repos/clinic-subscription";
 import { getSmsCreditAccount } from "../repos/pms/comms/credits";
-import { setEntitlement } from "../repos/pms/entitlements";
+import { getEntitlement, setEntitlement } from "../repos/pms/entitlements";
+import { markTrialConverted, readSelfTrial } from "../repos/self-trial";
 import { assertTenantId } from "../repos/context";
 import { billingLiveRequired } from "../pms/comms/credits/card-payments";
 import type { SubscriptionInfo, SubscriptionPayments } from "./payments";
@@ -39,7 +40,7 @@ import type { SubscriptionInfo, SubscriptionPayments } from "./payments";
 export const BILLING_ACTOR: PmsActor = { userId: null, sessionId: null };
 const DAY_MS = 86_400_000;
 
-export type BillingNoticeKind = "payment_failed" | "read_only" | "payment_received" | "cancelled";
+export type BillingNoticeKind = "payment_failed" | "read_only" | "payment_received" | "cancelled" | "trial_converted";
 
 export interface SyncDeps {
   db: Kysely<Database>;
@@ -153,7 +154,8 @@ export async function applySubscription(deps: SyncDeps, payments: Pick<Subscript
 
   const changedState = !before || !same || before.state !== state || before.planKey !== snap.planKey || before.reportsKey !== snap.reportsKey || before.interval !== snap.interval || before.cancelAtPeriodEnd !== snap.cancelAtPeriodEnd;
   const changedApplied = JSON.stringify(prevApplied) !== JSON.stringify(applied) || (opts.forceApply === true && !override);
-  if (!override && changedApplied && applied) await applyEntitlements(ctx, tenantId, applied, opts.forceApply ? null : prevApplied, choice, sub, firstPaid && (!before?.activatedAt || !same));
+  const converted =
+    !override && changedApplied && applied ? await applyEntitlements(ctx, tenantId, applied, opts.forceApply ? null : prevApplied, choice, sub, firstPaid && (!before?.activatedAt || !same)) : false;
   if (changedState || changedApplied) {
     await appendAudit(ctx, tenantId, {
       userId: null,
@@ -175,6 +177,8 @@ export async function applySubscription(deps: SyncDeps, payments: Pick<Subscript
     });
   }
   await sendNotices(deps, tenantId, before, saved, now);
+  // 13/11/2026: a self-serve free trial converted by this payment – "you're on a paid plan" (claimed once per clinic).
+  if (converted && deps.notify) await deps.notify(tenantId, { kind: "trial_converted" }).catch(() => undefined);
   return { status: "synced", subscription: saved, changed: changedState || changedApplied };
 }
 
@@ -209,7 +213,7 @@ async function applyEntitlements(
   choice: PlanChoice,
   sub: SubscriptionInfo,
   firstActivation: boolean,
-): Promise<void> {
+): Promise<boolean> {
   const note = "subscription";
   if (applied.clinic) {
     await setEntitlement(
@@ -251,13 +255,42 @@ async function applyEntitlements(
     await deleteClinicPackage(ctx, tenantId);
     await appendAudit(ctx, tenantId, { userId: null, action: "clinic.package_removed", targetType: "clinic", targetId: tenantId, detail: { by: "subscription" } });
   }
+  let converted = false;
   if (firstActivation) {
     const plan = await getClinicPlan(ctx, tenantId).catch(() => null);
     if (plan?.status === "trial") {
       await endClinicTrial(ctx, tenantId, "paid");
       await appendAudit(ctx, tenantId, { userId: null, action: "clinic.trial_converted", targetType: "clinic", targetId: tenantId, detail: { by: "subscription" } });
+      converted = await finishSelfServeTrial(ctx, tenantId, choice.product === "clindesk", applied.reports === "active");
     }
   }
+  return converted;
+}
+
+/**
+ * 13/11/2026 – a self-serve free trial converted by its first paid activation (docs/clinic-system/trial.md): every
+ * record is kept and the paid plan's packages apply at once. What the trial switched on and the plan does not include
+ * is put back: the free "Trial" package (10 reports) goes unless Reports is in the plan (then the plan's own package
+ * already replaced it); the clinic system's "trial" switches to paused (data kept) when the plan is not ClinDesk – a
+ * paid ClinForms plan never keeps the clinic system for free. Returns true when this was a self-serve trial.
+ */
+async function finishSelfServeTrial(ctx: { db: Kysely<Database>; now: () => Date }, tenantId: string, clinDeskPlan: boolean, reportsInPlan: boolean): Promise<boolean> {
+  const trial = await readSelfTrial(ctx, tenantId).catch(() => null);
+  if (!trial || trial.sampleOf) return false;
+  await markTrialConverted(ctx, tenantId);
+  const pkg = await getClinicPackage(ctx, tenantId);
+  if (pkg?.package === "trial" && !reportsInPlan) {
+    await deleteClinicPackage(ctx, tenantId);
+    await appendAudit(ctx, tenantId, { userId: null, action: "clinic.package_removed", targetType: "clinic", targetId: tenantId, detail: { by: "subscription", trial: true } });
+  }
+  if (!clinDeskPlan) {
+    const clinic = await getEntitlement(ctx, tenantId, "clinic");
+    if (clinic?.status === "trial") await setEntitlement(ctx, tenantId, "clinic", { status: "paused", note: "Trial ended: ClinDesk not in the paid plan" }, BILLING_ACTOR);
+  }
+  // Reports still "trial" (a ClinDesk plan without the add-on pauses it above; anything else made it active).
+  const reports = await getEntitlement(ctx, tenantId, "reports");
+  if (reports?.status === "trial" && !reportsInPlan) await setEntitlement(ctx, tenantId, "reports", { status: "paused", note: "Trial ended: Reports not in the paid plan" }, BILLING_ACTOR);
+  return true;
 }
 
 async function sendNotices(deps: SyncDeps, tenantId: string, before: ClinicSubscription | null, after: ClinicSubscription, now: Date): Promise<void> {

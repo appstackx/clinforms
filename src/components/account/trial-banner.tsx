@@ -37,6 +37,14 @@ export function TrialBannerBar({
       ) : (
         banner.text
       )}
+      {banner.link ? (
+        <>
+          {" "}
+          <a href={banner.link.href} className="font-medium underline underline-offset-2" data-testid="trial-banner-plan">
+            {banner.link.label}
+          </a>
+        </>
+      ) : null}
     </div>
   );
 }

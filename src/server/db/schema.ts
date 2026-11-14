@@ -476,6 +476,45 @@ export interface SignupAcceptancesTable {
   ua_hash: string;
 }
 
+/**
+ * `self_trial` (migration 0011) – one row per clinic created by self sign-up with a free trial, and one per its SAMPLE
+ * clinic (`sample_of` = the real clinic). Keyed hashes, counts and dates only (src/server/repos/self-trial.ts).
+ */
+export interface SelfTrialTable {
+  tenant_id: string;
+  /** clinforms | clinic */
+  brand: string;
+  sample_of: string | null;
+  email_key: string;
+  network_key: string;
+  domain_key: string | null;
+  reports_included: number;
+  texts_granted: number;
+  /** email | network | domain – why the free allowance was withheld (a repeat trial); null = given. */
+  repeat_reason: string | null;
+  sample_tenant_id: string | null;
+  /** creating | ready | declined */
+  sample_state: string | null;
+  sample_claimed_at: IsoTimestamp | null;
+  tips_off_at: IsoTimestamp | null;
+  converted_at: IsoTimestamp | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
+/** `trial_email` (migration 0011) – one claimed row per trial email per clinic (never sent twice). */
+export interface TrialEmailTable {
+  tenant_id: string;
+  /** welcome | tips | four_days | last_day | ended | paid */
+  kind: string;
+  /** claimed | sent | failed | skipped */
+  status: string;
+  attempts: number;
+  recipients: number;
+  claimed_at: IsoTimestamp;
+  sent_at: IsoTimestamp | null;
+}
+
 /** `access_requests` – the landing page's "Request access" form. */
 export interface AccessRequestsTable {
   id: string;
@@ -524,6 +563,8 @@ export interface Database extends PmsDatabase {
   access_requests: AccessRequestsTable;
   signup_requests: SignupRequestsTable;
   signup_acceptances: SignupAcceptancesTable;
+  self_trial: SelfTrialTable;
+  trial_email: TrialEmailTable;
 }
 
 /** Better Auth's tables in foreign-key order (parents first). */
@@ -563,6 +604,8 @@ export const TABLES_IN_FK_ORDER = [
   "access_requests",
   "signup_requests",
   "signup_acceptances",
+  "self_trial",
+  "trial_email",
   ...PMS_TABLES_IN_FK_ORDER,
 ] as const satisfies readonly (keyof Database)[];
 
@@ -600,6 +643,8 @@ export const PRIMARY_KEYS: { readonly [T in TableName]: readonly (keyof Database
   access_requests: ["id"],
   signup_requests: ["id"],
   signup_acceptances: ["id"],
+  self_trial: ["tenant_id"],
+  trial_email: ["tenant_id", "kind"],
   ...PMS_PRIMARY_KEYS,
 };
 

@@ -26,6 +26,7 @@ import { resolveMemberAccess } from "./access";
 import { hasPackage, requireEntitlement } from "./entitlements";
 import { HOLD_MESSAGE, accountHold, pausedByHold } from "../billing/access";
 import { pmsNow } from "../../modules/pms/core/clock";
+import { TRIAL_ENDED_MESSAGE, pausedByEndedTrial, selfTrialEnded } from "../trial/access";
 
 export interface ClinicActor {
   tenantId: string;
@@ -83,10 +84,14 @@ export async function requireClinicActor(options: { permission?: PmsPermission }
   return actor;
 }
 
-export type ClinicActorError = "signed_out" | "forbidden" | "no_clinic" | "not_entitled" | "payment_overdue";
+export type ClinicActorError = "signed_out" | "forbidden" | "no_clinic" | "not_entitled" | "payment_overdue" | "trial_ended";
 
-/** For server actions and route handlers: the actor, or an error code (nothing done). */
-export async function clinicActionActor(options: { permission?: PmsPermission } = {}): Promise<ClinicActor | { error: ClinicActorError }> {
+/**
+ * For server actions and route handlers: the actor, or an error code (nothing done). `allowAfterTrial`: the action
+ * stays available once a self-serve free trial has ended (buying text credits) – everything else that writes is
+ * refused then ("trial_ended", src/server/trial/access.ts); reading always works.
+ */
+export async function clinicActionActor(options: { permission?: PmsPermission; allowAfterTrial?: boolean } = {}): Promise<ClinicActor | { error: ClinicActorError }> {
   const ctx = await actionContext();
   if ("error" in ctx) return { error: ctx.error };
   if (!(await hasPackage(ctx.membership.tenantId, "clinic"))) return { error: "not_entitled" };
@@ -96,6 +101,8 @@ export async function clinicActionActor(options: { permission?: PmsPermission } 
   // A plan payment overdue past its grace period pauses admin set-up, imports and template changes only – never
   // clinical work (Khuram 01/11/2026, src/server/billing/access.ts).
   if (pausedByHold(permission) && (await accountHold(getDb(), actor.tenantId)).held) return { error: "payment_overdue" };
+  // 13/11/2026: a self-serve free trial that ended without a plan – read-only (records kept and readable).
+  if (pausedByEndedTrial(permission, options.allowAfterTrial) && (await selfTrialEnded(getDb(), actor.tenantId))) return { error: "trial_ended" };
   return actor;
 }
 
@@ -110,6 +117,8 @@ export function actorErrorMessage(error: ClinicActorError): string {
       return "This clinic does not use this part of the system.";
     case "payment_overdue":
       return HOLD_MESSAGE;
+    case "trial_ended":
+      return TRIAL_ENDED_MESSAGE;
     default:
       return "You do not have permission to do that.";
   }

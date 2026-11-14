@@ -32,6 +32,7 @@ import { RepoInputError } from "../repos/context";
 import { listMemberProfiles } from "../repos/member-profile";
 import { isDemoHcpc } from "../../modules/medreport/core/demo-clinic";
 import { appendPlatformAudit, type PlatformAdmin } from "./platform-console";
+import { sendTrialEmailNow } from "../trial/emails";
 
 /** Who changes a plan: a platform administrator on the platform page, or an admin script (ClinForms itself). */
 export type PlanActor = { kind: "platform"; admin: PlatformAdmin } | { kind: "script" };
@@ -140,6 +141,8 @@ export async function noteClinicVisit(
           targetId: visit.tenantId,
           detail: { days: r.plan.trialDays, endsAt: r.plan.trialEndsAt },
         }).catch(() => undefined);
+        // 13/11/2026: a self-serve trial's welcome email goes now (claimed once; a no-op for any other clinic).
+        await sendTrialEmailNow(db, visit.tenantId, "welcome", { now: () => now }).catch(() => undefined);
       }
       return r.plan ? clinicAccessOf(r.plan, now) : null;
     }
