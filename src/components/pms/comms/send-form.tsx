@@ -7,7 +7,7 @@
  */
 import { useRouter } from "next/navigation";
 import * as React from "react";
-import type { SendFormView } from "@/modules/pms/comms/view";
+import { mergeSendFormView, type SendFormView } from "@/modules/pms/comms/view";
 import { renderTemplate } from "@/modules/pms/comms/merge-fields";
 import { normaliseSmsText, smsInfo } from "@/modules/pms/comms/sms";
 import { formatUkDate } from "@/modules/pms/core/text";
@@ -63,7 +63,9 @@ export function SendMessageForm({ view: initial, onSent }: { view: SendFormView;
   const router = useRouter();
   const toast = useToast();
   const [view, setView] = React.useState(initial);
-  React.useEffect(() => setView(initial), [initial]);
+  // A refreshed page (every server action here renews the session cookie) brings a new `initial` without the patient
+  // chosen in the search: keep that patient (mergeSendFormView) – before 14/11/2026 the form went back to empty.
+  React.useEffect(() => setView((current) => mergeSendFormView(current, initial)), [initial]);
   const p = view.patient;
   const firstChannel: "sms" | "email" = p && !p.sms ? "sms" : "email";
   const [channel, setChannel] = React.useState<"sms" | "email">(firstChannel);
@@ -183,7 +185,14 @@ export function SendMessageForm({ view: initial, onSent }: { view: SendFormView;
         </div>
       ) : null}
       <div className="flex flex-wrap justify-end gap-2">
-        <PmsButton variant="ghost" onClick={() => router.push(`${MESSAGES_PATH}?tab=send`)}>
+        <PmsButton
+          variant="ghost"
+          onClick={() => {
+            // The patient chosen in the search lives here, not in the address: clear it, then show the empty form.
+            setView((v) => ({ ...v, patient: null }));
+            router.push(`${MESSAGES_PATH}?tab=send`);
+          }}
+        >
           Someone else
         </PmsButton>
         <PmsButton loading={busy} disabled={Boolean(blocked) || !body.trim()} onClick={() => void send()} data-testid="send-now">

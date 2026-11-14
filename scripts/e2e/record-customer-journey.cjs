@@ -352,7 +352,6 @@ async function step(n, title, fn) {
   page.on("domcontentloaded", () => void inject(current));
   let tenant = "";
   let sampleTenant = "";
-  let patientId = "";
   let slot = "";
 
   try {
@@ -548,7 +547,6 @@ async function step(n, title, fn) {
       await hold(1200);
       await f.locator("button[name=intent]:has-text('Save and book')").click();
       await page.waitForURL((u) => u.pathname === "/app/clinic/diary", { timeout: 30000 });
-      patientId = new URL(page.url()).searchParams.get("patient") || "";
     });
 
     await step(13, "Book an appointment in the diary", async () => {
@@ -643,8 +641,13 @@ async function step(n, title, fn) {
     await step(18, "Send the patient a text – it uses a text credit", async () => {
       await page.goto(`${DESK}/app/clinic/messages`);
       await hold(1500);
-      await page.goto(`${DESK}/app/clinic/messages?tab=send&patient=${patientId}`);
+      // Picked through the search, as the owner would (14/11/2026 fix: it used to reset the form to empty).
+      await page.click("[data-testid=send-message-button]");
+      await page.locator("#sm-to").pressSequentially(PATIENT.first, { delay: 80 });
+      await page.locator(`main button:has-text("${PATIENT.first} ${PATIENT.last}")`).first().click();
       await page.waitForSelector("[data-testid=send-form]");
+      await hold(1500);
+      if (!(await page.locator("[data-testid=send-form]").count())) throw new Error("the form went back to empty after choosing the patient");
       await page.check("input[name=sm-channel][value=sms]");
       await page.locator("#sm-b").pressSequentially("Hello {{patient.first_name}}, your home exercises are ready. See you next week – Larkfield Physio", { delay: 15 });
       await hold(1500);

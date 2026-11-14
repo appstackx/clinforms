@@ -18,6 +18,7 @@
  *   J4  Plan and billing → ClinDesk Solo monthly → TEST checkout (4242) → done page → "Open ClinDesk"
  *   J5  every page reachable from the clinic system's navigation and the account menu (crawl), plus every known
  *       route by direct URL
+ *   J5m (14/11/2026) Messages → Send a message: the patient picked through the search stays chosen (regression), sent
  *   J5d (01/11/2026) the activity CSV download: brand-neutral file name, the support team's neutral id (V1/V2); the
  *       ClinDesk theme colour (<meta name="theme-color">) on the app, sign-in and 404 pages (V3)
  *   J6  Manage billing → the hosted portal's return link → back on clinic.localhost
@@ -562,6 +563,24 @@ const livePages = [];
       await owner.locator("button[name=intent][value=save]").first().click();
       await owner.waitForURL((u) => /\/app\/clinic\/patients\/[^/]+/.test(u.pathname) && !u.pathname.endsWith("/new"), { timeout: 30000 });
       return new URL(owner.url()).pathname;
+    });
+
+    // 14/11/2026 fix: choosing the patient in the search used to reset the form to empty (the server action renews
+    // the session cookie, so the page refreshes). Picked through the search as a user would, then sent.
+    await step("J5m", "Messages → Send a message: the patient picked through the search stays chosen → sent", async () => {
+      await owner.goto(`${DESK}/app/clinic/messages?tab=send`);
+      await audit(owner, "messages?tab=send");
+      await owner.locator("#sm-to").pressSequentially("Testpat", { delay: 50 });
+      await owner.locator("main button:has-text('Pip Testpatient')").first().click();
+      await owner.waitForSelector("[data-testid=send-form]", { timeout: 20000 });
+      await owner.waitForTimeout(3000); // the refresh after the server actions must not empty the form
+      assert.equal(await owner.locator("[data-testid=send-form]").count(), 1, "the form is still open for the patient");
+      assert.match(await owner.locator("#sm-to").inputValue(), /^Pip Testpatient/);
+      await owner.check("input[name=sm-channel][value=email]");
+      await owner.fill("#sm-b", "Hello {{patient.first_name}}, the car park is closed on Friday (fictional e2e).");
+      await owner.click("[data-testid=send-now]");
+      await owner.waitForSelector("[role=status] >> text=/Sent/", { timeout: 20000 });
+      return "picked through the search, sent by email (test service)";
     });
 
     const visited = new Set();
