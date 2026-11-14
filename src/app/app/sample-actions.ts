@@ -4,13 +4,16 @@
  * clinic's separate SAMPLE clinic (made-up data) and makes it the active clinic; or hides the offer. The OWNER of the
  * active clinic only (re-checked against the member table by createSampleClinic); signed in with two-step. Returns the
  * page to load next (the caller loads it in full, as a clinic switch does).
+ *
+ * 14/11/2026: "Remove sample clinic" – after the clinic PAID, its OWNER removes the sample clinic for good (confirm step
+ * in the page; re-checked and audited by removeSampleClinic).
  */
 import { getAuth } from "@/server/auth/auth";
 import { actionContext, requestHeaders } from "@/server/auth/session";
 import { landingPath } from "@/server/brand";
 import { getDataCipher } from "@/server/crypto";
 import { getDb } from "@/server/db";
-import { createSampleClinic, declineSampleClinic } from "@/server/trial/sample";
+import { createSampleClinic, declineSampleClinic, removeSampleClinic } from "@/server/trial/sample";
 
 export type SampleActionResult = { ok: true; next: string } | { ok: "continue"; step: number; steps: number } | { ok: false; error: string };
 
@@ -36,4 +39,19 @@ export async function declineSampleClinicAction(): Promise<SampleActionResult> {
   if ("error" in ctx || ctx.membership.role !== "owner") return { ok: false, error: "Only the clinic's owner can do this." };
   await declineSampleClinic(getDb(), ctx.membership.tenantId).catch(() => undefined);
   return { ok: true, next: "" };
+}
+
+export async function removeSampleClinicAction(): Promise<SampleActionResult> {
+  const ctx = await actionContext();
+  if ("error" in ctx || ctx.membership.role !== "owner") return { ok: false, error: "Only the clinic's owner can remove the sample clinic." };
+  try {
+    const r = await removeSampleClinic({ db: getDb() }, { tenantId: ctx.membership.tenantId, userId: ctx.session.user.id });
+    if (r.status === "removed") return { ok: true, next: "" };
+    if (r.why === "busy") return { ok: false, error: "The sample clinic is being removed – refresh the page in a minute." };
+    if (r.why === "not_owner") return { ok: false, error: "Only the clinic's owner can remove the sample clinic." };
+    if (r.why === "not_paid") return { ok: false, error: "The sample clinic can be removed once your clinic is on a paid plan." };
+    return { ok: false, error: "There is no sample clinic to remove." };
+  } catch {
+    return { ok: false, error: "The sample clinic could not be removed. Please try again in a few minutes." };
+  }
 }

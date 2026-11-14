@@ -8,15 +8,16 @@
  *   tips       day 3     three things to try                                              (tips-type: "stop" link)
  *   four_days  day 10    4 days left – choose a plan to carry on
  *   last_day   day 13    the trial ends tomorrow (or today)
- *   ended      day 14/15 the trial has ended – your data is safe, how to continue
+ *   ended      day 14/15 the trial has ended – your data is safe and kept for 90 days, how to continue
  *   paid       on paying you're on a paid plan – everything is kept
+ *   deletion_warning  14 days before an unpaid trial clinic is deleted (90 days after the end): the date, how to keep
+ *              it (choose a plan) and how to keep a copy (download / export) – src/server/trial/retention.ts
+ *
+ * 14/11/2026 (owner decision): no "made-up patient details only" line in self-serve trial emails any more.
  */
 import { REPORTS_ADDON_NAME, type BrandId } from "../../lib/brand";
 import { COMPANY_NAME } from "../../lib/account-copy";
-
-/** Owner direction (24/10/2026): no real patient data in a trial. */
-export const TRIAL_DATA_RULE = "During the trial, please use made-up patient details only.";
-import type { TrialEmailKind } from "../../lib/trial";
+import { TRIAL_KEEP_DAYS, addUkDays, trialDeletionDay, ukDayStart, type TrialEmailKind } from "../../lib/trial";
 import { EMAIL_THEMES, brandedEmail, escapeHtml } from "./layout";
 import type { EmailMessage, EmailRecipient } from "./types";
 
@@ -53,6 +54,13 @@ export interface TrialEmailInput {
   planName?: string | null;
   /** Calendar days from today to the end (UK) – "ends tomorrow" / "ends today". */
   daysToEnd?: number;
+  /** For "deletion_warning": the UK day ("YYYY-MM-DD") the clinic will be deleted (the one the sweep acts on). */
+  deletionDay?: string | null;
+}
+
+/** "Friday 26 February 2027" for a UK day "YYYY-MM-DD". */
+function ukDayLong(day: string): string {
+  return ukLongDate(ukDayStart(day).toISOString());
 }
 
 const PLAN_PATH = "/app/settings/billing";
@@ -109,7 +117,7 @@ function bodyFor(i: TrialEmailInput): Body {
           "Your trial includes:",
         ],
         list: included,
-        after: [`${TRIAL_DATA_RULE} When you are ready to carry on, choose a plan – everything you set up during the trial is kept.`],
+        after: ["When you are ready to carry on, choose a plan – everything you set up during the trial is kept."],
         action: open,
       };
     case "tips":
@@ -121,12 +129,12 @@ function bodyFor(i: TrialEmailInput): Body {
         list: desk
           ? [
               "Add your sites, rooms, practitioners and appointment types under Set-up – it takes a few minutes.",
-              "Book a few made-up appointments and send yourself a test reminder text.",
+              "Book a few appointments and send yourself a test reminder text.",
               "Write and sign a clinical note, then raise an invoice for the visit.",
             ]
           : [
               "Upload one of your referrers' forms and confirm how each question is filled.",
-              "Import a made-up patient's notes – any layout – and check what was read.",
+              "Import a patient's notes – any layout – and check what was read.",
               "Draft the answers, review and edit them, then approve and download the completed form.",
             ],
         after: i.reportsIncluded > 0 ? [reportsLine(i)] : [],
@@ -154,25 +162,28 @@ function bodyFor(i: TrialEmailInput): Body {
         paragraphs: [
           hello(i.to),
           `${i.clinicName}'s free trial of ${name} ends ${when}, ${ends ?? ""}.`.replace(/, \.$/, "."),
-          "Choose a plan to carry on without a break. If you do not, nothing is lost: after the trial you can still sign in, open and download everything, but nothing new can be added until a plan is chosen.",
+          `Choose a plan to carry on without a break. If you do not, nothing is lost straight away: for ${TRIAL_KEEP_DAYS} days after the trial you can still sign in, open and download everything, but nothing new can be added until a plan is chosen.`,
         ],
         action: plan,
       };
     }
-    case "ended":
+    case "ended": {
+      // The last day kept (the deletion runs early the next morning).
+      const kept = i.endsAt ? ukDayLong(addUkDays(trialDeletionDay(i.endsAt), -1)) : null;
       return {
         subject: `Your ${name} free trial has ended – your data is safe`,
-        preheader: "Nothing has been deleted. Choose a plan to carry on where you left off.",
+        preheader: `Nothing has been deleted. Your data is kept for ${TRIAL_KEEP_DAYS} days – choose a plan to carry on where you left off.`,
         heading: "Your free trial has ended – your data is safe",
         paragraphs: [
           hello(i.to),
           `${i.clinicName}'s free trial of ${name} ended on ${ends ?? "its last day"}.`,
-          "Nothing has been deleted. You can still sign in, open and download everything your clinic recorded during the trial. Adding or changing anything is paused until a plan is chosen.",
+          `Nothing has been deleted. Your clinic's data is kept for ${TRIAL_KEEP_DAYS} days${kept ? `, until ${kept}` : ""}: you can still sign in, open and download everything your clinic recorded during the trial. Adding or changing anything is paused until a plan is chosen.`,
           "To carry on, choose a plan – everything continues exactly where you left off.",
         ],
         action: plan,
-        footnote: "We will never delete your clinic's data without telling you first. If you would like us to close the account and delete it, reply to this email.",
+        footnote: `If no plan is chosen, the clinic and its data are deleted after those ${TRIAL_KEEP_DAYS} days. We will email you two weeks before that happens.`,
       };
+    }
     case "paid":
       return {
         subject: `You're on a paid ${name} plan`,
@@ -185,6 +196,29 @@ function bodyFor(i: TrialEmailInput): Body {
         ],
         action: { label: "Open plan and billing", href: `${i.origin}${PLAN_PATH}` },
       };
+    case "deletion_warning": {
+      const on = i.deletionDay ? ukDayLong(i.deletionDay) : "in 14 days";
+      const when = i.deletionDay ? `on ${on}` : on;
+      const by = i.deletionDay ? `by ${ukDayLong(addUkDays(i.deletionDay, -1))}` : "before then";
+      return {
+        subject: `Your ${name} trial clinic will be deleted ${when}`,
+        preheader: `Choose a plan ${by} to keep ${i.clinicName}'s data.`,
+        heading: `Your trial clinic will be deleted ${when}`,
+        paragraphs: [
+          hello(i.to),
+          `${i.clinicName}'s free trial of ${name} ended on ${ends ?? "its last day"} and no plan has been chosen. We have kept the clinic and its data, read-only, since then.`,
+          `${i.clinicName} and all of its records and files will be deleted permanently ${when}. Once they are deleted they cannot be restored.`,
+        ],
+        list: [
+          `To keep it: choose a plan ${by} under Plan and billing. Everything continues exactly where you left off, and nothing is deleted.`,
+          desk
+            ? "To keep a copy instead: sign in and use Export CSV on the Patients and Billing pages, and download the letters, files and reports you want to keep."
+            : "To keep a copy instead: sign in and download the completed forms and reports you want to keep.",
+        ],
+        after: ["If you need help keeping a copy of your data, reply to this email."],
+        action: plan,
+      };
+    }
   }
 }
 

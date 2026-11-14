@@ -53,6 +53,7 @@ for (const brand of ["clinic", "clinforms"] as BrandId[]) {
         stopTipsUrl: `${origin}/trial/stop-tips?c=larkfield-physio-fictional&t=FICTIONALTOKEN0000000000000000000`,
         planName: brand === "clinic" ? "ClinDesk Small with Reports" : "ClinForms Starter",
         daysToEnd: 1,
+        deletionDay: "2027-03-01",
       }),
     );
   });

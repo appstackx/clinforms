@@ -14,8 +14,10 @@ Update this file at the end of every session (status, blockers, what changed).
 ## TOP-trial – Fri 2026-11-13: self-serve 14-day free trial BUILT (branch `feat/self-serve-trial`, not merged)
 - Everything behind `CLINFORMS_SELF_SIGNUP` (off). Runbook + switch-on checklist: `docs/clinic-system/trial.md` §8
   (prerequisites: DPA reviewed, Supabase PITR, Vercel Pro, MailerSend out of sandbox; then migrations 0010 + 0011).
-- Khuram to decide (trial.md §10): keep "made-up patient details only" in self-serve trials?; 09:00 email cron on Pro;
-  retention for never-converted trials; "Remove sample clinic" button; abuse thresholds.
+- DECIDED 14/11 (trial.md §10) and built on the same branch: no "made-up patient details" wording for self-serve
+  trials; unpaid trials read-only 90 days → warning 14 days before → deleted (with the sample clinic); "Remove sample
+  clinic" for the owner after paying; email time nightly and abuse thresholds unchanged. Still: the lawyer's DPA/terms
+  review must cover the trial's 90-day deletion (DPA §10 says [30] days after the agreement ends).
 
 ## TOP-first-client – Sun 2026-11-01: checklist before the first paying clinic
 - `docs/clinic-system/BEFORE-FIRST-CLIENT.md` – Cyber Essentials, Vercel Pro, Supabase PITR + compute, DPA + DPIA,

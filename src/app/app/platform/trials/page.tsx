@@ -3,7 +3,7 @@ import Link from "next/link";
 import { BrandMark, PageHeader, Panel } from "@/components/account/shell";
 import { SubmitButton } from "@/components/account/form-controls";
 import { CLINIC_SYSTEM_NAME, CLINFORMS_NAME } from "@/lib/brand";
-import { TRIAL_LIMITS, trialDays, trialReports, trialTexts } from "@/lib/trial";
+import { TRIAL_DELETION_NOTICE_DAYS, TRIAL_KEEP_DAYS, TRIAL_LIMITS, trialDays, trialReports, trialTexts } from "@/lib/trial";
 import { selfSignupBrands } from "@/lib/self-signup";
 import { requirePlatformAdmin } from "@/server/admin/guards";
 import { getDb } from "@/server/db";
@@ -26,17 +26,18 @@ const day = (iso: string | null) => (iso ? UK.format(new Date(iso)) : "–");
 const STATE_LABEL: Record<PlatformTrialRow["state"], string> = {
   waiting: "Waiting for the first sign-in",
   running: "Running",
-  ended: "Ended – not converted (read-only, data kept)",
+  ended: "Ended – not converted (read-only, data kept for 90 days)",
   converted: "Converted – paid",
+  deleted: "Deleted – not converted (90 days after the trial)",
 };
 const REPEAT_LABEL = { email: "same owner address as an earlier trial", network: "busy network (30 days)", domain: "busy email domain (30 days)" } as const;
-const EMAIL_LABEL = { welcome: "welcome", tips: "tips", four_days: "4 days left", last_day: "last day", ended: "ended", paid: "paid" } as const;
+const EMAIL_LABEL = { welcome: "welcome", tips: "tips", four_days: "4 days left", last_day: "last day", ended: "ended", paid: "paid", deletion_warning: "deletion warning" } as const;
 
 export default async function PlatformTrialsPage() {
   const admin = await requirePlatformAdmin();
   const rows = await listTrialsForPlatform(getDb());
   const on = Array.from(selfSignupBrands()).map((b) => (b === "clinic" ? CLINIC_SYSTEM_NAME : CLINFORMS_NAME));
-  const counts = { running: rows.filter((r) => r.state === "running" || r.state === "waiting").length, converted: rows.filter((r) => r.state === "converted").length, ended: rows.filter((r) => r.state === "ended").length };
+  const counts = { running: rows.filter((r) => r.state === "running" || r.state === "waiting").length, converted: rows.filter((r) => r.state === "converted").length, ended: rows.filter((r) => r.state === "ended").length, deleted: rows.filter((r) => r.state === "deleted").length };
   return (
     <>
       <header className="border-b border-slate-200 bg-white">
@@ -69,10 +70,10 @@ export default async function PlatformTrialsPage() {
       <main className="mx-auto max-w-[100rem] px-4 py-8">
         <PageHeader
           title="Free trials"
-          description={`Clinics that signed themselves up. Self sign-up is ${on.length ? `ON for ${on.join(" and ")}` : "OFF"}. Each trial: ${trialDays()} days from the owner's first sign-in, ${trialReports()} free reports, ${trialTexts()} free texts (${CLINIC_SYSTEM_NAME} only); a repeat trial (same owner address, more than ${TRIAL_LIMITS.perNetwork30Days} from one network or ${TRIAL_LIMITS.perDomain30Days} from one email domain in 30 days) gets no free reports or texts. Nothing is deleted when a trial ends.`}
+          description={`Clinics that signed themselves up. Self sign-up is ${on.length ? `ON for ${on.join(" and ")}` : "OFF"}. Each trial: ${trialDays()} days from the owner's first sign-in, ${trialReports()} free reports, ${trialTexts()} free texts (${CLINIC_SYSTEM_NAME} only); a repeat trial (same owner address, more than ${TRIAL_LIMITS.perNetwork30Days} from one network or ${TRIAL_LIMITS.perDomain30Days} from one email domain in 30 days) gets no free reports or texts. A trial that ends without a plan stays read-only for ${TRIAL_KEEP_DAYS} days; its owner is warned ${TRIAL_DELETION_NOTICE_DAYS} days before, then the clinic and its sample clinic are deleted (the daily job; never a clinic that paid, never a trial set by hand).`}
         />
         <p className="mb-4 text-sm text-slate-700" data-testid="trial-counts">
-          {rows.length} trials · {counts.running} running · {counts.converted} converted · {counts.ended} ended without a plan
+          {rows.length} trials · {counts.running} running · {counts.converted} converted · {counts.ended} ended without a plan · {counts.deleted} deleted
         </p>
         <Panel title={`Trial clinics (${rows.length})`}>
           {rows.length === 0 ? (
@@ -117,9 +118,16 @@ export default async function PlatformTrialsPage() {
                       <td className={TD}>{r.state === "converted" ? `Yes${r.trial.convertedAt ? ` – ${day(r.trial.convertedAt)}` : ""}` : "No"}</td>
                       <td className={`${TD} text-xs text-slate-600`}>
                         {r.trial.repeatReason ? <span className="block font-medium text-amber-800">No free allowance: {REPEAT_LABEL[r.trial.repeatReason]}</span> : null}
-                        <span className="block">Sample clinic: {r.trial.sampleState === "ready" ? r.trial.sampleTenantId : r.trial.sampleState === "declined" ? "declined" : r.trial.sampleState === "creating" ? "being set up" : "–"}</span>
+                        <span className="block">Sample clinic: {r.trial.sampleState === "ready" ? r.trial.sampleTenantId : r.trial.sampleState === "declined" ? "declined" : r.trial.sampleState === "creating" ? "being set up" : r.trial.sampleState === "removed" ? "removed by the owner" : "–"}</span>
                         <span className="block">Emails: {r.emails.length ? r.emails.map((e) => `${EMAIL_LABEL[e.kind]} (${e.status})`).join(", ") : "–"}</span>
                         {r.trial.tipsOffAt ? <span className="block">Tips stopped by the owner</span> : null}
+                        {r.state === "ended" && r.trial.deletionDueAt ? (
+                          <span className="block font-medium text-amber-800">
+                            To be deleted from {day(r.trial.deletionDueAt)}{" "}
+                            {r.emails.some((e) => e.kind === "deletion_warning" && e.status === "sent") ? "(warning sent)" : "(warning not delivered yet – nothing is deleted until it is)"}
+                          </span>
+                        ) : null}
+                        {r.state === "deleted" ? <span className="block">Deleted {day(r.trial.deletedAt)}</span> : null}
                       </td>
                     </tr>
                   ))}

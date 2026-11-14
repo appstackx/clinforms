@@ -9,7 +9,7 @@
  *
  * ONLY clinics that came from self sign-up (a self_trial row – their sample clinic included); a trial ClinForms staff
  * set by hand, and every other clinic, are never affected. Paying (Plan and billing) and buying text credits always
- * work. Nothing is ever deleted. Pure server code over a database handle (no Next imports). Fails OPEN on a read error
+ * work. Nothing is deleted here (14/11/2026: an unpaid trial clinic is deleted 90 days after its end by ./retention.ts). Pure server code over a database handle (no Next imports). Fails OPEN on a read error
  * (never locks a clinic out of its own records because a table could not be read) – the Report API enforces the trial
  * on its own too.
  */

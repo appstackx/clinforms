@@ -19,6 +19,16 @@
 --   reports_reserved   free reports RESERVED before a live drafting call (one conditional UPDATE: never more than
 --                   reports_included, even with parallel drafts), released when a call failed without cost
 --   sample_step     how far the sample clinic's creation got (it is made in short resumable steps)
+--   sample_state 'removed'  the owner removed the sample clinic after paying (14/11/2026)
+--   deletion_due_at  14/11/2026: the moment (UK midnight) the unpaid trial clinic may be deleted, as promised in the
+--                   deletion warning (set once that warning went to an owner; 90 days after the end at the earliest)
+--   deletion_claimed_at  the deletion's claim (one conditional UPDATE: two cron runs never delete twice; stale after
+--                   30 minutes - a crashed run is retried the next night)
+--   deleted_at      the clinic was deleted (offboarded without an export). The row itself is KEPT: keyed hashes and
+--                   counts only - the abuse brakes still see the earlier trial
+--   deletion_files_json  the clinic's stored-file keys ("<tenant>/<kind>/<id>", JSON array - no patient data) saved
+--                   BEFORE its rows are deleted and cleared once the objects are removed: a failed removal is retried
+--                   by the next run (never an orphaned file, never a file removed while its rows remain)
 --
 -- trial_report_hold - the reports holding a free-report reservation (one per report and fingerprint): a report that
 --   holds one may be drafted again without a second reservation.
@@ -26,7 +36,7 @@
 -- trial_email - one row per trial email per clinic (recipient_ref '') and one per recipient (the owner's user id),
 --   each CLAIMED before the send (the primary key): a retried cron or a second request never sends twice, and a send
 --   that failed for one owner is retried for that owner only. status claimed | sent | failed | skipped, and attempts counts the failed sends
---   retried (at most 3).
+--   retried (at most 3). Kind deletion_warning (14/11/2026): 14 days before an unpaid trial clinic is deleted.
 
 CREATE TABLE IF NOT EXISTS self_trial (
   tenant_id TEXT NOT NULL PRIMARY KEY,
@@ -40,11 +50,15 @@ CREATE TABLE IF NOT EXISTS self_trial (
   reports_reserved INTEGER NOT NULL DEFAULT 0 CHECK (reports_reserved >= 0),
   repeat_reason TEXT CHECK (repeat_reason IS NULL OR repeat_reason IN ('email', 'network', 'domain')),
   sample_tenant_id TEXT,
-  sample_state TEXT CHECK (sample_state IS NULL OR sample_state IN ('creating', 'ready', 'declined')),
+  sample_state TEXT CHECK (sample_state IS NULL OR sample_state IN ('creating', 'ready', 'declined', 'removed')),
   sample_claimed_at TEXT,
   sample_step INTEGER NOT NULL DEFAULT 0 CHECK (sample_step BETWEEN 0 AND 20),
   tips_off_at TEXT,
   converted_at TEXT,
+  deletion_due_at TEXT,
+  deletion_claimed_at TEXT,
+  deleted_at TEXT,
+  deletion_files_json TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -62,7 +76,7 @@ CREATE TABLE IF NOT EXISTS trial_report_hold (
 
 CREATE TABLE IF NOT EXISTS trial_email (
   tenant_id TEXT NOT NULL,
-  kind TEXT NOT NULL CHECK (kind IN ('welcome', 'tips', 'four_days', 'last_day', 'ended', 'paid')),
+  kind TEXT NOT NULL CHECK (kind IN ('welcome', 'tips', 'four_days', 'last_day', 'ended', 'paid', 'deletion_warning')),
   recipient_ref TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL CHECK (status IN ('claimed', 'sent', 'failed', 'skipped')),
   attempts INTEGER NOT NULL DEFAULT 1 CHECK (attempts BETWEEN 1 AND 10),

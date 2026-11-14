@@ -8,7 +8,8 @@
  * request or the cron racing the request finds the row and does nothing); a send the provider refused may be retried
  * (at most 3 attempts); an email whose moment has passed is recorded as skipped, never sent late. Only clinics with a
  * self_trial row (self sign-up) – never their sample clinic, a closed clinic, or a clinic that has paid (it gets
- * "paid" only). Days are UK calendar days (Europe/London). To the clinic's owners; the brand's sender (deliverEmail →
+ * "paid" only). 14/11/2026: the "deletion_warning" goes through sendTrialEmail too, but from the retention sweep
+ * (./retention.ts), not this schedule. Days are UK calendar days (Europe/London). To the clinic's owners; the brand's sender (deliverEmail →
  * the clinic brand's own account for ClinDesk), tracking off as for every email.
  *
  * Never throws into the caller (a page, the webhook, the cron): failures are logged and counted.
@@ -112,6 +113,8 @@ export type TrialSendOutcome = "sent" | "failed" | "skipped" | "not_claimed" | "
 export interface SendOptions {
   /** "paid": the product bought decides the brand (13/11/2026 review) – ClinDesk plan → ClinDesk, ClinForms → ClinForms. */
   brand?: BrandId;
+  /** "deletion_warning" (14/11/2026): the UK day the clinic will be deleted – src/server/trial/retention.ts. */
+  deletionDay?: string;
 }
 
 /**
@@ -163,6 +166,7 @@ export async function sendTrialEmail(db: Kysely<Database>, trial: SelfTrial, kin
         stopTipsUrl: secret && TRIAL_TIPS_KINDS.has(kind) ? stopTipsUrl(link.origin, secret, trial.tenantId) : null,
         planName,
         daysToEnd: plan?.trialEndsAt ? londonDaysBetween(now, plan.trialEndsAt) : undefined,
+        deletionDay: options.deletionDay ?? null,
       });
       const r = await deliverEmail(message).catch(() => ({ status: "failed" as const }));
       if (r.status === "sent") sent++;
@@ -243,6 +247,7 @@ export async function runTrialEmailSweep(db: Kysely<Database>, deps: TrialEmailD
     return out;
   }
   for (const trial of trials) {
+    if (trial.deletedAt) continue; // 14/11/2026: deleted after an unpaid trial – nothing more goes
     if (deps.budgetMs !== undefined && Date.now() - started > deps.budgetMs) {
       out.deferred++;
       continue;

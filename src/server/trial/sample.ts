@@ -13,6 +13,10 @@
  * trial window as the real clinic (it ends with it – read-only afterwards like the trial – and paying for the real
  * clinic does not convert it); no Reports (no drafting – drafting costs money), no free texts and no reminder rules
  * (nothing is sent to anyone); no invitations of its own (only the owner is a member).
+ *
+ * 14/11/2026 (owner decision): after the clinic PAYS, its owner may remove the sample clinic ("Remove sample clinic",
+ * removeSampleClinic – deleted through the offboarding's own deletes, audited); a trial that ends unpaid takes its sample
+ * clinic with it after 90 days (./retention.ts).
  */
 import type { Kysely } from "kysely";
 import { seedDemoClinic } from "../../../scripts/pms/seed-lib";
@@ -22,6 +26,7 @@ import { seedRecords } from "../../../scripts/pms/seed-records";
 import { seedSetup } from "../../../scripts/pms/seed-setup";
 import { SIGNUP_BRAND_KEY } from "../auth/brand-links";
 import { authId } from "../auth/platform";
+import { deleteTrialTenant, sampleOfTrial } from "./retention";
 import { tenantSlugProblem } from "../auth/tenant";
 import type { DataCipher } from "../crypto/envelope";
 import { runBatch } from "../db/batch";
@@ -30,7 +35,17 @@ import { appendAudit } from "../repos/audit";
 import { clinicAccessOf, getClinicPlan, setClinicDemoFlag, setClinicTrialWindow } from "../repos/clinic-plan";
 import type { RepoContext } from "../repos/context";
 import { setEntitlement } from "../repos/pms/entitlements";
-import { claimSampleClinic, createSelfTrial, getSelfTrial, releaseSampleClaim, saveSampleStep, setSampleState, type SelfTrial } from "../repos/self-trial";
+import {
+  claimSampleClinic,
+  claimSampleRemoval,
+  createSelfTrial,
+  getSelfTrial,
+  releaseSampleClaim,
+  saveSampleStep,
+  setSampleState,
+  undoSampleRemoval,
+  type SelfTrial,
+} from "../repos/self-trial";
 
 /** Patients in a sample clinic: enough to look real in the diary and reports, quick to create. */
 export const SAMPLE_PATIENTS = 40;
@@ -91,7 +106,7 @@ export async function createSampleClinic(deps: SampleDeps, input: { tenantId: st
   const trial: SelfTrial | null = await getSelfTrial(ctx, input.tenantId);
   if (!trial || trial.sampleOf) return { status: "unavailable", why: "no_trial" };
   if (trial.brand !== "clinic") return { status: "unavailable", why: "not_clinic_brand" };
-  if (trial.sampleState === "declined") return { status: "unavailable", why: "declined" };
+  if (trial.sampleState === "declined" || trial.sampleState === "removed") return { status: "unavailable", why: "declined" };
   const org = await db.selectFrom("organization").select(["id", "name", "metadata"]).where("slug", "=", input.tenantId).executeTakeFirst();
   if (!org) return { status: "unavailable", why: "no_trial" };
   const owner = await db.selectFrom("member").select("id").where("organizationId", "=", org.id).where("userId", "=", input.userId).where("role", "=", "owner").executeTakeFirst();
@@ -186,4 +201,76 @@ export async function createSampleClinic(deps: SampleDeps, input: { tenantId: st
 /** "No thanks": the offer is not shown again (only while there is no sample). */
 export async function declineSampleClinic(db: Kysely<Database>, tenantId: string, now?: () => Date): Promise<void> {
   await setSampleState(now ? { db, now } : { db }, tenantId, "declined");
+}
+
+/* ------------------------------------------------------------------ "Remove sample clinic" (after paying) */
+
+export type SampleRemoval =
+  | { status: "removed"; sampleTenantId: string }
+  | { status: "unavailable"; why: "no_trial" | "not_owner" | "not_paid" | "no_sample" | "busy" };
+
+export interface SampleRemovalDeps {
+  db: Kysely<Database>;
+  now?: () => Date;
+}
+
+/** What the real clinic's sample is now, for the owner's button – or why there is no button. */
+async function removableSample(
+  db: Kysely<Database>,
+  tenantId: string,
+  userId: string,
+  now: Date,
+): Promise<{ trial: SelfTrial; sampleTenantId: string; from: "ready" | "creating"; open: boolean } | { why: Exclude<Extract<SampleRemoval, { status: "unavailable" }>["why"], "busy"> }> {
+  const ctx = { db, now: () => now };
+  const trial = await getSelfTrial(ctx, tenantId);
+  if (!trial || trial.sampleOf) return { why: "no_trial" };
+  const org = await db.selectFrom("organization").select(["id", "metadata"]).where("slug", "=", tenantId).executeTakeFirst();
+  if (!org || (org.metadata && /"offboardedAt"/.test(org.metadata))) return { why: "no_trial" };
+  const owner = await db.selectFrom("member").select("id").where("organizationId", "=", org.id).where("userId", "=", userId).where("role", "=", "owner").executeTakeFirst();
+  if (!owner) return { why: "not_owner" };
+  const plan = await getClinicPlan(ctx, tenantId);
+  if (!trial.convertedAt || plan?.status !== "paid") return { why: "not_paid" };
+  if (trial.sampleState !== "ready" && trial.sampleState !== "creating") return { why: "no_sample" };
+  // Only a sample of THIS clinic (its own row, or its organization, says so).
+  const sampleTenantId = await sampleOfTrial(db, trial);
+  if (!sampleTenantId) return { why: "no_sample" };
+  const sorg = await db.selectFrom("organization").select(["metadata"]).where("slug", "=", sampleTenantId).executeTakeFirst();
+  return { trial, sampleTenantId, from: trial.sampleState, open: Boolean(sorg && !(sorg.metadata && /"offboardedAt"/.test(sorg.metadata))) };
+}
+
+/** Whether to show the OWNER the "Remove sample clinic" button (a paid clinic with a sample clinic). Never throws. */
+export async function sampleRemovalOffer(db: Kysely<Database>, tenantId: string, userId: string, role: string, now: Date = new Date()): Promise<{ sampleTenantId: string } | null> {
+  if (role !== "owner") return null;
+  try {
+    const r = await removableSample(db, tenantId, userId, now);
+    return "why" in r || !r.open ? null : { sampleTenantId: r.sampleTenantId };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Removes the paid clinic's sample clinic for good (the OWNER's "Remove sample clinic", after a confirm step): ONLY the
+ * sample clinic, through the offboarding's own deletes (no export – it holds made-up data only), audited in both clinics.
+ * One conditional claim: two clicks remove once. The caller checked the session; the owner is re-checked here.
+ */
+export async function removeSampleClinic(deps: SampleRemovalDeps, input: { tenantId: string; userId: string }): Promise<SampleRemoval> {
+  const now = deps.now ?? (() => new Date());
+  const ctx = { db: deps.db, now };
+  const r = await removableSample(deps.db, input.tenantId, input.userId, now());
+  if ("why" in r) return { status: "unavailable", why: r.why };
+  if (!(await claimSampleRemoval(ctx, input.tenantId, r.from))) return { status: "unavailable", why: "busy" };
+  try {
+    await deleteTrialTenant(deps.db, r.sampleTenantId, "sample_removed", { now, byUserId: input.userId });
+  } catch (err) {
+    // Not deleted (the offboarding refused or stopped before its first batch): the button comes back. If it stopped
+    // later, the clinic is closed and the state stays "removed" – the files still to remove are retried nightly.
+    const sorg = await deps.db.selectFrom("organization").select(["metadata"]).where("slug", "=", r.sampleTenantId).executeTakeFirst().catch(() => undefined);
+    if (sorg && !(sorg.metadata && /"offboardedAt"/.test(sorg.metadata))) await undoSampleRemoval(ctx, input.tenantId, r.from).catch(() => undefined);
+    throw err;
+  }
+  await appendAudit(ctx, input.tenantId, { userId: input.userId, action: "clinic.sample_removed", targetType: "organization", targetId: r.sampleTenantId, detail: { sample: r.sampleTenantId } }).catch((err) => {
+    console.warn(JSON.stringify({ event: "trial.sample_removed_audit_failed", error: err instanceof Error ? err.name : "error" }));
+  });
+  return { status: "removed", sampleTenantId: r.sampleTenantId };
 }

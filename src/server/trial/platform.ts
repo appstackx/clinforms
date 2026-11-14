@@ -12,7 +12,7 @@ import { readClinicPackages } from "../repos/clinic-package";
 import { listSelfTrials, listTrialEmails, type SelfTrial } from "../repos/self-trial";
 import { countBillableReports } from "../repos/usage";
 
-export type TrialRowState = "waiting" | "running" | "ended" | "converted";
+export type TrialRowState = "waiting" | "running" | "ended" | "converted" | "deleted";
 
 export interface PlatformTrialRow {
   trial: SelfTrial;
@@ -54,7 +54,7 @@ export async function listTrialsForPlatform(db: Kysely<Database>, now: Date = ne
     const plan = planOf.get(trial.tenantId) ?? null;
     const access = clinicAccessOf(plan, now);
     const converted = plan?.status === "paid" || Boolean(trial.convertedAt);
-    const state: TrialRowState = converted ? "converted" : access.state === "trial_ended" ? "ended" : access.state === "trial" && !access.pending ? "running" : "waiting";
+    const state: TrialRowState = trial.deletedAt ? "deleted" : converted ? "converted" : access.state === "trial_ended" ? "ended" : access.state === "trial" && !access.pending ? "running" : "waiting";
     const org = orgOf.get(trial.tenantId);
     const pkg = pkgOf.get(trial.tenantId);
     const [reportsUsed, texts, emails] = await Promise.all([

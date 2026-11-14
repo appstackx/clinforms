@@ -30,6 +30,7 @@ function render(kind: TrialEmailKind, brand: BrandId, clinicName = "Larkfield Ph
     stopTipsUrl: "https://clindesk.co.uk/trial/stop-tips?c=larkfield&t=x",
     planName: null,
     daysToEnd: 1,
+    deletionDay: "2027-03-01",
   });
 }
 
@@ -71,6 +72,39 @@ describe("trial emails – content and structure", () => {
     assert.match(render("ended", "clinic").text, /Nothing has been deleted/);
     assert.doesNotMatch(render("ended", "clinic").text, /export/i, "never promises an export");
     assert.match(render("paid", "clinic").text, /everything you set up and recorded during it is kept/);
+  });
+  it("14/11/2026: no 'made-up patient details' line in any self-serve trial email; the tips no longer say made-up", () => {
+    for (const brand of ["clinic", "clinforms"] as const) {
+      for (const kind of TRIAL_EMAIL_KINDS) {
+        const m = render(kind, brand);
+        assert.doesNotMatch(`${m.subject}\n${m.text}\n${m.html}`, /made-up patient details|made-up notes|use made-up|made-up appointments|a made-up patient's/i, `${brand} ${kind}`);
+      }
+    }
+    assert.match(render("welcome", "clinic").text, /A sample clinic with made-up patients/, "the sample clinic is still described as made-up (it is)");
+  });
+  it("14/11/2026: ended = kept for 90 days with the date (trial end 30 Nov 2026 → kept until 28 February 2027, deleted on 1 March); last day says 90 days", () => {
+    for (const brand of ["clinic", "clinforms"] as const) {
+      const ended = render("ended", brand);
+      assert.match(ended.text, /Nothing has been deleted\. Your clinic's data is kept for 90 days, until Sunday 28 February 2027/);
+      assert.match(ended.text, /deleted after those 90 days\. We will email you two weeks before/);
+      assert.match(ended.subject, /has ended – your data is safe$/);
+      assert.match(render("last_day", brand).text, /for 90 days after the trial you can still sign in/);
+    }
+  });
+  it("14/11/2026: the deletion warning – the date, how to keep it (choose a plan), how to keep a copy (both brands)", () => {
+    const desk = render("deletion_warning", "clinic");
+    assert.equal(desk.subject, "Your ClinDesk trial clinic will be deleted on Monday 1 March 2027");
+    assert.match(desk.text, /Larkfield Physio \(fictional\) and all of its records and files will be deleted permanently on Monday 1 March 2027\. Once they are deleted they cannot be restored\./);
+    assert.match(desk.text, /To keep it: choose a plan by Sunday 28 February 2027 under Plan and billing/);
+    assert.match(desk.text, /Export CSV on the Patients and Billing pages/);
+    assert.match(desk.text, /Choose a plan: https:\/\/clindesk\.co\.uk\/app\/settings\/billing/);
+    assert.match(desk.html, /#C4432B/, "ClinDesk's own colours");
+    const forms = render("deletion_warning", "clinforms");
+    assert.equal(forms.subject, "Your ClinForms trial clinic will be deleted on Monday 1 March 2027");
+    assert.match(forms.text, /download the completed forms and reports you want to keep/);
+    assert.doesNotMatch(forms.text, /Export CSV|Patients and Billing/);
+    assert.match(forms.html, /#0D9488/, "ClinForms' teal");
+    assert.doesNotMatch(forms.html, /Stop these tips/, "an account email: no unsubscribe");
   });
 });
 

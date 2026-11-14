@@ -3,7 +3,8 @@
 Branch `feat/self-serve-trial`. A clinic that signs itself up ("Start free trial", docs/auth.md §1b) gets a free trial
 straight away – no demo, no card. **Everything here sits behind the existing switch `CLINFORMS_SELF_SIGNUP`** (off by
 default): while it is off no page, link, email or website text changes. Migration **0011** (`self_trial`,
-`trial_email`).
+`trial_email`, `trial_report_hold`; extended in place on 14/11/2026 – still unreleased – with the deletion columns, the
+`deletion_warning` email kind and the sample state `removed`).
 
 ## 1. What a trial includes
 
@@ -19,8 +20,13 @@ default): while it is off no page, link, email or website text changes. Migratio
 | Sample data | "Explore with sample data" (§4) | – (the sample is the clinic system's demonstration data; ClinForms' own demo is the public `/reports`) |
 
 The banner on every page (`/app`, the Studio and – new – the clinic system's shell): **"Free trial – N days left · X of
-10 free reports used. Use made-up patient details only during the trial."** plus **"Choose a plan"** (owners and
-admins → Plan and billing). Owner direction 24/10/2026 (no real patient data in a trial) is kept – see open decisions.
+10 free reports used."** plus **"Choose a plan"** (owners and admins → Plan and billing). **14/11/2026 (owner decision):
+no "use made-up patient details only" line for self-serve trials** – not on the banner, the sign-up page, the trial
+emails, the tips (they no longer say "made-up appointments / a made-up patient's notes") or the drafting switch
+(Settings → Clinic and the overview checklist use the standard wording for a self-serve trial). A trial ClinForms staff
+set by hand (Blue Heart's kind) keeps "Trial – N days left. Use made-up notes only until your data processing agreement
+is signed." and its drafting wording, unchanged (`clinicTrialRunning` is true only for a hand-set trial). The sample
+clinic is still described as made-up data – it is.
 
 ## 2. When the trial ends
 
@@ -33,11 +39,50 @@ admins → Plan and billing). Owner direction 24/10/2026 (no real patient data i
   `READ_ONLY`; the messages cron sends nothing for the clinic (no reminders, no campaigns); public booking and portal
   pages close. Every page, list, record, export and download still works. Buying text credits and everything under
   Plan and billing keep working. A trial ClinForms staff set by hand (platform page) is not affected.
-- **Nothing is deleted automatically.** No cron deletes trial clinics; the daily retention job only applies each
-  clinic's own report retention (365 days by default) and the sign-up request clean-up, exactly as before (tested: a
-  trial that ended 75 days ago keeps its clinic, patients and trial record). The owner decides a retention rule later.
-- Banner: "Your free trial has ended. Your data is safe: you can still open and download everything, but nothing new
-  can be added or changed until a plan is chosen." + "Choose a plan".
+- **Kept for 90 days, then deleted (owner decision 14/11/2026; self-serve trials only – `src/server/trial/retention.ts`).**
+  A self-serve trial that ends without a plan stays read-only for **90 days**; nothing is deleted before. The daily cron
+  (`/api/cron/retention`, 03:17 UTC, after the trial emails, **only after a successful retention pass**; own budget ~10 s,
+  at most 10 clinics a night; log line `cron.trial_retention.done` with counts) then:
+  1. **Warning – 14 days before** (UK day = end's UK day + 77): one branded HTML + text email to the owner(s) in the
+     trial's brand – "Your <brand> trial clinic will be deleted on <date>": the date, "to keep it: choose a plan before
+     then", "to keep a copy: Export CSV on the Patients and Billing pages, download letters, files and reports"
+     (ClinForms: "download the completed forms and reports"), "reply if you need help". Claimed per clinic and per owner
+     like every trial email (kind `deletion_warning`; never twice; a refused send retried for that owner, max 3).
+  2. **The date it promises** (`self_trial.deletion_due_at`, UK midnight) is the end's UK day **+ 91** (so at least 90 full
+     days), or – when the warning goes late (sweep off, provider refused it) – **14 days from the day it actually goes**.
+     Once an owner has it the date never moves – unless staff extend or restart the trial: a warning for an earlier end
+     no longer counts, it is forgotten and a fresh warning goes 14 days before the new date.
+  3. **Deletion on that day** – only if an owner was actually SENT the warning, at least 14 UK days earlier, the promised
+     day has come (for the CURRENT end – staff may have moved it). One conditional claim per clinic
+     (`deletion_claimed_at`, stale after 30 minutes): two runs never delete twice; a deletion that stopped part-way (a
+     crash, the function's time limit, a failed batch) KEEPS its claim and a later run finishes it. Under the claim
+     everything is read again – and once more right before the clinic itself: still a self-serve trial (a `self_trial`
+     row; a trial set by hand never has one), **not converted**, the plan still an **ended trial** (not paid, not
+     extended), **no subscription that is not over** (any status but canceled / incomplete_expired holds it), **no payment
+     page opened in the last 48 hours** (audit `clinic.subscription_checkout` – the payment page expires within 24 hours),
+     the clinic still open.
+  4. **What is deleted:** the offboarding's own deletes (`offboardClinic` with `withoutExport` – the path
+     `admin:offboard-clinic` uses, without the export): every clinic-system record and ClinForms record, form files, the
+     **stored patient files** (removed FIRST, so a failure leaves rows that the next night finds again), members,
+     invitations, profiles, sessions' active clinic, partner keys revoked, and the accounts that belong to no other clinic.
+     The stored files' keys are saved on the `self_trial` row (`deletion_files_json`) BEFORE the rows go and the files are
+     removed AFTER them (retried every night until removed) – a clinic is never left with rows whose files are gone.
+     **Kept, as an offboarding keeps them:** the organization row as a tombstone (the id is never reused), the audit trail
+     (incl. the `clinic.offboard` row, detail `withoutExport: "trial_expired"`), the sign-up acceptance records, the
+     billing / usage records, and the `self_trial` row (keyed hashes and counts – marked `deleted_at`, so the abuse brakes
+     still see the earlier trial) with its `trial_email` rows. `trial_report_hold` rows go.
+  5. **Its sample clinic is deleted with it, first** (only the sample whose own row – or, after a crash before that row was
+     written, whose organization's `sampleOf` – names this clinic).
+  **Never touched:** a clinic that paid (converted – even one that later stops paying), a trial converted by hand, a
+  trial ClinForms staff set by hand, a clinic with a subscription under way, the sample clinic of a paid clinic. A trial
+  whose owner never signed in (no end date) is never deleted. With email off (`CLINFORMS_EMAIL_PROVIDER=none`) no warning
+  is delivered, so nothing is deleted (`held` in the log).
+- Banner after the end (self-serve): "Your free trial has ended. Your data is safe and kept for 90 days, until <last
+  day>: you can still open and download everything, but nothing new can be added or changed until a plan is chosen." +
+  "Choose a plan" (the last day = the day before the deletion day – the deletion runs early that morning; a later day a
+  late warning promised drops "for 90 days"; the sample clinic shows its real clinic's). The ended email and the warning
+  name the same days ("kept … until Sunday 28 February", "deleted on Monday 1 March – choose a plan by Sunday 28
+  February").
 
 ## 3. Paying
 
@@ -54,7 +99,7 @@ the clinic system, reports in Reports) it stays on as `trial` = **read-only** �
 with the notice "Read-only – these records are from your free trial … Add ClinDesk / the Reports add-on to your plan to
 keep working on them" (banner, refusals, the Report API's 403 `READ_ONLY`); the sync never switches it off, and buying
 it makes it active again. Without data it is paused. So a ClinForms-only plan never keeps the clinic system writable
-for free. Then one branded "You're on a paid plan" email, in the brand of the product bought. (Tests: `src/server/trial/testing/trial-suite.ts` "paying
+for free. A clinic that paid is never deleted by the 90-day rule (§2). Then one branded "You're on a paid plan" email, in the brand of the product bought. (Tests: `src/server/trial/testing/trial-suite.ts` "paying
 converts the trial …" on SQLite, PGlite, D1 stand-in and real local D1; e2e T9–T10.)
 
 ## 4. Sample data – a separate sample clinic
@@ -75,6 +120,17 @@ query, forever – one forgotten filter mixes fictional patients into a real exp
 - Limits (it must never be a free second clinic): one per trial (one conditional claim); its **owner only** – Better
   Auth refuses invitations and new members into it (`SAMPLE_CLINIC`); the **same trial window** (ends with the trial, read-only afterwards, not converted by paying for
   the real clinic); no Reports (no drafting cost), no texts, no reminder rules – nothing is ever sent from it.
+- **After paying – "Remove sample clinic" (14/11/2026):** the real clinic's **owner** (only – admins and others see no
+  button, and the action re-checks the owner role in the member table) sees a "Sample clinic" card on `/app` and the
+  clinic system's Today page while the sample exists. Two steps: "Remove sample clinic" → "Remove the sample clinic
+  permanently? … It cannot be undone. Your own clinic and its records are not affected." → "Remove permanently". It
+  deletes ONLY the sample clinic through the same offboarding deletes (no export – made-up data), one conditional claim
+  (`sample_state` ready/creating → `removed`; two clicks remove once; never under a creation step that still holds its
+  lock), audited `clinic.sample_removed` in the real clinic (by the owner) and `clinic.offboard` (`withoutExport:
+  "sample_removed"`) in the sample. The owner's account and the real clinic are untouched; the offer to create a sample
+  does not come back. (`src/server/trial/sample.ts removeSampleClinic`, `src/app/app/sample-actions.ts`,
+  `src/components/account/remove-sample.tsx`.)
+- An unpaid trial's sample clinic is deleted together with it after the 90 days (§2).
 
 ## 5. Emails (branded HTML + plain text)
 
@@ -86,6 +142,11 @@ query, forever – one forgotten filter mixes fictional patients into a real exp
 | "Your … free trial ends tomorrow / today" | the UK day before the end (day 13), or the end day | the trial already ended |
 | "Your … free trial has ended – your data is safe" | after the end (day 14/15) | more than 7 days after the end |
 | "You're on a paid … plan" | at once from the payment (webhook / success page), cron catch-up | more than 7 days after converting |
+| "Your … trial clinic will be deleted on <date>" (14/11/2026) | 14 days before the deletion (end + 77 UK days; late = 14 days' notice from the day it goes) – the retention sweep (§2) | the clinic paid or was converted; a hand-set trial; email off (then nothing is deleted) |
+
+The "ended" email now says the data is kept for 90 days (with the date) and that a warning comes two weeks before the
+deletion; "ends tomorrow / today" says "for 90 days after the trial you can still sign in …". The welcome no longer has
+the made-up-details line.
 
 - Sent by the **existing daily cron** (`/api/cron/retention`, after retention, billing extras and the expiry sweep;
   ~15 s budget; `cron.trial_emails.done` log line with counts) – no queue service. Vercel Hobby runs it once a day at
@@ -149,8 +210,9 @@ decision, the sample clinic, the emails sent, tips stopped.
 8. Check: clindesk.co.uk shows "Start free trial"; sign up with a mailbox you own; the welcome email arrives (branded);
    `/app/platform/trials` lists the clinic; the next morning's cron log shows `cron.trial_emails.done`.
 
-To switch off: remove the variable and redeploy – existing trial clinics keep their trial, their data and their emails
-(the cron keeps sending the remaining trial emails to clinics that already have one).
+To switch off: remove the variable and redeploy – existing trial clinics keep their trial and their emails (the cron
+keeps sending the remaining trial emails to clinics that already have one) and the 90-day rule still applies to them
+(§2: an unpaid trial is deleted 90 days after its end, after the warning).
 
 ## 9. Code and tests
 
@@ -161,19 +223,32 @@ To switch off: remove the variable and redeploy – existing trial clinics keep 
   `src/server/admin/clinic-plan.ts` (first visit → welcome), `src/server/billing/{sync,notify}.ts` (conversion),
   `src/server/pms/actor.ts` (read-only), `src/server/auth/medreport-actor.ts` + `src/modules/medreport/auth/clinic-access.ts`
   (10-report cap), `src/app/api/cron/retention/route.ts` (sweep).
-- Tests: `src/server/trial/trial.test.ts` (suite on SQLite + PGlite, and a database before 0011),
+- 14/11/2026: `src/server/trial/retention.ts` (warning + deletion), `offboardClinic(…, { withoutExport })` in
+  `src/server/auth/platform.ts`, `removeSampleClinic` / `sampleRemovalOffer` in `src/server/trial/sample.ts`; pure day
+  rules in `src/lib/trial.ts` (`trialDeletionDay`, `trialDeletionWarningDay`, `trialDeletionDayIfWarnedAt`,
+  `ukDayStart`); cron step `trialRetention` in `src/server/cron/expiry.ts afterRetentionCron` (200 only).
+- Tests: `src/server/trial/trial.test.ts` (suite on SQLite + PGlite, and a database before 0011; 14/11/2026: the 90-day
+  boundary, one warning, double runs, a refused warning holding the deletion, paid / converted by hand / hand-set /
+  open subscription untouched, the paid re-check during the deletion, the sample deleted with its unpaid clinic and kept
+  for a paid one, "Remove sample clinic" owner-only and once), `src/lib/trial.test.ts` (deletion days, UK midnight),
+  `src/lib/trial-copy.test.ts` (banners), `src/server/cron/expiry.test.ts` (the step runs last, 200 only),
   `workers/data-gateway/test/trial-stack.test.ts` (D1 stand-in + real local D1), `src/lib/trial.test.ts` (schedule,
   clock change), `src/server/email/trial-emails.test.ts` (every email, both brands; layout; stop-tips),
   `src/components/clindesk/trial-cta.test.ts` (website off/on), `src/server/trial/migrations.test.ts`,
   `src/server/auth/self-signup.test.ts` (sign-up now starts the trial), e2e `scripts/e2e/trial-journey.cjs` (whole
-  journey incl. Stripe TEST checkout) and `scripts/e2e/self-signup.cjs` (updated landing).
+  journey incl. Stripe TEST checkout; 14/11/2026: T8b the deletion warning, T11 "Remove sample clinic" after paying, T12 – with `PAY=skip` – the deletion of the unpaid clinic and its sample) and `scripts/e2e/self-signup.cjs` (updated landing).
 
-## 10. Open decisions (owner)
+## 10. Decisions (owner, 14/11/2026 – were open)
 
-- "Use made-up patient details only during the trial" (owner direction 24/10 for hand-set trials) is kept for self-serve
-  trials too – drop it once the DPA is final and online acceptance is accepted as the contract?
-- Email send time: the one daily cron runs 03:17 UTC. A second Vercel cron at 09:00 UK for the trial emails is a
-  one-line change once on Pro.
-- Retention for trials that never convert (none is deleted today).
-- Sample clinic after paying: it stays read-only; offer "Remove sample clinic" (offboard) as a button?
-- Abuse thresholds (2 per network / 3 per domain per 30 days) – adjust after the first weeks' data.
+| Question | Decided 14/11/2026 (Khuram) |
+|---|---|
+| "Use made-up patient details only during the trial" for self-serve trials | **Dropped** for self-serve trials everywhere (banner, sign-up page, trial emails and tips, drafting wording, docs) – §1. Kept for trials ClinForms staff set by hand (a separate code path). Before the first real client: the DPA's online acceptance must be in place (switch-on checklist §8) |
+| Email send time | **Unchanged: nightly** – the one daily cron at 03:17 UTC (Vercel Hobby). A second cron at 09:00 UK on Pro stays a one-line change if wanted later |
+| Retention for trials that never convert | **Read-only for 90 days after the end, a warning 14 days before, then deleted** (the clinic and its sample clinic, via the offboarding's deletes) – §2 |
+| Sample clinic after paying | **"Remove sample clinic" button for the owner** (confirm step, deletes only the sample, audited) – §4 |
+| Abuse thresholds (2 per network / 3 per domain per 30 days) | **Unchanged** – review after the first weeks' data |
+
+Still to check before switch-on (legal review, §8 item 1): the DPA draft (`content/dpa.json` §10 "Return and deletion")
+says the data is deleted within [30] days after the agreement ends, and ClinDesk's terms say clinical records are never
+deleted automatically while the agreement runs – both should say how a free trial that ends unpaid is kept read-only for
+90 days, warned and then deleted.

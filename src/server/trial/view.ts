@@ -4,6 +4,7 @@
  * the plain trial banner (src/lib/trial-copy.ts) and no offer.
  */
 import type { Kysely } from "kysely";
+import { londonDay, trialDeletionDay } from "../../lib/trial";
 import type { TrialBannerState } from "../../lib/trial-copy";
 import type { Database } from "../db/schema";
 import { readSelfTrial, type SelfTrial } from "../repos/self-trial";
@@ -34,10 +35,33 @@ export async function trialBannerState(
     const trial = await readSelfTrial({ db }, tenantId);
     if (!trial) return access;
     const allowance = trial.sampleOf ? null : await trialReportAllowance(db, tenantId);
-    return { ...access, selfServe: { reportsIncluded: allowance?.included ?? 0, reportsUsed: allowance?.used ?? 0, canChoosePlan: canChoosePlan && !trial.sampleOf } };
+    const kept = access.state === "trial_ended" ? await keptUntilFor(db, trial, access.endedAt) : null;
+    return {
+      ...access,
+      selfServe: {
+        reportsIncluded: allowance?.included ?? 0,
+        reportsUsed: allowance?.used ?? 0,
+        canChoosePlan: canChoosePlan && !trial.sampleOf,
+        ...(kept ? { keptUntil: kept.day, keptNinetyDays: kept.ninety } : {}),
+      },
+    };
   } catch {
     return access;
   }
+}
+
+/**
+ * 14/11/2026: the UK day an ended, unpaid self-serve trial's clinic will be deleted (the day its deletion warning
+ * promised, else 90 days after the end) – for a sample clinic, its real clinic's (they go together). null after paying.
+ */
+async function keptUntilFor(db: Kysely<Database>, trial: SelfTrial, endedAt: string): Promise<{ day: string; ninety: boolean } | null> {
+  const owner = trial.sampleOf ? await readSelfTrial({ db }, trial.sampleOf) : trial;
+  if (!owner || owner.convertedAt || owner.deletedAt) return null;
+  const standard = trialDeletionDay(endedAt);
+  const promised = owner.deletionDueAt ? londonDay(owner.deletionDueAt) : null;
+  // A date promised for an earlier end (the trial was extended since) does not count.
+  const day = promised && promised > standard ? promised : standard;
+  return { day, ninety: day === standard };
 }
 
 /** The sample-clinic offer: shown to the OWNER of a self-serve trial clinic while the trial runs and no sample exists. */
@@ -46,7 +70,7 @@ export async function sampleOfferFor(db: Kysely<Database>, tenantId: string, rol
   try {
     const trial = await readSelfTrial({ db }, tenantId);
     // ClinDesk trials only: the sample is the clinic system's demonstration data (a ClinForms trial has no clinic system).
-    if (!trial || trial.sampleOf || trial.brand !== "clinic" || trial.sampleState === "declined" || trial.sampleState === "ready") return null;
+    if (!trial || trial.sampleOf || trial.brand !== "clinic" || trial.sampleState === "declined" || trial.sampleState === "ready" || trial.sampleState === "removed") return null;
     return { trial };
   } catch {
     return null;

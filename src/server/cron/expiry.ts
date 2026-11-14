@@ -27,10 +27,15 @@ export async function expirySweepFromCron(
 /**
  * What the daily cron runs after the retention pass, in this order: the billing extras (only when the pass succeeded,
  * 200), then the expiry sweep (200 or 500 – the call was authorised), then (13/11/2026) the self-serve trial emails
- * (200 or 500; no-op without self-serve trials – src/server/trial/emails.ts). Each step is caught on its own, so the
- * route always returns the retention pass's response.
+ * (200 or 500; no-op without self-serve trials – src/server/trial/emails.ts), then (14/11/2026) the unpaid trials'
+ * deletion warnings and deletions – ONLY when the retention pass succeeded (200): a destructive step never runs on a
+ * night the database already failed (src/server/trial/retention.ts). Each step is caught on its own, so the route
+ * always returns the retention pass's response.
  */
-export async function afterRetentionCron(status: number, steps: { billingExtras: () => Promise<void>; expirySweep: () => Promise<unknown>; trialEmails?: () => Promise<unknown> }, warn: (event: string, detail: Record<string, unknown>) => void = (event, detail) => console.warn(JSON.stringify({ event, ...detail }))): Promise<void> {
+export async function afterRetentionCron(
+  status: number,
+  steps: { billingExtras: () => Promise<void>; expirySweep: () => Promise<unknown>; trialEmails?: () => Promise<unknown>; trialRetention?: () => Promise<unknown> },
+  warn: (event: string, detail: Record<string, unknown>) => void = (event, detail) => console.warn(JSON.stringify({ event, ...detail }))): Promise<void> {
   if (status === 200) {
     try {
       await steps.billingExtras();
@@ -50,6 +55,13 @@ export async function afterRetentionCron(status: number, steps: { billingExtras:
       } catch (err) {
         warn("cron.trial_emails.failed", { error: err instanceof Error ? err.name : "error" });
       }
+    }
+  }
+  if (status === 200 && steps.trialRetention) {
+    try {
+      await steps.trialRetention();
+    } catch (err) {
+      warn("cron.trial_retention.failed", { error: err instanceof Error ? err.name : "error" });
     }
   }
 }

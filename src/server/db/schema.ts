@@ -494,12 +494,20 @@ export interface SelfTrialTable {
   /** email | network | domain – why the free allowance was withheld (a repeat trial); null = given. */
   repeat_reason: string | null;
   sample_tenant_id: string | null;
-  /** creating | ready | declined */
+  /** creating | ready | declined | removed (14/11/2026: the owner removed it after paying) */
   sample_state: string | null;
   sample_claimed_at: IsoTimestamp | null;
   sample_step: number;
   tips_off_at: IsoTimestamp | null;
   converted_at: IsoTimestamp | null;
+  /** 14/11/2026: the moment an unpaid trial clinic may be deleted, as the deletion warning promised (set once it went). */
+  deletion_due_at: IsoTimestamp | null;
+  /** The deletion's claim (one run deletes; stale after 30 minutes). */
+  deletion_claimed_at: IsoTimestamp | null;
+  /** The clinic was deleted (the row is kept: keyed hashes and counts – the abuse brakes still see the trial). */
+  deleted_at: IsoTimestamp | null;
+  /** Stored-file keys saved before the rows were deleted, cleared once removed (JSON array; null = none pending). */
+  deletion_files_json: string | null;
   created_at: IsoTimestamp;
   updated_at: IsoTimestamp;
 }
@@ -515,7 +523,7 @@ export interface TrialReportHoldTable {
 /** `trial_email` (migration 0011) – one claimed row per trial email per clinic ('') and per recipient (never sent twice). */
 export interface TrialEmailTable {
   tenant_id: string;
-  /** welcome | tips | four_days | last_day | ended | paid */
+  /** welcome | tips | four_days | last_day | ended | paid | deletion_warning */
   kind: string;
   /** '' = the clinic's row (the schedule); else the owner's user id (one send). */
   recipient_ref: string;

@@ -17,10 +17,16 @@
  *       back: the real clinic holds none of them
  *   T6  10 free reports used → the banner says so (the Report API's refusal itself: src/server/trial tests)
  *   T7  the trial ends: the banner says the data is safe; a new patient is refused with the trial message; records read
- *   T8  the daily cron: "Your ClinDesk free trial has ended – your data is safe" once (a second run sends nothing)
+ *   T8  the daily cron: "Your ClinDesk free trial has ended – your data is safe" once (a second run sends nothing),
+ *       "kept for 90 days"
+ *   T8b 14/11/2026: 77 days after the end the cron sends ONE "Your ClinDesk trial clinic will be deleted on <date>"
+ *       (branded, the date, choose a plan, Export CSV); nothing deleted yet (the end is then put back for T9)
  *   T9  Plan and billing → ClinDesk Small monthly → TEST checkout (4242) → "your plan is active"
  *   T10 converted: plan paid, every record kept (patients, sample clinic, usage, texts), the banner gone, a new patient
  *       saves again, "You're on a paid ClinDesk plan" email once
+ *   T11 14/11/2026: the owner of the paid clinic: "Remove sample clinic" → confirm → only the sample clinic is deleted
+ *   T12 (PAY=skip only – the clinic did not pay) 14/11/2026: the promised day has come → the cron deletes the clinic
+ *       and its sample clinic (tombstones; records, members and the owner's account gone; the trial record kept)
  *   X1  no page errors
  *
  *   npm run build
@@ -421,7 +427,7 @@ const banner = async (page) => ((await page.locator("[data-testid=trial-banner]"
     await step("T7", "the trial ends: banner 'data is safe'; a new patient is refused with the trial message; records stay readable", async () => {
       run("UPDATE clinic_plan SET trial_ends_at = ? WHERE tenant_id IN (?, ?)", new Date(Date.now() - 60_000).toISOString(), tenant, sampleTenant);
       await page.goto(`${DESK}/app/clinic`);
-      assert.match(await banner(page), /Your free trial has ended\. Your data is safe/);
+      assert.match(await banner(page), /Your free trial has ended\. Your data is safe and kept for 90 days, until [A-Z][a-z]+day \d{1,2} [A-Z][a-z]+ \d{4}:/);
       await page.goto(`${DESK}/app/clinic/patients/new`);
       const form = page.locator("form#new-patient-page");
       await form.locator("input[name=firstName]").fill("Megan");
@@ -441,12 +447,34 @@ const banner = async (page) => ((await page.locator("[data-testid=trial-banner]"
       const m = await waitMail(OWNER.email, /free trial has ended/);
       assert(m, "ended email");
       assert.match(m.Subject, /Your ClinDesk free trial has ended – your data is safe/);
-      assert.match(m.Text, /Nothing has been deleted/);
+      assert.match(m.Text, /Nothing has been deleted\. Your clinic's data is kept for 90 days, until /);
       assert.equal((await call()).status, 200);
       await new Promise((r) => setTimeout(r, 1500));
       assert.equal(mailsTo(OWNER.email, /free trial has ended/).length, 1);
       assert.equal(mailsTo(OWNER.email, /Three things|4 days left|ends tomorrow/).length, 0, "the stale ones were skipped, not sent late");
       assert.ok(one("SELECT count(*) AS n FROM organization WHERE slug = ?", tenant).n === 1, "nothing deleted");
+      return m.Subject;
+    });
+
+    const cron = () => fetch(`${FORMS}/api/cron/retention`, { headers: { authorization: `Bearer ${SECRETS.CRON_SECRET}` } });
+    const realEnd = one("SELECT trial_ends_at AS e FROM clinic_plan WHERE tenant_id = ?", tenant).e;
+    await step("T8b", "77 days after the end: ONE deletion warning (date, choose a plan, Export CSV); nothing deleted yet", async () => {
+      const ended = new Date(Date.now() - 77 * 86_400_000 - 3_600_000).toISOString();
+      run("UPDATE clinic_plan SET trial_ends_at = ? WHERE tenant_id IN (?, ?)", ended, tenant, sampleTenant);
+      assert.equal((await cron()).status, 200);
+      const m = await waitMail(OWNER.email, /trial clinic will be deleted/);
+      assert(m, "deletion warning");
+      assert.match(m.Subject, /^Your ClinDesk trial clinic will be deleted on [A-Z][a-z]+day \d{1,2} [A-Z][a-z]+ \d{4}$/);
+      assert.match(m.Text, /will be deleted permanently on .+ Once they are deleted they cannot be restored\./);
+      assert.match(m.Text, /To keep it: choose a plan by [A-Z][a-z]+day \d{1,2} [A-Z][a-z]+ \d{4} under Plan and billing/);
+      assert.match(m.Text, /Export CSV on the Patients and Billing pages/);
+      assert.match(m.HTML || "", /role="presentation"/, "branded HTML");
+      assert.equal((await cron()).status, 200);
+      await new Promise((r) => setTimeout(r, 1500));
+      assert.equal(mailsTo(OWNER.email, /trial clinic will be deleted/).length, 1, "once");
+      assert.ok(one("SELECT deletion_due_at AS d FROM self_trial WHERE tenant_id = ?", tenant).d, "the promised date recorded");
+      assert.doesNotMatch(String(one("SELECT metadata FROM organization WHERE slug = ?", tenant).metadata || ""), /offboardedAt/, "not deleted yet");
+      if (PAY) run("UPDATE clinic_plan SET trial_ends_at = ? WHERE tenant_id IN (?, ?)", realEnd, tenant, sampleTenant);
       return m.Subject;
     });
 
@@ -551,6 +579,47 @@ const banner = async (page) => ((await page.locator("[data-testid=trial-banner]"
         await new Promise((r) => setTimeout(r, 3000));
         assert.equal(mailsTo(OWNER.email, /paid ClinDesk plan/).length, 1, "once, whatever webhooks arrive");
         return m.Subject;
+      });
+
+      await step("T11", "paid: the owner removes the sample clinic (confirm step) – only the sample clinic goes", async () => {
+        // A paid clinic is never deleted by the 90-day rule, even with its warning sent and the day long past.
+        run("UPDATE self_trial SET deletion_due_at = ? WHERE tenant_id = ?", new Date(Date.now() - 30 * 86_400_000).toISOString(), tenant);
+        assert.equal((await cron()).status, 200);
+        assert.doesNotMatch(String(one("SELECT metadata FROM organization WHERE slug = ?", tenant).metadata || ""), /offboardedAt/, "the paid clinic is kept");
+        await page.goto(`${DESK}/app/clinic`);
+        await page.click("[data-testid=remove-sample-start]");
+        await page.waitForSelector("[data-testid=remove-sample-confirm]");
+        assert.match(await page.locator("[data-testid=remove-sample-confirm]").innerText(), /It cannot be undone\. Your own clinic and its records are not affected\./);
+        await page.click("[data-testid=remove-sample-yes]");
+        await page.waitForURL(/\?sample=removed/, { timeout: 30000 });
+        await page.waitForSelector("[data-testid=sample-removed]", { timeout: 30000 });
+        assert.match(String(one("SELECT metadata FROM organization WHERE slug = ?", sampleTenant).metadata || ""), /offboardedAt/, "the sample clinic is closed");
+        assert.equal(one("SELECT count(*) AS n FROM pms_patients WHERE tenant_id = ?", sampleTenant).n, 0, "its made-up records are gone");
+        assert.equal(one("SELECT count(*) AS n FROM pms_patients WHERE tenant_id = ?", tenant).n, 1, "the clinic's own patient is kept");
+        assert.equal(one("SELECT count(*) AS n FROM audit_log WHERE tenant_id = ? AND action = 'clinic.sample_removed'", tenant).n, 1, "audited");
+        await page.screenshot({ path: path.join(SHOTS, "t11-sample-removed.png"), fullPage: true });
+        await page.goto(`${DESK}/app/clinic`);
+        assert.equal(await page.locator("[data-testid=remove-sample]").count(), 0, "no button any more");
+      });
+    } else {
+      await step("T12", "unpaid: the promised day has come → the cron deletes the clinic and its sample clinic", async () => {
+        const ownerId = one("SELECT u.id AS id FROM user u WHERE u.email = ?", OWNER.email).id;
+        // As if the end was 95 days ago, the warning went 15 days ago and promised 2 days ago.
+        run("UPDATE clinic_plan SET trial_ends_at = ? WHERE tenant_id IN (?, ?)", new Date(Date.now() - 95 * 86_400_000).toISOString(), tenant, sampleTenant);
+        run("UPDATE trial_email SET sent_at = ? WHERE tenant_id = ? AND kind = 'deletion_warning'", new Date(Date.now() - 15 * 86_400_000).toISOString(), tenant);
+        run("UPDATE self_trial SET deletion_due_at = ? WHERE tenant_id = ?", new Date(Date.now() - 2 * 86_400_000).toISOString(), tenant);
+        assert.equal((await cron()).status, 200);
+        await waitFor(() => /offboardedAt/.test(String(one("SELECT metadata FROM organization WHERE slug = ?", tenant).metadata || "")), 20000, "the clinic deleted");
+        assert.match(String(one("SELECT metadata FROM organization WHERE slug = ?", sampleTenant).metadata || ""), /offboardedAt/, "its sample clinic too");
+        for (const id of [tenant, sampleTenant]) {
+          assert.equal(one("SELECT count(*) AS n FROM pms_patients WHERE tenant_id = ?", id).n, 0);
+          assert.equal(one("SELECT count(*) AS n FROM clinic_plan WHERE tenant_id = ?", id).n, 0);
+        }
+        assert.equal(one("SELECT count(*) AS n FROM user WHERE id = ?", ownerId).n, 0, "the owner's account (no other clinic) is gone");
+        assert.ok(one("SELECT deleted_at AS d FROM self_trial WHERE tenant_id = ?", tenant).d, "the trial record kept, marked deleted");
+        assert.equal(one("SELECT count(*) AS n FROM audit_log WHERE tenant_id = ? AND action = 'clinic.offboard'", tenant).n, 1, "audited, once");
+        assert.equal((await cron()).status, 200);
+        assert.equal(one("SELECT count(*) AS n FROM audit_log WHERE tenant_id = ? AND action = 'clinic.offboard'", tenant).n, 1, "a second run deletes nothing more");
       });
     }
 

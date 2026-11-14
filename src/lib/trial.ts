@@ -9,8 +9,10 @@
  *               add-on to continue"); a paid plan's own allowance replaces it.
  *   texts       CLINFORMS_TRIAL_TEXTS free text credits (default 10, 0–100), granted once at sign-up, labelled as trial
  *               credits in the ledger. Packs can be bought at any time, the trial included.
- *   after       the trial ends: nothing new can be created, every record stays readable; nothing is ever deleted
- *               automatically.
+ *   after       the trial ends: nothing new can be created, every record stays readable and downloadable for
+ *               TRIAL_KEEP_DAYS (90) days; the owner is warned TRIAL_DELETION_NOTICE_DAYS (14) days before, then the
+ *               clinic (and its sample clinic) is deleted for good (owner decision 14/11/2026 – src/server/trial/
+ *               retention.ts). Never a clinic that paid, never a trial ClinForms staff set by hand.
  *
  * Abuse brakes (a repeat trial gets the trial but no free reports or texts – the platform page shows why): the same
  * owner address (case, +tags and gmail dots ignored) had a trial before; or the network (an IPv4 address, an IPv6 /64 –
@@ -118,7 +120,8 @@ export function ownEmailDomain(email: string): string | null {
 
 /* ------------------------------------------------------------------ the emails' schedule */
 
-export const TRIAL_EMAIL_KINDS = ["welcome", "tips", "four_days", "last_day", "ended", "paid"] as const;
+/** 14/11/2026: "deletion_warning" – 14 days before an unpaid trial clinic is deleted (src/server/trial/retention.ts). */
+export const TRIAL_EMAIL_KINDS = ["welcome", "tips", "four_days", "last_day", "ended", "paid", "deletion_warning"] as const;
 export type TrialEmailKind = (typeof TRIAL_EMAIL_KINDS)[number];
 
 /** Tips-type emails (not about the account itself): they carry the "stop these emails" link. */
@@ -140,6 +143,51 @@ export function londonDaysBetween(from: Date | string, to: Date | string): numbe
   const a = Date.parse(`${londonDay(from)}T00:00:00Z`);
   const b = Date.parse(`${londonDay(to)}T00:00:00Z`);
   return Math.round((b - a) / 86_400_000);
+}
+
+/* ------------------------------------------------------------------ after an unpaid trial (14/11/2026) */
+
+/** Days an unpaid trial clinic stays (read-only) after its trial ended, before it is deleted. */
+export const TRIAL_KEEP_DAYS = 90;
+/** Days of notice the owner gets (the "deletion_warning" email) before the deletion. */
+export const TRIAL_DELETION_NOTICE_DAYS = 14;
+
+const UK_DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** "YYYY-MM-DD" + n calendar days. */
+export function addUkDays(day: string, n: number): string {
+  if (!UK_DAY_RE.test(day)) throw new Error(`Not a day: ${day}`);
+  return new Date(Date.parse(`${day}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+}
+
+/** The moment a UK calendar day starts (00:00 Europe/London – 00:00 UTC in winter, 23:00 UTC the day before in summer). */
+export function ukDayStart(day: string): Date {
+  if (!UK_DAY_RE.test(day)) throw new Error(`Not a day: ${day}`);
+  const utc = Date.parse(`${day}T00:00:00Z`);
+  return londonDay(new Date(utc - 3_600_000)) === day ? new Date(utc - 3_600_000) : new Date(utc);
+}
+
+/**
+ * The UK day an unpaid trial clinic may be deleted, at the earliest: TRIAL_KEEP_DAYS full days after the trial's end
+ * (the end's UK day + 91 – so from 00:00 that day, at least 90 × 24 hours have passed since the end).
+ */
+export function trialDeletionDay(endsAt: string): string {
+  return addUkDays(londonDay(endsAt), TRIAL_KEEP_DAYS + 1);
+}
+
+/** The UK day the deletion warning is due: TRIAL_DELETION_NOTICE_DAYS before the deletion day. */
+export function trialDeletionWarningDay(endsAt: string): string {
+  return addUkDays(trialDeletionDay(endsAt), -TRIAL_DELETION_NOTICE_DAYS);
+}
+
+/**
+ * The deletion day to promise in a warning sent `now`: the deletion day, or – when the warning goes late (the sweep was
+ * off, the provider refused it) – TRIAL_DELETION_NOTICE_DAYS after today, so the owner always gets the full notice.
+ */
+export function trialDeletionDayIfWarnedAt(endsAt: string, now: Date): string {
+  const earliest = trialDeletionDay(endsAt);
+  const notice = addUkDays(londonDay(now), TRIAL_DELETION_NOTICE_DAYS);
+  return notice > earliest ? notice : earliest;
 }
 
 /** What the schedule needs to know about one trial clinic. */

@@ -6,6 +6,10 @@
  * sign-in, the 10-report cap, read-only after the end, conversion by the first payment (every record kept, the limits
  * lifted at once), the email schedule (each email once, on its UK day, skipped when paid or late, retried when the
  * provider failed), no deletion by the retention cron, and the separate sample clinic (isolation, once only).
+ * 14/11/2026: after an unpaid trial – kept 90 days, ONE deletion warning 14 days before, then deleted (the sample clinic
+ * with it); never a clinic that paid, a hand-set trial or the sample of a paid clinic; the paid state re-read right
+ * before deleting; double runs; the owner's "Remove sample clinic" after paying (owner only). These run LAST: they move
+ * the clock months ahead.
  */
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
@@ -50,6 +54,13 @@ import { sendTrialEmail } from "../emails";
 import { clinicShellTrial } from "../view";
 import { updateBookingSettings } from "../../repos/pms/portal/settings";
 import { loadPublicClinic } from "../../pms/portal/public-clinic";
+import { addUkDays, londonDay, ukDayStart } from "../../../lib/trial";
+import { endClinicTrial, extendClinicTrial } from "../../repos/clinic-plan";
+import { appendAudit } from "../../repos/audit";
+import { markTrialConverted } from "../../repos/self-trial";
+import { deleteUnpaidTrialClinic, runTrialRetentionSweep } from "../retention";
+import { removeSampleClinic, sampleRemovalOffer } from "../sample";
+import { clinicTrialRunning } from "../../admin/clinic-plan";
 
 const SECRET = "trial-suite-secret-".padEnd(48, "t");
 const DAY = 86_400_000;
@@ -725,6 +736,417 @@ export function defineTrialSuite(label: string, factory: () => Promise<TrialSuit
       await firstVisit(d);
       await declineSampleClinic(t.db, d.tenantId, now);
       assert.deepEqual(await createSampleClinic({ db: t.db, cipher, now, patients: 12 }, { tenantId: d.tenantId, userId: d.userId }), { status: "unavailable", why: "declined" });
+    });
+    /* ------------------------------------------------------------ 14/11/2026: after an unpaid trial (run last) */
+
+    /** 03:17 UTC on a UK day – the daily cron's moment. */
+    const cronAt = (day: string) => Date.parse(`${day}T03:17:00.000Z`);
+    const retention = () => runTrialRetentionSweep(t.db, { env: ENV, now, maxDeletions: 1000 });
+    const warningsTo = (email: string) => sent.filter((m) => m.to.email === email && /trial clinic will be deleted/.test(m.subject));
+    const orgRow = (slug: string) => t.db.selectFrom("organization").select(["id", "metadata"]).where("slug", "=", slug).executeTakeFirst();
+    const closed = async (slug: string) => /"offboardedAt"/.test(String((await orgRow(slug))?.metadata ?? ""));
+    /** A self-serve trial that has started (first sign-in), with one patient; its trial's end as a UK day. */
+    async function endedTrialClinic(brand: "clinic" | "clinforms" = "clinic") {
+      const c = await signedUpClinic(brand);
+      await start(c, brand);
+      await firstVisit(c);
+      if (brand === "clinic") await createPatient({ db: t.db, cipher, now }, c.tenantId, { firstName: "Megan", lastName: "Hart" }, { userId: c.userId, sessionId: null });
+      const endsAt = (await getClinicPlan({ db: t.db }, c.tenantId))?.trialEndsAt as string;
+      return { ...c, endsAt, endDay: londonDay(endsAt) };
+    }
+    /** What the subscription sync's conversion leaves (plan paid + trial converted) – for a payment mid-deletion. */
+    const markPaid = async (tenantId: string) => {
+      await endClinicTrial({ db: t.db, now }, tenantId, "paid");
+      await markTrialConverted({ db: t.db, now }, tenantId);
+    };
+
+    it("unpaid trial: kept read-only for 90 days, ONE warning 14 days before (with the date), deleted on day 91 – everything but the trial record and the audit trail", async () => {
+      const saved = clock;
+      const c = await endedTrialClinic("clinic");
+      const ctx = { db: t.db, cipher, now };
+      try {
+        // 75 days after the end (the retention cron's old test) and day 76: nothing.
+        for (const d of [75, 76]) {
+          clock = cronAt(addUkDays(c.endDay, d));
+          await retention();
+        }
+        assert.equal(warningsTo(c.email).length, 0, "no warning before day 77");
+        assert.equal(await closed(c.tenantId), false);
+        // Day 77 (14 days before day 91): one warning, the date in it, the date recorded.
+        clock = cronAt(addUkDays(c.endDay, 77));
+        await retention();
+        await retention();
+        const w = warningsTo(c.email);
+        assert.equal(w.length, 1, "exactly one warning, a re-run sends nothing");
+        const deletionDay = addUkDays(c.endDay, 91);
+        const long = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(ukDayStart(deletionDay)).replace(",", "");
+        assert.equal(w[0].subject, `Your ClinDesk trial clinic will be deleted on ${long}`);
+        assert.equal(w[0].brand, "clinic");
+        assert.match(w[0].html, /http:\/\/clinic\.localhost:3000\/app\/settings\/billing/);
+        assert.match(w[0].text, /Export CSV/);
+        assert.equal((await getSelfTrial({ db: t.db }, c.tenantId))?.deletionDueAt, ukDayStart(deletionDay).toISOString());
+        // The banner says how long the data is kept (the same day).
+        const banner = await trialBannerState(t.db, c.tenantId, clinicAccessOf(await getClinicPlan({ db: t.db }, c.tenantId), now()), true, "clinic");
+        assert.equal(banner && "selfServe" in banner ? banner.selfServe?.keptUntil : null, deletionDay);
+        // Day 90: still kept (the 90-day boundary).
+        clock = cronAt(addUkDays(c.endDay, 90));
+        assert.deepEqual(await deleteUnpaidTrialClinic(t.db, c.tenantId, { now }), { status: "skipped", why: "not_due" });
+        await retention();
+        assert.equal(await closed(c.tenantId), false, "day 90: kept");
+        assert.equal(await countPatients(ctx, c.tenantId), 1);
+        // Day 91: deleted.
+        clock = cronAt(deletionDay);
+        const r = await retention();
+        assert.ok(r.deleted >= 1);
+        assert.equal(await closed(c.tenantId), true, "the organization row stays as a tombstone");
+        assert.equal(await countPatients(ctx, c.tenantId, "any"), 0, "the clinic system's records are gone");
+        assert.equal(await getClinicPlan({ db: t.db }, c.tenantId), null);
+        assert.equal((await t.db.selectFrom("member").select("id").where("organizationId", "=", (await orgRow(c.tenantId))!.id).execute()).length, 0);
+        assert.equal(await t.db.selectFrom("user").select("id").where("id", "=", c.userId).executeTakeFirst(), undefined, "the owner's account (no other clinic) is gone");
+        const trial = await getSelfTrial({ db: t.db }, c.tenantId);
+        assert.ok(trial?.deletedAt, "the trial record is kept and marked (abuse brakes)");
+        const audit = await listAudit({ db: t.db }, c.tenantId, { action: "clinic.offboard" });
+        const off = audit.filter((a) => a.action === "clinic.offboard");
+        assert.equal(off.length, 1);
+        assert.equal((off[0].detail as Record<string, unknown>)?.withoutExport, "trial_expired");
+        // Later nights: nothing more – no second deletion, no email.
+        const before = sent.length;
+        clock = cronAt(addUkDays(deletionDay, 1));
+        await retention();
+        await sweep();
+        assert.equal(sent.length, before);
+        assert.equal((await listAudit({ db: t.db }, c.tenantId, { action: "clinic.offboard" })).filter((a) => a.action === "clinic.offboard").length, 1);
+      } finally {
+        clock = saved;
+      }
+    });
+
+    it("unpaid trial: two runs at once warn once and delete once; a ClinForms trial gets ClinForms' warning", async () => {
+      const saved = clock;
+      const c = await endedTrialClinic("clinforms");
+      try {
+        clock = cronAt(addUkDays(c.endDay, 77));
+        await Promise.all([retention(), retention()]);
+        const w = warningsTo(c.email);
+        assert.equal(w.length, 1);
+        assert.match(w[0].subject, /^Your ClinForms trial clinic will be deleted on /);
+        assert.equal(w[0].brand, undefined, "ClinForms' sender");
+        clock = cronAt(addUkDays(c.endDay, 91));
+        await Promise.all([retention(), retention(), deleteUnpaidTrialClinic(t.db, c.tenantId, { now })]);
+        assert.equal(await closed(c.tenantId), true);
+        assert.equal((await listAudit({ db: t.db }, c.tenantId, { action: "clinic.offboard" })).filter((a) => a.action === "clinic.offboard").length, 1, "deleted once");
+      } finally {
+        clock = saved;
+      }
+    });
+
+    it("no warning delivered = no deletion: the provider refused it → held; sent the next night with 14 days from THAT day", async () => {
+      const saved = clock;
+      const c = await endedTrialClinic("clinic");
+      try {
+        clock = cronAt(addUkDays(c.endDay, 77));
+        failFor = c.email;
+        const r1 = await retention();
+        assert.ok(r1.held >= 1);
+        assert.equal(warningsTo(c.email).length, 0);
+        // Day 91 without a delivered warning: never deleted.
+        failFor = null;
+        clock = cronAt(addUkDays(c.endDay, 91));
+        failFor = c.email;
+        await retention();
+        assert.equal(await closed(c.tenantId), false, "never deleted without a warning that reached the owner");
+        failFor = null;
+        // Day 92: the retry goes – it promises day 92 + 14 = day 106.
+        clock = cronAt(addUkDays(c.endDay, 92));
+        await retention();
+        const w = warningsTo(c.email);
+        assert.equal(w.length, 1);
+        assert.equal((await getSelfTrial({ db: t.db }, c.tenantId))?.deletionDueAt, ukDayStart(addUkDays(c.endDay, 106)).toISOString());
+        clock = cronAt(addUkDays(c.endDay, 105));
+        await retention();
+        assert.equal(await closed(c.tenantId), false, "day 105: the promised day has not come");
+        clock = cronAt(addUkDays(c.endDay, 106));
+        await retention();
+        assert.equal(await closed(c.tenantId), true);
+      } finally {
+        failFor = null;
+        clock = saved;
+      }
+    });
+
+    it("never deleted: a clinic that paid after the warning, one converted by hand, a hand-set trial (Blue Heart's kind), an open subscription", async () => {
+      const saved = clock;
+      const paidLate = await endedTrialClinic("clinic");
+      const byHand = await endedTrialClinic("clinforms");
+      const subOpen = await endedTrialClinic("clinforms");
+      const manual = await signedUpClinic("clinforms");
+      await setClinicTrial({ db: t.db, now }, manual.tenantId, { days: 3, startOnFirstSignIn: false });
+      const ctx = { db: t.db, cipher, now };
+      try {
+        // Converted by hand on the platform page (the plan only) before its warning day.
+        await endClinicTrial({ db: t.db, now }, byHand.tenantId, "paid");
+        clock = cronAt(addUkDays(paidLate.endDay, 77));
+        await retention();
+        assert.equal(warningsTo(paidLate.email).length, 1);
+        // Paid after the warning (the subscription sync: plan paid + converted).
+        await pay(paidLate.tenantId, ["clindesk_small_monthly"]);
+        await t.db
+          .insertInto("clinic_subscription")
+          .values({
+            tenant_id: subOpen.tenantId,
+            customer_ref: "cus_test_fictional_0001",
+            subscription_ref: "sub_test_fictional_0001",
+            mode: "test",
+            status: "incomplete",
+            state: "pending_payment",
+            rev: 1,
+            created_at: now().toISOString(),
+            updated_at: now().toISOString(),
+          } as never)
+          .execute();
+        for (const d of [91, 120, 400]) {
+          clock = cronAt(addUkDays(paidLate.endDay, d));
+          await retention();
+        }
+        for (const c of [paidLate, byHand, subOpen, manual]) assert.equal(await closed(c.tenantId), false, c.tenantId);
+        assert.equal(await countPatients(ctx, paidLate.tenantId), 1, "the paid clinic's records are kept");
+        assert.equal(warningsTo(byHand.email).length, 0, "converted by hand before its warning day: no warning");
+        assert.equal(warningsTo(manual.email).length, 0, "a hand-set trial gets nothing");
+        assert.equal((await deleteUnpaidTrialClinic(t.db, paidLate.tenantId, { now })).status, "skipped");
+        assert.deepEqual(await deleteUnpaidTrialClinic(t.db, manual.tenantId, { now }), { status: "skipped", why: "not_self_serve" });
+        assert.deepEqual(await deleteUnpaidTrialClinic(t.db, subOpen.tenantId, { now }), { status: "skipped", why: "subscription" });
+      } finally {
+        clock = saved;
+      }
+    });
+
+    it("the paid state is re-read right before the clinic is deleted (a payment while the deletion runs stops it)", { skip: options.sample === false ? "needs a sample clinic (covered on SQLite/PGlite)" : false }, async () => {
+      const saved = clock;
+      const c = await endedTrialClinic("clinic");
+      try {
+        // A sample clinic made during the trial.
+        clock = Date.parse((await getClinicPlan({ db: t.db }, c.tenantId))?.trialStartsAt as string) + DAY;
+        let s = await createSampleClinic({ db: t.db, cipher, now, patients: 12, budgetMs: 60_000 }, { tenantId: c.tenantId, userId: c.userId });
+        for (let i = 0; i < 10 && s.status === "in_progress"; i++) s = await createSampleClinic({ db: t.db, cipher, now, patients: 12, budgetMs: 60_000 }, { tenantId: c.tenantId, userId: c.userId });
+        assert.equal(s.status, "created");
+        clock = cronAt(addUkDays(c.endDay, 77));
+        await retention();
+        clock = cronAt(addUkDays(c.endDay, 91));
+        const r = await deleteUnpaidTrialClinic(t.db, c.tenantId, {
+          now,
+          // The payment lands while the sample clinic is being deleted (after its check, before the clinic's own).
+          beforeDelete: async (id, reason) => {
+            if (reason !== "trial_expired_sample") return;
+            assert.notEqual(id, c.tenantId);
+            await markPaid(c.tenantId);
+          },
+        });
+        assert.deepEqual(r, { status: "skipped", why: "converted" });
+        assert.equal(await closed(c.tenantId), false, "the clinic that paid is kept");
+        assert.equal(await countPatients({ db: t.db, cipher, now }, c.tenantId), 1);
+        assert.equal((await getSelfTrial({ db: t.db }, c.tenantId))?.deletionClaimedAt, null, "the claim was given back");
+      } finally {
+        clock = saved;
+      }
+    });
+
+    it("an unpaid trial's sample clinic is deleted with it (first); a paid clinic's sample clinic is never touched", { skip: options.sample === false ? "sample seed covered on SQLite/PGlite" : false }, async () => {
+      const saved = clock;
+      const unpaid = await endedTrialClinic("clinic");
+      const paid = await endedTrialClinic("clinic");
+      const ctx = { db: t.db, cipher, now };
+      try {
+        const samples: Record<string, string> = {};
+        for (const c of [unpaid, paid]) {
+          clock = Date.parse((await getClinicPlan({ db: t.db }, c.tenantId))?.trialStartsAt as string) + DAY;
+          let s = await createSampleClinic({ db: t.db, cipher, now, patients: 12, budgetMs: 60_000 }, { tenantId: c.tenantId, userId: c.userId });
+          for (let i = 0; i < 10 && s.status === "in_progress"; i++) s = await createSampleClinic({ db: t.db, cipher, now, patients: 12, budgetMs: 60_000 }, { tenantId: c.tenantId, userId: c.userId });
+          assert.equal(s.status, "created");
+          samples[c.tenantId] = s.status === "created" ? s.sampleTenantId : "";
+        }
+        await pay(paid.tenantId, ["clindesk_small_monthly"]);
+        for (const d of [77, 91, 200]) {
+          clock = cronAt(addUkDays(unpaid.endDay, d));
+          await retention();
+        }
+        assert.equal(await closed(unpaid.tenantId), true);
+        assert.equal(await closed(samples[unpaid.tenantId]), true, "its sample clinic too");
+        assert.equal(await countPatients(ctx, samples[unpaid.tenantId], "any"), 0);
+        assert.ok((await getSelfTrial({ db: t.db }, samples[unpaid.tenantId]))?.deletedAt);
+        assert.equal(await t.db.selectFrom("user").select("id").where("id", "=", unpaid.userId).executeTakeFirst(), undefined, "the owner (a member of both) is gone");
+        assert.equal(await closed(paid.tenantId), false);
+        assert.equal(await closed(samples[paid.tenantId]), false, "a paid clinic's sample clinic is untouched");
+        assert.ok((await countPatients(ctx, samples[paid.tenantId])) >= 12);
+      } finally {
+        clock = saved;
+      }
+    });
+
+    it("'Remove sample clinic': the OWNER of a paid clinic only, after a claim; removes the sample clinic only, audited; once", { skip: options.sample === false ? "sample seed covered on SQLite/PGlite" : false }, async () => {
+      const saved = clock;
+      const c = await endedTrialClinic("clinic");
+      const ctx = { db: t.db, cipher, now };
+      try {
+        clock = Date.parse((await getClinicPlan({ db: t.db }, c.tenantId))?.trialStartsAt as string) + DAY;
+        let s = await createSampleClinic({ db: t.db, cipher, now, patients: 12, budgetMs: 60_000 }, { tenantId: c.tenantId, userId: c.userId });
+        for (let i = 0; i < 10 && s.status === "in_progress"; i++) s = await createSampleClinic({ db: t.db, cipher, now, patients: 12, budgetMs: 60_000 }, { tenantId: c.tenantId, userId: c.userId });
+        const sample = s.status === "created" ? s.sampleTenantId : "";
+        assert.ok(sample);
+        // An administrator of the clinic (not its owner).
+        const at = now().toISOString();
+        const org = (await orgRow(c.tenantId))!;
+        await t.db.insertInto("user").values({ id: `u-admin-${n}`, name: "Sam Reed", email: `sam${n}@larkfield-physio.example`, emailVerified: true, image: null, createdAt: at, updatedAt: at, twoFactorEnabled: true }).execute();
+        await t.db.insertInto("member").values({ id: `m-admin-${n}`, organizationId: org.id, userId: `u-admin-${n}`, role: "admin", createdAt: at }).execute();
+        // Before paying: no button, refused.
+        assert.equal(await sampleRemovalOffer(t.db, c.tenantId, c.userId, "owner", now()), null);
+        assert.deepEqual(await removeSampleClinic({ db: t.db, now }, { tenantId: c.tenantId, userId: c.userId }), { status: "unavailable", why: "not_paid" });
+        await pay(c.tenantId, ["clindesk_small_monthly"]);
+        // Owner only.
+        assert.equal(await sampleRemovalOffer(t.db, c.tenantId, `u-admin-${n}`, "admin", now()), null);
+        assert.deepEqual(await removeSampleClinic({ db: t.db, now }, { tenantId: c.tenantId, userId: `u-admin-${n}` }), { status: "unavailable", why: "not_owner" });
+        assert.deepEqual(await removeSampleClinic({ db: t.db, now }, { tenantId: c.tenantId, userId: "u-not-a-member" }), { status: "unavailable", why: "not_owner" });
+        assert.deepEqual(await sampleRemovalOffer(t.db, c.tenantId, c.userId, "owner", now()), { sampleTenantId: sample });
+        // From the sample clinic itself: nothing to remove there.
+        assert.equal(await sampleRemovalOffer(t.db, sample, c.userId, "owner", now()), null);
+        // Two clicks at once: one removal.
+        const [a, b] = await Promise.all([removeSampleClinic({ db: t.db, now }, { tenantId: c.tenantId, userId: c.userId }), removeSampleClinic({ db: t.db, now }, { tenantId: c.tenantId, userId: c.userId })]);
+        assert.deepEqual([a, b].filter((x) => x.status === "removed").length, 1, JSON.stringify([a, b]));
+        assert.equal(await closed(sample), true);
+        assert.equal(await countPatients(ctx, sample, "any"), 0);
+        assert.equal(await closed(c.tenantId), false, "the clinic itself is untouched");
+        assert.equal(await countPatients(ctx, c.tenantId), 1, "its records too");
+        assert.ok(await t.db.selectFrom("user").select("id").where("id", "=", c.userId).executeTakeFirst(), "the owner's account is kept");
+        assert.equal((await getSelfTrial({ db: t.db }, c.tenantId))?.sampleState, "removed");
+        const audit = await listAudit({ db: t.db }, c.tenantId, { action: "clinic.sample_removed" });
+        assert.ok(audit.some((x) => x.action === "clinic.sample_removed" && x.userId === c.userId), "audited in the clinic, by the owner");
+        const sampleAudit = await listAudit({ db: t.db }, sample, { action: "clinic.offboard" });
+        assert.ok(sampleAudit.some((x) => x.action === "clinic.offboard" && (x.detail as Record<string, unknown>)?.withoutExport === "sample_removed"));
+        // Afterwards: no button, nothing to remove, and the offer to create one never comes back.
+        assert.equal(await sampleRemovalOffer(t.db, c.tenantId, c.userId, "owner", now()), null);
+        assert.deepEqual(await removeSampleClinic({ db: t.db, now }, { tenantId: c.tenantId, userId: c.userId }), { status: "unavailable", why: "no_sample" });
+      } finally {
+        clock = saved;
+      }
+    });
+
+    it("review H1: staff extend the trial after the warning → that warning no longer counts; a fresh one 14 days before the NEW date", async () => {
+      const saved = clock;
+      const c = await endedTrialClinic("clinforms");
+      try {
+        clock = cronAt(addUkDays(c.endDay, 77));
+        await retention();
+        assert.equal(warningsTo(c.email).length, 1);
+        // Day 80: staff extend the ended trial by 7 days (from now).
+        clock = cronAt(addUkDays(c.endDay, 80));
+        await extendClinicTrial({ db: t.db, now }, c.tenantId, 7);
+        const newEnd = (await getClinicPlan({ db: t.db }, c.tenantId))?.trialEndsAt as string;
+        const newDay = londonDay(newEnd);
+        // The old date comes and goes: nothing deleted (the trial even runs again for a while).
+        for (const d of [91, 100]) {
+          clock = cronAt(addUkDays(c.endDay, d));
+          await retention();
+          assert.equal(await closed(c.tenantId), false, `old day ${d}`);
+        }
+        // New end + 91 without a new warning: still nothing (the old warning promised another day).
+        clock = cronAt(addUkDays(newDay, 91));
+        assert.deepEqual(await deleteUnpaidTrialClinic(t.db, c.tenantId, { now }), { status: "skipped", why: "not_warned" });
+        // The sweep at new end + 77: a second warning for the new date; then deleted on new end + 91.
+        clock = cronAt(addUkDays(newDay, 77));
+        await retention();
+        assert.equal(warningsTo(c.email).length, 2, "a fresh warning for the new date");
+        assert.equal((await getSelfTrial({ db: t.db }, c.tenantId))?.deletionDueAt, ukDayStart(addUkDays(newDay, 91)).toISOString());
+        clock = cronAt(addUkDays(newDay, 90));
+        await retention();
+        assert.equal(await closed(c.tenantId), false);
+        clock = cronAt(addUkDays(newDay, 91));
+        await retention();
+        assert.equal(await closed(c.tenantId), true);
+      } finally {
+        clock = saved;
+      }
+    });
+
+    it("review M2: a deletion that stopped part-way keeps its claim and is finished by a later run (after 30 minutes)", async () => {
+      const saved = clock;
+      const c = await endedTrialClinic("clinic");
+      try {
+        clock = cronAt(addUkDays(c.endDay, 77));
+        await retention();
+        clock = cronAt(addUkDays(c.endDay, 91));
+        // As if the offboarding's first batch ran (the plan row is gone) and the run then died.
+        await assert.rejects(
+          deleteUnpaidTrialClinic(t.db, c.tenantId, {
+            now,
+            beforeDelete: async (id) => {
+              await t.db.deleteFrom("clinic_plan").where("tenant_id", "=", id).execute();
+              throw new Error("killed");
+            },
+          }),
+          /killed/,
+        );
+        assert.ok((await getSelfTrial({ db: t.db }, c.tenantId))?.deletionClaimedAt, "the claim is kept once deleting began");
+        await retention();
+        assert.equal(await closed(c.tenantId), false, "within 30 minutes: another run may still be working");
+        clock += 31 * 60_000;
+        const r = await retention();
+        assert.ok(r.resumed >= 1);
+        assert.equal(await closed(c.tenantId), true, "finished");
+        assert.equal(await countPatients({ db: t.db, cipher, now }, c.tenantId, "any"), 0);
+        assert.ok((await getSelfTrial({ db: t.db }, c.tenantId))?.deletedAt);
+      } finally {
+        clock = saved;
+      }
+    });
+
+    it("review: a payment page opened in the last 48 hours holds the deletion", async () => {
+      const saved = clock;
+      const c = await endedTrialClinic("clinforms");
+      try {
+        clock = cronAt(addUkDays(c.endDay, 77));
+        await retention();
+        clock = cronAt(addUkDays(c.endDay, 91));
+        await appendAudit({ db: t.db, now }, c.tenantId, { userId: c.userId, action: "clinic.subscription_checkout", targetType: "clinic_subscription", targetId: c.tenantId, detail: { plan: ["clinforms_starter_monthly"] } });
+        assert.deepEqual(await deleteUnpaidTrialClinic(t.db, c.tenantId, { now }), { status: "skipped", why: "checkout" });
+        await retention();
+        assert.equal(await closed(c.tenantId), false);
+        clock += 2 * DAY;
+        await retention();
+        assert.equal(await closed(c.tenantId), true, "the page expired unpaid: deleted");
+      } finally {
+        clock = saved;
+      }
+    });
+
+    it("review M3: a sample clinic whose own trial row was never written (a crash) is still found by its organization and deleted with the clinic", { skip: options.sample === false ? "sample seed covered on SQLite/PGlite" : false }, async () => {
+      const saved = clock;
+      const c = await endedTrialClinic("clinic");
+      try {
+        clock = Date.parse((await getClinicPlan({ db: t.db }, c.tenantId))?.trialStartsAt as string) + DAY;
+        const s1 = await createSampleClinic({ db: t.db, cipher, now, patients: 12, budgetMs: 0 }, { tenantId: c.tenantId, userId: c.userId });
+        assert.equal(s1.status, "in_progress");
+        const sample = s1.status === "in_progress" ? s1.sampleTenantId : "";
+        await t.db.deleteFrom("self_trial").where("tenant_id", "=", sample).execute();
+        // An unrelated clinic that happens to carry a sample-like id is never touched.
+        clock = cronAt(addUkDays(c.endDay, 77));
+        await retention();
+        clock = cronAt(addUkDays(c.endDay, 91));
+        await retention();
+        assert.equal(await closed(c.tenantId), true);
+        assert.equal(await closed(sample), true, "the orphan sample clinic went too");
+        assert.equal(await t.db.selectFrom("user").select("id").where("id", "=", c.userId).executeTakeFirst(), undefined, "so the owner's account is gone");
+      } finally {
+        clock = saved;
+      }
+    });
+
+    it("14/11/2026: a self-serve trial has no made-up-notes wording on the drafting switch; a hand-set trial keeps it", async () => {
+      const c = await signedUpClinic("clinforms");
+      await start(c, "clinforms");
+      await firstVisit(c);
+      assert.equal(await clinicTrialRunning(t.db, c.tenantId, now()), false, "self-serve: the standard wording");
+      const manual = await signedUpClinic("clinforms");
+      await setClinicTrial({ db: t.db, now }, manual.tenantId, { days: 3, startOnFirstSignIn: false });
+      assert.equal(await clinicTrialRunning(t.db, manual.tenantId, now()), true, "hand-set: made-up notes only, as before");
     });
   });
 }

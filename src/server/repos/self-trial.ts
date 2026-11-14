@@ -11,7 +11,7 @@ import { RepoInputError, assertTenantId, nowIso, toInt, type DbContext } from ".
 
 export type TrialBrand = "clinforms" | "clinic";
 export type RepeatReason = "email" | "network" | "domain";
-export type SampleState = "creating" | "ready" | "declined";
+export type SampleState = "creating" | "ready" | "declined" | "removed";
 
 export interface SelfTrial {
   tenantId: string;
@@ -33,6 +33,13 @@ export interface SelfTrial {
   sampleStep: number;
   tipsOffAt: string | null;
   convertedAt: string | null;
+  /** 14/11/2026: when an unpaid trial clinic may be deleted (set once the deletion warning went to an owner). */
+  deletionDueAt: string | null;
+  deletionClaimedAt: string | null;
+  /** The clinic was deleted (the row is kept for the abuse brakes). */
+  deletedAt: string | null;
+  /** Stored-file keys still to remove after the clinic's rows were deleted (normally empty). */
+  pendingFileKeys: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -54,9 +61,23 @@ type Row = {
   sample_step?: number | null;
   tips_off_at: string | null;
   converted_at: string | null;
+  deletion_due_at?: string | null;
+  deletion_claimed_at?: string | null;
+  deleted_at?: string | null;
+  deletion_files_json?: string | null;
   created_at: string;
   updated_at: string;
 };
+
+function parseKeys(json: string | null): string[] {
+  if (!json) return [];
+  try {
+    const v = JSON.parse(json) as unknown;
+    return Array.isArray(v) ? v.filter((k): k is string => typeof k === "string") : [];
+  } catch {
+    return [];
+  }
+}
 
 function toTrial(r: Row): SelfTrial {
   return {
@@ -71,11 +92,15 @@ function toTrial(r: Row): SelfTrial {
     reportsReserved: toInt(r.reports_reserved ?? 0),
     repeatReason: r.repeat_reason === "email" || r.repeat_reason === "network" || r.repeat_reason === "domain" ? r.repeat_reason : null,
     sampleTenantId: r.sample_tenant_id,
-    sampleState: r.sample_state === "creating" || r.sample_state === "ready" || r.sample_state === "declined" ? r.sample_state : null,
+    sampleState: r.sample_state === "creating" || r.sample_state === "ready" || r.sample_state === "declined" || r.sample_state === "removed" ? r.sample_state : null,
     sampleClaimedAt: r.sample_claimed_at,
     sampleStep: toInt(r.sample_step ?? 0),
     tipsOffAt: r.tips_off_at,
     convertedAt: r.converted_at,
+    deletionDueAt: r.deletion_due_at ?? null,
+    deletionClaimedAt: r.deletion_claimed_at ?? null,
+    deletedAt: r.deleted_at ?? null,
+    pendingFileKeys: parseKeys(r.deletion_files_json ?? null),
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -171,6 +196,10 @@ export async function createSelfTrial(ctx: DbContext, tenantId: string, input: S
       sample_step: 0,
       tips_off_at: null,
       converted_at: null,
+      deletion_due_at: null,
+      deletion_claimed_at: null,
+      deleted_at: null,
+      deletion_files_json: null,
       created_at: at,
       updated_at: at,
     })
@@ -279,9 +308,118 @@ export async function setSampleState(ctx: DbContext, tenantId: string, state: Sa
   assertTenantId(tenantId);
   const at = nowIso(ctx);
   let q = ctx.db.updateTable("self_trial").set({ sample_state: state, updated_at: at, ...(state === "ready" ? { sample_claimed_at: null } : {}) }).where("tenant_id", "=", tenantId).where("sample_of", "is", null);
-  // "declined" only while there is no sample; "ready" only for the clinic's own claim.
+  // "declined" only while there is no sample; "ready" only for the clinic's own claim (never over a removed sample).
   if (state === "declined") q = q.where("sample_state", "is", null);
+  if (state === "ready") q = q.where("sample_state", "=", "creating");
   await q.execute();
+}
+
+/* ------------------------------------------------------------------ after an unpaid trial (14/11/2026) */
+
+/** How long a deletion's claim holds before another run may take over (a crashed run). */
+export const TRIAL_DELETION_CLAIM_STALE_MS = 30 * 60_000;
+
+/**
+ * Records the moment the clinic may be deleted, as the deletion warning states it. `onlyIfUnset`: once the warning went
+ * to an owner the promised date never moves earlier (a later owner's retry keeps it).
+ */
+export async function setTrialDeletionDue(ctx: DbContext, tenantId: string, dueAt: string, options: { onlyIfUnset?: boolean } = {}): Promise<void> {
+  assertTenantId(tenantId);
+  if (!Number.isFinite(Date.parse(dueAt))) throw new RepoInputError("Invalid deletion date.");
+  const at = nowIso(ctx);
+  let q = ctx.db.updateTable("self_trial").set({ deletion_due_at: dueAt, updated_at: at }).where("tenant_id", "=", tenantId).where("deleted_at", "is", null).where("converted_at", "is", null);
+  if (options.onlyIfUnset) q = q.where("deletion_due_at", "is", null);
+  await q.execute();
+}
+
+/**
+ * Claims the clinic's deletion: ONE conditional UPDATE – not deleted, not converted, not a sample, and no live claim
+ * (or a stale one). Two runs at once: one wins.
+ */
+export async function claimTrialDeletion(ctx: DbContext, tenantId: string): Promise<boolean> {
+  assertTenantId(tenantId);
+  const at = nowIso(ctx);
+  const stale = new Date(Date.parse(at) - TRIAL_DELETION_CLAIM_STALE_MS).toISOString();
+  const r = await ctx.db
+    .updateTable("self_trial")
+    .set({ deletion_claimed_at: at, updated_at: at })
+    .where("tenant_id", "=", tenantId)
+    .where("sample_of", "is", null)
+    .where("deleted_at", "is", null)
+    .where("converted_at", "is", null)
+    .where((eb) => eb.or([eb("deletion_claimed_at", "is", null), eb("deletion_claimed_at", "<", stale)]))
+    .executeTakeFirst();
+  return Number(r.numUpdatedRows) > 0;
+}
+
+/** Gives the claim back (the deletion was stopped or failed – the next run decides again). */
+export async function releaseTrialDeletionClaim(ctx: DbContext, tenantId: string): Promise<void> {
+  assertTenantId(tenantId);
+  await ctx.db.updateTable("self_trial").set({ deletion_claimed_at: null, updated_at: nowIso(ctx) }).where("tenant_id", "=", tenantId).where("deleted_at", "is", null).execute();
+}
+
+/** The clinic (a trial clinic or its sample) was deleted. Idempotent: the first moment is kept. */
+export async function markTrialDeleted(ctx: DbContext, tenantId: string): Promise<void> {
+  assertTenantId(tenantId);
+  const at = nowIso(ctx);
+  await ctx.db.updateTable("self_trial").set({ deleted_at: at, deletion_claimed_at: null, updated_at: at }).where("tenant_id", "=", tenantId).where("deleted_at", "is", null).execute();
+}
+
+/**
+ * Claims the removal of the clinic's sample clinic (the owner's button after paying): ONE conditional UPDATE from
+ * "ready" / "creating" to "removed" – two clicks at once: one removes. `undo` puts the state back after a failure.
+ */
+export async function claimSampleRemoval(ctx: DbContext, tenantId: string, from: "ready" | "creating"): Promise<boolean> {
+  assertTenantId(tenantId);
+  const at = nowIso(ctx);
+  let q = ctx.db
+    .updateTable("self_trial")
+    .set({ sample_state: "removed", sample_claimed_at: null, updated_at: at })
+    .where("tenant_id", "=", tenantId)
+    .where("sample_of", "is", null)
+    .where("sample_state", "=", from);
+  // A creation step still working holds the lock: never remove under it (a crashed one is stale after 2 minutes).
+  if (from === "creating") {
+    const stale = new Date(Date.parse(at) - SAMPLE_CLAIM_STALE_MS).toISOString();
+    q = q.where((eb) => eb.or([eb("sample_claimed_at", "is", null), eb("sample_claimed_at", "<", stale)]));
+  }
+  const r = await q.executeTakeFirst();
+  return Number(r.numUpdatedRows) > 0;
+}
+
+export async function undoSampleRemoval(ctx: DbContext, tenantId: string, to: "ready" | "creating"): Promise<void> {
+  assertTenantId(tenantId);
+  await ctx.db.updateTable("self_trial").set({ sample_state: to, updated_at: nowIso(ctx) }).where("tenant_id", "=", tenantId).where("sample_state", "=", "removed").execute();
+}
+
+/** Saves the clinic's stored-file keys BEFORE its rows are deleted (merged with any still pending). */
+export async function savePendingDeletionFiles(ctx: DbContext, tenantId: string, keys: readonly string[]): Promise<void> {
+  assertTenantId(tenantId);
+  const current = (await getSelfTrial(ctx, tenantId))?.pendingFileKeys ?? [];
+  const all = Array.from(new Set([...current, ...keys]));
+  await ctx.db.updateTable("self_trial").set({ deletion_files_json: all.length ? JSON.stringify(all) : null, updated_at: nowIso(ctx) }).where("tenant_id", "=", tenantId).execute();
+}
+
+/** The saved keys were removed from the file store. */
+export async function clearPendingDeletionFiles(ctx: DbContext, tenantId: string): Promise<void> {
+  assertTenantId(tenantId);
+  await ctx.db.updateTable("self_trial").set({ deletion_files_json: null, updated_at: nowIso(ctx) }).where("tenant_id", "=", tenantId).execute();
+}
+
+/**
+ * The deletion warning was for an earlier end (staff extended or restarted the trial since): forget it – its date and
+ * its claimed emails – so a fresh warning goes 14 days before the new deletion day.
+ */
+export async function resetTrialDeletionWarning(ctx: DbContext, tenantId: string): Promise<void> {
+  assertTenantId(tenantId);
+  await ctx.db.deleteFrom("trial_email").where("tenant_id", "=", tenantId).where("kind", "=", "deletion_warning").execute();
+  await ctx.db.updateTable("self_trial").set({ deletion_due_at: null, updated_at: nowIso(ctx) }).where("tenant_id", "=", tenantId).where("deleted_at", "is", null).execute();
+}
+
+/** The free-report reservations of a deleted clinic (report keys only – no patient data) go with it. */
+export async function deleteTrialReportHolds(ctx: DbContext, tenantId: string): Promise<void> {
+  assertTenantId(tenantId);
+  await ctx.db.deleteFrom("trial_report_hold").where("tenant_id", "=", tenantId).execute();
 }
 
 /* ------------------------------------------------------------------ free-report reservations */

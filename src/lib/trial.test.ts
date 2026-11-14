@@ -7,6 +7,13 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   TRIAL_DEFAULT_DAYS,
+  TRIAL_DELETION_NOTICE_DAYS,
+  TRIAL_KEEP_DAYS,
+  addUkDays,
+  trialDeletionDay,
+  trialDeletionDayIfWarnedAt,
+  trialDeletionWarningDay,
+  ukDayStart,
   canonicalTrialEmail,
   dueTrialEmails,
   londonDay,
@@ -106,4 +113,30 @@ describe("trial emails – the schedule (UK calendar days)", () => {
     const e = new Date(Date.parse(s) + 14 * DAY).toISOString();
     assert.deepEqual(sendKinds(facts({ startedAt: s, endsAt: e }), new Date("2026-10-30T03:17:00.000Z")), ["four_days"], "day 10 of a trial that started in BST");
   });
+});
+
+/* ------------------------------------------------------------------ after an unpaid trial (14/11/2026) */
+
+it("deletion days: 90 full days after the end (the end's UK day + 91), the warning 14 days before, a late warning keeps 14 days' notice", () => {
+  assert.equal(TRIAL_KEEP_DAYS, 90);
+  assert.equal(TRIAL_DELETION_NOTICE_DAYS, 14);
+  assert.equal(addUkDays("2026-11-30", 91), "2027-03-01");
+  assert.equal(addUkDays("2027-03-01", -14), "2027-02-15");
+  assert.equal(trialDeletionDay("2026-11-30T15:00:00.000Z"), "2027-03-01");
+  assert.equal(trialDeletionWarningDay("2026-11-30T15:00:00.000Z"), "2027-02-15");
+  // At least 90 × 24 hours: the earliest deletion moment (00:00 UK on the day) is after end + 90 days, never before.
+  for (const end of ["2026-11-30T00:00:00.000Z", "2026-11-30T23:59:00.000Z", "2026-06-30T22:59:00.000Z", "2026-07-01T09:00:00.000Z"]) {
+    const start = ukDayStart(trialDeletionDay(end)).getTime();
+    assert.ok(start >= Date.parse(end) + 90 * 86_400_000, end);
+    assert.ok(start <= Date.parse(end) + 92 * 86_400_000, end);
+  }
+  // 23:30 UTC on 30 June is 00:30 on 1 July in the UK (BST): the UK day decides.
+  assert.equal(trialDeletionDay("2026-06-30T23:30:00.000Z"), addUkDays("2026-07-01", 91));
+  // UK midnight: GMT in winter, BST (23:00 UTC the day before) in summer.
+  assert.equal(ukDayStart("2027-03-01").toISOString(), "2027-03-01T00:00:00.000Z");
+  assert.equal(ukDayStart("2027-07-01").toISOString(), "2027-06-30T23:00:00.000Z");
+  // On time: the deletion day itself. Late (the warning goes on 20 Feb): 14 days from then.
+  assert.equal(trialDeletionDayIfWarnedAt("2026-11-30T15:00:00.000Z", new Date("2027-02-15T03:17:00.000Z")), "2027-03-01");
+  assert.equal(trialDeletionDayIfWarnedAt("2026-11-30T15:00:00.000Z", new Date("2027-02-20T03:17:00.000Z")), "2027-03-06");
+  assert.throws(() => addUkDays("1 March", 1));
 });

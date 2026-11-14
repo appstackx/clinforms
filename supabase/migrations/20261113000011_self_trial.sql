@@ -17,11 +17,15 @@ create table if not exists public.self_trial (
   reports_reserved integer not null default 0 check (reports_reserved >= 0),
   repeat_reason text check (repeat_reason is null or repeat_reason in ('email', 'network', 'domain')),
   sample_tenant_id text,
-  sample_state text check (sample_state is null or sample_state in ('creating', 'ready', 'declined')),
+  sample_state text check (sample_state is null or sample_state in ('creating', 'ready', 'declined', 'removed')),
   sample_claimed_at timestamptz,
   sample_step integer not null default 0 check (sample_step between 0 and 20),
   tips_off_at timestamptz,
   converted_at timestamptz,
+  deletion_due_at timestamptz,
+  deletion_claimed_at timestamptz,
+  deleted_at timestamptz,
+  deletion_files_json text,
   created_at timestamptz not null,
   updated_at timestamptz not null
 );
@@ -39,7 +43,7 @@ create table if not exists public.trial_report_hold (
 
 create table if not exists public.trial_email (
   tenant_id text not null,
-  kind text not null check (kind in ('welcome', 'tips', 'four_days', 'last_day', 'ended', 'paid')),
+  kind text not null check (kind in ('welcome', 'tips', 'four_days', 'last_day', 'ended', 'paid', 'deletion_warning')),
   recipient_ref text not null default '',
   status text not null check (status in ('claimed', 'sent', 'failed', 'skipped')),
   attempts integer not null default 1 check (attempts between 1 and 10),

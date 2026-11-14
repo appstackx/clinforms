@@ -33,6 +33,7 @@ import { listMemberProfiles } from "../repos/member-profile";
 import { isDemoHcpc } from "../../modules/medreport/core/demo-clinic";
 import { appendPlatformAudit, type PlatformAdmin } from "./platform-console";
 import { sendTrialEmailNow } from "../trial/emails";
+import { readSelfTrial } from "../repos/self-trial";
 
 /** Who changes a plan: a platform administrator on the platform page, or an admin script (ClinForms itself). */
 export type PlanActor = { kind: "platform"; admin: PlatformAdmin } | { kind: "script" };
@@ -154,13 +155,16 @@ export async function noteClinicVisit(
 }
 
 /**
- * Whether the clinic's trial runs now (or waits for the owner's first visit): the clinic's pages then word drafting for
- * made-up notes only (src/lib/account-copy.ts DRAFTING_COPY.*Trial). false without a trial, after it ended, and on
- * any error (the wording falls back to the standard text).
+ * Whether the clinic's HAND-SET trial runs now (or waits for the owner's first visit): the clinic's pages then word
+ * drafting for made-up notes only (src/lib/account-copy.ts DRAFTING_COPY.*Trial). false without a trial, after it ended,
+ * for a self-serve trial (14/11/2026), and on any error (the wording falls back to the standard text).
  */
 export async function clinicTrialRunning(db: Kysely<Database>, tenantId: string, now = new Date()): Promise<boolean> {
   try {
-    return clinicAccessOf(await getClinicPlan({ db }, tenantId), now).state === "trial";
+    if (clinicAccessOf(await getClinicPlan({ db }, tenantId), now).state !== "trial") return false;
+    // 14/11/2026 (owner decision): a SELF-SERVE trial (a self_trial row) has no made-up-notes rule – the standard
+    // wording. A trial ClinForms staff set by hand keeps it, exactly as before.
+    return !(await readSelfTrial({ db }, tenantId));
   } catch {
     return false;
   }
