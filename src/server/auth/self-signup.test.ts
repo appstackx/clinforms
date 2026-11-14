@@ -104,7 +104,13 @@ describe("self sign-up – input rules", () => {
     assert.match(DPA.status, /DRAFT/);
   });
   it("neutral wording: the DPA text and the two new emails", () => {
-    const texts = [DPA.title, DPA.intro, DPA.statusNote, ...DPA.sections.flatMap((s) => [s.heading, ...s.paragraphs])].map((t) => fillDpa(t, { product: "ClinDesk", company: "Appstack X Ltd" }));
+    // The DPA must name the drafting sub-processor (hard rule: disclose truthfully) – in Annex 3 and nowhere else.
+    const named = (t: string) => /^Anthropic PBC – the drafting service/.test(t);
+    const annex3 = DPA.sections.find((s) => s.id === "annex-3")?.paragraphs ?? [];
+    assert.equal(annex3.filter(named).length, 1, "Annex 3 names the drafting sub-processor once");
+    const texts = [DPA.title, DPA.intro, DPA.statusNote, ...DPA.sections.flatMap((s) => [s.heading, ...s.paragraphs])]
+      .filter((t) => !(annex3.includes(t) && named(t)))
+      .map((t) => fillDpa(t, { product: "ClinDesk", company: "Appstack X Ltd" }));
     const confirm = signupConfirmEmail({ to: { email: "a@b.example" }, brand: "clinic", clinicName: "C", link: "https://x.example/l", expiresAt: new Date().toISOString() });
     const existing = signupExistingAccountEmail({ to: { email: "a@b.example" }, signInLink: "https://x.example/login", resetLink: "https://x.example/reset-password" });
     for (const t of [...texts, confirm.subject, confirm.text, confirm.html, existing.subject, existing.text, existing.html]) {

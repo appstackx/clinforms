@@ -62,6 +62,9 @@ export function registeredOfficeLine(company: CompanyDetails = COMPANY): string 
 /** Date shown as "Last updated" on the legal pages (ISO). Change it whenever their text changes (01/11/2026: company name, number, ICO). */
 export const LEGAL_LAST_UPDATED = "2026-11-01";
 
+/** The terms' own "Last updated" (ISO): 14/11/2026 liability limit £600 and the 3-month claim notice. Also the terms' version accepted at sign-up. */
+export const TERMS_LAST_UPDATED = "2026-11-14";
+
 /**
  * The privacy policy's own "Last updated" (ISO): it changed on its own for the demo video (section 3, 10/10) and for
  * advertising measurement (31/10); company details 01/11.
