@@ -1,6 +1,6 @@
 # Data protection impact assessment (DPIA) – template for a clinic
 
-> **DRAFT – 14/11/2026, pending legal review.** A DPIA is the **clinic's** document (it is the controller). We give
+> **14/11/2026 – template for DPA version 1 (lawyer review planned).** A DPIA is the **clinic's** document (it is the controller). We give
 > each clinic this pre-filled template so it only has to check our parts and add its own. Fill every `<…>`.
 > Match the DPA (`content/dpa.json`) – Annex 2 (security) and Annex 3 (sub-processors) are the source.
 

@@ -7,7 +7,7 @@
  *   OFF  the server WITHOUT CLINFORMS_SELF_SIGNUP: /start-trial, /start-trial/confirm, /data-processing-agreement → 404
  *        on both hosts; the sign-in page keeps "Request access"; POST /api/auth/sign-up/email refused (404)
  *   ON   restarted with CLINFORMS_SELF_SIGNUP=clinic,forms:
- *     S1  ClinDesk host: sign-in → "Start a free trial" → the DPA page (DRAFT banner) → form → "Check your email" →
+ *     S1  ClinDesk host: sign-in → "Start a free trial" → the DPA page (version 1) → form → "Check your email" →
  *         ClinDesk email, link on clinic.localhost → password → two-step set-up → Plan and billing; acceptance row,
  *         audit row, Reports paused
  *     S2  ClinForms host: the same, ClinForms' email and host, Plan and billing
@@ -233,15 +233,14 @@ async function signUpJourney(page, base, who, brand) {
   const pot = await page.locator("input[name=website]").boundingBox();
   assert.ok(!pot || pot.x + pot.width < 0, `honeypot off screen (${JSON.stringify(pot)})`);
   await page.screenshot({ path: path.join(SHOTS, `${brand}-01-form.png`), fullPage: true });
-  // The DPA page (draft, marked) and the terms link from the form.
+  // The DPA page (version 1, no draft banner) and the terms link from the form.
   const dpaHref = await page.locator("a:has-text('data processing agreement')").getAttribute("href");
   const termsHref = await page.locator("a:has-text('terms of service')").getAttribute("href");
   assert.equal(dpaHref, "/data-processing-agreement");
   assert.equal(termsHref, "/terms");
   const dpa = await page.context().newPage();
   await dpa.goto(`${base}${dpaHref}`);
-  const draft = (await dpa.locator("[data-testid=dpa-draft]").innerText()).trim();
-  assert.match(draft, /DRAFT – pending legal review/);
+  assert.equal(await dpa.locator("[data-testid=dpa-draft]").count(), 0, "version 1: no draft banner");
   assert.match(await dpa.locator("h1").innerText(), /Data processing agreement/);
   assert.match(await dpa.locator("main").innerText(), new RegExp(productName));
   await dpa.screenshot({ path: path.join(SHOTS, `${brand}-02-dpa.png`), fullPage: true });
@@ -311,7 +310,7 @@ async function signUpJourney(page, base, who, brand) {
     assert.equal(acc[0].user_id, user.id);
     assert.equal(acc[0].brand, brand === "clinic" ? "clinic" : "clinforms");
     assert.match(acc[0].terms_version, brand === "clinic" ? /^clindesk-terms-/ : /^clinforms-terms-/);
-    assert.match(acc[0].dpa_version, /^dpa-draft-/);
+    assert.match(acc[0].dpa_version, /^dpa-v1-/);
     assert.ok(acc[0].ip_hash && acc[0].ua_hash && !/127\.0\.0\.1|local/.test(acc[0].ip_hash));
     const actions = db.prepare("SELECT action FROM audit_log WHERE tenant_id = ? ORDER BY at").all(member.slug).map((r) => r.action);
     for (const a of ["clinic.create", "member.join", "clinic.self_signup", "auth.two_factor_enable"]) assert.ok(actions.includes(a), `${a} audited (${actions.join(", ")})`);
@@ -376,7 +375,7 @@ const livePages = [];
     /* ON */
     await startServer({ CLINFORMS_SELF_SIGNUP: "clinic,forms" });
     const desk = await newPage("desk-owner");
-    await step("S1", "ClinDesk: sign-in → trial → DPA (draft) → form → email → link → password → two-step → Plan and billing", () => signUpJourney(desk, DESK, OWNERS.clinic, "clinic"));
+    await step("S1", "ClinDesk: sign-in → trial → DPA (version 1) → form → email → link → password → two-step → Plan and billing", () => signUpJourney(desk, DESK, OWNERS.clinic, "clinic"));
     const forms = await newPage("forms-owner");
     await step("S2", "ClinForms: the same on ClinForms' host", () => signUpJourney(forms, FORMS, OWNERS.forms, "forms"));
 

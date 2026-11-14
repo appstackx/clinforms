@@ -96,12 +96,14 @@ describe("self sign-up – input rules", () => {
     assert.equal(slugBaseFromClinicName("Clinique Élan"), "clinique-elan");
     assert.ok(slugBaseFromClinicName("x".repeat(80)).length <= 40);
   });
-  it("versions: the terms page's date per brand, the DPA's own version (a draft, marked as one)", () => {
+  it("versions: the terms page's date per brand, the DPA's own version (version 1, no draft banner)", () => {
     assert.match(termsVersion("clinic"), /^clindesk-terms-\d{4}-\d{2}-\d{2}$/);
     assert.match(termsVersion("clinforms"), /^clinforms-terms-\d{4}-\d{2}-\d{2}$/);
     assert.equal(DPA_VERSION, DPA.version);
-    assert.equal(dpaIsDraft(), true, "the DPA is a draft pending legal review: the page must say so");
-    assert.match(DPA.status, /DRAFT/);
+    // 14/11/2026 Khuram: version 1 is in use (no draft banner); a lawyer review may follow, as a new version.
+    assert.equal(dpaIsDraft(), false, "version 1 is not a draft: no banner");
+    assert.equal(DPA.status, "Version 1");
+    assert.equal(dpaIsDraft({ ...DPA, status: "DRAFT – pending legal review" }), true, "a draft status still shows the banner");
   });
   it("neutral wording: the DPA text and the two new emails", () => {
     // The DPA must name the drafting sub-processor (hard rule: disclose truthfully) – in Annex 3 and nowhere else.

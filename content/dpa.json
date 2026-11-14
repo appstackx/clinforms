@@ -1,7 +1,7 @@
 {
-  "status": "DRAFT – pending legal review",
-  "statusNote": "This data processing agreement is a DRAFT. It has not yet been reviewed by a lawyer and may change before it is used. It is shown only where self-serve sign-up is switched on for testing.",
-  "version": "dpa-draft-2026-11-14",
+  "status": "Version 1",
+  "statusNote": "",
+  "version": "dpa-v1-2026-11-14",
   "lastUpdated": "2026-11-14",
   "title": "Data processing agreement",
   "intro": "This data processing agreement (DPA) forms part of the agreement between {company} and the clinic that uses {product}. It sets out how we process personal data on the clinic's behalf, as required by Article 28 of the UK GDPR.",
