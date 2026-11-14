@@ -1,7 +1,7 @@
 /**
  * The clinic behind a public page (/clinics/<clinic id>/…). A page or action of the booking page or the patient
  * portal first loads the clinic here; nothing is shown unless the clinic exists, is not closed, has the "clinic"
- * package and has switched the page on (else the 404 page – an outsider cannot tell why). The clinic id comes from
+ * package, is not a self-serve free trial that has ended (13/11/2026 – read-only) and has switched the page on (else the 404 page – an outsider cannot tell why). The clinic id comes from
  * the address; every query after this is scoped to it.
  */
 import "server-only";
@@ -11,6 +11,7 @@ import { getPmsSettings } from "../../repos/pms/settings";
 import { getBookingSettings } from "../../repos/pms/portal/settings";
 import { logAuthEvent } from "../../email/log";
 import type { BookingSettings } from "../../../modules/pms/portal/types";
+import { selfTrialEnded } from "../../trial/access";
 
 export interface PublicClinic {
   tenantId: string;
@@ -39,6 +40,8 @@ export async function loadPublicClinic(ctx: DbContext, slug: string, options: { 
     const org = await ctx.db.selectFrom("organization").select(["name", "metadata"]).where("slug", "=", slug).executeTakeFirst();
     if (!org || (org.metadata && /"offboardedAt"/.test(org.metadata))) return null;
     if (!(await isPackageOn(ctx, slug, "clinic"))) return null;
+    // 13/11/2026: a self-serve free trial that ended without a plan is read-only – no public booking or portal pages.
+    if (await selfTrialEnded(ctx.db, slug, ctx.now ? ctx.now() : new Date())) return null;
     const [settings, pms] = await Promise.all([getBookingSettings(ctx, slug), getPmsSettings(ctx, slug)]);
     if (!options.device && !settings.onlineBooking && !settings.portal) return null;
     return { tenantId: slug, name: org.name, settings, isDemo: pms.isDemo };

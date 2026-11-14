@@ -8,9 +8,10 @@
  *        on both hosts; the sign-in page keeps "Request access"; POST /api/auth/sign-up/email refused (404)
  *   ON   restarted with CLINFORMS_SELF_SIGNUP=clinic,forms:
  *     S1  ClinDesk host: sign-in → "Start a free trial" → the DPA page (DRAFT banner) → form → "Check your email" →
- *         ClinDesk email, link on clinic.localhost → password → two-step set-up → Plan and billing; acceptance row,
- *         audit row, Reports paused
- *     S2  ClinForms host: the same, ClinForms' email and host, Plan and billing
+ *         ClinDesk email, link on clinic.localhost → password → two-step set-up → the clinic system with the free
+ *         trial's banner (13/11/2026: the trial – scripts/e2e/trial-journey.cjs covers it end to end); acceptance
+ *         row, audit row, the clinic system and Reports on as "trial"
+ *     S2  ClinForms host: the same, ClinForms' email and host, the overview with the trial banner
  *     S3  a disposable address is refused with a message; the honeypot / fast-fill answer "Check your email", no email
  *     S4  the ClinDesk owner's address again: the SAME page answer, a "You already have an account" email, no clinic
  *     S5  the 4th sign-up from this network today is refused ("Too many sign-ups from this network today")
@@ -287,10 +288,12 @@ async function signUpJourney(page, base, who, brand) {
   await page.waitForURL((u) => u.pathname.startsWith("/app"), { timeout: 30000 });
   const landed = new URL(page.url());
   assert.equal(landed.host, host, "stays on the brand's host");
-  assert.equal(landed.pathname, "/app/settings/billing", `lands on Plan and billing (got ${landed.pathname})`);
-  const main = (await page.locator("main").innerText()).replace(/\s+/g, " ");
-  assert.match(main, /Plan and billing/i);
-  await page.screenshot({ path: path.join(SHOTS, `${brand}-05-billing.png`), fullPage: true });
+  // 13/11/2026: the free trial runs – the clinic's own start page, with the trial banner (no plan to choose first).
+  const expected = brand === "clinic" ? "/app/clinic" : "/app";
+  assert.equal(landed.pathname, expected, `lands on ${expected} (got ${landed.pathname})`);
+  const banner = (await page.locator("[data-testid=trial-banner]").innerText()).replace(/\s+/g, " ");
+  assert.match(banner, /Free trial – 14 days left · 0 of 10 free reports used/);
+  await page.screenshot({ path: path.join(SHOTS, `${brand}-05-start.png`), fullPage: true });
   notes.push(`landed on ${landed.pathname}`);
 
   // The database: the clinic, its brand, the owner, the acceptance and the audit rows.
@@ -303,8 +306,8 @@ async function signUpJourney(page, base, who, brand) {
     who.tenant = member.slug;
     if (brand === "clinic") assert.match(String(member.metadata), /signupBrand/);
     else assert.equal(member.metadata, null);
-    const ent = db.prepare("SELECT package, status FROM clinic_entitlements WHERE tenant_id = ?").all(member.slug);
-    if (brand === "clinic") assert.deepEqual(ent.map((e) => `${e.package}:${e.status}`), ["reports:paused"]);
+    const ent = db.prepare("SELECT package, status FROM clinic_entitlements WHERE tenant_id = ? ORDER BY package").all(member.slug);
+    if (brand === "clinic") assert.deepEqual(ent.map((e) => `${e.package}:${e.status}`), ["clinic:trial", "reports:trial"]);
     else assert.equal(ent.length, 0);
     const acc = db.prepare("SELECT user_id, brand, terms_version, dpa_version, ip_hash, ua_hash, accepted_at, confirmed_at FROM signup_acceptances WHERE tenant_id = ?").all(member.slug);
     assert.equal(acc.length, 1);
@@ -376,7 +379,7 @@ const livePages = [];
     /* ON */
     await startServer({ CLINFORMS_SELF_SIGNUP: "clinic,forms" });
     const desk = await newPage("desk-owner");
-    await step("S1", "ClinDesk: sign-in → trial → DPA (draft) → form → email → link → password → two-step → Plan and billing", () => signUpJourney(desk, DESK, OWNERS.clinic, "clinic"));
+    await step("S1", "ClinDesk: sign-in → trial → DPA (draft) → form → email → link → password → two-step → the clinic system, trial banner", () => signUpJourney(desk, DESK, OWNERS.clinic, "clinic"));
     const forms = await newPage("forms-owner");
     await step("S2", "ClinForms: the same on ClinForms' host", () => signUpJourney(forms, FORMS, OWNERS.forms, "forms"));
 

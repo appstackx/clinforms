@@ -42,6 +42,23 @@ export const PMS_MODULES: Readonly<Record<PmsModuleId, PmsModuleInfo>> = {
   integration: { id: "integration", title: "Data import and the native connector", sqlite: [170, 179], postgresPrefix: "2026102400" },
 };
 
+/**
+ * ClinForms' OWN migrations (below 0100 – not a clinic-system module), as reserved on branches not merged yet, so no
+ * two branches take the same number (13/11/2026). 0010 is used twice on purpose, under different names and Postgres
+ * versions that coexist (SQLite/D1 track applied files by NAME, Postgres by the 14-digit version):
+ *   0010_self_signup     / 20261112000010  main (self sign-up)
+ *   0010_lifecycle_email / 20261111000010  parked branch feat/lifecycle-emails – ALREADY APPLIED to production (two empty
+ *                                          tables lifecycle_email, lifecycle_email_pref); never reuse those table names
+ *   0011_self_trial      / 20261113000011  feat/self-serve-trial (self_trial, trial_email)
+ * Next free: 0012. Numbers reserved by other unreleased branches in the module ranges: 0172 (xero), 0126–0128
+ * (exercises), 0226–0229 and 0239–0241 (card payments).
+ */
+export const CLINFORMS_OWN_MIGRATIONS = [
+  { number: 10, name: "self_signup", postgres: "20261112000010", branch: "main" },
+  { number: 10, name: "lifecycle_email", postgres: "20261111000010", branch: "feat/lifecycle-emails (parked; applied to production)" },
+  { number: 11, name: "self_trial", postgres: "20261113000011", branch: "feat/self-serve-trial" },
+] as const;
+
 /** The module whose range holds a SQLite migration number, or null (numbers below 100 are ClinForms' own). */
 export function moduleForMigration(n: number): PmsModuleId | null {
   for (const id of PMS_MODULE_IDS) {

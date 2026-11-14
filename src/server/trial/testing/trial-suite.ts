@@ -34,6 +34,8 @@ import { createSampleClinic, declineSampleClinic } from "../sample";
 import { startSelfServeTrial, trialKeys, TRIAL_TEXTS_REASON } from "../start";
 import { trialBannerState } from "../view";
 import { listTrialsForPlatform } from "../platform";
+import { updateBookingSettings } from "../../repos/pms/portal/settings";
+import { loadPublicClinic } from "../../pms/portal/public-clinic";
 
 const SECRET = "trial-suite-secret-".padEnd(48, "t");
 const DAY = 86_400_000;
@@ -251,6 +253,10 @@ export function defineTrialSuite(label: string, factory: () => Promise<TrialSuit
       const manual = await signedUpClinic("clinforms");
       await setClinicTrial({ db: t.db, now }, manual.tenantId, { days: 1, startOnFirstSignIn: false });
       assert.equal(await selfTrialEnded(t.db, manual.tenantId, new Date(clock + 3 * DAY)), false, "only self-serve trials");
+      // Public booking / portal pages: shown while the trial runs, gone once it has ended.
+      await updateBookingSettings(ctx, c.tenantId, 0, { onlineBooking: true, portal: true } as never, { userId: c.userId, sessionId: null });
+      assert.ok(await loadPublicClinic(ctx, c.tenantId));
+      assert.equal(await loadPublicClinic({ db: t.db, now: () => new Date(end + 1000) }, c.tenantId), null);
     });
 
     it("the retention cron never deletes a trial clinic, its records or its trial (ended weeks ago)", async () => {
@@ -467,6 +473,11 @@ export function defineTrialSuite(label: string, factory: () => Promise<TrialSuit
       assert.equal((await loadClinicProfile(t.db, slug, now()))?.trialReports, undefined);
       // After the trial: the sample is read-only too.
       assert.equal(await selfTrialEnded(t.db, slug, new Date(Date.parse(real?.trialEndsAt ?? "") + 1000)), true);
+      // A ClinForms trial: no sample (it has no clinic system).
+      const f = await signedUpClinic("clinforms");
+      await start(f, "clinforms");
+      await firstVisit(f);
+      assert.deepEqual(await createSampleClinic({ db: t.db, cipher, now, patients: 12 }, { tenantId: f.tenantId, userId: f.userId }), { status: "unavailable", why: "not_clinic_brand" });
       // "No thanks" on another clinic: the offer stays away.
       const d = await signedUpClinic("clinic");
       await start(d, "clinic");

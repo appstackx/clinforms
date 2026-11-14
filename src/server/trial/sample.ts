@@ -39,7 +39,7 @@ export type SampleOutcome =
   | { status: "created"; sampleTenantId: string; organizationId: string }
   | { status: "exists"; sampleTenantId: string; organizationId: string | null }
   | { status: "busy" }
-  | { status: "unavailable"; why: "no_trial" | "not_running" | "declined" | "not_owner" };
+  | { status: "unavailable"; why: "no_trial" | "not_running" | "declined" | "not_owner" | "not_clinic_brand" };
 
 /** The sample clinic's name: the real clinic's, marked – it always ends "(fictional)" (the demo-data rule). */
 export function sampleClinicName(clinicName: string): string {
@@ -77,6 +77,7 @@ export async function createSampleClinic(deps: SampleDeps, input: { tenantId: st
   const db = deps.db;
   const trial: SelfTrial | null = await getSelfTrial(ctx, input.tenantId);
   if (!trial || trial.sampleOf) return { status: "unavailable", why: "no_trial" };
+  if (trial.brand !== "clinic") return { status: "unavailable", why: "not_clinic_brand" };
   if (trial.sampleState === "declined") return { status: "unavailable", why: "declined" };
   const org = await db.selectFrom("organization").select(["id", "name", "metadata"]).where("slug", "=", input.tenantId).executeTakeFirst();
   if (!org) return { status: "unavailable", why: "no_trial" };

@@ -28,7 +28,8 @@ export async function sampleOfferFor(db: Kysely<Database>, tenantId: string, rol
   if (role !== "owner" || access?.state !== "trial") return null;
   try {
     const trial = await readSelfTrial({ db }, tenantId);
-    if (!trial || trial.sampleOf || trial.sampleState === "declined" || trial.sampleState === "ready") return null;
+    // ClinDesk trials only: the sample is the clinic system's demonstration data (a ClinForms trial has no clinic system).
+    if (!trial || trial.sampleOf || trial.brand !== "clinic" || trial.sampleState === "declined" || trial.sampleState === "ready") return null;
     return { trial };
   } catch {
     return null;
