@@ -26,7 +26,8 @@ export interface PmsModuleInfo {
    * Courses, gift cards and products (PK, 11/2026): billing 0231–0239. Bulk email to patient groups (xt02, 11/2026):
    * comms 0146 (inside comms' own range – reserved here so no other comms branch takes it; 0147–0149 stay free).
    * Public clinic API v1 (xt03, 11/2026, docs/clinic-system/api.md): integration 0171 (inside integration's own range –
-   * reserved here; 0172–0179 stay free).
+   * reserved here). Xero sync groundwork (xe03–xe06, 11/2026, docs/clinic-system/decisions/xero-sync-scope.md):
+   * integration 0172 (inside integration's own range – reserved here; 0173–0179 stay free).
    */
   extra?: readonly (readonly [number, number])[];
 }

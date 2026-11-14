@@ -90,6 +90,7 @@ export const PAGE_PERMISSIONS: readonly (readonly [string, PmsPermission])[] = [
   ["/setup/services", "settings.setup"],
   ["/setup/sites", "settings.setup"],
   ["/setup/targets", "settings.setup"],
+  ["/setup/xero", "settings.setup"],
 ];
 
 /** Pages whose gate is "any of" (their own rules in the page): the Set-up start and the Reports start. */

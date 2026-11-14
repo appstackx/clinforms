@@ -89,6 +89,7 @@ describe("shell navigation by permission", () => {
         "Import data",
         // The owner only, and only while CLINFORMS_CLINIC_API=on (the clinic layout leaves it out otherwise).
         "API keys",
+        "Xero",
       ],
     );
     assert.ok(!shellNav(PMS_NAV, as("admin")).manage.some((i) => i.label === "API keys"), "administrators never see API keys");
@@ -103,6 +104,15 @@ describe("shell navigation by permission", () => {
     assert.ok(!navForDeployment(PMS_NAV, { clinicApi: false }).some((e) => e.id === "integration.api"));
     assert.ok(navForDeployment(PMS_NAV, { clinicApi: true }).some((e) => e.id === "integration.api"));
     assert.equal(firstSetupEntry(PMS_NAV, as("owner"), { clinicApi: false })?.id, "reporting.sites");
+  });
+
+  it("the navigation leaves out Xero unless CLINFORMS_XERO is on (and the layout passes it only for owners and admins)", () => {
+    assert.ok(!navForDeployment(PMS_NAV, { clinicApi: true }).some((e) => e.id === "integration.xero"), "off unless asked for");
+    assert.ok(!navForDeployment(PMS_NAV, { clinicApi: true, xero: false }).some((e) => e.id === "integration.xero"));
+    assert.ok(navForDeployment(PMS_NAV, { clinicApi: false, xero: true }).some((e) => e.id === "integration.xero"));
+    const onlySetup = (p: string) => p === "settings.setup" || p === "clinic.view";
+    assert.notEqual(firstSetupEntry(PMS_NAV, onlySetup, { clinicApi: false, xero: false })?.id, "integration.xero");
+    assert.ok(!shellNav(PMS_NAV, as("clinician")).manage.some((i) => i.label === "Xero"), "clinicians never see Xero");
   });
 
   it("a badge on an entry (Messages: replies waiting) only when the count is above 0", () => {

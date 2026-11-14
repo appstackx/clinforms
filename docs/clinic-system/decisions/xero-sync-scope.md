@@ -1,6 +1,7 @@
 # Decision: Xero sync scope (tracker xe02)
 
-Status: proposed, 11/11/2026. Owner: Khuram. Covers ClinDesk (clinic system) billing → Xero.
+Status: proposed, 11/11/2026. Owner: Khuram. **12/11/2026: groundwork for xe03–xe06 built behind `CLINFORMS_XERO` (off) on
+`feat/xero-sync` – see `docs/clinic-system/xero.md` (incl. the deliberate differences from this doc).** Covers ClinDesk (clinic system) billing → Xero.
 
 ## Recommendation
 
