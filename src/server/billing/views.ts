@@ -234,6 +234,8 @@ export async function startPlanCheckout(db: Kysely<Database>, actor: BillingActo
     await audit(db, actor, "clinic.subscription_checkout", { plan: items.map((i) => i.lookupKey), session: s.id });
     return { ok: true, value: { url: s.url } };
   } catch (err) {
+    // 13/11/2026: say why in the log (the error's kind and code only – never a key, a card or a customer's details).
+    console.warn(JSON.stringify({ event: "billing.checkout_failed", error: err instanceof Error ? err.name : "error", code: err instanceof CardPaymentsError ? err.code : null, message: err instanceof Error ? err.message.replace(/\b(sk|rk|pk|whsec)_[A-Za-z0-9_*]+/g, "[redacted]").slice(0, 160) : null }));
     return { ok: false, error: err instanceof CardPaymentsError && err.code === "price_mismatch" ? "That plan is not on sale at the moment. Contact us." : UNREACHABLE };
   }
 }

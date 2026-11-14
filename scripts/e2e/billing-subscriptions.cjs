@@ -11,7 +11,7 @@
  *      change nothing more
  *   M  "Manage billing" opens the hosted billing page; plan change to Small without the add-on → Reports paused
  *   K  the subscription is cancelled at the service → the webhook cancels the packages
- *   D  Direct Debit: ClinForms Starter with Bacs test details (sort code 10-88-00, account 00012345) → the done page
+ *   D  Direct Debit: ClinDesk Small monthly + Reports 25 with Bacs test details (sort code 10-88-00, account 00012345) → the done page
  *      "being set up"; NOT active until the payment clears; then (webhook invoice.paid / subscription updated) active
  *      with the allowance 25
  *   F  the platform page lists the subscription
@@ -44,7 +44,11 @@ const DB_FILE = path.join(TMP, "e2e.db");
 process.env.SQLITE_PATH = DB_FILE;
 const { openScratchDb } = require("./scratch-db.cjs");
 const AXE = require.resolve("axe-core/axe.min.js");
-const CLINIC = "riverside-demo";
+// A clinic (and so a clinic id) of its own per run: the payment service keeps a created customer's answer for a day
+// under the clinic's id, and this script deletes its test customer at the end.
+const RUN_WORD = Array.from(crypto.randomBytes(6), (b) => "abcdefghijklmnopqrstuvwxyz"[b % 26]).join("");
+const CLINIC = `riverside-demo-${RUN_WORD}`;
+const CLINIC_NAME = `Riverside ${RUN_WORD[0].toUpperCase()}${RUN_WORD.slice(1)} Physiotherapy (fictional)`;
 const OWNER = "owner@riverside-demo.example.com";
 
 function testKey() {
@@ -240,31 +244,83 @@ const waitFor = async (fn, ms = 60000, what = "condition") => {
   }
 };
 
-/** On the hosted payment page: choose a method in the accordion (when several are offered). */
-async function chooseMethod(page, method) {
-  const button = page.locator(`[data-testid=${method}-accordion-item-button]`);
+/*
+ * The hosted payment page. Its payment-method list and fields may sit in frames (the page's layout changes over time,
+ * as found by trial-journey.cjs on 13/11/2026): choose the method's row, then fill the fields wherever they are.
+ */
+const CARD_SEL = "#cardNumber, input[name=cardnumber], input[name=number], input[autocomplete='cc-number']";
+const SORT_SEL = "#sortCode, input[name=sortCode], input[name=sort_code]";
+/** The first visible match in the page or any of its frames (null when none). */
+async function firstVisible(page, make) {
+  for (const f of page.frames()) {
+    const l = make(f).first();
+    if (await l.isVisible().catch(() => false)) return l;
+  }
+  return null;
+}
+/** The frame (or the page's main frame) that shows `fieldSel`. */
+async function frameWith(page, fieldSel) {
+  for (const f of page.frames()) if (await f.locator(fieldSel).first().isVisible().catch(() => false)) return f;
+  return null;
+}
+/** Choose a method (card | bacs_debit) in the list, then return the frame that holds its fields. */
+async function chooseMethod(page, method, fieldSel, label) {
   await page.waitForLoadState("domcontentloaded");
   await page.waitForTimeout(1500);
+  const button = page.locator(`[data-testid=${method}-accordion-item-button]`);
   if (await button.count()) await button.dispatchEvent("click");
+  await page.getByText(/Pay and subscribe|Subscribe/).first().waitFor({ timeout: 30000 }).catch(() => {});
+  await page.waitForTimeout(2000);
+  const notes = [];
+  for (let attempt = 0; attempt < 3 && !(await frameWith(page, fieldSel)); attempt++) {
+    for (const frame of page.frames()) {
+      const tries = [frame.locator(`[data-testid=${method}-accordion-item-button]`), frame.locator(`input[type=radio][value=${method}]`), frame.getByRole("radio", { name: label }), frame.getByText(label, { exact: true })];
+      for (const c of tries) {
+        const n = await c.count().catch(() => 0);
+        notes.push(`${frame.url().slice(0, 60)} ${n}`);
+        if (!n) continue;
+        await c.first().click({ force: true, timeout: 5000 }).catch(() => {});
+        await page.waitForTimeout(1000);
+        if (await frameWith(page, fieldSel)) break;
+      }
+      if (await frameWith(page, fieldSel)) break;
+    }
+  }
+  fs.writeFileSync(path.join(OUT, `checkout-controls-${method}.txt`), notes.join("\n"));
+  const f = await frameWith(page, fieldSel);
+  assert(f, `the ${method} fields did not show on the payment page`);
+  return f;
 }
+/** Email, name, country and address: wherever the page puts them (main page or a frame); only empty fields. */
 async function fillCommon(page, name) {
-  const email = page.locator("#email");
-  if ((await email.count()) && !(await email.inputValue().catch(() => ""))) await email.fill(OWNER);
-  const billingName = page.locator("#billingName");
-  if (await billingName.isVisible().catch(() => false)) await billingName.fill(name);
-  const country = page.locator("#billingCountry");
-  if (await country.isVisible().catch(() => false)) await country.selectOption("GB");
+  const email = await firstVisible(page, (f) => f.locator("#email, input[type=email], input[autocomplete=email]"));
+  if (email && !(await email.inputValue().catch(() => ""))) await email.fill(OWNER);
+  // Inside the payment frame the fields go by name, with "billing …" autocomplete tokens (matched with ~=).
+  const billingName = await firstVisible(page, (f) => f.locator("#billingName, input[name=name], input[autocomplete~='cc-name'], input[autocomplete~=name]"));
+  if (billingName && !(await billingName.inputValue().catch(() => ""))) await billingName.fill(name);
+  const country = await firstVisible(page, (f) => f.locator("#billingCountry, select[name=country], select[autocomplete~=country]"));
+  if (country) await country.selectOption("GB").catch(() => {});
   for (const [sel, v] of [
-    ["#billingAddressLine1", "1 Test Street (fictional)"],
-    ["#billingLocality", "Milton Keynes"],
-    ["#billingPostalCode", "MK9 9ZZ"],
+    ["#billingAddressLine1, input[name=addressLine1], input[autocomplete~='address-line1']", "1 Test Street (fictional)"],
+    ["#billingLocality, input[name=locality], input[autocomplete~='address-level2']", "Milton Keynes"],
+    ["#billingPostalCode, input[name=postalCode], input[autocomplete~='postal-code']", "MK9 9ZZ"],
   ]) {
-    const f = page.locator(sel);
-    if (await f.isVisible().catch(() => false)) await f.fill(v);
+    const f = await firstVisible(page, (fr) => fr.locator(sel));
+    if (f && !(await f.inputValue().catch(() => ""))) {
+      await f.fill(v);
+      // The address line opens a suggestions list over the next fields: close it.
+      await f.press("Escape").catch(() => {});
+      await page.waitForTimeout(300);
+    }
   }
 }
+/** The pay button, wherever it is (by test id, else by its name). */
 async function submit(page) {
-  await page.locator("button[data-testid=hosted-payment-submit-button], button.SubmitButton").first().click();
+  const pay = await firstVisible(page, (f) => f.locator("button[data-testid=hosted-payment-submit-button], button[data-testid=payment-form-submit-button], button.SubmitButton"));
+  if (pay) return pay.click();
+  const byName = await firstVisible(page, (f) => f.getByRole("button", { name: /Pay and subscribe|Subscribe/ }));
+  assert(byName, "no pay button found");
+  await byName.click();
 }
 
 (async () => {
@@ -278,11 +334,11 @@ async function submit(page) {
     pages.push([who, page]);
     return page;
   };
-  const made = { subscriptions: [] };
+  const made = { subscriptions: [], customers: [] };
   try {
     WEBHOOK_SECRET = execFileSync("stripe", ["listen", "--print-secret"], { env: { PATH: process.env.PATH, HOME: process.env.HOME, STRIPE_API_KEY: KEY }, encoding: "utf8", timeout: 30000 }).trim();
     assert(/^whsec_[A-Za-z0-9]+$/.test(WEBHOOK_SECRET), "no webhook secret from the CLI");
-    const seed = execFileSync("npm", ["run", "-s", "pms:seed-demo", "--", "--fresh", "--patients", "10"], { cwd: REPO, env: appEnv(), encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+    const seed = execFileSync("npm", ["run", "-s", "pms:seed-demo", "--", "--fresh", "--slug", CLINIC, "--name", CLINIC_NAME, "--owner-email", OWNER, "--patients", "10"], { cwd: REPO, env: appEnv(), encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
     const ownerLink = (seed.match(/https?:\/\/\S+\/accept-invite\?token=[A-Za-z0-9._%-]+/) || [])[0];
     await startServer();
     startListener();
@@ -310,7 +366,7 @@ async function submit(page) {
       assert(!/ex VAT|plus VAT|exclude VAT/i.test(body), "no VAT is charged – no ex-VAT wording");
       assert.match(body, /No VAT is charged/);
       await owner.locator("input[name=interval][value=year]").check();
-      assert.match(await owner.locator("[data-testid=plan-form]").innerText(), /Practice · £1,690 a year/);
+      assert.match(await owner.locator("[data-testid=plan-form]").innerText(), /Practice · £850 a year/);
       assert.equal(await owner.locator("#plan-reports").isDisabled(), false, "yearly plans take the add-on too");
       assert.match(await owner.locator("#plan-reports").innerText(), /Up to 100 reports a month · £1,590 a year/);
       await owner.locator("input[name=interval][value=month]").check();
@@ -336,11 +392,10 @@ async function submit(page) {
       await owner.selectOption("#plan-reports", "100");
       await owner.click("button:has-text('Continue to payment')");
       await owner.waitForURL(/checkout\.stripe\.com/, { timeout: 60000 });
-      await chooseMethod(owner, "card");
-      await owner.locator("#cardNumber").waitFor({ state: "visible", timeout: 30000 });
-      await owner.locator("#cardNumber").fill("4242424242424242");
-      await owner.locator("#cardExpiry").fill("12 / 34");
-      await owner.locator("#cardCvc").fill("123");
+      const cf = await chooseMethod(owner, "card", CARD_SEL, "Card");
+      await cf.locator(CARD_SEL).first().fill("4242424242424242");
+      await cf.locator("#cardExpiry, input[name=exp-date], input[name=expiry], input[autocomplete='cc-exp']").first().fill("12 / 34");
+      await cf.locator("#cardCvc, input[name=cvc], input[autocomplete='cc-csc']").first().fill("123");
       await fillCommon(owner, "Helen Ward (fictional)");
       await owner.screenshot({ path: path.join(OUT, "checkout-card.png") });
       await submit(owner);
@@ -351,7 +406,8 @@ async function submit(page) {
       await owner.screenshot({ path: path.join(OUT, "1440-billing-done.png"), fullPage: true });
       const s = sub();
       made.subscriptions.push(s.subscription_ref);
-      assert.deepEqual([s.state, s.product, s.plan_key, s.billing_interval, s.reports_key, Number(s.reports_included), Number(s.amount_pence), s.mode], ["active", "clindesk", "practice", "year", "100", 100, 328000, "test"]);
+      if (s.customer_ref) made.customers.push(s.customer_ref);
+      assert.deepEqual([s.state, s.product, s.plan_key, s.billing_interval, s.reports_key, Number(s.reports_included), Number(s.amount_pence), s.mode], ["active", "clindesk", "practice", "year", "100", 100, 244000, "test"]);
       assert.deepEqual([ent("clinic").status, ent("clinic").plan_code, ent("reports").status], ["active", "clindesk-practice", "active"]);
       assert.deepEqual([pkg().package, Number(pkg().reports_included)], ["practice", 100]);
       return `subscription ${s.subscription_ref.slice(0, 12)}…`;
@@ -404,25 +460,26 @@ async function submit(page) {
     });
 
     if (process.env.SKIP_BACS !== "1") {
-      await check("D1", "Direct Debit: ClinForms Starter with Bacs test details → 'being set up', not active yet", async () => {
-        await owner.goto(`${billing}?product=clinforms`);
-        await owner.locator("input[name=tier][value=starter]").check();
+      // A ClinDesk clinic is never offered ClinForms' own plans (R1, 01/11/2026): its Direct Debit plan is ClinDesk + Reports.
+      await check("D1", "Direct Debit: ClinDesk Small monthly + Reports 25 with Bacs test details → 'being set up', not active yet", async () => {
+        await owner.goto(billing);
+        await owner.locator("input[name=interval][value=month]").check();
+        await owner.locator("input[name=band][value=small]").check();
+        await owner.selectOption("#plan-reports", "25");
         await owner.click("button:has-text('Continue to payment')");
         await owner.waitForURL(/checkout\.stripe\.com/, { timeout: 60000 });
-        await chooseMethod(owner, "bacs_debit");
-        const sort = owner.locator("#sortCode");
-        await sort.waitFor({ state: "visible", timeout: 30000 });
-        await sort.fill("108800");
-        await owner.locator("#accountNumber").fill("00012345");
+        const bf = await chooseMethod(owner, "bacs_debit", SORT_SEL, "Bacs Direct Debit");
+        await bf.locator(SORT_SEL).first().fill("108800");
+        await bf.locator("#accountNumber, input[name=accountNumber], input[name=account_number]").first().fill("00012345");
         await fillCommon(owner, "Helen Ward (fictional)");
-        await owner.locator("#confirm").check({ force: true });
+        const confirm = await firstVisible(owner, (f) => f.locator("#confirm, input[name=confirm][type=checkbox], input[name=termsConfirmation]"));
+        if (confirm) await confirm.check({ force: true });
         await owner.screenshot({ path: path.join(OUT, "checkout-bacs.png") });
         await submit(owner);
-        // Bacs: the page shows the Direct Debit details to review, then "Pay and subscribe".
-        const pay = owner.locator("button[data-testid=hosted-payment-submit-button]:has-text('Pay and subscribe')");
-        await pay.waitFor({ timeout: 60000 });
+        // Bacs: a dialog (in its own frame) shows the Direct Debit details to confirm.
+        const confirmMandate = await waitFor(() => firstVisible(owner, (f) => f.getByRole("button", { name: "Confirm", exact: true })), 60000, "the Direct Debit confirmation");
         await owner.screenshot({ path: path.join(OUT, "checkout-bacs-review.png") });
-        await pay.click();
+        await confirmMandate.click();
         await owner.waitForURL((u) => u.origin === DESK && u.pathname === "/app/settings/billing/done", { timeout: 120000 });
         const state = await owner.locator("[data-testid=billing-done]").getAttribute("data-state");
         await owner.screenshot({ path: path.join(OUT, "1440-billing-done-bacs.png"), fullPage: true });
@@ -437,7 +494,7 @@ async function submit(page) {
 
       await check("D2", "the Direct Debit clears (test mode, a few minutes) → active, Reports on with 25 reports", async () => {
         await waitFor(() => sub().state === "active", 8 * 60_000, "the Direct Debit to clear");
-        assert.deepEqual([sub().product, sub().plan_key, ent("reports").status, Number(pkg().reports_included)], ["clinforms", "starter", "active", 25]);
+        assert.deepEqual([sub().product, sub().plan_key, sub().reports_key, ent("reports").status, Number(pkg().reports_included)], ["clindesk", "small", "25", "active", 25]);
         assert(/"type":"invoice\.paid"/.test(serverLog));
       });
     }
@@ -446,7 +503,7 @@ async function submit(page) {
       await owner.goto(`${DESK}/app/platform/billing`);
       const row = owner.locator(`tr[data-tenant=${CLINIC}]`);
       await row.waitFor();
-      assert.match(await row.innerText(), /ClinForms Starter|ClinDesk/);
+      assert.match(await row.innerText(), /ClinDesk/);
       await owner.screenshot({ path: path.join(OUT, "1440-platform-billing.png"), fullPage: true });
     });
 
@@ -460,6 +517,7 @@ async function submit(page) {
   } finally {
     // Test-mode clean-up: end the subscriptions this run made (test objects only).
     for (const id of made.subscriptions) await api("DELETE", `/subscriptions/${id}`).catch(() => {});
+    for (const id of new Set(made.customers)) await api("DELETE", `/customers/${id}`).catch(() => {});
     await browser.close();
     stopChild(listener);
     stopChild(server);
