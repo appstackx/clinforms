@@ -52,7 +52,8 @@ export async function saveClinicProfile(_prev: ActionResult | null, form: FormDa
       phone,
       email: email ? email.toLowerCase() : null,
       retentionDays,
-      // Drafting from the notes (clinic_profile.drafting_enabled): off until an owner or administrator turns it on.
+      // Drafting from the notes (clinic_profile.drafting_enabled): off for a clinic set up by hand until an owner or
+      // administrator turns it on; on from sign-up for a clinic that signed up online (14/11/2026) – either can change it.
       draftingEnabled: form.get("draftingEnabled") === "on",
     };
   } catch {

@@ -290,7 +290,9 @@ export function describeActivityDetail(action: string, detail: Record<string, un
       return fields.length ? `Changed: ${fields.join(", ")}` : null;
     }
     case "clinic.self_signup":
-      return typeof detail.termsVersion === "string" && typeof detail.dpaVersion === "string" ? `Terms ${detail.termsVersion} · agreement ${detail.dpaVersion}` : null;
+      return typeof detail.termsVersion === "string" && typeof detail.dpaVersion === "string"
+        ? `Terms ${detail.termsVersion} · agreement ${detail.dpaVersion}${detail.draftingEnabled === true ? " · drafting from the notes switched on" : ""}`
+        : null;
     case "clinic.create":
       return typeof detail.retentionDays === "number" ? `Reports kept for ${detail.retentionDays} days` : null;
     case "auth.sign_in":

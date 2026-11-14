@@ -281,6 +281,20 @@ export async function listSignupAcceptances(ctx: DbContext, tenantId: string): P
   return rows.map(toAcceptance);
 }
 
+/**
+ * Whether the clinic signed up online (an acceptance of the terms and the DPA is on record) – 14/11/2026: such a clinic
+ * has drafting from the notes on from the start, and the drafting wording says so. false before migration 0010.
+ */
+export async function clinicSignedUpOnline(ctx: DbContext, tenantId: string): Promise<boolean> {
+  try {
+    const row = await ctx.db.selectFrom("signup_acceptances").select("id").where("tenant_id", "=", tenantId).limit(1).executeTakeFirst();
+    return Boolean(row);
+  } catch (err) {
+    if (isMissingSignupTable(err)) return false;
+    throw err;
+  }
+}
+
 type AcceptanceRow = {
   id: string;
   tenant_id: string;

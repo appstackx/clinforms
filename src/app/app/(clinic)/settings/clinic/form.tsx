@@ -17,12 +17,13 @@ export interface ClinicFormValues {
   draftingEnabled: boolean;
 }
 
-/** `trial`: the clinic's trial runs now – drafting is worded for made-up notes only. */
+/** `trial`: the clinic's (hand-set) trial runs now – drafting is worded for made-up notes only. `selfServe`: the clinic
+ * signed up online – drafting was switched on at sign-up (14/11/2026), worded so. */
 /**
  * `reports` (01/11/2026): the clinic has Reports – false (a ClinDesk clinic without the add-on) leaves out the
  * reports-only fields (kept as hidden values, so saving never changes them) and words the rest for the clinic.
  */
-export function ClinicProfileForm({ values, editable, trial = false, reports = true }: { values: ClinicFormValues; editable: boolean; trial?: boolean; reports?: boolean }) {
+export function ClinicProfileForm({ values, editable, trial = false, selfServe = false, reports = true }: { values: ClinicFormValues; editable: boolean; trial?: boolean; selfServe?: boolean; reports?: boolean }) {
   const [state, action] = useFormState(saveClinicProfile, null as ActionResult | null);
   return (
     <form action={action} className="space-y-4">
@@ -78,7 +79,7 @@ export function ClinicProfileForm({ values, editable, trial = false, reports = t
                 <p id="f-drafting-hint" className="space-y-1 text-xs text-slate-500">
                   <span className="block">{DRAFTING_COPY.whatItDoes}</span>
                   <span className="block" data-testid="drafting-when">
-                    {trial ? DRAFTING_COPY.whenToSwitchOnTrial : DRAFTING_COPY.whenToSwitchOn}
+                    {selfServe ? DRAFTING_COPY.whenSelfServe : trial ? DRAFTING_COPY.whenToSwitchOnTrial : DRAFTING_COPY.whenToSwitchOn}
                   </span>
                 </p>
               </div>

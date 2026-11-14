@@ -25,7 +25,8 @@ import { createPgliteTestDb, createSqliteTestDb, type TestDb } from "../db/testi
 import { setEmailProviderForTests, signupConfirmEmail, signupExistingAccountEmail, type EmailMessage } from "../email";
 import { listAudit } from "../repos/audit";
 import { hitRateLimit, peekRateLimit } from "../repos/rate-limits";
-import { listSignupAcceptances, takeOverStaleSignupClaim } from "../repos/signup";
+import { getClinicProfile, upsertClinicProfile } from "../repos/clinic-profile";
+import { clinicSignedUpOnline, listSignupAcceptances, takeOverStaleSignupClaim } from "../repos/signup";
 import { ipLimitSubject, signupClientIp } from "../signup/client-ip";
 import { checkFormStamp, confirmSignup, issueFormStamp, signupHostServed, startSignup, viewSignupLink, type SignupDeps } from "../signup/self-signup";
 import { baseUrlSetting } from "./config";
@@ -283,7 +284,8 @@ function defineFlow(label: string, open: () => Promise<TestDb>, dialect: "sqlite
       for (const a of ["clinic.create", "member.join", "clinic.self_signup"]) assert.ok(actions.includes(a), `${a} in ${actions.join(",")}`);
       const selfRow = audit.find((a) => a.action === "clinic.self_signup");
       assert.equal(selfRow?.userId, user.id);
-      assert.deepEqual(selfRow?.detail, { brand: "clinic", termsVersion: termsVersion("clinic"), dpaVersion: DPA_VERSION, acceptance: acc[0].id });
+      // 14/11/2026: drafting from the notes switched on by the sign-up – recorded with the DPA version accepted.
+      assert.deepEqual(selfRow?.detail, { brand: "clinic", termsVersion: termsVersion("clinic"), dpaVersion: DPA_VERSION, acceptance: acc[0].id, draftingEnabled: true });
       const used = await t.db.selectFrom("signup_requests").selectAll().where("email", "=", f.email as string).executeTakeFirstOrThrow();
       assert.equal(used.password_hash, null);
       assert.equal(used.tenant_id, done.tenantId);
@@ -291,6 +293,34 @@ function defineFlow(label: string, open: () => Promise<TestDb>, dialect: "sqlite
       // The link works once.
       assert.equal((await confirmSignup({ token, password: PASSWORD }, confirmDeps)).kind, "invalid");
       assert.equal((await viewSignupLink(t.db, token, "clinic", now())).kind, "invalid");
+    });
+
+    it("drafting from the notes (14/11/2026): ON for a clinic that signed up online, OFF for one set up by hand; the owner can switch it off", async () => {
+      ipCounter++;
+      const f = form({ clinicName: "Kestrel Physio (fictional)" });
+      assert.equal((await startSignup(f, deps())).detail, "sent");
+      const done = await confirmSignup(
+        { token: tokenOf(lastTo(f.email as string)), password: PASSWORD },
+        { db: t.db, auth, secret: SECRET, baseUrl: BASE, brand: "clinic", headers: headersFor(DESK), isPlatformAdminEmail: (e: string) => platformAdmins.has(e), now },
+      );
+      assert.equal(done.kind, "created");
+      if (done.kind !== "created") return;
+      const self = await getClinicProfile({ db: t.db }, done.tenantId);
+      assert.equal(self?.draftingEnabled, true, "self-serve: on from sign-up");
+      assert.equal(await clinicSignedUpOnline({ db: t.db }, done.tenantId), true);
+      const audit = await listAudit({ db: t.db }, done.tenantId, { limit: 20 });
+      assert.equal(audit.find((a) => a.action === "clinic.self_signup")?.detail?.draftingEnabled, true, "audited at sign-up");
+      assert.equal(audit.find((a) => a.action === "clinic.self_signup")?.detail?.dpaVersion, DPA_VERSION, "with the DPA version");
+      assert.equal(audit.find((a) => a.action === "clinic.create")?.detail?.draftingEnabled, true);
+      // The owner switches it off (Settings → Clinic saves the profile): it stays off.
+      await upsertClinicProfile({ db: t.db }, done.tenantId, { organizationId: self!.organizationId, displayName: self!.displayName, retentionDays: self!.retentionDays, draftingEnabled: false });
+      assert.equal((await getClinicProfile({ db: t.db }, done.tenantId))?.draftingEnabled, false, "the owner can switch it off");
+      // A clinic set up by hand (platform page / admin:create-clinic): off until its owner switches it on.
+      const hand = await createClinic(t.db, { name: "Heron Physio (fictional)", slug: `heron-physio-${Math.random().toString(36).slice(2, 7)}`, ownerEmail: "owner@heron-physio.example", appOrigin: FORMS, linkSecret: SECRET, sendEmail: false, now: now() });
+      assert.equal((await getClinicProfile({ db: t.db }, hand.tenantId))?.draftingEnabled, false, "hand-created: off");
+      assert.equal(await clinicSignedUpOnline({ db: t.db }, hand.tenantId), false);
+      const handAudit = await listAudit({ db: t.db }, hand.tenantId, { limit: 5 });
+      assert.equal(handAudit.find((a) => a.action === "clinic.create")?.detail?.draftingEnabled, undefined);
     });
 
     it("ClinForms: the clinic is a ClinForms clinic (Reports as today), link and email on ClinForms' host", async () => {

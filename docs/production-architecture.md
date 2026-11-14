@@ -155,8 +155,10 @@ re-encrypt in the background).
 | `/app/**` | signed-in member with 2FA | The Studio in tenant mode (server storage) + `/app/settings/{clinic,members,security,api-keys}`. *Built:* overview + the four settings pages (route group `(clinic)`), `/app/select-clinic` (several clinics / none / open invitations). *Wave 2:* the tenant Studio at `/app/studio/**`
 (`HostHooks` `basePath`/`mode: "tenant"`/`storage: "server"`; layout checks session, two-step and clinic on the server);
 Settings → Clinic has the owner/admin switch for drafting from the notes (`clinic_profile.drafting_enabled`, off for a
-new clinic – owner decision 10/10: a clinic opts in to sending notes to the drafting service once its DPA is signed;
-the switch and the overview's set-up checklist say so in plain words, `src/lib/account-copy.ts` `DRAFTING_COPY`); a clinic's launch link opens `/app/studio/new`; `/app/settings/activity` (audit trail: owners/admins the whole clinic, clinicians/staff their own entries; CSV of the page, ids only) and `/app/platform` (emails in `CLINFORMS_PLATFORM_ADMINS` with two-step on, 404 for everyone else) |
+clinic set up by hand – owner decision 10/10: a clinic opts in to sending notes to the drafting service once its DPA is
+signed; ON from sign-up for a clinic that signs up online – owner decision 14/11/2026: its owner accepted the DPA
+online, and can switch it off; the switch and the overview's set-up checklist say so in plain words,
+`src/lib/account-copy.ts` `DRAFTING_COPY`); a clinic's launch link opens `/app/studio/new`; `/app/settings/activity` (audit trail: owners/admins the whole clinic, clinicians/staff their own entries; CSV of the page, ids only) and `/app/platform` (emails in `CLINFORMS_PLATFORM_ADMINS` with two-step on, 404 for everyone else) |
 | `/reports/**`, `/pms-sandbox/**` | public demo | Unchanged demo-tenant Studio, browser storage, fictional data. On while `CLINFORMS_PUBLIC_DEMO=1` (*built:* on unless `CLINFORMS_PUBLIC_DEMO=0`) |
 | `/api/auth/[...all]` | – | Better Auth |
 | `/api/reports/v1/**` | demo or tenant actor | + `/store/**` endpoints (tenant only). *Wave 3:* `/connectors/file-import/read` and `/confirm` – notes as the clinic system prints or exports them, checked by staff before the record is built (§8); per-minute limits per sign-in or session and per address (fix wave 3) |

@@ -454,6 +454,10 @@ export async function confirmSignup(input: { token: unknown; password: unknown }
         brand: request.brand,
         linkSecret: deps.secret,
         sendEmail: false, // the person is right here: they join at once, no invitation email
+        // 14/11/2026 (Khuram): drafting from the notes ON for a self-serve clinic – its owner accepted the DPA online
+        // (it names the drafting sub-processor); the owner can switch it off in Settings → Clinic. Recorded in the
+        // clinic.self_signup audit row below, with the DPA version.
+        draftingEnabled: true,
         now,
       });
       tenantId = created.tenantId;
@@ -538,12 +542,21 @@ async function finishSignup(
     .limit(1)
     .executeTakeFirst();
   if (!audited) {
+    // Drafting from the notes as the sign-up left it (switched on by the sign-up, 14/11/2026) – recorded with the DPA
+    // version the owner accepted, so the activity shows why it is on.
+    const drafting = await ctx.db.selectFrom("clinic_profile").select("drafting_enabled").where("tenant_id", "=", tenantId).executeTakeFirst();
     await appendAudit(ctx, tenantId, {
       userId,
       action: "clinic.self_signup",
       targetType: "organization",
       targetId: organizationId,
-      detail: { brand: request.brand, termsVersion: request.termsVersion, dpaVersion: request.dpaVersion, acceptance: acceptance.id },
+      detail: {
+        brand: request.brand,
+        termsVersion: request.termsVersion,
+        dpaVersion: request.dpaVersion,
+        acceptance: acceptance.id,
+        ...(drafting && Number(drafting.drafting_enabled) === 1 ? { draftingEnabled: true } : {}),
+      },
     });
   }
   await startSelfServeTrial(

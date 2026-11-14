@@ -98,3 +98,13 @@ test("owner reset: shown once, expires, identity check first; a sole owner is po
   assert.equal(OWNER_RESET_COPY.soleOwner("help@example.test"), "If you are your clinic's only owner, contact us at help@example.test.");
   assert.match(OWNER_RESET_COPY.notArrived("help@example.test"), /only owner, contact us at help@example\.test\.$/);
 });
+
+test("drafting for a clinic that signed up online (14/11/2026): on from sign-up, the owner can switch it off", () => {
+  assert.match(DRAFTING_COPY.whenSelfServe, /^Your clinic accepted the data processing agreement when it signed up online, so this was switched on at sign-up\. Switch it off/);
+  assert.match(DRAFTING_COPY.checklistOffSelfServe, /^Switched off\. Switch it on again in Clinic details/);
+  // Never "off until you switch it on" for a self-serve clinic.
+  assert.doesNotMatch(DRAFTING_COPY.whenSelfServe + DRAFTING_COPY.checklistOffSelfServe, /off until|once the agreement is signed/i);
+  const read = (p: string) => fs.readFileSync(path.resolve(p), "utf8");
+  assert.match(read("src/app/app/(clinic)/settings/clinic/form.tsx"), /selfServe \? DRAFTING_COPY\.whenSelfServe : trial \?/);
+  assert.match(read("src/app/app/(clinic)/page.tsx"), /selfServe \? DRAFTING_COPY\.checklistOffSelfServe : trial \?/);
+});

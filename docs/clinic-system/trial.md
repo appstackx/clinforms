@@ -28,6 +28,16 @@ set by hand (Blue Heart's kind) keeps "Trial – N days left. Use made-up notes 
 is signed." and its drafting wording, unchanged (`clinicTrialRunning` is true only for a hand-set trial). The sample
 clinic is still described as made-up data – it is.
 
+**Drafting from the notes is ON from sign-up (14/11/2026, owner decision)** for every clinic that signs up online –
+including its 10 free trial reports: the owner accepted the DPA (version 1, which names the drafting sub-processor) on
+the sign-up form. `createClinic(…, { draftingEnabled: true })` is passed by the self-serve sign-up only; the
+`clinic.self_signup` audit row records `draftingEnabled: true` with the DPA version (activity: "… · drafting from the
+notes switched on"). The owner can switch it off in Settings → Clinic; the wording there and on the overview checklist
+says it was switched on at sign-up (`DRAFTING_COPY.whenSelfServe` / `checklistOffSelfServe`, chosen when
+`clinicSignedUpOnline` – a `signup_acceptances` row exists). Clinics set up by hand (`admin:create-clinic`, the platform
+page – Blue Heart's kind) and every existing clinic are unchanged: off until the owner switches it on. The sample clinic
+keeps drafting off (it has no Reports).
+
 ## 2. When the trial ends
 
 - **Read-only, data kept.** Reports: as before (403 `TRIAL_ENDED` for anything new; everything opens and downloads).

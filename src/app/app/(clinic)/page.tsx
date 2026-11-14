@@ -22,6 +22,7 @@ import { SAMPLE_REMOVED_PARAM } from "@/lib/trial-copy";
 import { sampleRemovalOffer } from "@/server/trial/sample";
 import { clinicAccessOf, readClinicPlan } from "@/server/repos/clinic-plan";
 import { sampleOfferFor } from "@/server/trial/view";
+import { clinicSignedUpOnline } from "@/server/repos/signup";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Overview" };
@@ -31,11 +32,12 @@ export default async function ClinicOverviewPage({ searchParams }: { searchParam
   const db = getDb();
   const [members, invitations] = await Promise.all([countMembers(db, membership.organizationId), listPendingInvitations(db, membership.organizationId)]);
   const manager = isManager(membership.role);
-  const [setup, trial, packages, ownBrand] = await Promise.all([
+  const [setup, trial, packages, ownBrand, selfServe] = await Promise.all([
     loadSetupChecklist(db, membership, { members, openInvitations: invitations.length }),
     clinicTrialRunning(db, membership.tenantId),
     clinicPackages(membership.tenantId),
     clinicBrand(membership.tenantId),
+    clinicSignedUpOnline({ db }, membership.tenantId).catch(() => false),
   ]);
   // 01/11/2026 (Khuram's R1): the reports checklist, Plan & usage and API keys only for a clinic with Reports (or a
   // ClinForms clinic); a ClinDesk clinic without the add-on gets its own set-up steps and no reports links.
@@ -49,14 +51,14 @@ export default async function ClinicOverviewPage({ searchParams }: { searchParam
   // Fix wave 2: a new clinic's first steps, for the owner and administrators (who can do them).
   const formSteps: Array<{ done: boolean; optional?: boolean; href: string; label: string; text: string }> = [
     { done: setup.clinicDetails, href: "/app/settings/clinic", label: "Clinic details", text: "Name, address and postcode – they appear on completed forms." },
-    // Optional (owner decision: off for a new clinic, switched on once the data processing agreement is signed),
-    // so it never counts as a step left.
+    // Optional (owner decisions: off for a clinic set up by hand, switched on once the data processing agreement is
+    // signed; on from sign-up for a clinic that signed up online, 14/11/2026), so it never counts as a step left.
     {
       done: setup.draftingEnabled,
       optional: true,
       href: "/app/settings/clinic",
       label: "Drafting from the notes",
-      text: setup.draftingEnabled ? DRAFTING_COPY.checklistOn : trial ? DRAFTING_COPY.checklistOffTrial : DRAFTING_COPY.checklistOff,
+      text: setup.draftingEnabled ? DRAFTING_COPY.checklistOn : selfServe ? DRAFTING_COPY.checklistOffSelfServe : trial ? DRAFTING_COPY.checklistOffTrial : DRAFTING_COPY.checklistOff,
     },
     { done: setup.team, href: "/app/settings/members", label: "Invite your clinicians", text: "Each member signs in with two-step verification." },
     { done: setup.signer, href: "/app/settings/members", label: "Signing details", text: "An HCPC number and “may sign” for each clinician who approves forms." },

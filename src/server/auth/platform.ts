@@ -95,6 +95,12 @@ export interface CreateClinicInput {
    * (status "withheld"): the admin script always passes false, so a command run on a laptop never sends email.
    */
   sendEmail?: boolean;
+  /**
+   * Drafting from the notes (clinic_profile.drafting_enabled) from the start – ONLY the self-serve sign-up passes true
+   * (14/11/2026, Khuram: the owner accepted the DPA online, which names the drafting sub-processor). Clinics set up by
+   * hand (admin:create-clinic, the platform page) keep the default: off until the owner switches it on.
+   */
+  draftingEnabled?: boolean;
   now?: Date;
 }
 
@@ -162,7 +168,7 @@ export async function createClinic(db: Kysely<Database>, input: CreateClinicInpu
       phone: null,
       email: null,
       retention_days: retentionDays,
-      drafting_enabled: 0,
+      drafting_enabled: input.draftingEnabled === true ? 1 : 0,
       created_at: at,
       updated_at: at,
     }),
@@ -191,6 +197,7 @@ export async function createClinic(db: Kysely<Database>, input: CreateClinicInpu
       emailProvider: email.provider,
       emailStatus: email.status,
       ...(input.brand && input.brand !== "clinforms" ? { linkBrand: input.brand } : {}),
+      ...(input.draftingEnabled === true ? { draftingEnabled: true } : {}),
     },
   });
   return { organizationId, tenantId: slug, invitationId, inviteLink: link, invitationExpiresAt, email };
