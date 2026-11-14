@@ -112,7 +112,7 @@ export default function ClindeskTermsPage() {
           </li>
           <li>
             The clinic decides how long its records are kept. Clinical records are never deleted automatically while the
-            agreement runs.
+            agreement runs, except at the end of a free trial without a paid plan, as set out below.
           </li>
           <li>
             We may use information about how the service is used, which does not identify patients, users or clinics, to
@@ -121,6 +121,11 @@ export default function ClindeskTermsPage() {
           <li>
             When the agreement ends, we return the clinic&rsquo;s data and then delete it, except where the law requires us
             to keep it. How the data is returned: <Fill k="pricing.dataExport" />.
+          </li>
+          <li>
+            If a free trial ends without a paid plan, the clinic&rsquo;s data is kept read-only for 90 days after the trial
+            ends, so that the clinic can choose a plan or export its data. We email the clinic at least 14 days before the
+            data is deleted, and then delete it.
           </li>
         </ul>
         <p>

@@ -106,6 +106,11 @@ export default function TermsPage() {
           When the agreement ends, we return the clinic&rsquo;s data if it asks within 30 days, and then delete it, except
           where the law requires us to keep it.
         </li>
+        <li>
+          If a free trial ends without a paid plan, the clinic&rsquo;s data is kept read-only for 90 days after the trial
+          ends, so that the clinic can choose a plan or export its data. We email the clinic at least 14 days before the
+          data is deleted, and then delete it.
+        </li>
       </ul>
       <p>
         Our <Link href="/privacy">privacy policy</Link> explains how we handle the personal data we control.

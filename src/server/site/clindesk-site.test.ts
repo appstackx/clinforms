@@ -106,6 +106,20 @@ describe("clinforms.co.uk is unchanged", () => {
     assert.match(dpaLiability, /limited to £600 in total/);
     for (const text of [clinforms, clindesk, dpaLiability]) assert.match(text, /within 3 months of the claiming party becoming aware/);
   });
+  // 14/11/2026 (Khuram): an unpaid self-serve trial is kept read-only for 90 days after its end, the clinic emailed at
+  // least 14 days before, then deleted (src/server/trial/retention.ts) – both terms and the DPA (v1.1) say so.
+  it("both brands' terms and the DPA say an unpaid free trial is kept read-only 90 days, warned 14 days before, then deleted", () => {
+    const clinforms = fs.readFileSync(path.join(ROOT, "src/app/(marketing)/terms/page.tsx"), "utf8").replace(/\s+/g, " ");
+    const clindesk = fs.readFileSync(path.join(ROOT, "src/app/clindesk-site/terms/page.tsx"), "utf8").replace(/\s+/g, " ");
+    const dpa = JSON.parse(fs.readFileSync(path.join(ROOT, "content/dpa.json"), "utf8")) as { version: string; status: string; sections: { id: string; paragraphs: string[] }[] };
+    const dpaEnd = dpa.sections.find((s) => s.id === "end")?.paragraphs.join(" ") ?? "";
+    for (const text of [clinforms, clindesk, dpaEnd]) {
+      assert.match(text, /If a free trial ends without a paid plan, the clinic(&rsquo;|')s data is kept read-only for 90 days after the trial ends, so that the clinic can choose a plan or export its data\. We email the clinic at least 14 days before the/);
+    }
+    assert.match(clindesk, /Clinical records are never deleted automatically while the agreement runs, except at the end of a free trial without a paid plan/);
+    assert.equal(dpa.version, "dpa-v1.1-2026-11-14");
+    assert.equal(dpa.status, "Version 1");
+  });
 });
 
 describe("clindesk.co.uk", () => {
