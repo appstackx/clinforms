@@ -129,6 +129,12 @@ export default async function PlatformPage() {
             <span className="text-slate-600">– reports, drafting calls, tokens, estimated drafting cost and margin per month.</span>
           </p>
           <p className="mt-2 text-sm">
+            <Link href="/app/platform/trials" className="font-medium text-teal-700 underline-offset-4 hover:underline">
+              Free trials
+            </Link>{" "}
+            <span className="text-slate-600">– self-serve trial clinics: start, days left, free reports and texts used, converted or not.</span>
+          </p>
+          <p className="mt-2 text-sm">
             <Link href="/app/platform/text-credits" className="font-medium text-teal-700 underline-offset-4 hover:underline">
               Text credits
             </Link>{" "}

@@ -5,6 +5,10 @@ import { SITE_COOKIE } from "@/components/pms/shell/site-cookie";
 import { requireClinicActor } from "@/server/pms/actor";
 import { dashboardFor } from "@/server/pms/reporting/dashboard";
 import { getPmsSettings } from "@/server/repos/pms/settings";
+import { SampleOfferCard } from "@/components/account/sample-offer";
+import { getDb } from "@/server/db";
+import { clinicAccessOf, readClinicPlan } from "@/server/repos/clinic-plan";
+import { sampleOfferFor } from "@/server/trial/view";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Today" };
@@ -16,6 +20,17 @@ export const metadata: Metadata = { title: "Today" };
  */
 export default async function ClinicTodayPage() {
   const actor = await requireClinicActor();
-  const [view, settings] = await Promise.all([dashboardFor(actor, { siteChoice: cookies().get(SITE_COOKIE)?.value ?? null }), getPmsSettings(actor.repo(), actor.tenantId)]);
-  return <Dashboard view={view} demo={settings.isDemo} />;
+  // 13/11/2026: a self-serve trial's owner is offered the separate sample clinic (src/server/trial/sample.ts).
+  const [view, settings, plan] = await Promise.all([
+    dashboardFor(actor, { siteChoice: cookies().get(SITE_COOKIE)?.value ?? null }),
+    getPmsSettings(actor.repo(), actor.tenantId),
+    readClinicPlan({ db: getDb() }, actor.tenantId).catch(() => null),
+  ]);
+  const offer = await sampleOfferFor(getDb(), actor.tenantId, actor.role, plan ? clinicAccessOf(plan) : null);
+  return (
+    <>
+      {offer ? <SampleOfferCard creating={offer.trial.sampleState === "creating"} /> : null}
+      <Dashboard view={view} demo={settings.isDemo} />
+    </>
+  );
 }

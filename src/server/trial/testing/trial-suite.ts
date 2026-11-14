@@ -33,6 +33,7 @@ import { runTrialEmailSweep, sendTrialEmailNow } from "../emails";
 import { createSampleClinic, declineSampleClinic } from "../sample";
 import { startSelfServeTrial, trialKeys, TRIAL_TEXTS_REASON } from "../start";
 import { trialBannerState } from "../view";
+import { listTrialsForPlatform } from "../platform";
 
 const SECRET = "trial-suite-secret-".padEnd(48, "t");
 const DAY = 86_400_000;
@@ -395,6 +396,18 @@ export function defineTrialSuite(label: string, factory: () => Promise<TrialSuit
       assert.equal((await getEntitlement({ db: t.db }, d.tenantId, "clinic"))?.status, "active");
       assert.equal((await getEntitlement({ db: t.db }, d.tenantId, "reports"))?.status, "paused");
       assert.equal(await getClinicPackage({ db: t.db }, d.tenantId), null, "the free Trial package is gone");
+    });
+
+    it("platform page: every trial clinic (not the samples) with its state, reports and texts used, emails and conversion", async () => {
+      const rows = await listTrialsForPlatform(t.db, now());
+      assert.ok(rows.length >= 10);
+      assert.ok(rows.every((r) => r.trial.sampleOf === null), "samples are not listed");
+      const states = new Set(rows.map((r) => r.state));
+      for (const s of ["waiting", "running", "converted"]) assert.ok(states.has(s as never), s);
+      const converted = rows.find((r) => r.state === "converted" && r.reportsUsed === 10);
+      assert.ok(converted, "the converted clinic with its 10 reports");
+      assert.ok(converted.emails.some((e) => e.kind === "paid" && e.status === "sent"));
+      assert.ok(rows.some((r) => r.trial.repeatReason === "email"));
     });
 
     it("a ClinForms trial's emails speak for ClinForms (its host, its words, no texts)", async () => {
