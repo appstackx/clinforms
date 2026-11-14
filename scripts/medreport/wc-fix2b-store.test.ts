@@ -21,7 +21,9 @@ import { buildCase, ownerOf, type Built } from "../../src/modules/medreport/core
 import { CORPUS_TENANT, actorOf } from "../../src/modules/medreport/core/validation/__corpus__/harness/fixtures";
 import { createHttpHarness, putStoredReport, type HttpHarness } from "../../src/modules/medreport/core/validation/__corpus__/harness/http";
 import { CaseInputSchema } from "../../src/modules/medreport/core/validation/__corpus__/harness/types";
+import { ATTRIBUTION_FIX_GENERATORS, nameInstead } from "../../src/modules/medreport/core/validation/attribution-fixes";
 import { ENGINE_FIX_KINDS, applyFixProposal, offeredFixes } from "../../src/modules/medreport/ui/components/review/fixes";
+import { metered } from "../../src/modules/medreport/core/validation/__corpus__/harness/work-meter";
 import { reviewReducer } from "../../src/modules/medreport/ui/components/review/use-review-state";
 
 const SARAH = actorOf("sarah");
@@ -52,14 +54,14 @@ async function seed(h: HttpHarness, r: Report, as: "sarah" | "pat" = "sarah"): P
   return (res.body as { rev: number }).rev;
 }
 /**
- * One PUT, timed by this process's CPU (the handler runs in it): load from other test files never counts, as wall time
- * would under the parallel runner.
+ * One PUT with the work it did (harness/work-meter.ts): full validator passes and attribution fix generator calls –
+ * counted, the guards – and this thread's CPU ms, a backstop only. The whole process's CPU (process.cpuUsage) used to
+ * be the guard, at 2–3x the unloaded cost: it counts V8's and libuv's helper threads too, and every thread's CPU time
+ * grows on a loaded machine (efficiency cores, shared caches), so it failed under load with the same work done.
  */
-async function timedPut(h: HttpHarness, r: Report, as: "sarah" | "pat", rev: number): Promise<{ status: number; code: string | null; ms: number; body: unknown }> {
-  const c0 = process.cpuUsage();
-  const res = await putStoredReport(h, r, as, rev);
-  const cpu = process.cpuUsage(c0);
-  return { status: res.status, code: res.code, ms: (cpu.user + cpu.system) / 1000, body: res.body };
+async function timedPut(h: HttpHarness, r: Report, as: "sarah" | "pat", rev: number): Promise<{ status: number; code: string | null; ms: number; body: unknown; passes: number; generators: number }> {
+  const m = await metered(() => putStoredReport(h, r, as, rev));
+  return { status: m.value.status, code: m.value.code, ms: m.cpuMs, body: m.value.body, passes: m.passes, generators: m.generators };
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -95,6 +97,19 @@ async function colleagueDrafted(paragraphs: number, chars: number, noteChars: nu
   return { b, r: { ...r, flags: [...r.flags, ...forged] } };
 }
 
+/** fixes.ts attributionCandidates: each of WB's generators but "Name X instead" (offered by the review itself) per flag. */
+const GENERATORS_PER_FLAG = ATTRIBUTION_FIX_GENERATORS.filter((g) => g !== nameInstead).length;
+
+/**
+ * The flags the store's generators read for claims on `paragraphIds` of F-32: the server's own flags (the validators on
+ * the stored copy, client flags dropped) of `code`, each distinct flag once (store-reports.ts engineFixViolation).
+ */
+function serverFlagReads(b: Built, r: Report, code: ReportFlag["code"], paragraphIds: readonly string[]): number {
+  const owner = r.approver ? { memberId: r.approver.memberId, name: r.approver.name, hcpc: r.approver.hcpc } : null;
+  const flags = validateReport({ ...r, flags: [] }, b.template, { form: b.form, ...(owner ? { voice: { owner: owner as never } } : {}) }).flags;
+  return paragraphIds.reduce((n, id) => n + new Set(flags.filter((f) => f.sectionKey === "F-32" && f.paragraphId === id && f.code === code).map((f) => `${f.code}|${f.severity}|${f.evidence ?? ""}|${f.message}`)).size, 0);
+}
+
 /** The first paragraph of F-32 changed in place by a claimed "attribution-prefix" fix (own stamp) the engine never makes. */
 function claimedPrefix(r: Report, by: typeof SARAH): Report {
   return mapBox(r, "F-32", (s) => ({
@@ -103,14 +118,25 @@ function claimedPrefix(r: Report, by: typeof SARAH): Report {
   }));
 }
 
-test("R2-SEC-2 re-check: the approver's one claimed fix on a paragraph 200 client-written flags point at is refused in well under a second (the generators read the server's flags only)", async () => {
+test("R2-SEC-2 re-check: the approver's one claimed fix on a paragraph 200 client-written flags point at is refused, the generators' work the same as with none (they read the server's flags only)", async () => {
   for (const noteChars of [20_000, 100_000]) {
+    // The same claim on the same stored copy without the forged flags: the work the server's own flags call for.
+    const clean = await colleagueDrafted(1, 3_800, noteChars, 0);
+    const hc = await clinic(clean.b);
+    const plain = await timedPut(hc, claimedPrefix(clean.r, SARAH), "sarah", await seed(hc, clean.r));
+    assert.equal(plain.status, 403, `notes ${noteChars}, no forged flags: ${refusedAs(plain)}`);
+
     const { b, r } = await colleagueDrafted(1, 3_800, noteChars, 200);
     const h = await clinic(b);
     const rev = await seed(h, r);
     const res = await timedPut(h, claimedPrefix(r, SARAH), "sarah", rev);
     assert.equal(res.status, 403, `notes ${noteChars}: ${refusedAs(res)}`);
-    assert.ok(res.ms < 1_000, `notes ${noteChars}: ${Math.round(res.ms)} ms`);
+    // The root (9–31 s CPU): candidates generated once per stored flag. Now the 200 client-written flags add nothing.
+    assert.ok(plain.generators > 0, "the generators ran on the server's flags");
+    assert.equal(res.generators, plain.generators, `notes ${noteChars}: generator calls with 200 forged flags`);
+    assert.ok(res.passes <= 2, `notes ${noteChars}: ${res.passes} validator passes`);
+    // Backstop (about 0.15 s CPU unloaded).
+    assert.ok(res.ms < 1_000, `notes ${noteChars}: ${Math.round(res.ms)} ms CPU`);
   }
 });
 
@@ -121,10 +147,13 @@ test("R2-SEC-2 re-check: a claimed fix on a paragraph over the store's bound (th
   const res = await timedPut(h, claimedPrefix(r, SARAH), "sarah", rev);
   assert.equal(res.status, 413, refusedAs(res));
   assert.equal(res.code, "PAYLOAD_TOO_LARGE");
-  assert.ok(res.ms < 300, `${Math.round(res.ms)} ms`);
+  assert.deepEqual([res.passes, res.generators], [0, 0], "no validator pass or fix generator before the 413");
+  // Backstop (a few ms CPU unloaded).
+  assert.ok(res.ms < 300, `${Math.round(res.ms)} ms CPU`);
 });
 
 test("R2-SEC-2 re-check: twenty genuine engine fixes in one save – stored at real sizes, refused (413) where the generators' work would exceed the budget", async () => {
+  let stored = 0;
   // Real sizes (the largest bh2 paragraph is 684 characters, notes 5,647): the engine's own offers, applied as the review
   // applies them, all twenty in one save – stored, each still drafted with its fix recorded.
   {
@@ -138,7 +167,13 @@ test("R2-SEC-2 re-check: twenty genuine engine fixes in one save – stored at r
     assert.equal(done.size, 20, "the engine offers the approver a fix on each paragraph");
     const res = await timedPut(h, fixed, "sarah", rev);
     assert.equal(res.status, 200, JSON.stringify(res.body));
-    // Genuine work (about 0.45 s CPU unloaded); the bound leaves room for the parallel runner.
+    // Two validator passes in all (the stored copy, the fixed report) – never one per fix – and the generators once per
+    // claimed fix on that paragraph's distinct server flags of the claimed check (OTHER_CLINICIAN_VOICE here).
+    assert.equal(res.passes, 2, `${res.passes} validator passes`);
+    const reads = serverFlagReads(b, r, "OTHER_CLINICIAN_VOICE", Array.from(done));
+    assert.ok(reads > 0 && res.generators <= reads * GENERATORS_PER_FLAG, `${res.generators} generator calls for ${reads} flag reads`);
+    stored = res.generators;
+    // Backstop: genuine work, about 0.4 s CPU unloaded.
     assert.ok(res.ms < 1_500, `${Math.round(res.ms)} ms CPU`);
     assert.ok(box((res.body as { report: Report }).report, "F-32").paragraphs.every((p) => p.origin === "ai" && p.fixes?.length === 1), "still drafted, each fix recorded");
   }
@@ -153,7 +188,10 @@ test("R2-SEC-2 re-check: twenty genuine engine fixes in one save – stored at r
     for (const f of fixes) if (!done.has(f.paragraphId)) (done.add(f.paragraphId), (fixed = applyFixProposal(fixed, f, SARAH)));
     const res = await timedPut(h, fixed, "sarah", rev);
     assert.equal(res.status, 413, refusedAs(res));
-    // About 0.5 s CPU unloaded: the generators stop at the budget.
+    // The generators stop at the budget: fewer calls than the twenty fixes stored above, and no second validator pass.
+    assert.ok(res.generators < stored, `${res.generators} generator calls (stored save: ${stored})`);
+    assert.equal(res.passes, 1, `${res.passes} validator passes`);
+    // Backstop: about 0.4 s CPU unloaded.
     assert.ok(res.ms < 1_500, `${Math.round(res.ms)} ms CPU (the generators stop at the budget)`);
   }
 });

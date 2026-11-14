@@ -11,10 +11,13 @@
  *    queries (word endings, figures, final "e", history, ties, long index lists, several and repeated notes).
  * 2. The cost at the budget limits: anonymous demo session → POST /validate (and /sign) through the real handlers, with
  *    the reviewers' shapes and shapes aimed at the index (a word in every note sentence, long prefix families, many
- *    combinations of common words, 1,000 small paragraphs). Ceilings are generous (the suite runs in parallel on a
- *    loaded machine): the reviewers' shapes took under a second in all on the fix branch, the check itself under 0.5 s
- *    on every shape; ee34d1a took 15–40 s on the first and over 2 minutes on the others. The opinion check is timed
- *    too: it normalised each cited note once per drafted paragraph (2 s on 1,000 paragraphs; now once per note).
+ *    combinations of common words, 1,000 small paragraphs). Timed in this thread's CPU (harness/work-meter.ts
+ *    threadCpuMs), never wall time: wall time grows while the process waits for a core (the parallel runner, other
+ *    suites – a check took 2 s of wall time for 0.6 s of CPU with the machine loaded, and failed); CPU time grows
+ *    about 2x at most there. The reviewers' shapes took under a second of CPU in all on the fix branch, the check itself
+ *    under 0.5 s on every shape; ee34d1a took 15–40 s on the first and over 2 minutes on the others. The opinion check
+ *    is timed too: it normalised each cited note once per drafted paragraph (2 s on 1,000 paragraphs; now once per
+ *    note). /validate runs the validators exactly once (counted).
  * Fictional data only.
  */
 import { describe, it } from "node:test";
@@ -32,10 +35,11 @@ import type { MedreportDeps } from "../../src/modules/medreport/api/deps";
 import { handleSign } from "../../src/modules/medreport/api/handlers/sign";
 import { handleValidate } from "../../src/modules/medreport/api/handlers/validate";
 import { VALIDATORS } from "../../src/modules/medreport/core/validation/registry";
+import { countValidatorPasses, threadCpuMs } from "../../src/modules/medreport/core/validation/__corpus__/harness/work-meter";
 
 process.env.MEDREPORT_AI_MODE = "demo";
 
-/** The time each of WB's checks named here took in the last request (the registry's entries, wrapped – this process only). */
+/** The CPU time (this thread) each of WB's checks named here took in the last request (the registry's entries, wrapped – this process only). */
 const TIMED = ["attribution-colleague-named", "opinion-language"] as const;
 const checkMs: Record<string, number> = {};
 for (const name of TIMED) {
@@ -43,17 +47,17 @@ for (const name of TIMED) {
   assert.ok(entry, `${name} is registered`);
   const run = entry.run;
   entry.run = (input) => {
-    const t = performance.now();
+    const t = threadCpuMs();
     try {
       return run(input);
     } finally {
-      checkMs[name] = (checkMs[name] ?? 0) + performance.now() - t;
+      checkMs[name] = (checkMs[name] ?? 0) + threadCpuMs() - t;
     }
   };
 }
 const resetChecks = () => TIMED.forEach((n) => (checkMs[n] = 0));
 const assertChecksCheap = (label: string) => {
-  for (const n of TIMED) assert.ok(checkMs[n] < 2_500, `${label}: ${n} took ${Math.round(checkMs[n])} ms`);
+  for (const n of TIMED) assert.ok(checkMs[n] < 2_500, `${label}: ${n} took ${Math.round(checkMs[n])} ms CPU`);
 };
 
 /* ------------------------------------------------------------------------------------------------
@@ -176,16 +180,20 @@ async function demoCase(): Promise<Built> {
   );
 }
 
-async function post(handler: MedreportHandler, url: string, body: unknown): Promise<{ status: number; ms: number; flags: number }> {
+const validatorPasses = countValidatorPasses();
+
+/** One request through the real handler, with this thread's CPU ms (the handler runs in it) and the validator passes. */
+async function post(handler: MedreportHandler, url: string, body: unknown): Promise<{ status: number; ms: number; flags: number; passes: number }> {
   const req = new Request(`http://localhost/api/reports/v1${url}`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${createSessionToken({ tenantId: "demo", kind: "demo" }).token}` },
     body: JSON.stringify(body),
   });
-  const started = performance.now();
+  const passes = validatorPasses();
+  const started = threadCpuMs();
   const res = await bindHandler(handler, () => ({}) as MedreportDeps)(req, { params: {} });
   const json = (await res.json()) as { flags?: unknown[] };
-  return { status: res.status, ms: Math.round(performance.now() - started), flags: json.flags?.length ?? 0 };
+  return { status: res.status, ms: Math.round(threadCpuMs() - started), flags: json.flags?.length ?? 0, passes: validatorPasses() - passes };
 }
 
 type Para = Report["sections"][number]["paragraphs"][number];
@@ -302,9 +310,10 @@ describe("R2-SEC-1: /validate inside VALIDATION_BUDGET stays cheap for a signed-
       resetChecks();
       const res = await post(handleValidate, "/validate", body);
       assert.equal(res.status, 200);
+      assert.equal(res.passes, 1, "/validate runs the validators once");
       // ee34d1a: 15–40 s on the reviewers' shapes, over 2 minutes on the others; the fix branch: well under 0.5 s alone.
       assertChecksCheap(name);
-      if (!CHECK_ONLY.has(name)) assert.ok(res.ms < 6_000, `${name}: ${res.ms} ms`);
+      if (!CHECK_ONLY.has(name)) assert.ok(res.ms < 6_000, `${name}: ${res.ms} ms CPU`);
     });
   }
 
@@ -317,6 +326,6 @@ describe("R2-SEC-1: /validate inside VALIDATION_BUDGET stays cheap for a signed-
     assert.notEqual(res.status, 413);
     assert.ok(checkMs["attribution-colleague-named"] > 0, "/sign ran the check");
     assertChecksCheap("/sign");
-    assert.ok(res.ms < 6_000, `/sign: ${res.ms} ms`);
+    assert.ok(res.ms < 6_000, `/sign: ${res.ms} ms CPU`);
   });
 });

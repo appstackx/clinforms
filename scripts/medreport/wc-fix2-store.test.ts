@@ -4,7 +4,8 @@
  * Ellis may sign, Pat Morgan is staff). Fictional data only.
  *
  * - R2-SEC-2 (= R2-REG-1): claimed one-click fixes cost at most two validator runs within the validators' budget, after
- *   the cheap checks – 20 forged rewrites on a report at the record cap are refused in under a second;
+ *   the cheap checks – 20 forged rewrites on a report at the record cap are refused after at most one validator pass
+ *   (counted, not timed: harness/work-meter.ts), with a CPU-time backstop;
  * - R2-SAF-1: a stored box is never put back to "pending"; only an empty box the factory left waiting is redrafted;
  * - R2-SAF-2: a create the store cannot check against the clinic's map (or the built-in template's version) is refused;
  * - R2-TPN-01: an answer set, replaced or un-stamped with no member's stamp is refused in every box (a redraft of an
@@ -23,6 +24,7 @@ import { CORPUS_TENANT, actorOf } from "../../src/modules/medreport/core/validat
 import { createHttpHarness, postSign, putStoredReport, type HttpHarness } from "../../src/modules/medreport/core/validation/__corpus__/harness/http";
 import { CaseInputSchema } from "../../src/modules/medreport/core/validation/__corpus__/harness/types";
 import { ENGINE_FIX_KINDS, applyFixProposal, offeredFixes } from "../../src/modules/medreport/ui/components/review/fixes";
+import { metered } from "../../src/modules/medreport/core/validation/__corpus__/harness/work-meter";
 import { reviewReducer } from "../../src/modules/medreport/ui/components/review/use-review-state";
 import { createAmendedVersion } from "../../src/modules/medreport/ui/components/review/review-model";
 
@@ -106,13 +108,18 @@ function forgedFixes(r: Report, kind = "value-only"): Report {
   return mapBox(r, "F-32", (s) => ({ ...s, paragraphs: s.paragraphs.map((p) => ({ ...p, text: `${p.text} Noted.`, fixes: [{ kind, by: PAT as never, at: r.updatedAt, edits: [{ start: p.text.length, end: p.text.length, text: " Noted." }] }] })) }));
 }
 
-async function timedPut(h: HttpHarness, r: Report, rev: number): Promise<{ status: number; code: string | null; ms: number }> {
-  const t0 = performance.now();
-  const res = await putStoredReport(h, r, "pat", rev);
-  return { status: res.status, code: res.code, ms: performance.now() - t0 };
+/**
+ * One PUT as Pat, with the work it did (harness/work-meter.ts): full validator passes and attribution generator calls
+ * (counted – the guards), and this thread's CPU ms (a backstop only). Wall time used to be the guard and failed whenever
+ * the machine was busy (the parallel runner, other suites): the handler did the same work, the process waited longer
+ * for a core.
+ */
+async function timedPut(h: HttpHarness, r: Report, rev: number): Promise<{ status: number; code: string | null; ms: number; passes: number; generators: number }> {
+  const m = await metered(() => putStoredReport(h, r, "pat", rev));
+  return { status: m.value.status, code: m.value.code, ms: m.cpuMs, passes: m.passes, generators: m.generators };
 }
 
-test("R2-SEC-2: 20 forged drafted rewrites on a report at the record cap are refused in under a second (over the validators' budget: 413 before any validator)", async () => {
+test("R2-SEC-2: 20 forged drafted rewrites on a report at the record cap are refused with no validator pass (over the validators' budget: 413 before any validator)", async () => {
   // 20 × 30,000 characters of drafted text (and its drafted wording): under the store's 1.4 MB record cap, over the
   // validators' budget.
   const { b, r } = await bigDrafted(20, 30_000, 20_000, 0);
@@ -123,10 +130,13 @@ test("R2-SEC-2: 20 forged drafted rewrites on a report at the record cap are ref
   const res = await timedPut(h, forgedFixes(r), rev);
   assert.ok(res.status === 413 || res.status === 403, refusedAs(res));
   assert.equal(res.code, "PAYLOAD_TOO_LARGE", "the claimed fixes would be checked over the validators' budget");
-  assert.ok(res.ms < 1_000, `${Math.round(res.ms)} ms`);
+  assert.equal(res.passes, 0, "no validator pass before the 413");
+  assert.equal(res.generators, 0, "no fix generator before the 413");
+  // Backstop (about 35 ms CPU unloaded).
+  assert.ok(res.ms < 1_000, `${Math.round(res.ms)} ms CPU`);
 });
 
-test("R2-SEC-2: 20 forged drafted rewrites on a report at the record cap inside the validators' budget: refused in under a second (the store's own bound on the notes, 413)", async () => {
+test("R2-SEC-2: 20 forged drafted rewrites on a report at the record cap inside the validators' budget: refused with no validator pass (the store's own bound on the notes, 413)", async () => {
   // Inside every limit of the validators' budget (paragraphs, text, notes, all characters) – the record itself at the cap.
   const { b, r } = await bigDrafted(20, 2_400, 280_000, 880_000);
   const bytes = Buffer.byteLength(JSON.stringify(r));
@@ -137,14 +147,16 @@ test("R2-SEC-2: 20 forged drafted rewrites on a report at the record cap inside 
   const rev = await seed(h, r);
   const res = await timedPut(h, forgedFixes(r), rev);
   assert.equal(res.status, 413, refusedAs(res));
-  assert.ok(res.ms < 1_000, `${Math.round(res.ms)} ms`);
+  assert.deepEqual([res.passes, res.generators], [0, 0], "no validator pass or fix generator before the 413");
+  assert.ok(res.ms < 1_000, `${Math.round(res.ms)} ms CPU`);
   // A kind no generator makes is refused before that (403, no validator).
   const unknown = await timedPut(h, forgedFixes(r, "remove-sentence"), rev);
   assert.equal(unknown.status, 403, refusedAs(unknown));
-  assert.ok(unknown.ms < 1_000, `${Math.round(unknown.ms)} ms`);
+  assert.deepEqual([unknown.passes, unknown.generators], [0, 0], "no validator pass or fix generator before the 403");
+  assert.ok(unknown.ms < 1_000, `${Math.round(unknown.ms)} ms CPU`);
 });
 
-test("R2-SEC-2: 20 forged drafted rewrites inside the store's bound (the most text, 95,000 characters of notes, a padded record) are refused in under a second", async () => {
+test("R2-SEC-2: 20 forged drafted rewrites inside the store's bound (the most text, 95,000 characters of notes, a padded record) are refused after one validator pass, at the first forged claim", async () => {
   const { b, r } = await bigDrafted(20, 2_400, 95_000, 900_000);
   const bytes = Buffer.byteLength(JSON.stringify(r));
   assert.ok(bytes > 1_000_000 && bytes < STORE_MAX_RECORD_BYTES, `${bytes} bytes`);
@@ -152,7 +164,13 @@ test("R2-SEC-2: 20 forged drafted rewrites inside the store's bound (the most te
   const rev = await seed(h, r);
   const res = await timedPut(h, forgedFixes(r), rev);
   assert.equal(res.status, 403, refusedAs(res));
-  assert.ok(res.ms < 1_000, `${Math.round(res.ms)} ms`);
+  // The validators once on the stored copy, then the first forged claim stops the check: never a pass per claimed fix
+  // (the R2-SEC-2 root: 20 passes, each about 0.3 s CPU on this record), never the second pass on a fixed report.
+  assert.equal(res.passes, 1, `${res.passes} validator passes`);
+  // The generators ran for the first claim only (4 calls per flag read; all 20 claims would be 80 or more).
+  assert.ok(res.generators < 20, `${res.generators} fix generator calls`);
+  // Backstop: one pass is about 0.3 s CPU unloaded (up to about 2x on a loaded machine); 20 passes were over 6 s.
+  assert.ok(res.ms < 2_500, `${Math.round(res.ms)} ms CPU`);
 });
 
 test("R2-SEC-2: a rewrite the cheap checks refuse never reaches the validators (no fixes entry, another member's stamp, an unknown kind, an edit that does not replay)", async () => {
@@ -165,7 +183,9 @@ test("R2-SEC-2: a rewrite the cheap checks refuse never reaches the validators (
   for (const [label, body] of [["no fixes entry", noFix], ["stamped as someone else", asSarah], ["an unknown kind", forgedFixes(r, "remove-sentence")], ["edits that do not replay", notReplaying]] as const) {
     const res = await timedPut(h, body, rev);
     assert.equal(res.status, 403, `${label}: ${refusedAs(res)}`);
-    assert.ok(res.ms < 500, `${label}: ${Math.round(res.ms)} ms`);
+    assert.deepEqual([res.passes, res.generators], [0, 0], `${label}: no validator pass or fix generator`);
+    // Backstop (under 20 ms CPU unloaded).
+    assert.ok(res.ms < 500, `${label}: ${Math.round(res.ms)} ms CPU`);
   }
 });
 
