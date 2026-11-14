@@ -184,9 +184,12 @@ export default function ClindeskTermsPage() {
             consequential loss.
           </li>
           <li>
-            Subject to the points above, each party&rsquo;s total liability arising from the agreement in any 12-month
-            period is limited to <Fill k="legal.liabilityCap" />. The order or the DPA may set a different limit for data
-            protection claims.
+            Subject to the points above, each party&rsquo;s total liability arising from the agreement is limited to{" "}
+            <Fill k="legal.liabilityCap" />. The same limit applies to data protection claims under the DPA.
+          </li>
+          <li>
+            Any claim must be notified to the other party in writing within 3 months of the claiming party becoming aware
+            of the event giving rise to it. A claim not notified in that time cannot be brought.
           </li>
           <li>
             We are not responsible for the clinical content of records, letters or approved forms, for decisions made

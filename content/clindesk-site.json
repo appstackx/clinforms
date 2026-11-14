@@ -194,8 +194,8 @@
       "description": "One sentence on whether the clinic system is a medical device, checked by a lawyer, e.g. \"It is not a medical device.\" Terms page, clinical responsibility."
     },
     "legal.liabilityCap": {
-      "value": "the fees paid and payable by the clinic in the 12 months before the claim",
-      "description": "Each party's total liability in any 12-month period, after \"is limited to\", e.g. \"the fees paid and payable by the clinic in the 12 months before the claim\". Terms page, liability."
+      "value": "£600 in total",
+      "description": "Each party's total liability under the agreement, after \"is limited to\" (Khuram, 14/11/2026: \"£600 in total\"; lawyer to check). Terms page, liability."
     },
     "legal.paymentProviderTerms": {
       "value": "A clinic that switches on card payments also accepts the card payment provider's own terms, which cover how payments are processed and paid out.",

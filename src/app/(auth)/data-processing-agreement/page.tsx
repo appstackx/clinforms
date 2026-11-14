@@ -14,7 +14,7 @@ export const metadata: Metadata = { title: "Data processing agreement" };
 /**
  * /data-processing-agreement – the DPA accepted at self-serve sign-up (docs/auth.md §1b), rendered from ONE content file
  * (content/dpa.json, src/lib/legal/dpa.ts). 404 unless CLINFORMS_SELF_SIGNUP is on for this host's brand. While the
- * text is a DRAFT pending legal review the page says so above the text. Not indexed (the sign-in pages' layout).
+ * text is marked as a draft (its status), the page says so above the text. Not indexed (the sign-in pages' layout).
  */
 export default function DataProcessingAgreementPage() {
   if (!signupBrandForPage()) notFound();

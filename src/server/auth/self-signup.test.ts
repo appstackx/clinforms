@@ -96,15 +96,23 @@ describe("self sign-up – input rules", () => {
     assert.equal(slugBaseFromClinicName("Clinique Élan"), "clinique-elan");
     assert.ok(slugBaseFromClinicName("x".repeat(80)).length <= 40);
   });
-  it("versions: the terms page's date per brand, the DPA's own version (a draft, marked as one)", () => {
+  it("versions: the terms page's date per brand, the DPA's own version (version 1, no draft banner)", () => {
     assert.match(termsVersion("clinic"), /^clindesk-terms-\d{4}-\d{2}-\d{2}$/);
     assert.match(termsVersion("clinforms"), /^clinforms-terms-\d{4}-\d{2}-\d{2}$/);
     assert.equal(DPA_VERSION, DPA.version);
-    assert.equal(dpaIsDraft(), true, "the DPA is a draft pending legal review: the page must say so");
-    assert.match(DPA.status, /DRAFT/);
+    // 14/11/2026 Khuram: version 1 is in use (no draft banner); a lawyer review may follow, as a new version.
+    assert.equal(dpaIsDraft(), false, "version 1 is not a draft: no banner");
+    assert.equal(DPA.status, "Version 1");
+    assert.equal(dpaIsDraft({ ...DPA, status: "DRAFT – pending legal review" }), true, "a draft status still shows the banner");
   });
   it("neutral wording: the DPA text and the two new emails", () => {
-    const texts = [DPA.title, DPA.intro, DPA.statusNote, ...DPA.sections.flatMap((s) => [s.heading, ...s.paragraphs])].map((t) => fillDpa(t, { product: "ClinDesk", company: "Appstack X Ltd" }));
+    // The DPA must name the drafting sub-processor (hard rule: disclose truthfully) – in Annex 3 and nowhere else.
+    const named = (t: string) => /^Anthropic PBC – the drafting service/.test(t);
+    const annex3 = DPA.sections.find((s) => s.id === "annex-3")?.paragraphs ?? [];
+    assert.equal(annex3.filter(named).length, 1, "Annex 3 names the drafting sub-processor once");
+    const texts = [DPA.title, DPA.intro, DPA.statusNote, ...DPA.sections.flatMap((s) => [s.heading, ...s.paragraphs])]
+      .filter((t) => !(annex3.includes(t) && named(t)))
+      .map((t) => fillDpa(t, { product: "ClinDesk", company: "Appstack X Ltd" }));
     const confirm = signupConfirmEmail({ to: { email: "a@b.example" }, brand: "clinic", clinicName: "C", link: "https://x.example/l", expiresAt: new Date().toISOString() });
     const existing = signupExistingAccountEmail({ to: { email: "a@b.example" }, signInLink: "https://x.example/login", resetLink: "https://x.example/reset-password" });
     for (const t of [...texts, confirm.subject, confirm.text, confirm.html, existing.subject, existing.text, existing.html]) {

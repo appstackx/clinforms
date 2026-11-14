@@ -10,7 +10,7 @@
  */
 import type { BrandId } from "./brand";
 import { CLINDESK_LEGAL_LAST_UPDATED } from "./clindesk/site";
-import { LEGAL_LAST_UPDATED } from "./site";
+import { TERMS_LAST_UPDATED } from "./site";
 import { DPA_VERSION } from "./legal/dpa";
 
 export const SELF_SIGNUP_ENV = "CLINFORMS_SELF_SIGNUP";
@@ -43,11 +43,11 @@ export const DPA_PATH = "/data-processing-agreement";
 /* ------------------------------------------------------------------ versions of what is accepted */
 
 /**
- * The terms' version for a brand: its terms page's "last updated" date (src/lib/site.ts / src/lib/clindesk/site.ts) –
+ * The terms' version for a brand: its terms page's "last updated" date (TERMS_LAST_UPDATED in src/lib/site.ts / CLINDESK_LEGAL_LAST_UPDATED in src/lib/clindesk/site.ts) –
  * a change to the terms changes the date, so a new acceptance records the new version.
  */
 export function termsVersion(brand: BrandId): string {
-  return brand === "clinic" ? `clindesk-terms-${CLINDESK_LEGAL_LAST_UPDATED}` : `clinforms-terms-${LEGAL_LAST_UPDATED}`;
+  return brand === "clinic" ? `clindesk-terms-${CLINDESK_LEGAL_LAST_UPDATED}` : `clinforms-terms-${TERMS_LAST_UPDATED}`;
 }
 
 export function dpaVersion(): string {

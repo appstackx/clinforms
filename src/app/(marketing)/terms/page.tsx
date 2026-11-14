@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { LegalPage } from "@/components/marketing/legal-page";
-import { COMPANY, LEGAL_LAST_UPDATED, companyRegistrationLine } from "@/lib/site";
+import { COMPANY, TERMS_LAST_UPDATED, companyRegistrationLine } from "@/lib/site";
 import { PRODUCT } from "@/modules/medreport/config.public";
 
 const DESCRIPTION = `The terms on which ${COMPANY.legalName} provides ${PRODUCT.name} to physiotherapy clinics.`;
@@ -19,7 +19,7 @@ export default function TermsPage() {
   return (
     <LegalPage
       title="Terms of service"
-      lastUpdated={LEGAL_LAST_UPDATED}
+      lastUpdated={TERMS_LAST_UPDATED}
       intro={
         <p>
           These terms apply when a clinic uses {PRODUCT.name}. They are a business-to-business agreement between{" "}
@@ -157,9 +157,12 @@ export default function TermsPage() {
           loss.
         </li>
         <li>
-          Subject to the points above, each party&rsquo;s total liability arising from the agreement in any 12-month
-          period is limited to the fees paid and payable by the clinic in the 12 months before the event giving rise to the
-          claim. The order or the DPA may set a different limit for data protection claims.
+          Subject to the points above, each party&rsquo;s total liability arising from the agreement is limited to
+          £600 in total. The same limit applies to data protection claims under the DPA.
+        </li>
+        <li>
+          Any claim must be notified to the other party in writing within 3 months of the claiming party becoming aware
+          of the event giving rise to it. A claim not notified in that time cannot be brought.
         </li>
         <li>
           We are not responsible for the clinical content of approved forms, for decisions made using them, or for

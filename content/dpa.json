@@ -1,8 +1,8 @@
 {
-  "status": "DRAFT – pending legal review",
-  "statusNote": "This data processing agreement is a DRAFT. It has not yet been reviewed by a lawyer and may change before it is used. It is shown only where self-serve sign-up is switched on for testing. Placeholders in [square brackets] are to be completed.",
-  "version": "dpa-draft-2026-11-12",
-  "lastUpdated": "2026-11-12",
+  "status": "Version 1",
+  "statusNote": "",
+  "version": "dpa-v1-2026-11-14",
+  "lastUpdated": "2026-11-14",
   "title": "Data processing agreement",
   "intro": "This data processing agreement (DPA) forms part of the agreement between {company} and the clinic that uses {product}. It sets out how we process personal data on the clinic's behalf, as required by Article 28 of the UK GDPR.",
   "sections": [
@@ -34,7 +34,9 @@
     {
       "id": "confidentiality",
       "heading": "4. Confidentiality",
-      "paragraphs": ["Everyone we authorise to process the personal data is bound by a duty of confidentiality."]
+      "paragraphs": [
+        "Everyone we authorise to process the personal data is bound by a duty of confidentiality."
+      ]
     },
     {
       "id": "security",
@@ -47,15 +49,15 @@
       "id": "sub-processors",
       "heading": "6. Sub-processors",
       "paragraphs": [
-        "The clinic gives us general authorisation to use sub-processors. The current list, with their locations and safeguards, is in Annex 3 and is available on request.",
-        "We tell the clinic at least [30] days before adding or replacing a sub-processor that handles patient information, so the clinic can object. Each sub-processor is bound by data protection terms no less protective than this DPA, and we remain responsible for its work."
+        "The clinic gives us general authorisation to use sub-processors. The current list, with what each does, where it processes data and the safeguard for any transfer, is in Annex 3.",
+        "We tell the clinic at least 30 days before adding or replacing a sub-processor that handles the clinic's personal data, so the clinic can object. If the clinic objects on reasonable data protection grounds and we cannot resolve it, the clinic may end the affected service without penalty. Each sub-processor is bound by data protection terms no less protective than this DPA, and we remain responsible to the clinic for its work, within the limits in section 12."
       ]
     },
     {
       "id": "transfers",
       "heading": "7. International transfers",
       "paragraphs": [
-        "Clinic data is stored in [the UK]. We transfer personal data outside the UK only with appropriate safeguards (such as an adequacy regulation or the International Data Transfer Addendum), as Annex 3 records."
+        "Clinic data is stored in the UK (London). Where a sub-processor processes personal data outside the UK, the transfer is protected by an adequacy regulation, the UK Extension to the EU-US Data Privacy Framework or the International Data Transfer Addendum, as Annex 3 records."
       ]
     },
     {
@@ -69,29 +71,42 @@
       "id": "breaches",
       "heading": "9. Personal data breaches",
       "paragraphs": [
-        "We tell the clinic without undue delay, and in any case within [48] hours, after becoming aware of a personal data breach affecting its data, with the information the clinic needs to meet its own obligations."
+        "We tell the clinic without undue delay, and in any case within 48 hours, after becoming aware of a personal data breach affecting its data, with the information the clinic needs to meet its own obligations. Where not all the information is available at once, we give it in stages as we learn it.",
+        "Telling the clinic about a breach, or helping it respond, is not an admission of fault or liability."
       ]
     },
     {
       "id": "end",
       "heading": "10. Return and deletion",
       "paragraphs": [
-        "When the agreement ends, the clinic can export its data. We then delete it within [30] days, unless the law requires us to keep it, and confirm the deletion in writing on request."
+        "When the agreement ends, the clinic can export its data. We then delete it within 30 days, unless the law requires us to keep it, and confirm the deletion in writing on request.",
+        "Copies in our backups are not restored or used, and are overwritten as the backups expire on their normal cycle (currently 7 days)."
       ]
     },
     {
       "id": "audits",
       "heading": "11. Information and audits",
       "paragraphs": [
-        "We make available the information needed to show that we meet these obligations, and allow for and contribute to reasonable audits by the clinic or an auditor it appoints, on reasonable notice and at most [once a year] unless a breach or a regulator requires more."
+        "We make available the information needed to show that we meet these obligations: our security measures, sub-processor list, policies and any certificates we hold, and written answers to a reasonable security questionnaire.",
+        "If that information is not enough, the clinic, or an independent auditor it appoints who is bound by confidentiality, may carry out a reasonable audit at most once a year, on at least 30 days' written notice, during business hours and at the clinic's own cost. More than once a year is allowed only after a personal data breach affecting the clinic's data or where a regulator requires it."
+      ]
+    },
+    {
+      "id": "liability",
+      "heading": "12. Liability",
+      "paragraphs": [
+        "Each party's total liability under or in connection with this DPA and the terms, including for data protection claims, is limited to £600 in total. Neither party is liable for loss of profits, revenue, business or goodwill, or for any indirect or consequential loss.",
+        "We are not liable for any loss caused by the clinic, its users or its instructions, including the use of the clinic's sign-in details or devices, personal data the clinic sends to the wrong person or shares outside the service, or the clinic's own systems.",
+        "Any claim must be notified to the other party in writing within 3 months of the claiming party becoming aware of the event giving rise to it, with reasonable detail. A claim not notified in that time cannot be brought.",
+        "Nothing in this DPA limits liability that cannot be limited by law, or the rights of individuals or the powers of the Information Commissioner's Office."
       ]
     },
     {
       "id": "general",
-      "heading": "12. General",
+      "heading": "13. General",
       "paragraphs": [
         "If this DPA and the terms conflict, this DPA wins on anything about personal data. This DPA is governed by the law of England and Wales.",
-        "The clinic accepts this DPA online when it signs up. The version accepted, and when, are recorded with the clinic's account."
+        "The clinic accepts this DPA online when it signs up, or by signing a copy before its account is set up. For online acceptance, the version accepted, who accepted it and when are recorded with the clinic's account; a signed copy is kept for as long as the agreement lasts and for 6 years after."
       ]
     },
     {
@@ -106,13 +121,31 @@
     {
       "id": "annex-2",
       "heading": "Annex 2 – Security measures",
-      "paragraphs": ["[To be completed: the technical and organisational measures, matching the security page.]"]
+      "paragraphs": [
+        "Hosting: the service and its database run in UK data centres in London.",
+        "Encryption: TLS 1.2 or later in transit; AES-256 at rest, with patient files and notes also encrypted with a separate key for each clinic.",
+        "Access: invite-only accounts, two-step verification for every user, and access set by role and by site.",
+        "Audit trail: every sign-in, view, change and signature is recorded and cannot be edited; audit records are kept for 8 years.",
+        "Records: clinical notes lock when signed; amendments are tracked and the original is kept.",
+        "Backups: daily, kept for 7 days, stored in the UK.",
+        "Minimisation: when a clinic switches on drafting from notes, only a minimised extract is sent – no patient name, date of birth, address or contact details.",
+        "Retention: the clinic sets how long reports are kept and they are deleted automatically; a clinic's data is deleted after it leaves as section 10 says.",
+        "Incidents: security issues are acknowledged within one working day and breaches reported as section 9 says.",
+        "Organisation: confidentiality duties for everyone with access, written access-control and incident policies, and registration with the Information Commissioner's Office (ZC135044)."
+      ]
     },
     {
       "id": "annex-3",
       "heading": "Annex 3 – Sub-processors",
       "paragraphs": [
-        "[To be completed before use: the named sub-processors, what each does, where it processes data and the transfer safeguard. Categories today: hosting and database, email delivery, payment processing, usage statistics and the drafting service used when a clinic switches drafting on.]"
+        "Vercel Inc. – application hosting. Runs in London (UK); the company is in the US. Safeguard for any access from outside the UK: the UK Extension to the EU-US Data Privacy Framework, with the EU standard contractual clauses and the UK Addendum as a fallback.",
+        "Supabase Inc. – database and patient file storage. Stored in London (UK). Safeguard for any access from outside the UK: the EU standard contractual clauses with the UK International Data Transfer Addendum.",
+        "MailerSend, Inc. – sending service emails such as invitations, sign-in links and notifications. Stored in the EU (Belgium); the company is in the US and may access data from there. Safeguard: the EU standard contractual clauses with the UK Addendum.",
+        "Stripe Payments UK Ltd – subscription billing and, where the clinic switches it on, card payments from patients. UK, EU and US. Safeguard: the UK Extension to the EU-US Data Privacy Framework or the International Data Transfer Addendum.",
+        "The SMS Works Ltd – text messages to patients, where the clinic switches them on. UK.",
+        "PostHog Inc. – usage statistics, only after consent. EU cloud (Germany). Safeguard: UK adequacy regulation for the EU.",
+        "Cloudflare Inc. – the human check on public booking and patient sign-in, where switched on. Global network; the check keeps no personal data afterwards. Safeguard: the UK Extension to the EU-US Data Privacy Framework, with the EU standard contractual clauses as a fallback.",
+        "Anthropic PBC – the drafting service, only where the clinic switches drafting from notes on. US. It receives only the minimised extract in Annex 2 and does not use it to train its models. It deletes it within 30 days, unless the law requires otherwise or the content is flagged under its usage policy (then kept for up to 2 years). Safeguard: the EU standard contractual clauses with the UK International Data Transfer Addendum."
       ]
     }
   ]

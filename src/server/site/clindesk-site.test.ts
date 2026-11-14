@@ -69,7 +69,8 @@ describe("clinforms.co.uk is unchanged", () => {
       // 01/11/2026: company name, number and ICO registration on every page (footer) and the legal pages.
       { url: "https://clinforms.co.uk/privacy", lastModified: "2026-11-08", changeFrequency: "yearly", priority: 0.4 },
       { url: "https://clinforms.co.uk/cookies", lastModified: "2026-11-08", changeFrequency: "yearly", priority: 0.3 },
-      { url: "https://clinforms.co.uk/terms", lastModified: "2026-11-01", changeFrequency: "yearly", priority: 0.3 },
+      // 14/11/2026: the terms' liability limit (£600) and 3-month claim notice.
+      { url: "https://clinforms.co.uk/terms", lastModified: "2026-11-14", changeFrequency: "yearly", priority: 0.3 },
     ]);
   });
   it("its hosts keep the ClinForms brand, site and analytics; its public pages list is unchanged", () => {
@@ -91,20 +92,19 @@ describe("clinforms.co.uk is unchanged", () => {
       assert.ok(!/@\/app\/\(marketing\)/.test(fs.readFileSync(path.join(ROOT, f), "utf8")), `${f} imports a ClinForms page`);
     }
   });
-  // Privacy and cookies changed on purpose on 31/10/2026 (advertising measurement, src/components/ads): only the terms
-  // are still held to the clinic-system branch.
-  it("ClinForms' terms are byte-for-byte those of feat/clinic-system (when that branch is available)", (t) => {
-    const ref = "origin/feat/clinic-system";
-    try {
-      execFileSync("git", ["rev-parse", "--verify", "-q", ref], { cwd: ROOT, stdio: "pipe" });
-    } catch {
-      return t.skip(`${ref} is not available here`);
-    }
-    for (const p of ["terms"]) {
-      const f = `src/app/(marketing)/${p}/page.tsx`;
-      const base = execFileSync("git", ["show", `${ref}:${f}`], { cwd: ROOT, maxBuffer: 4 * 1024 * 1024 });
-      assert.ok(Buffer.compare(base, fs.readFileSync(path.join(ROOT, f))) === 0, `${f} changed`);
-    }
+  // The byte-for-byte check against feat/clinic-system was retired on 14/11/2026: that branch is merged into main, and
+  // the terms changed on purpose (Khuram: liability limit £600, claims notified within 3 months). Pinned instead:
+  it("both brands' terms and the DPA carry the same liability limit (£600) and 3-month claim notice", () => {
+    const clinforms = fs.readFileSync(path.join(ROOT, "src/app/(marketing)/terms/page.tsx"), "utf8").replace(/\s+/g, " ");
+    const clindesk = fs.readFileSync(path.join(ROOT, "src/app/clindesk-site/terms/page.tsx"), "utf8").replace(/\s+/g, " ");
+    const fills = JSON.parse(fs.readFileSync(path.join(ROOT, "content/clindesk-site.json"), "utf8"));
+    const dpa = JSON.parse(fs.readFileSync(path.join(ROOT, "content/dpa.json"), "utf8")) as { sections: { id: string; paragraphs: string[] }[] };
+    const dpaLiability = dpa.sections.find((s) => s.id === "liability")?.paragraphs.join(" ") ?? "";
+    assert.match(clinforms, /limited to £600 in total\. The same limit applies to data protection claims under the DPA\./);
+    assert.match(clindesk, /limited to\{" "\} <Fill k="legal\.liabilityCap" \/>\. The same limit applies to data protection claims under the DPA\./);
+    assert.equal(JSON.stringify(fills).includes('"legal.liabilityCap":{"value":"£600 in total"'), true);
+    assert.match(dpaLiability, /limited to £600 in total/);
+    for (const text of [clinforms, clindesk, dpaLiability]) assert.match(text, /within 3 months of the claiming party becoming aware/);
   });
 });
 
@@ -219,7 +219,7 @@ describe("clindesk.co.uk legal pages", () => {
       for (const vendor of vendors) {
         assert.ok(!vendor.test(text), `${page}: names a vendor (${vendor})`);
       }
-      if (page === "terms") assert.match(text, /Last updated: 1 November 2026/);
+      if (page === "terms") assert.match(text, /Last updated: 14 November 2026/);
       if (page === "privacy" || page === "cookies") assert.match(text, /Last updated: 8 November 2026/);
     });
   }
