@@ -37,6 +37,7 @@ const crypto = require("crypto");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const { chooseCard, fillCard: fillTestCard, fillCommon: fillCheckoutCommon, submitPayment } = require("./hosted-checkout.cjs");
 const { spawn, execFileSync } = require("child_process");
 const { chromium } = require(process.env.PLAYWRIGHT || "/Users/khuram/Projects/Appstackx/dutydesk/node_modules/playwright");
 
@@ -346,32 +347,11 @@ async function invite(page, origin, email, role) {
 }
 
 /* hosted payment page */
-async function chooseMethod(page, method) {
-  const button = page.locator(`[data-testid=${method}-accordion-item-button]`);
-  await page.waitForLoadState("domcontentloaded");
-  await page.waitForTimeout(1500);
-  if (await button.count()) await button.dispatchEvent("click");
-}
+// The hosted payment page (fields may sit in frames): scripts/e2e/hosted-checkout.cjs.
 async function fillCard(page, email, name) {
-  await chooseMethod(page, "card");
-  await page.locator("#cardNumber").waitFor({ state: "visible", timeout: 30000 });
-  await page.locator("#cardNumber").fill("4242424242424242");
-  await page.locator("#cardExpiry").fill("12 / 34");
-  await page.locator("#cardCvc").fill("123");
-  const em = page.locator("#email");
-  if ((await em.count()) && (await em.isVisible().catch(() => false)) && !(await em.inputValue().catch(() => ""))) await em.fill(email);
-  const billingName = page.locator("#billingName");
-  if (await billingName.isVisible().catch(() => false)) await billingName.fill(name);
-  const country = page.locator("#billingCountry");
-  if (await country.isVisible().catch(() => false)) await country.selectOption("GB");
-  for (const [sel, v] of [
-    ["#billingAddressLine1", "1 Test Street (fictional)"],
-    ["#billingLocality", "Milton Keynes"],
-    ["#billingPostalCode", "MK9 9ZZ"],
-  ]) {
-    const f = page.locator(sel);
-    if (await f.isVisible().catch(() => false)) await f.fill(v);
-  }
+  const frame = await chooseCard(page);
+  await fillTestCard(frame);
+  await fillCheckoutCommon(page, { email, name });
 }
 /** What the hosted page says about the seller (business name in its header) and where its own back link goes. */
 async function hostedPageFacts(page, ownOrigin) {
@@ -740,7 +720,7 @@ async function hostedPageFacts(page, ownOrigin) {
       await desk.click("button:has-text('Continue to payment')");
       await desk.waitForURL(/checkout\.stripe\.com/, { timeout: 60000 });
       await fillCard(desk, DESK_OWNER, "Dana Desk (fictional)");
-      await desk.locator("button[data-testid=hosted-payment-submit-button], button.SubmitButton").first().click();
+      await submitPayment(desk);
       await desk.waitForURL((u) => u.pathname === "/app/settings/billing/done", { timeout: 120000 });
       await desk.locator("[data-testid=billing-done]").waitFor();
       const scan = await brandScan(desk);
@@ -883,7 +863,7 @@ async function hostedPageFacts(page, ownOrigin) {
       await forms.click("button:has-text('Continue to payment')");
       await forms.waitForURL(/checkout\.stripe\.com/, { timeout: 60000 });
       await fillCard(forms, FORMS_OWNER, "Fran Forms (fictional)");
-      await forms.locator("button[data-testid=hosted-payment-submit-button], button.SubmitButton").first().click();
+      await submitPayment(forms);
       await forms.waitForURL((u) => u.pathname === "/app/settings/billing/done", { timeout: 120000 });
       await forms.locator("[data-testid=billing-done]").waitFor();
       const scan = await brandScan(forms);

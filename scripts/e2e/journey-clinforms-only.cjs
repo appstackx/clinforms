@@ -38,6 +38,7 @@ const crypto = require("crypto");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const { chooseCard, fillCard, fillCommon: fillCheckoutCommon, submitPayment } = require("./hosted-checkout.cjs");
 const { spawn, execFileSync } = require("child_process");
 let chromium;
 try {
@@ -349,27 +350,9 @@ async function audit(page, label, { expectHost = `localhost:${PORT}`, shot = tru
 }
 
 /* ------------------------------------------------------------------ checkout helpers */
-async function chooseMethod(page, method) {
-  const button = page.locator(`[data-testid=${method}-accordion-item-button]`);
-  await page.waitForLoadState("domcontentloaded");
-  await page.waitForTimeout(1500);
-  if (await button.count()) await button.dispatchEvent("click");
-}
+// The hosted payment page (fields may sit in frames): scripts/e2e/hosted-checkout.cjs.
 async function fillCommon(page, name) {
-  const email = page.locator("#email");
-  if ((await email.count()) && (await email.isEditable().catch(() => false)) && !(await email.inputValue().catch(() => ""))) await email.fill(OWNER);
-  const billingName = page.locator("#billingName");
-  if (await billingName.isVisible().catch(() => false)) await billingName.fill(name);
-  const country = page.locator("#billingCountry");
-  if (await country.isVisible().catch(() => false)) await country.selectOption("GB");
-  for (const [sel, v] of [
-    ["#billingAddressLine1", "1 Test Street (fictional)"],
-    ["#billingLocality", "Milton Keynes"],
-    ["#billingPostalCode", "MK9 9ZZ"],
-  ]) {
-    const f = page.locator(sel);
-    if (await f.isVisible().catch(() => false)) await f.fill(v);
-  }
+  await fillCheckoutCommon(page, { email: OWNER, name });
 }
 
 /* ------------------------------------------------------------------ browser steps */
@@ -597,16 +580,13 @@ async function acceptInvite(page, link, email, name, label) {
       await owner.locator("input[name=tier][value=starter]").check();
       await owner.click("button:has-text('Continue to payment')");
       await owner.waitForURL(/checkout\.stripe\.com/, { timeout: 60000 });
-      await chooseMethod(owner, "card");
-      await owner.locator("#cardNumber").waitFor({ state: "visible", timeout: 30000 });
+      const cardFrame = await chooseCard(owner, { notesFile: path.join(OUT, "checkout-controls.txt") });
       checkoutText = (await owner.locator("body").innerText()).replace(/\s+/g, " ");
       checkoutSession = (owner.url().match(/\b(cs_test_[A-Za-z0-9]+)/) || [])[1] || "";
       await owner.screenshot({ path: path.join(OUT, "checkout-page.png"), fullPage: true });
-      await owner.locator("#cardNumber").fill("4242424242424242");
-      await owner.locator("#cardExpiry").fill("12 / 34");
-      await owner.locator("#cardCvc").fill("123");
+      await fillCard(cardFrame);
       await fillCommon(owner, "Rowan Lark (fictional)");
-      await owner.locator("button[data-testid=hosted-payment-submit-button], button.SubmitButton").first().click();
+      await submitPayment(owner);
       await owner.waitForURL((u) => u.pathname === "/app/settings/billing/done", { timeout: 120000 });
       const doneUrl = new URL(owner.url());
       assert.equal(doneUrl.origin, FORMS, `success return URL origin ${doneUrl.origin}`);

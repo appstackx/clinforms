@@ -38,6 +38,7 @@ const fs = require("fs");
 const http = require("http");
 const os = require("os");
 const path = require("path");
+const { payByCard } = require("./hosted-checkout.cjs");
 const { spawn, execFileSync } = require("child_process");
 const { chromium } = require(process.env.PW_MODULE || "playwright");
 
@@ -531,23 +532,7 @@ const livePages = [];
       if (BAD.test(co)) finding("R1", "serious", "Stripe checkout page (checkout.stripe.com)", `checkout names ClinForms: ${(co.match(/.{0,60}clin\s*forms.{0,60}/i) || [""])[0].replace(/\s+/g, " ")}`, "ClinDesk account branding only");
       const coTitle = await owner.title();
       if (BAD.test(coTitle)) finding("R1", "serious", "Stripe checkout tab title", coTitle, "no ClinForms");
-      const button = owner.locator("[data-testid=card-accordion-item-button]");
-      if (await button.count()) await button.dispatchEvent("click");
-      await owner.locator("#cardNumber").waitFor({ state: "visible", timeout: 30000 });
-      await owner.locator("#cardNumber").fill("4242424242424242");
-      await owner.locator("#cardExpiry").fill("12 / 34");
-      await owner.locator("#cardCvc").fill("123");
-      const email = owner.locator("#email");
-      if ((await email.count()) && !(await email.inputValue().catch(() => ""))) await email.fill(OWNER);
-      const bn = owner.locator("#billingName");
-      if (await bn.isVisible().catch(() => false)) await bn.fill("TEST – Dana Lark (fictional)");
-      const country = owner.locator("#billingCountry");
-      if (await country.isVisible().catch(() => false)) await country.selectOption("GB");
-      for (const [sel, v] of [["#billingAddressLine1", "1 Test Street (fictional)"], ["#billingLocality", "Milton Keynes"], ["#billingPostalCode", "MK9 9ZZ"]]) {
-        const fld = owner.locator(sel);
-        if (await fld.isVisible().catch(() => false)) await fld.fill(v);
-      }
-      await owner.locator("button[data-testid=hosted-payment-submit-button], button.SubmitButton").first().click();
+      await payByCard(owner, { email: OWNER, name: "TEST – Dana Lark (fictional)", notesFile: path.join(OUT, "checkout-controls.txt") });
       await owner.waitForURL((u) => u.pathname === "/app/settings/billing/done", { timeout: 120000 });
       await owner.locator("[data-testid=billing-done]").waitFor();
       const state = await owner.locator("[data-testid=billing-done]").getAttribute("data-state");
