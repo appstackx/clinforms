@@ -9,6 +9,9 @@ import { portalViewer, publicClinicOr404, publicCtx } from "@/server/pms/portal/
 import { portalProgrammesFor } from "@/server/pms/records/exercises-service";
 import { formatUkDate } from "@/modules/pms/core/text";
 import { requestLinkAction, signOutAction } from "./actions";
+import { portalPayInvoiceAction, portalSaveCardAction } from "./card-actions";
+import { PortalCards } from "@/components/pms/portal/portal-cards";
+import { portalCardsFor } from "@/server/pms/billing/connect/portal";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +22,7 @@ const DONE: Record<string, string> = {
 };
 
 /** /clinics/<id>/portal: sign in by email link, then the patient's appointments, forms and documents (design 2g). */
-export default async function PortalPage({ params, searchParams }: { params: { clinicId: string }; searchParams: { done?: string } }) {
+export default async function PortalPage({ params, searchParams }: { params: { clinicId: string }; searchParams: { done?: string; paid?: string; card?: string } }) {
   const clinic = await publicClinicOr404(params.clinicId, "portal");
   const viewer = await portalViewer(clinic);
   const paths = clinicPublicPaths(clinic.tenantId);
@@ -31,8 +34,13 @@ export default async function PortalPage({ params, searchParams }: { params: { c
       </main>
     );
   }
-  const [home, exercises] = await Promise.all([portalHome(publicCtx(), clinic, viewer.patientId), portalProgrammesFor(publicCtx(), clinic, viewer.patientId)]);
-  const toast = searchParams.done ? DONE[searchParams.done] : null;
+  // Card payments (the clinic's own payment account): nothing shows unless the clinic takes card payments now.
+  const [home, exercises, cards] = await Promise.all([
+    portalHome(publicCtx(), clinic, viewer.patientId),
+    portalProgrammesFor(publicCtx(), clinic, viewer.patientId),
+    portalCardsFor(publicCtx(), clinic, viewer.patientId, { paid: searchParams.paid ?? null, card: searchParams.card ?? null }),
+  ]);
+  const toast = cards.toast ?? (searchParams.done ? DONE[searchParams.done] : null);
   return (
     <>
       <div className="flex items-center justify-end border-b border-border bg-white px-4 py-1.5">
@@ -68,6 +76,9 @@ export default async function PortalPage({ params, searchParams }: { params: { c
               ))}
             </ul>
           </section>
+        ) : null}
+        {cards.view ? (
+          <PortalCards clinicId={clinic.tenantId} {...cards.view} pay={portalPayInvoiceAction} save={portalSaveCardAction} />
         ) : null}
         <section aria-labelledby="pt-up">
           <div className="flex items-center justify-between">

@@ -1,6 +1,6 @@
 /**
  * Tables of the billing module (migrations 0130–0139, 0212, the Healthcode groundwork 0220–0229 and courses, gift
- * cards and products 0231–0239): billing settings, VAT per appointment
+ * cards and products 0231–0239, card payments 0226–0229 and 0239–0241): billing settings, VAT per appointment
  * type, invoices and their lines, credit notes and their lines, payments and refunds, their allocations to
  * invoices, card payment links (test mode) and the e-billing export log. Conventions: docs/clinic-system/contract.md
  * §4 and docs/clinic-system/billing.md.
@@ -504,6 +504,157 @@ export interface PmsStockMovesTable {
   created_at: IsoTimestamp;
 }
 
+/** 0226 (card payments): one row per clinic – its connected payment account, switch, fee and missed-appointment policy. */
+export interface PmsCardSettingsTable {
+  tenant_id: string;
+  rev: WithDefault<number>;
+  enabled: WithDefault<number>;
+  account_ref: string | null;
+  /** "test" | "live" */
+  account_mode: string | null;
+  /** "none" | "pending" | "active" | "restricted" | "closed" */
+  account_status: WithDefault<string>;
+  card_capability: string | null;
+  payouts_capability: string | null;
+  requirements_due: WithDefault<number>;
+  last_synced_at: IsoTimestamp | null;
+  fee_bps: WithDefault<number>;
+  fee_fixed_pence: WithDefault<number>;
+  no_show_enabled: WithDefault<number>;
+  no_show_policy: string | null;
+  updated_by: string | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
+/** 0227 (card payments): card readers at the desk, per site. */
+export interface PmsCardReadersTable {
+  tenant_id: string;
+  id: string;
+  site_id: string;
+  account_ref: string;
+  location_ref: string;
+  reader_ref: string;
+  label: string;
+  device_type: string | null;
+  simulated: WithDefault<number>;
+  /** "active" | "removed" */
+  status: WithDefault<string>;
+  removed_at: IsoTimestamp | null;
+  removed_by: string | null;
+  created_by: string | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
+/** 0228 (card payments): every payment, card set-up and refund made through the clinic's account. */
+export interface PmsCardIntentsTable {
+  tenant_id: string;
+  id: string;
+  /** "payment" | "setup" | "refund" */
+  kind: string;
+  /** "reader" | "saved_card" | "portal" | "membership" | "save_card" | "refund" */
+  purpose: string;
+  /** "open" | "processing" | "succeeded" | "failed" | "canceled" */
+  status: WithDefault<string>;
+  intent_ref: string | null;
+  checkout_ref: string | null;
+  parent_ref: string | null;
+  invoice_id: string | null;
+  patient_id: string | null;
+  mandate_id: string | null;
+  reader_id: string | null;
+  membership_id: string | null;
+  period: string | null;
+  amount_pence: number;
+  fee_pence: WithDefault<number>;
+  payment_id: string | null;
+  failure_code: string | null;
+  attempts: WithDefault<number>;
+  created_by: string | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
+/** 0229 (card payments): webhook events handled, one row per event id. */
+export interface PmsCardEventsTable {
+  tenant_id: string;
+  id: string;
+  type: string;
+  object_ref: string | null;
+  outcome: string;
+  created_at: IsoTimestamp;
+}
+
+/** 0239 (card payments): a card on file and the patient's consent to it. */
+export interface PmsCardMandatesTable {
+  tenant_id: string;
+  id: string;
+  patient_id: string;
+  /** "pending" | "active" | "removed" | "failed" */
+  status: WithDefault<string>;
+  account_ref: string;
+  customer_ref: string;
+  method_ref: string | null;
+  setup_ref: string | null;
+  brand: string | null;
+  last4: string | null;
+  exp_month: number | null;
+  exp_year: number | null;
+  consent_wording: string;
+  consent_version: string;
+  /** "portal" | "desk" | "phone" */
+  consent_channel: string;
+  consent_recorded_by: string | null;
+  consent_at: IsoTimestamp;
+  allows_no_show: WithDefault<number>;
+  removed_at: IsoTimestamp | null;
+  removed_by: string | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
+/** 0240 (memberships): plans with a monthly price. */
+export interface PmsMembershipPlansTable {
+  tenant_id: string;
+  id: string;
+  rev: WithDefault<number>;
+  name: string;
+  price_pence: number;
+  /** "exempt" | "standard" | "reduced" | "zero" */
+  vat_code: WithDefault<string>;
+  active: WithDefault<number>;
+  created_by: string | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
+/** 0241 (memberships): a patient's membership, charged monthly to a saved card. */
+export interface PmsMembershipsTable {
+  tenant_id: string;
+  id: string;
+  rev: WithDefault<number>;
+  patient_id: string;
+  plan_id: string;
+  mandate_id: string;
+  site_id: string | null;
+  /** "active" | "payment_failed" | "cancelled" */
+  status: WithDefault<string>;
+  charge_day: number;
+  started_on: IsoDate;
+  next_charge_on: IsoDate | null;
+  attempts: WithDefault<number>;
+  consent_wording: string;
+  consent_channel: string;
+  consent_recorded_by: string | null;
+  consent_at: IsoTimestamp;
+  cancelled_at: IsoTimestamp | null;
+  cancelled_by: string | null;
+  created_by: string | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
 export interface BillingTables {
   pms_billing_settings: PmsBillingSettingsTable;
   pms_service_vat: PmsServiceVatTable;
@@ -534,6 +685,13 @@ export interface BillingTables {
   pms_gift_card_moves: PmsGiftCardMovesTable;
   pms_products: PmsProductsTable;
   pms_stock_moves: PmsStockMovesTable;
+  pms_card_settings: PmsCardSettingsTable;
+  pms_card_readers: PmsCardReadersTable;
+  pms_card_intents: PmsCardIntentsTable;
+  pms_card_events: PmsCardEventsTable;
+  pms_card_mandates: PmsCardMandatesTable;
+  pms_membership_plans: PmsMembershipPlansTable;
+  pms_memberships: PmsMembershipsTable;
 }
 
 /** Foreign-key order (parents first). */
@@ -567,6 +725,13 @@ export const BILLING_TABLES = [
   "pms_gift_card_moves",
   "pms_products",
   "pms_stock_moves",
+  "pms_card_settings",
+  "pms_card_readers",
+  "pms_card_intents",
+  "pms_card_events",
+  "pms_card_mandates",
+  "pms_membership_plans",
+  "pms_memberships",
 ] as const satisfies readonly (keyof BillingTables)[];
 
 export const BILLING_PRIMARY_KEYS: { readonly [T in (typeof BILLING_TABLES)[number]]: readonly (keyof BillingTables[T] & string)[] } = {
@@ -599,10 +764,17 @@ export const BILLING_PRIMARY_KEYS: { readonly [T in (typeof BILLING_TABLES)[numb
   pms_gift_card_moves: ["tenant_id", "id"],
   pms_products: ["tenant_id", "id"],
   pms_stock_moves: ["tenant_id", "id"],
+  pms_card_settings: ["tenant_id"],
+  pms_card_readers: ["tenant_id", "id"],
+  pms_card_intents: ["tenant_id", "id"],
+  pms_card_events: ["tenant_id", "id"],
+  pms_card_mandates: ["tenant_id", "id"],
+  pms_membership_plans: ["tenant_id", "id"],
+  pms_memberships: ["tenant_id", "id"],
 };
 
 /** Timestamp columns beyond created_at/updated_at (TEXT in SQLite, timestamptz in Postgres) – the D1 → Postgres copy. */
-export const BILLING_TIMESTAMP_COLUMNS: readonly string[] = ["issued_at", "cancelled_at", "exported_at", "reversed_at", "last_checked_at", "voided_at", "removed_at"];
+export const BILLING_TIMESTAMP_COLUMNS: readonly string[] = ["issued_at", "cancelled_at", "exported_at", "reversed_at", "last_checked_at", "voided_at", "removed_at", "last_synced_at", "consent_at"];
 
 /**
  * Healthcode groundwork tables (0220–0225): each row hangs off one parent row (a payer account, the clinic's billing
@@ -634,8 +806,24 @@ export const GIFT_CARD_CASCADE_DELETED_TABLES: readonly (typeof BILLING_TABLES)[
 /** Products and stock (0236–0237): products go with the clinic's billing settings row; moves with product, site and line. */
 export const PRODUCT_CASCADE_DELETED_TABLES: readonly (typeof BILLING_TABLES)[number][] = ["pms_products", "pms_stock_moves"];
 
+/**
+ * Card payments (0226–0229, 0239–0241): the clinic's card settings row goes with its billing settings row; readers,
+ * intents, events, saved cards, membership plans and memberships with the card settings row (and their site, invoice,
+ * patient, plan or saved card).
+ */
+export const CARD_CASCADE_DELETED_TABLES: readonly (typeof BILLING_TABLES)[number][] = [
+  "pms_card_settings",
+  "pms_card_readers",
+  "pms_card_intents",
+  "pms_card_events",
+  "pms_card_mandates",
+  "pms_membership_plans",
+  "pms_memberships",
+];
+
 export const BILLING_CASCADE_DELETED_TABLES: readonly (typeof BILLING_TABLES)[number][] = [
   ...HEALTHCODE_CASCADE_DELETED_TABLES,
+  ...CARD_CASCADE_DELETED_TABLES,
   ...COURSE_CASCADE_DELETED_TABLES,
   ...GIFT_CARD_CASCADE_DELETED_TABLES,
   ...PRODUCT_CASCADE_DELETED_TABLES,

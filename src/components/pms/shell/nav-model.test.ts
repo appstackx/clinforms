@@ -84,6 +84,8 @@ describe("shell navigation by permission", () => {
         "Billing settings",
         "Courses",
         "Products",
+        // The owner only, and only while CLINFORMS_CARD_PAYMENTS=on (the clinic layout leaves it out otherwise).
+        "Card payments",
         "Message settings",
         "Text credits",
         "Report targets",
@@ -95,8 +97,18 @@ describe("shell navigation by permission", () => {
       ],
     );
     assert.ok(!shellNav(PMS_NAV, as("admin")).manage.some((i) => i.label === "API keys"), "administrators never see API keys");
+    assert.ok(!shellNav(PMS_NAV, as("admin")).manage.some((i) => i.label === "Card payments"), "administrators never see Card payments");
     assert.deepEqual(shellNav(PMS_NAV, as("clinician")).main.map((i) => i.label), ["Dashboard", "Diary", "Patients", "Unsigned notes", "Billing", "Messages", "Reports"]);
     assert.deepEqual(shellNav(PMS_NAV, as("clinician")).manage, []);
+  });
+
+  it("card payments: the navigation leaves Set-up → Card payments out while CLINFORMS_CARD_PAYMENTS is off", () => {
+    assert.ok(!navForDeployment(PMS_NAV, { clinicApi: true }).some((e) => e.href === "/app/clinic/setup/card-payments"));
+    assert.ok(!navForDeployment(PMS_NAV, { clinicApi: true, cardPayments: false }).some((e) => e.href === "/app/clinic/setup/card-payments"));
+    assert.ok(navForDeployment(PMS_NAV, { clinicApi: false, cardPayments: true }).some((e) => e.href === "/app/clinic/setup/card-payments"));
+    const onlyOwner = (p: string) => p === "settings.owner" || p === "clinic.view";
+    assert.equal(firstSetupEntry(PMS_NAV, onlyOwner, { clinicApi: false, cardPayments: false }), null);
+    assert.equal(firstSetupEntry(PMS_NAV, onlyOwner, { clinicApi: false, cardPayments: true })?.href, "/app/clinic/setup/card-payments");
   });
 
   it("Set-up's start and the navigation leave out API keys while CLINFORMS_CLINIC_API is off (security review 12/11)", () => {
@@ -118,6 +130,17 @@ describe("shell navigation by permission", () => {
     const onlySetup = (p: string) => p === "settings.setup" || p === "clinic.view";
     assert.notEqual(firstSetupEntry(PMS_NAV, onlySetup, { clinicApi: false, xero: false })?.id, "integration.xero");
     assert.ok(!shellNav(PMS_NAV, as("clinician")).manage.some((i) => i.label === "Xero"), "clinicians never see Xero");
+  });
+
+  it("the four deployment switches are independent – each entry shows only with its own switch", () => {
+    const ids = ["integration.api", "integration.xero", "records.exercises", "billing.card-payments"] as const;
+    const has = (sw: Parameters<typeof navForDeployment>[1]) => ids.filter((id) => navForDeployment(PMS_NAV, sw).some((e) => e.id === id));
+    assert.deepEqual(has({ clinicApi: false }), [], "all off by default");
+    assert.deepEqual(has({ clinicApi: true }), ["integration.api"]);
+    assert.deepEqual(has({ clinicApi: false, xero: true }), ["integration.xero"]);
+    assert.deepEqual(has({ clinicApi: false, exercises: true }), ["records.exercises"]);
+    assert.deepEqual(has({ clinicApi: false, cardPayments: true }), ["billing.card-payments"]);
+    assert.deepEqual(has({ clinicApi: true, xero: true, exercises: true, cardPayments: true }), [...ids]);
   });
 
   it("a badge on an entry (Messages: replies waiting) only when the count is above 0", () => {

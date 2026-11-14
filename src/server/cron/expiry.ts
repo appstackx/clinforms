@@ -29,7 +29,7 @@ export async function expirySweepFromCron(
  * 200), then the expiry sweep (200 or 500 – the call was authorised). Each step is caught on its own, so the route
  * always returns the retention pass's response.
  */
-export async function afterRetentionCron(status: number, steps: { billingExtras: () => Promise<void>; expirySweep: () => Promise<unknown> }, warn: (event: string, detail: Record<string, unknown>) => void = (event, detail) => console.warn(JSON.stringify({ event, ...detail }))): Promise<void> {
+export async function afterRetentionCron(status: number, steps: { billingExtras: () => Promise<void>; expirySweep: () => Promise<unknown>; memberships?: () => Promise<unknown> }, warn: (event: string, detail: Record<string, unknown>) => void = (event, detail) => console.warn(JSON.stringify({ event, ...detail }))): Promise<void> {
   if (status === 200) {
     try {
       await steps.billingExtras();
@@ -42,6 +42,15 @@ export async function afterRetentionCron(status: number, steps: { billingExtras:
       await steps.expirySweep();
     } catch (err) {
       warn("cron.expiry.failed", { error: err instanceof Error ? err.name : "error" });
+    }
+  }
+  // Card payments (pk03): monthly membership charges, after the sweep, only when the retention pass succeeded and the
+  // platform switch is on (the step itself checks). Caught on its own like the others.
+  if (status === 200 && steps.memberships) {
+    try {
+      await steps.memberships();
+    } catch (err) {
+      warn("cron.memberships.failed", { error: err instanceof Error ? err.name : "error" });
     }
   }
 }
