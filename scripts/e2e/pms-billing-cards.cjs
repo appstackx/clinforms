@@ -41,7 +41,12 @@ const TMP = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "cf-cards-"))
 const DB_FILE = path.join(TMP, "e2e.db");
 process.env.SQLITE_PATH = DB_FILE;
 const { openScratchDb } = require("./scratch-db.cjs");
-const CLINIC = "riverside-demo";
+// A clinic (and so a clinic id) of its own per run: the payment account is created with an idempotency key built from
+// the clinic id, and the provider replays a key's first answer for a day – a second run on the fixed id got the
+// previous run's account back (closed at that run's end), so "Connect" failed with ?error=connect.
+const RUN_WORD = Array.from(crypto.randomBytes(6), (b) => "abcdefghijklmnopqrstuvwxyz"[b % 26]).join("");
+const CLINIC = `riverside-demo-${RUN_WORD}`;
+const CLINIC_NAME = `Riverside ${RUN_WORD[0].toUpperCase()}${RUN_WORD.slice(1)} Physiotherapy (fictional)`;
 
 const rnd = (n = 24) => crypto.randomBytes(n).toString("base64url");
 const SECRETS = {
@@ -242,7 +247,7 @@ async function stripe(method, p, account, form) {
   let ctx = null;
   let account = null;
   try {
-    const seed = execFileSync("npm", ["run", "-s", "pms:seed-demo", "--", "--fresh", "--patients", "40", "--app-url", BASE], { cwd: REPO, env: appEnv(), encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+    const seed = execFileSync("npm", ["run", "-s", "pms:seed-demo", "--", "--fresh", "--slug", CLINIC, "--name", CLINIC_NAME, "--patients", "40", "--app-url", BASE], { cwd: REPO, env: appEnv(), encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
     const ownerLink = (seed.match(/https?:\/\/\S+\/accept-invite\?token=[A-Za-z0-9._%-]+/) || [])[0];
     assert(ownerLink, "owner invitation in the seed output");
 
