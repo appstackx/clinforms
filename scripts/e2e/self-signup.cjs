@@ -285,7 +285,8 @@ async function signUpJourney(page, base, who, brand) {
   await page.check("input[name=saved]");
   await page.fill("#f-code", await freshCode(who.key));
   await page.click("button[type=submit]");
-  await page.waitForURL((u) => u.pathname.startsWith("/app"), { timeout: 30000 });
+  // /app/start redirects on to the clinic's own start page (13/11/2026: the free trial is running).
+  await page.waitForURL((u) => u.pathname.startsWith("/app") && u.pathname !== "/app/start", { timeout: 30000 });
   const landed = new URL(page.url());
   assert.equal(landed.host, host, "stays on the brand's host");
   // 13/11/2026: the free trial runs – the clinic's own start page, with the trial banner (no plan to choose first).

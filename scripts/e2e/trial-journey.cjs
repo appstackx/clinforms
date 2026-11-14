@@ -423,7 +423,8 @@ const banner = async (page) => ((await page.locator("[data-testid=trial-banner]"
       const form = page.locator("form#new-patient-page");
       await form.locator("input[name=firstName]").fill("Megan");
       await form.locator("input[name=lastName]").fill("Hart");
-      await form.locator("button[type=submit]").click();
+      await form.locator("input[name=dateOfBirth]").fill("14/03/1988");
+      await form.locator("button[type=submit][value=save]").click();
       await page.waitForSelector("text=Your free trial has ended, so nothing new can be added or changed", { timeout: 20000 });
       assert.equal(one("SELECT count(*) AS n FROM pms_patients WHERE tenant_id = ?", tenant).n, 0);
       await page.screenshot({ path: path.join(SHOTS, "t7-read-only.png"), fullPage: true });
@@ -456,21 +457,64 @@ const banner = async (page) => ((await page.locator("[data-testid=trial-banner]"
         await page.waitForTimeout(1500);
         const cardButton = page.locator("[data-testid=card-accordion-item-button]");
         if (await cardButton.count()) await cardButton.dispatchEvent("click");
-        await page.locator("#cardNumber").waitFor({ state: "visible", timeout: 30000 });
-        await page.locator("#cardNumber").fill("4242424242424242");
-        await page.locator("#cardExpiry").fill("12 / 34");
-        await page.locator("#cardCvc").fill("123");
-        const email = page.locator("#email");
-        if ((await email.count()) && !(await email.inputValue().catch(() => ""))) await email.fill(OWNER.email);
-        const nm = page.locator("#billingName");
-        if (await nm.isVisible().catch(() => false)) await nm.fill("Dana Lark (fictional)");
-        const country = page.locator("#billingCountry");
-        if (await country.isVisible().catch(() => false)) await country.selectOption("GB");
-        for (const [sel, v] of [["#billingAddressLine1", "1 Test Street (fictional)"], ["#billingLocality", "Milton Keynes"], ["#billingPostalCode", "MK9 9ZZ"]]) {
-          const f = page.locator(sel);
-          if (await f.isVisible().catch(() => false)) await f.fill(v);
+        // The hosted page's payment-method list and card fields may sit in frames (the page's layout changes over
+        // time): click the Card row, then fill the card fields wherever they are.
+        await page.getByText("Pay and subscribe").first().waitFor({ timeout: 30000 }).catch(() => {});
+        await page.waitForTimeout(2000);
+        const CARD_SEL = "#cardNumber, input[name=cardnumber], input[name=number], input[autocomplete='cc-number']";
+        const cardFrame = async () => {
+          for (const f of page.frames()) if (await f.locator(CARD_SEL).first().isVisible().catch(() => false)) return f;
+          return null;
+        };
+        const notes = [];
+        for (let attempt = 0; attempt < 3 && !(await cardFrame()); attempt++) {
+          for (const frame of page.frames()) {
+            const tries = [frame.locator("[data-testid=card-accordion-item-button]"), frame.locator("input[type=radio][value=card]"), frame.getByRole("radio", { name: /Card/ }), frame.getByText("Card", { exact: true })];
+            for (const c of tries) {
+              const n = await c.count().catch(() => 0);
+              notes.push(`${frame.url().slice(0, 60)} ${n}`);
+              if (!n) continue;
+              await c.first().click({ force: true, timeout: 5000 }).catch(() => {});
+              await page.waitForTimeout(1000);
+              if (await cardFrame()) break;
+            }
+            if (await cardFrame()) break;
+          }
         }
-        await page.locator("button[data-testid=hosted-payment-submit-button], button.SubmitButton").first().click();
+        fs.writeFileSync(path.join(OUT, "checkout-controls.txt"), notes.join("\n"));
+        const cf = await cardFrame();
+        assert(cf, "the card fields did not show on the payment page");
+        await cf.locator(CARD_SEL).first().fill("4242424242424242");
+        await cf.locator("#cardExpiry, input[name=exp-date], input[name=expiry], input[autocomplete='cc-exp']").first().fill("12 / 34");
+        await cf.locator("#cardCvc, input[name=cvc], input[autocomplete='cc-csc']").first().fill("123");
+        const nameInFrame = cf.locator("#billingName, input[autocomplete='cc-name']");
+        if (await nameInFrame.first().isVisible().catch(() => false)) await nameInFrame.first().fill("Dana Lark (fictional)");
+        const postcode = cf.locator("input[name=postalCode], input[autocomplete='postal-code']");
+        if (await postcode.first().isVisible().catch(() => false)) await postcode.first().fill("MK9 9ZZ");
+        // Email, address and the pay button: wherever the page puts them (main page or a frame).
+        const firstVisible = async (make) => {
+          for (const f of page.frames()) {
+            const l = make(f).first();
+            if (await l.isVisible().catch(() => false)) return l;
+          }
+          return null;
+        };
+        const email = await firstVisible((f) => f.locator("#email, input[type=email], input[autocomplete=email]"));
+        if (email && !(await email.inputValue().catch(() => ""))) await email.fill(OWNER.email);
+        const country = await firstVisible((f) => f.locator("#billingCountry, select[autocomplete=country]"));
+        if (country) await country.selectOption("GB").catch(() => {});
+        for (const sel of [["#billingAddressLine1, input[autocomplete='address-line1']", "1 Test Street (fictional)"], ["#billingLocality, input[autocomplete='address-level2']", "Milton Keynes"], ["#billingPostalCode, input[autocomplete='postal-code']", "MK9 9ZZ"]]) {
+          const f = await firstVisible((fr) => fr.locator(sel[0]));
+          if (f && !(await f.inputValue().catch(() => ""))) await f.fill(sel[1]);
+        }
+        await page.screenshot({ path: path.join(SHOTS, "t9-checkout-filled.png") });
+        const pay = await firstVisible((f) => f.locator("button[data-testid=hosted-payment-submit-button], button.SubmitButton"));
+        if (pay) await pay.click();
+        else {
+          const byName = await firstVisible((f) => f.getByRole("button", { name: /Pay and subscribe|Subscribe/ }));
+          assert(byName, "no pay button found");
+          await byName.click();
+        }
         await page.waitForURL((u) => u.origin === DESK && u.pathname === "/app/settings/billing/done", { timeout: 120000 });
         await page.locator("[data-testid=billing-done]").waitFor();
         assert.equal(await page.locator("[data-testid=billing-done]").getAttribute("data-state"), "active");
@@ -496,7 +540,8 @@ const banner = async (page) => ((await page.locator("[data-testid=trial-banner]"
         const form = page.locator("form#new-patient-page");
         await form.locator("input[name=firstName]").fill("Megan");
         await form.locator("input[name=lastName]").fill("Hart");
-        await form.locator("button[type=submit]").click();
+      await form.locator("input[name=dateOfBirth]").fill("14/03/1988");
+        await form.locator("button[type=submit][value=save]").click();
         await waitFor(() => one("SELECT count(*) AS n FROM pms_patients WHERE tenant_id = ?", tenant).n === 1, 20000, "the patient saved");
         const m = await waitMail(OWNER.email, /paid ClinDesk plan/);
         assert(m, "paid email");
