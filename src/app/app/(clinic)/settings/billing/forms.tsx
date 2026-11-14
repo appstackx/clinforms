@@ -29,6 +29,18 @@ function Result({ state }: { state: BillingActionResult | null }) {
 }
 
 /**
+ * A ClinForms clinic pays through the payment account it shares with ClinDesk (Khuram 31/10/2026, one account for
+ * both): the hosted payment and billing pages show that name, so say so before the customer is sent there.
+ */
+function SharedAccountNote() {
+  return (
+    <p className="text-xs text-slate-600" data-testid="payments-via-clindesk">
+      Payments are handled through {CLINIC_SYSTEM_NAME}, our parent platform, so you&apos;ll see the {CLINIC_SYSTEM_NAME} name on the payment pages.
+    </p>
+  );
+}
+
+/**
  * `keepReports` (V-01): the clinic has Reports now (a ClinForms clinic) – a clinic-system plan starts with the smallest
  * Reports add-on, and choosing none says what that means.
  */
@@ -62,6 +74,7 @@ export function ChoosePlanForm({ view, keepReports = false }: { view: BillingVie
             </label>
           ))}
         </fieldset>
+        {view.changesRunning ? null : <SharedAccountNote />}
         <SubmitButton pendingText="Please wait…">{button}</SubmitButton>
         <Result state={state} />
       </form>
@@ -214,7 +227,8 @@ export function AddReportsPanel({ view, offer }: { view: BillingView; offer: boo
   );
 }
 
-export function ManageBillingButton() {
+/** `sharedAccountNote`: a ClinForms plan – the hosted billing page shows the shared account's name (ClinDesk). */
+export function ManageBillingButton({ sharedAccountNote = false }: { sharedAccountNote?: boolean }) {
   const [state, action] = useFormState(manageBillingAction, null as BillingActionResult | null);
   useRedirectOn(state);
   return (
@@ -223,6 +237,7 @@ export function ManageBillingButton() {
         Manage billing
       </SubmitButton>
       <p className="text-xs text-slate-600">Change your card or Direct Debit, download invoices or cancel your plan.</p>
+      {sharedAccountNote ? <SharedAccountNote /> : null}
       <Result state={state} />
     </form>
   );
