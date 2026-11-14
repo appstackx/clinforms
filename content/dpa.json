@@ -138,14 +138,14 @@
       "id": "annex-3",
       "heading": "Annex 3 – Sub-processors",
       "paragraphs": [
-        "Vercel Inc. – application hosting. Runs in London (UK); the company is in the US. Safeguard for any access from outside the UK: UK Extension to the EU-US Data Privacy Framework or the International Data Transfer Addendum [to confirm].",
-        "Supabase Inc. – database and patient file storage. Stored in London (UK). Safeguard for any access from outside the UK: the International Data Transfer Addendum [to confirm].",
-        "MailerSend (MailerLite UAB) – sending service emails such as invitations, sign-in links and notifications. EU (Lithuania) [to confirm]. Safeguard: UK adequacy regulation for the EU.",
-        "Stripe Payments UK Ltd – subscription billing and, where the clinic switches it on, card payments from patients. UK, EU and US. Safeguard: UK Extension to the EU-US Data Privacy Framework or the International Data Transfer Addendum.",
+        "Vercel Inc. – application hosting. Runs in London (UK); the company is in the US. Safeguard for any access from outside the UK: the UK Extension to the EU-US Data Privacy Framework, with the EU standard contractual clauses and the UK Addendum as a fallback.",
+        "Supabase Inc. – database and patient file storage. Stored in London (UK). Safeguard for any access from outside the UK: the EU standard contractual clauses with the UK International Data Transfer Addendum.",
+        "MailerSend – sending service emails such as invitations, sign-in links and notifications. EU (Belgium and Germany). Safeguard: UK adequacy regulation for the EU; for any access from outside the EU, the safeguards in its data processing agreement [to confirm].",
+        "Stripe Payments UK Ltd – subscription billing and, where the clinic switches it on, card payments from patients. UK, EU and US. Safeguard: the UK Extension to the EU-US Data Privacy Framework or the International Data Transfer Addendum.",
         "The SMS Works Ltd – text messages to patients, where the clinic switches them on. UK.",
         "PostHog Inc. – usage statistics, only after consent. EU cloud (Germany). Safeguard: UK adequacy regulation for the EU.",
-        "Cloudflare Inc. – the human check on public booking and patient sign-in, where switched on. Global network; the check keeps no personal data afterwards. Safeguard: UK Extension to the EU-US Data Privacy Framework or the International Data Transfer Addendum [to confirm].",
-        "Anthropic PBC – the drafting service, only where the clinic switches drafting from notes on. US. It receives only the minimised extract in Annex 2, does not use it to train its models, and keeps it for no more than [30 days] [to confirm]. Safeguard: UK Extension to the EU-US Data Privacy Framework or the International Data Transfer Addendum [to confirm]."
+        "Cloudflare Inc. – the human check on public booking and patient sign-in, where switched on. Global network; the check keeps no personal data afterwards. Safeguard: the UK Extension to the EU-US Data Privacy Framework, with the EU standard contractual clauses as a fallback.",
+        "Anthropic PBC – the drafting service, only where the clinic switches drafting from notes on. US. It receives only the minimised extract in Annex 2 and does not use it to train its models. It deletes it within 30 days, unless the law requires otherwise or the content is flagged under its usage policy (then kept for up to 2 years). Safeguard: the EU standard contractual clauses with the UK International Data Transfer Addendum."
       ]
     }
   ]
