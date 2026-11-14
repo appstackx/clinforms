@@ -2,6 +2,7 @@
  * Audit actions of the integration module and their plain-English labels (owned by the integration builder – contract §7).
  * Codes: "pms.<entity>.<verb>", lower case. Every code a repository writes must be listed here.
  */
+import { XERO_AUDIT_LABELS, XERO_AUDIT_TARGETS } from "./xero";
 export const INTEGRATION_AUDIT_LABELS: Readonly<Record<string, string>> = {
   "pms.import_batch.create": "Data import started",
   "pms.import_batch.rows_add": "Data import file uploaded (part)",
@@ -29,6 +30,8 @@ export const INTEGRATION_AUDIT_LABELS: Readonly<Record<string, string>> = {
   "pms.api_key.use": "API key used (first call of the day)",
   "pms.api.patient_read": "Patient record read through the API",
   "pms.api.appointment_book": "Appointment booked through the API",
+  // Xero sync (0172, xe03–xe06).
+  ...XERO_AUDIT_LABELS,
 };
 
 /** Names of the record types its audit rows point at (target_type → label), e.g. { pms_appointment: "Appointment" }. */
@@ -38,4 +41,5 @@ export const INTEGRATION_AUDIT_TARGETS: Readonly<Record<string, string>> = {
   pms_filed_form: "Filed referrer form",
   pms_api_key: "API key",
   pms_api_settings: "Clinic API",
+  ...XERO_AUDIT_TARGETS,
 };

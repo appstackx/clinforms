@@ -262,7 +262,12 @@ describe("every activity and platform entry point applies its guard (source chec
       .filter((f) => /\bsetClinicDemoFlag\(|\bsetDemoClinic\(|demo_clinic: (?:1|on|value)/.test(read(f)))
       .map((f) => path.relative(process.cwd(), f).split(path.sep).join("/"))
       .sort();
-    assert.deepEqual(writers, ["scripts/admin/set-demo-clinic.ts", "src/app/app/platform/actions.ts", "src/server/admin/clinic-plan.ts", "src/server/repos/clinic-plan.ts"]);
+    // 13/11/2026: + the self-serve trial's SAMPLE clinic (src/server/trial/sample.ts) – it switches the flag ON once, for
+    // the brand-new sample clinic it has just created (made-up data only); never off, never for an existing clinic.
+    assert.deepEqual(writers, ["scripts/admin/set-demo-clinic.ts", "src/app/app/platform/actions.ts", "src/server/admin/clinic-plan.ts", "src/server/repos/clinic-plan.ts", "src/server/trial/sample.ts"]);
+    const sample = read("src/server/trial/sample.ts");
+    assert.equal((sample.match(/setClinicDemoFlag\(/g) ?? []).length, 1);
+    assert.match(sample, /setClinicDemoFlag\(ctx, slug, true\)/, "on, for the new sample clinic only");
     // The clinic's own settings never mention it; the members page reads it on the server (never from the form).
     for (const file of ["src/app/app/(clinic)/settings/clinic/actions.ts", "src/app/app/(clinic)/settings/clinic/form.tsx", "src/app/app/(clinic)/settings/clinic/page.tsx"]) {
       if (fs.existsSync(path.resolve(file))) assert.doesNotMatch(read(file), /demo_clinic|demoClinic|setDemoClinic/, file);

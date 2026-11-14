@@ -4,6 +4,8 @@ import { INVOICE_LIST_STATES, type InvoiceListState } from "@/server/repos/pms/b
 import { requireClinicActor } from "@/server/pms/actor";
 import { agedDebtFor, billingHomeFor, payerAccountsFor, recentRemittancesFor, statementAccountsFor, uninvoicedVisitsFor } from "@/server/pms/billing/views";
 import { pmsNow } from "../../../../modules/pms/core/clock";
+import Link from "next/link";
+import { cardPaymentsAvailable } from "@/server/pms/billing/connect/screen";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Billing" };
@@ -37,7 +39,16 @@ export default async function BillingPage({ searchParams }: { searchParams: Reco
   void payerAccountsFor;
   const failed = !home.ok ? home.error : visits && !visits.ok ? visits.error : aged && !aged.ok ? aged.error : remittances && !remittances.ok ? remittances.error : accounts && !accounts.ok ? accounts.error : null;
   const h = home.ok ? home.value : null;
+  const payoutsLink = cardPaymentsAvailable() && actor.can("billing.refund");
   return (
+    <>
+    {payoutsLink ? (
+      <p className="mb-3 text-right text-sm">
+        <Link href="/app/clinic/billing/payouts" className="text-primary-strong underline underline-offset-[3px]" data-testid="billing-payouts-link">
+          Card payouts and fees
+        </Link>
+      </p>
+    ) : null}
     <BillingList
       tab={tab}
       figures={
@@ -57,5 +68,6 @@ export default async function BillingPage({ searchParams }: { searchParams: Reco
       can={{ edit: actor.can("billing.edit"), pay: actor.can("billing.pay"), export: actor.can("reports.export") }}
       failed={failed}
     />
+    </>
   );
 }

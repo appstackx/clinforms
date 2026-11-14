@@ -20,6 +20,8 @@ import { humanTokenFrom } from "@/server/pms/portal/human-check";
 import type { BookResultView } from "@/modules/pms/portal/flow-types";
 import { formatScore } from "@/modules/pms/records/outcomes";
 import { getOutcome } from "@/server/repos/pms/records/outcomes";
+import { portalCheckinFor } from "@/server/pms/records/exercises-service";
+import { publicLimit, tooManyMessage } from "@/server/pms/portal/rate-limit";
 
 const SIGNED_OUT = "Your session has ended. Please sign in again.";
 
@@ -131,4 +133,20 @@ export async function portalSubmitFormAction(clinicId: string, responseId: strin
     if (o) score = formatScore(o.measure, o.scoreTenths);
   }
   return { ok: true, message: "Thanks – your answers have been sent to the clinic.", score };
+}
+
+/** A check-in on one of the patient's shared exercise programmes (today, UK date; one a day – a second changes it). */
+export async function portalExerciseCheckinAction(clinicId: string, programmeId: string, input: { completed: boolean; painScore: string; comment: string }): Promise<SimpleAnswer> {
+  const v = await viewerFor(clinicId);
+  if (!v) return { ok: false, error: SIGNED_OUT };
+  const ctx = flowDeps().ctx;
+  // At most 60 check-in saves per patient an hour (each is one row a day, but every save is audited).
+  const limited = await publicLimit(ctx, v.clinic.tenantId, "patientWritesPerClient", `exercise:${v.viewer.patientId}`);
+  if (!limited.ok) return { ok: false, error: tooManyMessage(limited.retryAfterSeconds) };
+  const r = await portalCheckinFor(ctx, v.clinic, v.viewer, String(programmeId), {
+    completed: input?.completed === true,
+    painScore: typeof input?.painScore === "string" ? input.painScore.slice(0, 4) : null,
+    comment: typeof input?.comment === "string" ? input.comment.slice(0, 2000) : null,
+  });
+  return r;
 }

@@ -7,6 +7,8 @@ import { requireClinicActor } from "@/server/pms/actor";
 import { printInvoiceFor, invoiceDetailFor, printClinicOf } from "@/server/pms/billing/views";
 import { getPmsSettings } from "@/server/repos/pms/settings";
 import { pmsNow } from "../../../../../../modules/pms/core/clock";
+import { InvoiceCardPanel } from "@/components/pms/billing/invoice-card-panel";
+import { invoiceCardViewFor } from "@/server/pms/billing/connect/service";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Invoice" };
@@ -24,6 +26,10 @@ export default async function InvoicePage({ params }: { params: { invoiceId: str
   const printed = inv.status === "issued" ? await printInvoiceFor(actor, inv.id) : null;
   const settings = await getPmsSettings(actor.repo(), actor.tenantId);
   const hc = await invoiceHealthcodeFor(actor, inv.id);
+  // Card payments (the clinic's own payment account): null while switched off or not set up.
+  const cards = await invoiceCardViewFor(actor, inv.id);
+  const cardPanel = cards.ok && cards.value ? <InvoiceCardPanel view={cards.value} /> : null;
+  const hcPanel = hc.ok && hc.value ? <InvoiceHealthcodePanel view={hc.value} /> : null;
   return (
     <InvoiceDetail
       invoice={inv}
@@ -33,7 +39,14 @@ export default async function InvoicePage({ params }: { params: { invoiceId: str
       printedAt={pmsNow().toISOString()}
       demo={settings.isDemo}
       can={{ edit: actor.can("billing.edit"), pay: actor.can("billing.pay"), refund: actor.can("billing.refund"), void: actor.can("billing.void") }}
-      extra={hc.ok && hc.value ? <InvoiceHealthcodePanel view={hc.value} /> : null}
+      extra={
+        cardPanel || hcPanel ? (
+          <>
+            {cardPanel}
+            {hcPanel}
+          </>
+        ) : null
+      }
     />
   );
 }

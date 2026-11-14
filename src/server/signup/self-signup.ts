@@ -59,7 +59,8 @@ import {
   takeOverStaleSignupClaim,
   type SignupRequest,
 } from "../repos/signup";
-import { ipLimitSubject } from "./client-ip";
+import { ipLimitSubject, signupClientIp } from "./client-ip";
+import { startSelfServeTrial } from "../trial/start";
 
 const DAY_MS = 86_400_000;
 const HOUR_MS = 3_600_000;
@@ -367,10 +368,14 @@ export interface ConfirmSignupDeps {
   headers: Headers;
   isPlatformAdminEmail: (email: string) => boolean;
   now?: () => Date;
+  /** The confirming client's address (the trial's per-network brake); default: from `headers` (signupClientIp). */
+  ip?: string;
+  /** The trial's settings (CLINFORMS_TRIAL_*); default process.env. */
+  env?: Readonly<Record<string, string | undefined>>;
 }
 
 export type ConfirmSignupOutcome =
-  | { kind: "created"; tenantId: string; userId: string; acceptanceId: string; brand: BrandId; cookie: string }
+  | { kind: "created"; tenantId: string; userId: string; acceptanceId: string; brand: BrandId; cookie: string; trial: boolean }
   | { kind: "invalid" }
   | { kind: "wrong_password" }
   | { kind: "too_many" }
@@ -449,6 +454,10 @@ export async function confirmSignup(input: { token: unknown; password: unknown }
         brand: request.brand,
         linkSecret: deps.secret,
         sendEmail: false, // the person is right here: they join at once, no invitation email
+        // 14/11/2026 (Khuram): drafting from the notes ON for a self-serve clinic – its owner accepted the DPA online
+        // (it names the drafting sub-processor); the owner can switch it off in Settings → Clinic. Recorded in the
+        // clinic.self_signup audit row below, with the DPA version.
+        draftingEnabled: true,
         now,
       });
       tenantId = created.tenantId;
@@ -495,17 +504,25 @@ export async function confirmSignup(input: { token: unknown; password: unknown }
     return { kind: "failed" };
   }
 
-  const acceptanceId = await finishSignup(ctx, request, tenantId, organizationId, userId);
+  const acceptanceId = await finishSignup(ctx, request, tenantId, organizationId, userId, deps);
   logAuthEvent("signup.completed", { brand: request.brand, tenant: tenantId });
-  return { kind: "created", tenantId, userId, acceptanceId, brand: request.brand, cookie };
+  return { kind: "created", tenantId, userId, acceptanceId, brand: request.brand, cookie, trial: true };
 }
 
 /**
  * The records of a finished sign-up, each step idempotent so a retry after any failure completes them: the acceptance
- * (one per request), the "clinic.self_signup" audit row (once per clinic), then the request marked done – last, so a
- * failure before it leaves the link usable for the retry.
+ * (one per request), the "clinic.self_signup" audit row (once per clinic), the free trial (13/11/2026,
+ * src/server/trial/start.ts – once per clinic), then the request marked done – last, so a failure before it leaves the
+ * link usable for the retry.
  */
-async function finishSignup(ctx: DbContext, request: SignupRequest, tenantId: string, organizationId: string, userId: string): Promise<string> {
+async function finishSignup(
+  ctx: DbContext,
+  request: SignupRequest,
+  tenantId: string,
+  organizationId: string,
+  userId: string,
+  deps: Pick<ConfirmSignupDeps, "secret" | "headers" | "ip" | "env" | "now">,
+): Promise<string> {
   const acceptance = await recordSignupAcceptance(ctx, {
     tenantId,
     userId,
@@ -525,14 +542,28 @@ async function finishSignup(ctx: DbContext, request: SignupRequest, tenantId: st
     .limit(1)
     .executeTakeFirst();
   if (!audited) {
+    // Drafting from the notes as the sign-up left it (switched on by the sign-up, 14/11/2026) – recorded with the DPA
+    // version the owner accepted, so the activity shows why it is on.
+    const drafting = await ctx.db.selectFrom("clinic_profile").select("drafting_enabled").where("tenant_id", "=", tenantId).executeTakeFirst();
     await appendAudit(ctx, tenantId, {
       userId,
       action: "clinic.self_signup",
       targetType: "organization",
       targetId: organizationId,
-      detail: { brand: request.brand, termsVersion: request.termsVersion, dpaVersion: request.dpaVersion, acceptance: acceptance.id },
+      detail: {
+        brand: request.brand,
+        termsVersion: request.termsVersion,
+        dpaVersion: request.dpaVersion,
+        acceptance: acceptance.id,
+        ...(drafting && Number(drafting.drafting_enabled) === 1 ? { draftingEnabled: true } : {}),
+      },
     });
   }
+  await startSelfServeTrial(
+    ctx.db,
+    { tenantId, brand: request.brand, userId, email: request.email, ip: deps.ip ?? signupClientIp(deps.headers), secret: deps.secret },
+    { env: deps.env, now: deps.now },
+  );
   await completeSignupRequest(ctx, request.id);
   return acceptance.id;
 }
@@ -583,9 +614,9 @@ async function resumeAfterAccount(
     logAuthEvent("signup.resume_failed", { tenant: tenantId, error: err instanceof Error ? err.name : "error" });
     return null;
   }
-  const acceptanceId = await finishSignup(ctx, request, tenantId, org.id, userId);
+  const acceptanceId = await finishSignup(ctx, request, tenantId, org.id, userId, deps);
   logAuthEvent("signup.completed", { brand: request.brand, tenant: tenantId, resumed: true });
   // No session (e.g. two-step already switched on for the account): the records are made; the person signs in.
   if (!cookie) return { kind: "existing_account" };
-  return { kind: "created", tenantId, userId, acceptanceId, brand: request.brand, cookie };
+  return { kind: "created", tenantId, userId, acceptanceId, brand: request.brand, cookie, trial: true };
 }

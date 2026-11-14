@@ -26,11 +26,17 @@ import { hasPackage } from "@/server/pms/entitlements";
 import { listSites } from "@/server/repos/pms/directory";
 import { patientExists } from "@/server/repos/pms/patients";
 import { BillingBannerBar } from "@/components/account/billing-banner";
+import { TrialBannerBar } from "@/components/account/trial-banner";
+import { clinicShellTrial } from "@/server/trial/view";
 import { billingBannerFor } from "@/server/billing/banner";
 import { canManageBilling } from "@/server/billing/views";
 import { getDb } from "@/server/db";
 import { bulkEmailAvailable, mayUseBulkEmail } from "@/server/pms/comms/campaigns/service";
 import { clinicApiAvailable, mayManageApi } from "@/server/pms/integration/api/screen";
+import { xeroAvailable } from "@/server/pms/integration/xero/config";
+import { mayManageXero } from "@/server/pms/integration/xero/screen";
+import { exercisesAvailable, exercisesOnForClinic } from "@/server/pms/records/exercises-service";
+import { cardPaymentsAvailable, mayManageCards } from "@/server/pms/billing/connect/screen";
 
 export const dynamic = "force-dynamic";
 
@@ -90,6 +96,18 @@ export default async function ClinicSystemLayout({ children }: { children: React
   // API keys (xt03): without the platform switch the page does not exist; only the owner opens it.
   const apiOn = clinicApiAvailable();
   if (path && /^\/app\/clinic\/setup\/api(?:[/?#]|$)/.test(path) && (!apiOn || !mayManageApi(actor))) notFound();
+  // Xero (xe03–xe05): without the platform switch the page does not exist; owners and admins only.
+  const xeroOn = xeroAvailable();
+  if (path && /^\/app\/clinic\/setup\/xero(?:[/?#]|$)/.test(path) && (!xeroOn || !mayManageXero(actor))) notFound();
+  // Exercise programmes (ex03–ex05): without the platform switch the pages do not exist; the record's pages also need
+  // the clinic's own setting (Set-up → Exercises stays open to switch it on).
+  const exercisesOn = exercisesAvailable();
+  if (path && /^\/app\/clinic\/setup\/exercises(?:[/?#]|$)/.test(path) && !exercisesOn) notFound();
+  if (path && /^\/app\/clinic\/patients\/[^/]+\/exercises(?:[/?#]|$)/.test(path) && !(await exercisesOnForClinic(actor.repo(), actor.tenantId).catch(() => false))) notFound();
+  // Card payments: without the platform switch the pages do not exist; only the owner opens Set-up → Card payments.
+  const cardsOn = cardPaymentsAvailable();
+  if (path && /^\/app\/clinic\/setup\/card-payments(?:[/?#]|$)/.test(path) && (!cardsOn || !mayManageCards(actor))) notFound();
+  if (path && /^\/app\/clinic\/billing\/payouts(?:[/?#]|$)/.test(path) && !cardsOn) notFound();
   const report = path?.split(/[?#]/)[0].match(new RegExp(`^${REPORTS_PATH}/([a-z]+)$`))?.[1];
   if (report && report !== "export" && (!isReportId(report) || reportAccess(report, (p) => actor.can(p)) === null)) notFound();
   const brand = currentBrand();
@@ -101,13 +119,17 @@ export default async function ClinicSystemLayout({ children }: { children: React
       .catch(() => true))) notFound();
   // 01/11/2026: the Studio is offered on either host when the clinic has Reports (the clinic brand calls it the
   // "Reports" add-on – never the ClinForms name on its host).
-  const [reports, sites, scope, replies, billing, memberships] = await Promise.all([
+  // 13/11/2026: a SELF-SERVE trial (starts at the owner's first visit – here, for a ClinDesk clinic, whose owner lands
+  // in the clinic system) and its banner; nothing for any other clinic.
+  const [reports, sites, scope, replies, billing, memberships, trial] = await Promise.all([
     hasPackage(actor.tenantId, "reports"),
     listSites(ctx, actor.tenantId),
     resolveDiarySiteScope(actor),
     unansweredRepliesFor(actor),
     billingBannerFor(getDb(), actor.tenantId, actor.role === "owner" || actor.role === "admin"),
     listMemberships(getDb(), actor.userId).catch(() => []),
+    // Self-serve trial clinics only (src/server/trial/view.ts): every other clinic gets null – no visit noted, no banner.
+    clinicShellTrial(getDb(), { tenantId: actor.tenantId, userId: actor.userId, sessionId: actor.sessionId, role: actor.role }, canManageBilling(actor.role)),
   ]);
   // Owners and admins: the way back to the clinic account (Plan and billing, members, security …) – the billing rule.
   const account = accountAdminLinks(canManageBilling(actor.role));
@@ -122,7 +144,7 @@ export default async function ClinicSystemLayout({ children }: { children: React
       homeHref={CLINIC_BASE_PATH}
       clinicName={actor.clinicName}
       user={{ name: actor.name, email: actor.email, roleLabel: clinicRoleLabel(actor.role, roleLabel(actor.role)), sitesSummary: sitesSummary(mySites.length, sites.length) }}
-      nav={withSetupAccountLinks(shellNav(navForDeployment(PMS_NAV, { clinicApi: apiOn }), actor.can, { "comms.messages": { count: replies, label: "replies to answer" } }, reportsSection(actor.can)), account.setup)}
+      nav={withSetupAccountLinks(shellNav(navForDeployment(PMS_NAV, { clinicApi: apiOn, xero: xeroOn && mayManageXero(actor), exercises: exercisesOn, cardPayments: cardsOn }), actor.can, { "comms.messages": { count: replies, label: "replies to answer" } }, reportsSection(actor.can)), account.setup)}
       sites={{ options: mySites.map((s, i) => ({ id: s.id, name: s.name, note: i === 0 ? "Default" : undefined })), value: siteValue, total: sites.length }}
       searchHref={actor.can("patients.view") ? `${CLINIC_BASE_PATH}/patients` : null}
       clinForms={reports ? { href: "/app/studio", label: brand.id === "clinic" ? REPORTS_ADDON_NAME : CLINFORMS_NAME } : null}
@@ -130,6 +152,7 @@ export default async function ClinicSystemLayout({ children }: { children: React
       adminLinks={menu}
       installableApp={currentInstallableApp() !== null}
     >
+      {trial ? <TrialBannerBar access={trial} contactEmail={brand.contactEmail} className="mb-4 rounded-md border" /> : null}
       <BillingBannerBar banner={billing} className="mb-4 rounded-md border" />
       {children}
     </ClinicShell>

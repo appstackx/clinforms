@@ -84,9 +84,11 @@ export const ACCOUNT_ERRORS = {
 export type AccountErrorKey = keyof typeof ACCOUNT_ERRORS;
 
 /**
- * Drafting from the notes (Settings → Clinic and the overview's set-up checklist). Owner decision: OFF for a
- * new clinic – a clinic opts in to sending notes to the drafting service once it has signed the data
- * processing agreement. Plain words, and only what is true today (data minimisation: core NOTICES).
+ * Drafting from the notes (Settings → Clinic and the overview's set-up checklist). Owner decisions: OFF for a clinic
+ * set up by hand – it opts in to sending notes to the drafting service once it has signed the data processing
+ * agreement; ON from the start for a clinic that signed up online (14/11/2026 – its owner accepted the DPA at sign-up,
+ * which names the drafting sub-processor), and its owner can switch it off. Plain words, and only what is true today
+ * (data minimisation: core NOTICES).
  */
 export const DRAFTING_COPY = {
   label: "Draft answers from the notes",
@@ -97,6 +99,12 @@ export const DRAFTING_COPY = {
   checklistOff:
     "Off until you switch it on. When on, the patient's notes (without name, date of birth, address or contact details) are sent to the drafting service in your data processing agreement to draft answers for the clinician to check. Switch it on in Clinic details once the agreement is signed; until then your clinicians write the answers.",
   checklistOn: "Switched on: answers are drafted from the notes for the clinician to check and approve.",
+  /** Replaces whenToSwitchOn for a clinic that signed up online (on from sign-up; the owner may switch it off). */
+  whenSelfServe:
+    "Your clinic accepted the data processing agreement when it signed up online, so this was switched on at sign-up. Switch it off if you would rather your clinicians wrote those answers themselves – while it is off, nothing from the notes is sent.",
+  /** Replaces checklistOff for a clinic that signed up online and switched drafting off. */
+  checklistOffSelfServe:
+    "Switched off. Switch it on again in Clinic details to have answers drafted from the notes for the clinician to check; until then your clinicians write the answers.",
   /** Replaces whenToSwitchOn while the clinic's trial runs (made-up notes only until the DPA is signed). */
   whenToSwitchOnTrial: "During your trial, switch this on to try drafting with made-up notes only.",
   /** Replaces checklistOff while the clinic's trial runs. */

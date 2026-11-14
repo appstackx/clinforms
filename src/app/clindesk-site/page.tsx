@@ -1,3 +1,4 @@
+import { StartTrialButton } from "@/components/clindesk/trial-cta";
 import { CLINIC_SYSTEM_NAME } from "@/lib/brand";
 import { clindeskMetadata } from "@/lib/clindesk/site";
 import { cssVars } from "@/components/clindesk/css-vars";
@@ -56,6 +57,7 @@ function Hero() {
           </p>
           <div className="hero-ctas">
             <a className="btn btn-coral" href="/demo">Book a demo <span className="arr" aria-hidden="true">→</span></a>
+            <StartTrialButton />
             {" "}
             <a className="btn btn-outline" href="#reports">See an insurer form filled <span className="arr" aria-hidden="true">↓</span></a>
           </div>

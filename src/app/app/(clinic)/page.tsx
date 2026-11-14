@@ -16,37 +16,49 @@ import { countMembers, listPendingInvitations } from "@/server/auth/membership";
 import { isManager } from "@/server/auth/roles";
 import { requireAppContext } from "@/server/auth/session";
 import { getDb } from "@/server/db";
+import { SampleOfferCard } from "@/components/account/sample-offer";
+import { RemoveSampleClinicCard, SampleRemovedNotice } from "@/components/account/remove-sample";
+import { SAMPLE_REMOVED_PARAM } from "@/lib/trial-copy";
+import { sampleRemovalOffer } from "@/server/trial/sample";
+import { clinicAccessOf, readClinicPlan } from "@/server/repos/clinic-plan";
+import { sampleOfferFor } from "@/server/trial/view";
+import { clinicSignedUpOnline } from "@/server/repos/signup";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Overview" };
 
-export default async function ClinicOverviewPage() {
+export default async function ClinicOverviewPage({ searchParams }: { searchParams?: Record<string, string | string[] | undefined> }) {
   const { session, membership } = await requireAppContext();
   const db = getDb();
   const [members, invitations] = await Promise.all([countMembers(db, membership.organizationId), listPendingInvitations(db, membership.organizationId)]);
   const manager = isManager(membership.role);
-  const [setup, trial, packages, ownBrand] = await Promise.all([
+  const [setup, trial, packages, ownBrand, selfServe] = await Promise.all([
     loadSetupChecklist(db, membership, { members, openInvitations: invitations.length }),
     clinicTrialRunning(db, membership.tenantId),
     clinicPackages(membership.tenantId),
     clinicBrand(membership.tenantId),
+    clinicSignedUpOnline({ db }, membership.tenantId).catch(() => false),
   ]);
   // 01/11/2026 (Khuram's R1): the reports checklist, Plan & usage and API keys only for a clinic with Reports (or a
   // ClinForms clinic); a ClinDesk clinic without the add-on gets its own set-up steps and no reports links.
   const reportsArea = packages.reports || ownBrand === "clinforms";
   // R2: the full clinic system offered to a ClinForms clinic's owners and admins (hidden on request, per browser).
   const offer = showClinDeskOffer({ clinicSystem: packages.clinic, clinicBrand: ownBrand, role: membership.role }) && cookies().get(CLINDESK_OFFER_COOKIE)?.value !== "1";
+  // 13/11/2026: a self-serve trial's owner is offered the separate sample clinic (src/server/trial/sample.ts).
+  const sample = await sampleOfferFor(db, membership.tenantId, membership.role, await readClinicPlan({ db }, membership.tenantId).then((p) => (p ? clinicAccessOf(p) : null)).catch(() => null));
+  // 14/11/2026: after paying, the owner may remove the sample clinic (owner only – re-checked by the action).
+  const removable = await sampleRemovalOffer(db, membership.tenantId, session.user.id, membership.role);
   // Fix wave 2: a new clinic's first steps, for the owner and administrators (who can do them).
   const formSteps: Array<{ done: boolean; optional?: boolean; href: string; label: string; text: string }> = [
     { done: setup.clinicDetails, href: "/app/settings/clinic", label: "Clinic details", text: "Name, address and postcode – they appear on completed forms." },
-    // Optional (owner decision: off for a new clinic, switched on once the data processing agreement is signed),
-    // so it never counts as a step left.
+    // Optional (owner decisions: off for a clinic set up by hand, switched on once the data processing agreement is
+    // signed; on from sign-up for a clinic that signed up online, 14/11/2026), so it never counts as a step left.
     {
       done: setup.draftingEnabled,
       optional: true,
       href: "/app/settings/clinic",
       label: "Drafting from the notes",
-      text: setup.draftingEnabled ? DRAFTING_COPY.checklistOn : trial ? DRAFTING_COPY.checklistOffTrial : DRAFTING_COPY.checklistOff,
+      text: setup.draftingEnabled ? DRAFTING_COPY.checklistOn : selfServe ? DRAFTING_COPY.checklistOffSelfServe : trial ? DRAFTING_COPY.checklistOffTrial : DRAFTING_COPY.checklistOff,
     },
     { done: setup.team, href: "/app/settings/members", label: "Invite your clinicians", text: "Each member signs in with two-step verification." },
     { done: setup.signer, href: "/app/settings/members", label: "Signing details", text: "An HCPC number and “may sign” for each clinician who approves forms." },
@@ -79,6 +91,9 @@ export default async function ClinicOverviewPage() {
   return (
     <>
       <PageHeader title={membership.clinicName} description={`Signed in as ${session.user.name} (${session.user.email}).`} />
+      {sample ? <SampleOfferCard creating={sample.trial.sampleState === "creating"} /> : null}
+      {searchParams?.[SAMPLE_REMOVED_PARAM] === "removed" && !removable ? <SampleRemovedNotice /> : null}
+      {removable ? <RemoveSampleClinicCard /> : null}
       {packages.clinic ? (
         <Panel className="mb-6">
           <div className="flex flex-wrap items-center justify-between gap-3" data-testid="open-clinic-system">

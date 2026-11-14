@@ -1,3 +1,4 @@
+import { StartTrialButton, TrialSummary } from "@/components/clindesk/trial-cta";
 import type { ReactNode } from "react";
 import { BRANDS, CLINFORMS_NAME, CLINIC_SYSTEM_NAME } from "@/lib/brand";
 import {
@@ -86,9 +87,10 @@ function PricingHero() {
             <span className="t-long"><b>One monthly price, set by how many practitioners you have – from {FROM_PRICE}.</b> Every feature on every plan, with unlimited reception staff, sites and patients.</span>
             <span className="t-short"><b>Plans by number of practitioners, from {FROM_PRICE}.</b> Every feature on every plan.</span>
           </p>
-          <p className="p-vat"><Fill k="pricing.vat" /> · <Fill k="pricing.trialSummary" /></p>
+          <p className="p-vat"><Fill k="pricing.vat" /> · <TrialSummary /></p>
           <div className="p-ctas">
             <a className="btn btn-coral" href="/demo">Book a demo <span className="arr" aria-hidden="true">→</span></a>
+            <StartTrialButton />
             {" "}
             <a className="btn btn-outline" href="#plans">Compare the plans <span className="arr" aria-hidden="true">↓</span></a>
           </div>
@@ -469,7 +471,7 @@ function FAQs() {
           </details>
           <details>
             <summary>Is there a free trial?</summary>
-            <p className="body">Yes. <Fill k="pricing.trialSummary" /> – <a className="link" href="/demo">book a demo</a> to get started.</p>
+            <p className="body">Yes. <TrialSummary /> – <a className="link" href="/demo">book a demo</a> to get started.</p>
           </details>
           <details>
             <summary>Do prices include VAT?</summary>

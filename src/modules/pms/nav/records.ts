@@ -7,5 +7,10 @@ export const RECORDS_NAV: readonly PmsNavEntry[] = [
   // Design round 2: "Unsigned notes" under Patients for whoever writes notes (clinicians; owners and administrators
   // also see every clinician's). The design's count badge needs the shell (foundation) to take a count – not added.
   { id: "records.unsigned", module: "records", label: "Unsigned notes", href: `${CLINIC_BASE_PATH}/patients/unsigned-notes`, order: 21, permission: "clinical.view", group: "main" },
+  // Home exercise programmes (ex03): the clinic's switch and its own library. Behind CLINFORMS_EXERCISE=on – the clinic
+  // layout leaves the entry out while it is off (EXERCISES_NAV_ID).
+  { id: "records.exercises", module: "records", label: "Exercises", href: `${CLINIC_BASE_PATH}/setup/exercises`, order: 25, permission: "settings.setup", group: "manage" },
   // Note templates are reached from Set-up → Record templates (reporting nav, /app/clinic/setup/records).
 ];
+
+export const EXERCISES_NAV_ID = "records.exercises";

@@ -112,7 +112,7 @@ export default function ClindeskTermsPage() {
           </li>
           <li>
             The clinic decides how long its records are kept. Clinical records are never deleted automatically while the
-            agreement runs.
+            agreement runs, except at the end of a free trial without a paid plan, as set out below.
           </li>
           <li>
             We may use information about how the service is used, which does not identify patients, users or clinics, to
@@ -121,6 +121,11 @@ export default function ClindeskTermsPage() {
           <li>
             When the agreement ends, we return the clinic&rsquo;s data and then delete it, except where the law requires us
             to keep it. How the data is returned: <Fill k="pricing.dataExport" />.
+          </li>
+          <li>
+            If a free trial ends without a paid plan, the clinic&rsquo;s data is kept read-only for 90 days after the trial
+            ends, so that the clinic can choose a plan or export its data. We email the clinic at least 14 days before the
+            data is deleted, and then delete it.
           </li>
         </ul>
         <p>
@@ -184,9 +189,12 @@ export default function ClindeskTermsPage() {
             consequential loss.
           </li>
           <li>
-            Subject to the points above, each party&rsquo;s total liability arising from the agreement in any 12-month
-            period is limited to <Fill k="legal.liabilityCap" />. The order or the DPA may set a different limit for data
-            protection claims.
+            Subject to the points above, each party&rsquo;s total liability arising from the agreement is limited to{" "}
+            <Fill k="legal.liabilityCap" />. The same limit applies to data protection claims under the DPA.
+          </li>
+          <li>
+            Any claim must be notified to the other party in writing within 3 months of the claiming party becoming aware
+            of the event giving rise to it. A claim not notified in that time cannot be brought.
           </li>
           <li>
             We are not responsible for the clinical content of records, letters or approved forms, for decisions made

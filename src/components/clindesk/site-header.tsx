@@ -1,4 +1,5 @@
 import { Logo } from "./logo";
+import { StartTrialButton } from "./trial-cta";
 
 /** Paths with an entry in the main navigation (the header marks the current one). */
 export type ClindeskNavPath = "/" | "/features" | "/reports" | "/pricing" | "/switching" | "/security" | "/demo" | "other";
@@ -45,7 +46,8 @@ export function SiteHeader({ current }: { current: ClindeskNavPath }) {
         <div className="hactions">
           <a className="signin" href="/login">
             Sign in
-          </a>{" "}
+          </a>
+          <StartTrialButton className="signin" arrow={false} />{" "}
           <a className="btn btn-coral" href="/demo" aria-current={demoCurrent}>
             Book a demo <span className="arr" aria-hidden="true">→</span>
           </a>
@@ -62,6 +64,7 @@ export function SiteHeader({ current }: { current: ClindeskNavPath }) {
             <nav className="menu-sheet" aria-label="Main">
               <NavLinks current={current} />
               <a href="/login">Sign in</a>
+              <StartTrialButton className="" arrow={false} />
               <a className="btn btn-coral" href="/demo" aria-current={demoCurrent}>
                 Book a demo <span className="arr" aria-hidden="true">→</span>
               </a>

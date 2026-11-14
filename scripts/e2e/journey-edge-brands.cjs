@@ -26,12 +26,18 @@
  * Needs the TEST key in ~/.config/appstackx/clinforms.secrets.env (STRIPE_CLINDESK_TEST_SECRET_KEY – read here,
  * never printed). Test customers are named "TEST – <clinic>" by the app; this script deletes them (and their
  * subscriptions) at the end. No webhook forwarding: the done page and the plan change apply the subscription at once.
+ *
+ * KNOWN (not a problem): the hosted checkout (E5) and billing (E7) pages show the business name "ClinDesk" to the
+ * ClinForms-only owner – by design, ClinDesk and ClinForms share ONE payment account (Khuram 31/10/2026, Appstackx
+ * CLAUDE.md). Recorded in known.json; E5/E7 still assert the ClinForms Starter product at its catalogue price and no
+ * ClinDesk product on those pages.
  */
 const assert = require("assert/strict");
 const crypto = require("crypto");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const { chooseCard, fillCard: fillTestCard, fillCommon: fillCheckoutCommon, submitPayment } = require("./hosted-checkout.cjs");
 const { spawn, execFileSync } = require("child_process");
 const { chromium } = require(process.env.PLAYWRIGHT || "/Users/khuram/Projects/Appstackx/dutydesk/node_modules/playwright");
 
@@ -82,6 +88,7 @@ const results = [];
 const notes = []; // free-form observations (what each page showed), written to observations.json
 const pages = [];
 const problems = [];
+const known = []; // by-design behaviour, written to known.json
 
 async function check(id, what, fn) {
   try {
@@ -110,6 +117,34 @@ async function api(method, pathname, form) {
   const json = await res.json();
   if (json.livemode === true) throw new Error("live answer refused");
   return json;
+}
+
+/**
+ * A hosted payment page seen by a ClinForms customer (test mode, read-only lookups): the ClinForms product of
+ * `lookupKey` at its catalogue price and no ClinDesk PRODUCT; any other "ClinDesk" is the shared account's business
+ * name – known (by design), not a problem. Throws on a wrong product or price.
+ */
+async function assertSharedAccountPage(page, id, where, lookupKey, expectPence) {
+  const text = (await page.locator("body").innerText()).replace(/\s+/g, " ");
+  const r = await api("GET", `/prices?active=true&lookup_keys[]=${encodeURIComponent(lookupKey)}&expand[]=data.product`);
+  const price = r.data && r.data[0];
+  assert.ok(price, `no test price with lookup key ${lookupKey}`);
+  const name = price.product.name;
+  const shown = `£${(price.unit_amount / 100).toFixed(2)}`;
+  assert.equal(price.unit_amount, expectPence, `${lookupKey} costs ${shown} in the payment account`);
+  assert.match(name, /clinforms/i, `the ${lookupKey} product is named "${name}"`);
+  assert.doesNotMatch(name, /clindesk/i, `the ${lookupKey} product is named "${name}"`);
+  assert.ok(text.includes(name), `${where}: product "${name}" not shown`);
+  assert.ok(text.includes(shown), `${where}: price ${shown} not shown`);
+  const products = await api("GET", "/products?active=true&limit=100");
+  const wrong = (products.data || []).map((p) => p.name).filter((n) => /clindesk/i.test(n) && text.includes(n));
+  assert.equal(wrong.length, 0, `${where}: shows a ClinDesk product: ${wrong.join(", ")}`);
+  const m = text.match(/.{0,80}clindesk.{0,80}/gi) || [];
+  if (m.length) {
+    known.push({ id, where, observed: `business name ClinDesk shown (${m.length}×): …${m[0].trim()}…`, why: "by design: ClinDesk and ClinForms share one payment account (Khuram 31/10/2026)" });
+    console.log(`KNOWN ${id} @ ${where}: business name ClinDesk (shared payment account, by design)`);
+  }
+  return { product: name, price: shown, businessNameClinDesk: m.length };
 }
 
 /* ------------------------------------------------------------------ server */
@@ -312,32 +347,11 @@ async function invite(page, origin, email, role) {
 }
 
 /* hosted payment page */
-async function chooseMethod(page, method) {
-  const button = page.locator(`[data-testid=${method}-accordion-item-button]`);
-  await page.waitForLoadState("domcontentloaded");
-  await page.waitForTimeout(1500);
-  if (await button.count()) await button.dispatchEvent("click");
-}
+// The hosted payment page (fields may sit in frames): scripts/e2e/hosted-checkout.cjs.
 async function fillCard(page, email, name) {
-  await chooseMethod(page, "card");
-  await page.locator("#cardNumber").waitFor({ state: "visible", timeout: 30000 });
-  await page.locator("#cardNumber").fill("4242424242424242");
-  await page.locator("#cardExpiry").fill("12 / 34");
-  await page.locator("#cardCvc").fill("123");
-  const em = page.locator("#email");
-  if ((await em.count()) && (await em.isVisible().catch(() => false)) && !(await em.inputValue().catch(() => ""))) await em.fill(email);
-  const billingName = page.locator("#billingName");
-  if (await billingName.isVisible().catch(() => false)) await billingName.fill(name);
-  const country = page.locator("#billingCountry");
-  if (await country.isVisible().catch(() => false)) await country.selectOption("GB");
-  for (const [sel, v] of [
-    ["#billingAddressLine1", "1 Test Street (fictional)"],
-    ["#billingLocality", "Milton Keynes"],
-    ["#billingPostalCode", "MK9 9ZZ"],
-  ]) {
-    const f = page.locator(sel);
-    if (await f.isVisible().catch(() => false)) await f.fill(v);
-  }
+  const frame = await chooseCard(page);
+  await fillTestCard(frame);
+  await fillCheckoutCommon(page, { email, name });
 }
 /** What the hosted page says about the seller (business name in its header) and where its own back link goes. */
 async function hostedPageFacts(page, ownOrigin) {
@@ -706,7 +720,7 @@ async function hostedPageFacts(page, ownOrigin) {
       await desk.click("button:has-text('Continue to payment')");
       await desk.waitForURL(/checkout\.stripe\.com/, { timeout: 60000 });
       await fillCard(desk, DESK_OWNER, "Dana Desk (fictional)");
-      await desk.locator("button[data-testid=hosted-payment-submit-button], button.SubmitButton").first().click();
+      await submitPayment(desk);
       await desk.waitForURL((u) => u.pathname === "/app/settings/billing/done", { timeout: 120000 });
       await desk.locator("[data-testid=billing-done]").waitFor();
       const scan = await brandScan(desk);
@@ -830,6 +844,7 @@ async function hostedPageFacts(page, ownOrigin) {
       const facts = await hostedPageFacts(forms, FORMS);
       await shot(forms, "e5-forms-hosted-checkout");
       observe("E5-hosted", { defaultForm, ...facts });
+      const sharedE5 = await assertSharedAccountPage(forms, "E5", "hosted checkout page (ClinForms Starter)", "clinforms_starter_monthly", 9_900);
       await forms.locator(`a[href^="${FORMS}"]`).first().click();
       await forms.waitForURL((u) => u.pathname.endsWith("/cancelled"), { timeout: 60000 });
       const scan = await brandScan(forms);
@@ -839,8 +854,7 @@ async function hostedPageFacts(page, ownOrigin) {
       if (c) made.customers.add(c);
       assert.equal(new URL(scan.url).origin, FORMS);
       assert.match(scan.title, /ClinForms/);
-      // The shared payment account's public name (CLAUDE.md's deliberate exception) – recorded, Khuram to decide.
-      if (facts.mentions.clindesk) observe("E5-shared-account-name", { decisionPending: true, headerText: facts.headerText });
+      return `product "${sharedE5.product}" at ${sharedE5.price}; business name ClinDesk ${sharedE5.businessNameClinDesk}× (known, shared account)`;
     });
     await check("E6", "ClinForms: checkout with the test card → /done on localhost, ClinForms brand", async () => {
       await forms.goto(formsBilling);
@@ -849,7 +863,7 @@ async function hostedPageFacts(page, ownOrigin) {
       await forms.click("button:has-text('Continue to payment')");
       await forms.waitForURL(/checkout\.stripe\.com/, { timeout: 60000 });
       await fillCard(forms, FORMS_OWNER, "Fran Forms (fictional)");
-      await forms.locator("button[data-testid=hosted-payment-submit-button], button.SubmitButton").first().click();
+      await submitPayment(forms);
       await forms.waitForURL((u) => u.pathname === "/app/settings/billing/done", { timeout: 120000 });
       await forms.locator("[data-testid=billing-done]").waitFor();
       const scan = await brandScan(forms);
@@ -871,8 +885,8 @@ async function hostedPageFacts(page, ownOrigin) {
       await shot(forms, "e7-forms-billing-portal");
       observe("E7", facts);
       for (const l of facts.ownLinks) assert.ok(l.href.startsWith(FORMS), l.href);
-      // The shared payment account's public name (CLAUDE.md's deliberate exception) – recorded, Khuram to decide.
-      if (facts.mentions.clindesk) observe("E7-shared-account-name", { decisionPending: true, headerText: facts.headerText });
+      const sharedE7 = await assertSharedAccountPage(forms, "E7", "hosted billing portal (ClinForms Starter running)", "clinforms_starter_monthly", 9_900);
+      return `product "${sharedE7.product}" at ${sharedE7.price}; business name ClinDesk ${sharedE7.businessNameClinDesk}× (known, shared account)`;
     });
     await check("E8", "ClinForms Plan and billing after paying: still offers ClinDesk (upgrade path) to the owner", async () => {
       await forms.goto(formsBilling);
@@ -944,10 +958,11 @@ async function hostedPageFacts(page, ownOrigin) {
     const scrub = (s) => s.replace(/token=\S+/g, "token=…").replace(/whsec_[A-Za-z0-9]+/g, "whsec_…").replace(/sk_(test|live)_[A-Za-z0-9]+/g, "sk_…");
     fs.writeFileSync(path.join(OUT, "results.json"), JSON.stringify(results, null, 2));
     fs.writeFileSync(path.join(OUT, "observations.json"), JSON.stringify(notes, null, 2));
+    fs.writeFileSync(path.join(OUT, "known.json"), JSON.stringify(known, null, 2));
     fs.writeFileSync(path.join(OUT, "cleanup.txt"), cleanup.join("\n"));
     fs.writeFileSync(path.join(OUT, "server.log"), scrub(serverLog));
     const failed = results.filter((r) => !r.pass);
-    console.log(`\n${results.length - failed.length}/${results.length} passed`);
+    console.log(`\n${results.length - failed.length}/${results.length} passed; ${known.length} known (by design, see known.json)`);
     process.exit(failed.length ? 1 : 0);
   }
 })();

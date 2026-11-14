@@ -11,6 +11,10 @@ export const RECORDS_ID_PREFIXES = {
   outcome: "om",
   anonymisation: "anon",
   clinicalFlag: "cflg",
+  /** Home exercise programmes (0126–0128). */
+  exercise: "exer",
+  exerciseProgramme: "exprog",
+  exerciseCheckin: "excheck",
 } as const;
 
 /** Built-in note templates have fixed ids (no row in pms_note_templates). */

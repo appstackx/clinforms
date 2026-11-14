@@ -26,13 +26,19 @@
  *
  * Needs the TEST key in ~/.config/appstackx/clinforms.secrets.env (STRIPE_CLINDESK_TEST_SECRET_KEY – read, never
  * printed) and the `stripe` CLI. Test-mode objects only; the run's test customer ("TEST – …") is deleted at the end.
- * Fictional data only. Results: E2E_OUT/results.json + findings.json + screenshots.
+ * Fictional data only. Results: E2E_OUT/results.json + findings.json + known.json + screenshots.
+ *
+ * KNOWN (not findings): the hosted checkout and billing pages show the payment account's business name "ClinDesk" to a
+ * ClinForms-only customer. That is BY DESIGN – Khuram 31/10/2026: ClinDesk and ClinForms share ONE payment account
+ * (Appstackx CLAUDE.md, the Stripe table). B3/M1 record it under "known" (known.json) and still assert that the line
+ * item is the ClinForms product at its catalogue price and that no ClinDesk PRODUCT appears, so a real mix-up fails.
  */
 const assert = require("assert/strict");
 const crypto = require("crypto");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const { chooseCard, fillCard, fillCommon: fillCheckoutCommon, submitPayment } = require("./hosted-checkout.cjs");
 const { spawn, execFileSync } = require("child_process");
 let chromium;
 try {
@@ -83,6 +89,8 @@ const users = {};
 const results = [];
 /** Brand findings: { id, requirement, severity, where, observed, expected }. */
 const findings = [];
+/** Known, by-design behaviour (not a finding): { id, where, observed, why }. */
+const known = [];
 /** Every ClinDesk mention seen, for the report: { where, context }. */
 const mentions = [];
 const pages = [];
@@ -92,6 +100,12 @@ function finding(requirement, severity, where, observed, expected) {
   findings.push({ id, requirement, severity, where, observed, expected });
   console.log(`FINDING ${id} [${severity}] ${requirement} @ ${where}: ${observed}`);
 }
+function knownBehaviour(where, observed, why) {
+  const id = `K-${String(known.length + 1).padStart(2, "0")}`;
+  known.push({ id, where, observed, why });
+  console.log(`KNOWN ${id} @ ${where}: ${observed} (${why})`);
+}
+const SHARED_ACCOUNT_WHY = "by design: ClinDesk and ClinForms share one payment account (Khuram 31/10/2026)";
 async function check(id, what, fn) {
   try {
     const note = await fn();
@@ -113,6 +127,49 @@ async function api(method, pathname, form) {
   const json = await res.json();
   if (json.livemode === true) throw new Error("live answer refused");
   return json;
+}
+
+/**
+ * What a hosted payment page must show a ClinForms customer (test mode, read-only lookups): the ClinForms product of
+ * `lookupKey` at its catalogue price, and no ClinDesk PRODUCT. Any other "ClinDesk" is the shared account's business
+ * name – recorded as known, not a finding. Throws (a FAIL) on a wrong product or price.
+ */
+let catalogueCache = null;
+async function catalogue() {
+  if (catalogueCache) return catalogueCache;
+  const products = [];
+  for (let after = null; ; ) {
+    const page = await api("GET", `/products?active=true&limit=100${after ? `&starting_after=${after}` : ""}`);
+    if (!Array.isArray(page.data)) throw new Error(`products list: ${JSON.stringify(page.error || page).slice(0, 200)}`);
+    products.push(...page.data);
+    if (!page.has_more || !page.data.length) break;
+    after = page.data.at(-1).id;
+  }
+  catalogueCache = { clindeskProducts: products.map((p) => p.name).filter((n) => /clindesk/i.test(n)) };
+  return catalogueCache;
+}
+async function catalogueProduct(lookupKey) {
+  const r = await api("GET", `/prices?active=true&lookup_keys[]=${encodeURIComponent(lookupKey)}&expand[]=data.product`);
+  const price = r.data && r.data[0];
+  if (!price) throw new Error(`no test price with lookup key ${lookupKey}`);
+  return { name: price.product.name, pence: price.unit_amount, currency: price.currency };
+}
+const gbp = (pence) => `£${(pence / 100).toFixed(2)}`;
+async function assertSharedAccountPage(text, where, lookupKey, expectPence) {
+  const want = await catalogueProduct(lookupKey);
+  assert.equal(want.currency, "gbp", `${lookupKey} currency`);
+  assert.equal(want.pence, expectPence, `${lookupKey} costs ${gbp(want.pence)} in the payment account, ${gbp(expectPence)} in our catalogue`);
+  assert.match(want.name, /clinforms/i, `the ${lookupKey} product is named "${want.name}" – a ClinForms customer's product must say ClinForms`);
+  assert.doesNotMatch(want.name, /clindesk/i, `the ${lookupKey} product is named "${want.name}"`);
+  assert(text.includes(want.name), `${where}: product "${want.name}" not shown`);
+  assert(text.includes(gbp(want.pence)), `${where}: price ${gbp(want.pence)} not shown`);
+  const { clindeskProducts } = await catalogue();
+  const wrong = clindeskProducts.filter((n) => text.includes(n));
+  assert.equal(wrong.length, 0, `${where}: shows a ClinDesk product: ${wrong.join(", ")}`);
+  // Every remaining "ClinDesk" is the shared account's business name – known, not a finding.
+  const m = text.match(/.{0,80}clindesk.{0,80}/gi) || [];
+  if (m.length) knownBehaviour(where, `business name ClinDesk shown (${m.length}×): …${m[0].trim()}…`, SHARED_ACCOUNT_WHY);
+  return `product "${want.name}" at ${gbp(want.pence)}; ClinDesk as business name ${m.length}× (known)`;
 }
 
 function appEnv(extra = {}) {
@@ -257,7 +314,11 @@ async function audit(page, label, { expectHost = `localhost:${PORT}`, shot = tru
     const promoText = card ? card.innerText : "";
     let text = document.body ? document.body.innerText : "";
     if (promoText) text = text.replace(promoText, " ");
-    return { title: document.title, icons, marks, hrefs, imgs, text, promoText, html: document.documentElement.outerHTML };
+    // The note before the hosted payment pages ("Payments are handled through ClinDesk …") is a deliberate disclosure
+    // of the shared payment account – read on its own, like the offer card.
+    const paymentsNote = [...document.querySelectorAll("[data-testid=payments-via-clindesk]")].map((n) => n.innerText);
+    for (const n of paymentsNote) text = text.replace(n, " ");
+    return { title: document.title, icons, marks, hrefs, imgs, text, promoText, paymentsNote, html: document.documentElement.outerHTML };
   });
   const where = `${label} (${url.host}${url.pathname})`;
   if (url.host !== expectHost) finding("R3", "serious", where, `host is ${url.host}`, `host stays ${expectHost}`);
@@ -274,6 +335,7 @@ async function audit(page, label, { expectHost = `localhost:${PORT}`, shot = tru
   for (const m of text.matchAll(/clindesk/gi)) ctxs.push(text.slice(Math.max(0, m.index - 90), m.index + 90));
   for (const c of ctxs) mentions.push({ where, context: c });
   if (info.promoText) mentions.push({ where, context: `offer card: ${info.promoText.replace(/\s+/g, " ").slice(0, 200)}` });
+  for (const n of info.paymentsNote) mentions.push({ where, context: `payments note (shared account): ${n.replace(/\s+/g, " ")}` });
   // promoPage: the ClinDesk plans page a ClinForms owner opens from the offer (?product=clindesk) – ClinDesk on purpose.
   // deliberateText: a public page whose ClinDesk mention is a deliberate disclosure (the shared cookie policy).
   const nonPromo = promoPage || deliberateText ? [] : ctxs.filter((c) => !PROMO_RE.test(c));
@@ -284,31 +346,13 @@ async function audit(page, label, { expectHost = `localhost:${PORT}`, shot = tru
   if (imgBad.length) finding("R3", "serious", where, `image/logo names ClinDesk: ${imgBad.join(" | ")}`, "ClinForms logo");
   const hiddenHtml = (info.html.replace(/<script[\s\S]*?<\/script>/gi, "").match(/clindesk/gi) || []).length;
   if (shot) await page.screenshot({ path: path.join(OUT, `${label.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.png`), fullPage: true }).catch(() => {});
-  return { url, title: info.title, icons: info.icons, marks: info.marks, text, ctxs, hiddenHtml, hrefs: info.hrefs, promoText: info.promoText.replace(/\s+/g, " ").trim() };
+  return { url, title: info.title, icons: info.icons, marks: info.marks, text, ctxs, hiddenHtml, hrefs: info.hrefs, promoText: info.promoText.replace(/\s+/g, " ").trim(), paymentsNote: info.paymentsNote };
 }
 
 /* ------------------------------------------------------------------ checkout helpers */
-async function chooseMethod(page, method) {
-  const button = page.locator(`[data-testid=${method}-accordion-item-button]`);
-  await page.waitForLoadState("domcontentloaded");
-  await page.waitForTimeout(1500);
-  if (await button.count()) await button.dispatchEvent("click");
-}
+// The hosted payment page (fields may sit in frames): scripts/e2e/hosted-checkout.cjs.
 async function fillCommon(page, name) {
-  const email = page.locator("#email");
-  if ((await email.count()) && (await email.isEditable().catch(() => false)) && !(await email.inputValue().catch(() => ""))) await email.fill(OWNER);
-  const billingName = page.locator("#billingName");
-  if (await billingName.isVisible().catch(() => false)) await billingName.fill(name);
-  const country = page.locator("#billingCountry");
-  if (await country.isVisible().catch(() => false)) await country.selectOption("GB");
-  for (const [sel, v] of [
-    ["#billingAddressLine1", "1 Test Street (fictional)"],
-    ["#billingLocality", "Milton Keynes"],
-    ["#billingPostalCode", "MK9 9ZZ"],
-  ]) {
-    const f = page.locator(sel);
-    if (await f.isVisible().catch(() => false)) await f.fill(v);
-  }
+  await fillCheckoutCommon(page, { email: OWNER, name });
 }
 
 /* ------------------------------------------------------------------ browser steps */
@@ -507,7 +551,10 @@ async function acceptInvite(page, link, email, name, label) {
       const included = await owner.locator("[data-testid=billing-included]").innerText();
       assert.doesNotMatch(included, /clindesk/i, "What is included talks about ClinForms plans only");
       const offerLink = await owner.locator("a[href*='product=clindesk']").count();
-      return `ClinDesk mentions: ${a.ctxs.map((c) => `…${c.trim()}…`).join(" || ") || "none"}; link to ClinDesk plans: ${offerLink}`;
+      // The shared payment account is explained before the customer is sent to the hosted page.
+      const note = (await owner.locator("[data-testid=plan-form] [data-testid=payments-via-clindesk]").innerText()).trim();
+      assert.match(note, /Payments are handled through ClinDesk/, note);
+      return `payments note: "${note}"; ClinDesk mentions: ${a.ctxs.map((c) => `…${c.trim()}…`).join(" || ") || "none"}; link to ClinDesk plans: ${offerLink}`;
     });
     await check("B1b", "?product=clindesk (the in-app offer): what a ClinForms-only owner sees", async () => {
       await owner.goto(`${FORMS}/app/settings/billing?product=clindesk`);
@@ -527,20 +574,19 @@ async function acceptInvite(page, link, email, name, label) {
       return `title "${a.title}"; bands offered: ${await owner.locator("input[name=band]").count()}; mentions ${a.ctxs.length}; warning on none: "${warnText}"`;
     });
     let checkoutText = "";
+    let checkoutSession = "";
     await check("B2", "ClinForms Starter → TEST checkout (4242) → success page on localhost, plan active", async () => {
       await owner.goto(`${FORMS}/app/settings/billing?product=clinforms`);
       await owner.locator("input[name=tier][value=starter]").check();
       await owner.click("button:has-text('Continue to payment')");
       await owner.waitForURL(/checkout\.stripe\.com/, { timeout: 60000 });
-      await chooseMethod(owner, "card");
-      await owner.locator("#cardNumber").waitFor({ state: "visible", timeout: 30000 });
+      const cardFrame = await chooseCard(owner, { notesFile: path.join(OUT, "checkout-controls.txt") });
       checkoutText = (await owner.locator("body").innerText()).replace(/\s+/g, " ");
+      checkoutSession = (owner.url().match(/\b(cs_test_[A-Za-z0-9]+)/) || [])[1] || "";
       await owner.screenshot({ path: path.join(OUT, "checkout-page.png"), fullPage: true });
-      await owner.locator("#cardNumber").fill("4242424242424242");
-      await owner.locator("#cardExpiry").fill("12 / 34");
-      await owner.locator("#cardCvc").fill("123");
+      await fillCard(cardFrame);
       await fillCommon(owner, "Rowan Lark (fictional)");
-      await owner.locator("button[data-testid=hosted-payment-submit-button], button.SubmitButton").first().click();
+      await submitPayment(owner);
       await owner.waitForURL((u) => u.pathname === "/app/settings/billing/done", { timeout: 120000 });
       const doneUrl = new URL(owner.url());
       assert.equal(doneUrl.origin, FORMS, `success return URL origin ${doneUrl.origin}`);
@@ -555,10 +601,16 @@ async function acceptInvite(page, link, email, name, label) {
       assert.equal(state, "active", await owner.locator("[data-testid=billing-done]").innerText());
       return `done text: ${a.text.slice(0, 300)}`;
     });
-    await check("B3", "the hosted checkout page: what product/business name it shows (shared ClinDesk account)", async () => {
-      const m = checkoutText.match(/.{0,80}clindesk.{0,80}/gi) || [];
-      if (m.length) finding("R2/R3", "minor", "hosted checkout page (checkout.stripe.com) for ClinForms Starter", `shows ClinDesk: …${m[0].trim()}…`, "a ClinForms customer sees ClinForms as the product (business name is the shared ClinDesk account – deliberate exception; consider product name/descriptor CLINDESK REPORTS wording)");
-      return `checkout header: ${checkoutText.slice(0, 220)}`;
+    await check("B3", "the hosted checkout page shows the ClinForms Starter product at £99.00 (business name ClinDesk = shared account, known)", async () => {
+      assert(checkoutText, "no checkout page text (B2 did not reach the hosted page)");
+      // The session's own line items: exactly the ClinForms Starter price.
+      assert(checkoutSession, "no checkout session id in the hosted page's address");
+      const li = await api("GET", `/checkout/sessions/${checkoutSession}/line_items`);
+      assert(Array.isArray(li.data), `line items: ${JSON.stringify(li.error || li).slice(0, 200)}`);
+      const keys = li.data.map((l) => `${l.price && l.price.lookup_key} x${l.quantity} ${l.amount_total}`);
+      assert.deepEqual(keys, ["clinforms_starter_monthly x1 9900"], `line items ${keys.join(", ")}`);
+      const note = await assertSharedAccountPage(checkoutText, "hosted checkout page (checkout.stripe.com) for ClinForms Starter", "clinforms_starter_monthly", 9_900);
+      return `${note}; line items ${keys.join(", ")}`;
     });
     await check("B4", "webhooks arrive and change nothing; the subscription is ClinForms starter; still no clinic package", async () => {
       const end = Date.now() + 90000;
@@ -591,6 +643,7 @@ async function acceptInvite(page, link, email, name, label) {
       await owner.goto(`${FORMS}/app/settings/billing`);
       const a = await audit(owner, "plan and billing (active)");
       assert.equal(await owner.locator("[data-testid=clinic-system-offer]").count(), 1, "the offer stays while a ClinForms plan runs");
+      assert.equal(a.paymentsNote.length, 1, `one payments note (beside Manage billing) while the ClinForms plan runs: ${JSON.stringify(a.paymentsNote)}`);
       return `plan "${(await owner.locator("[data-testid=billing-plan]").innerText()).trim()}"; ClinDesk mentions: ${a.ctxs.map((c) => `…${c.trim()}…`).join(" || ") || "none"}`;
     });
     await check("W3", "Studio pages and the account menu", async () => {
@@ -643,8 +696,7 @@ async function acceptInvite(page, link, email, name, label) {
       await owner.waitForTimeout(2500);
       const t = (await owner.locator("body").innerText()).replace(/\s+/g, " ");
       await owner.screenshot({ path: path.join(OUT, "billing-portal.png"), fullPage: true });
-      const m = t.match(/.{0,80}clindesk.{0,80}/gi) || [];
-      if (m.length) finding("R2/R3", "minor", "hosted billing portal (billing.stripe.com)", `shows ClinDesk: …${m[0].trim()}…`, "a ClinForms customer sees ClinForms (shared ClinDesk account – deliberate exception)");
+      const shown = await assertSharedAccountPage(t, "hosted billing portal (billing.stripe.com)", "clinforms_starter_monthly", 9_900);
       const ret = owner.locator("a[data-testid='return-to-business-link'], a:has-text('Return to'), a[href*='localhost']").first();
       const href = await ret.getAttribute("href").catch(() => null);
       assert(href, "return link on the portal");
@@ -654,7 +706,7 @@ async function acceptInvite(page, link, email, name, label) {
       await ret.click();
       await owner.waitForURL((x) => x.pathname === "/app/settings/billing", { timeout: 60000 });
       await audit(owner, "back from billing portal");
-      return `return ${u.href}; portal header: ${t.slice(0, 160)}`;
+      return `${shown}; return ${u.href}`;
     });
 
     /* ---------------- S: sign out → reset password → sign in */
@@ -860,10 +912,11 @@ async function acceptInvite(page, link, email, name, label) {
       .replace(/sk_(test|live)_[A-Za-z0-9]+/g, "sk_…");
   fs.writeFileSync(path.join(OUT, "results.json"), JSON.stringify(results, null, 2));
   fs.writeFileSync(path.join(OUT, "findings.json"), JSON.stringify(findings, null, 2));
+  fs.writeFileSync(path.join(OUT, "known.json"), JSON.stringify(known, null, 2));
   fs.writeFileSync(path.join(OUT, "clindesk-mentions.json"), JSON.stringify(mentions, null, 2));
   fs.writeFileSync(path.join(OUT, "navigations.txt"), scrub(redirects.join("\n")));
   fs.writeFileSync(path.join(OUT, "server.log"), scrub(serverLog));
   const failed = results.filter((r) => !r.pass);
-  console.log(`\n${results.length - failed.length}/${results.length} passed; ${findings.length} finding(s)`);
+  console.log(`\n${results.length - failed.length}/${results.length} passed; ${findings.length} finding(s); ${known.length} known (by design, see known.json)`);
   process.exit(failed.length ? 1 : 0);
 })();

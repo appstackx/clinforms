@@ -5,6 +5,7 @@
 import { COMPANY_NAME, roleLabel } from "../../lib/account-copy";
 import { BRANDS, type BrandId } from "../../lib/brand";
 import type { EmailMessage, EmailRecipient } from "./types";
+import { brandedEmail, escapeHtml, themeForName } from "./layout";
 
 /**
  * The brand an email speaks for (src/lib/brand.ts): ClinForms by default; "clinic" for a clinic with the clinic
@@ -19,14 +20,7 @@ function brandField(brand: BrandId | undefined): { brand?: BrandId } {
   return brand && brand !== "clinforms" ? { brand } : {};
 }
 
-export function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
+export { escapeHtml } from "./layout";
 
 const UK_DATE_TIME = new Intl.DateTimeFormat("en-GB", {
   timeZone: "Europe/London",
@@ -43,24 +37,12 @@ export function ukDateTime(iso: string | Date): string {
   return `${UK_DATE_TIME.format(date).replace(",", " at")} (UK time)`;
 }
 
+/**
+ * 13/11/2026: every template renders through the branded, table-based layout (./layout.ts – the brand's wordmark and
+ * colours, inline styles, max-width 600, no remote content). The words are unchanged.
+ */
 function layout(name: string, title: string, paragraphs: string[], action?: { label: string; href: string }, footnote?: string): string {
-  const body = paragraphs.map((p) => `<p style="margin:0 0 14px;line-height:1.5">${p}</p>`).join("");
-  const button = action
-    ? `<p style="margin:22px 0"><a href="${escapeHtml(action.href)}" style="display:inline-block;background:#0d9488;color:#ffffff;` +
-      `text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600">${escapeHtml(action.label)}</a></p>` +
-      `<p style="margin:0 0 14px;line-height:1.5;font-size:13px;color:#475569">If the button does not work, copy this link into your browser:<br>` +
-      `<span style="word-break:break-all">${escapeHtml(action.href)}</span></p>`
-    : "";
-  const note = footnote ? `<p style="margin:18px 0 0;font-size:13px;color:#475569;line-height:1.5">${footnote}</p>` : "";
-  return (
-    `<!doctype html><html lang="en-GB"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title></head>` +
-    `<body style="margin:0;background:#f8fafc;font-family:Arial,Helvetica,sans-serif;color:#0f172a">` +
-    `<div style="max-width:560px;margin:0 auto;padding:28px 20px">` +
-    `<p style="margin:0 0 18px;font-weight:700;color:#0d9488;font-size:18px">${escapeHtml(name)}</p>` +
-    `<div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;padding:24px">${body}${button}${note}</div>` +
-    `<p style="margin:18px 0 0;font-size:12px;color:#64748b">${escapeHtml(name)} · ${escapeHtml(COMPANY_NAME)}</p>` +
-    `</div></body></html>`
-  );
+  return brandedEmail({ theme: themeForName(name), title, preheader: undefined, paragraphs, action, footnote });
 }
 
 function greeting(to: EmailRecipient): string {

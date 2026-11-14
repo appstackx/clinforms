@@ -13,6 +13,7 @@ import { baseUrlSetting, linkTarget } from "../auth/config";
 import type { BrandId } from "../../lib/brand";
 import { ukDate } from "../../lib/billing/plans";
 import type { SyncDeps } from "./sync";
+import { sendTrialEmailNow } from "../trial/emails";
 
 export const BILLING_PAGE_PATH = "/app/settings/billing";
 
@@ -34,6 +35,11 @@ export function billingLinkTarget(env: Readonly<Record<string, string | undefine
 
 export function emailBillingNotifier(db: () => Kysely<Database>, env: Readonly<Record<string, string | undefined>> = process.env): NonNullable<SyncDeps["notify"]> {
   return async (tenantId, n) => {
+    // 13/11/2026: a self-serve trial converted – the branded "you're on a paid plan" email (once per clinic).
+    if (n.kind === "trial_converted") {
+      await sendTrialEmailNow(db(), tenantId, "paid", { env }, n.product ? { brand: n.product === "clindesk" ? "clinic" : "clinforms" } : {});
+      return;
+    }
     const ctx = { db: db() };
     const managers = await clinicManagers(ctx, tenantId);
     // 01/11/2026 (R3): the button goes to the host of the brand the email speaks for (a ClinForms clinic → ClinForms'
@@ -45,7 +51,7 @@ export function emailBillingNotifier(db: () => Kysely<Database>, env: Readonly<R
         ? { kind: "payment_failed", graceUntil: ukDate(n.graceUntil) }
         : n.kind === "cancelled"
           ? { kind: "cancelled", endsOn: ukDate(n.endsOn) }
-          : { kind: n.kind };
+          : { kind: n.kind as "read_only" | "payment_received" };
     for (const m of managers) {
       await deliverEmail(billingNoticeEmail({ to: { email: m.email, name: m.name }, brand, clinicName: m.clinicName, notice, billingUrl: url }));
     }

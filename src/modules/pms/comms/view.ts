@@ -134,6 +134,17 @@ export interface SendFormView {
   clinicName: string;
 }
 
+/**
+ * The send form's view when the page hands it a new one (14/11/2026 fix). A server action on the clinic pages (the
+ * patient search, loading the form) renews the session cookie, so Next refreshes the route and the page passes a NEW
+ * view object for the SAME request – without the patient chosen in the search. The patient chosen stays, unless the
+ * server itself names a patient (?patient= or the record's patient); everything else (templates, names) is the new.
+ */
+export function mergeSendFormView(current: SendFormView, incoming: SendFormView): SendFormView {
+  if (incoming.patient || !current.patient) return incoming;
+  return { ...incoming, patient: current.patient };
+}
+
 export interface PatientMessagesView {
   patient: PatientContactView;
   rows: OutboxRowView[];

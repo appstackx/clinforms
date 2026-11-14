@@ -130,7 +130,7 @@ export default async function PlanBillingPage({ searchParams }: { searchParams: 
           {c.testMode ? <p className="mt-3 text-xs text-amber-800">Test payments only – nothing is charged.</p> : null}
           {hasPlan && view.paymentsReady && !c.managedBySupport ? (
             <div className="mt-4">
-              <ManageBillingButton />
+              <ManageBillingButton sharedAccountNote={!clinicSide && c.choice?.product === "clinforms"} />
             </div>
           ) : null}
         </Panel>

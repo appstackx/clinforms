@@ -9,7 +9,12 @@
  * 12/11/2026 (PK06): an authorised run (the retention pass done or failed) also expires courses and gift cards past
  * their expiry date (src/server/cron/expiry.ts) – idempotent, so a retried run changes nothing more. Order: retention,
  * then the billing extras (money owed to us first), then the sweep with its own time budget (~20 s; the rest the next
- * night). Nothing after the retention pass can throw: the route always returns the retention pass's response.
+ * night). 13/11/2026: then the self-serve free trial's emails (own time budget ~15 s). 14/11/2026: then – only after a
+ * successful retention pass – the unpaid trials' deletion warnings and deletions (90 days after the end, 14 days'
+ * notice; own budget ~10 s, at most 10 clinics a night – src/server/trial/retention.ts). Nothing after the retention
+ * pass can throw: the route always returns the retention pass's response.
+ *
+ * 13/11/2026 (card payments, pk03): last, the monthly membership charges (only with CLINFORMS_CARD_PAYMENTS=on).
  */
 import "server-only";
 import { getDb } from "@/server/db";
@@ -17,6 +22,11 @@ import { handleRetentionCron } from "@/server/cron/retention";
 import { billExtrasFromCron } from "@/server/billing/extras";
 import { subscriptionPaymentsFromEnv } from "@/server/billing/payments";
 import { afterRetentionCron, expirySweepFromCron } from "@/server/cron/expiry";
+import { getDataCipher } from "@/server/crypto";
+import { membershipRunFromCron } from "@/server/pms/billing/connect/memberships-run";
+import { cardDeps } from "@/server/pms/billing/connect/service";
+import { runTrialEmailSweep } from "@/server/trial/emails";
+import { runTrialRetentionSweep } from "@/server/trial/retention";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,6 +42,12 @@ export async function GET(req: Request): Promise<Response> {
       if (p.ok) console.info(JSON.stringify({ event: "cron.billing_extras.done", ...(await billExtrasFromCron({ db: getDb() }, p.payments)) }));
     },
     expirySweep: () => expirySweepFromCron(() => ({ db: getDb() })),
+    // Card payments (pk03): membership charges – a no-op unless CLINFORMS_CARD_PAYMENTS=on.
+    memberships: () => membershipRunFromCron(() => ({ db: getDb(), cipher: getDataCipher() }), cardDeps()),
+    // 13/11/2026: the self-serve free trial's emails (UK days; each claimed once per clinic – src/server/trial/emails.ts).
+    trialEmails: async () => console.info(JSON.stringify({ event: "cron.trial_emails.done", ...(await runTrialEmailSweep(getDb(), { budgetMs: 15_000 })) })),
+    // 14/11/2026: unpaid self-serve trials – the warning 14 days before, the deletion 90 days after the end.
+    trialRetention: async () => console.info(JSON.stringify({ event: "cron.trial_retention.done", ...(await runTrialRetentionSweep(getDb(), { budgetMs: 10_000, maxDeletions: 10 })) })),
   });
   return res;
 }

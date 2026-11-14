@@ -67,9 +67,10 @@ describe("clinforms.co.uk is unchanged", () => {
       { url: "https://clinforms.co.uk/request-access", lastModified: "2026-11-01", changeFrequency: "yearly", priority: 0.8 },
       { url: "https://clinforms.co.uk/security", lastModified: "2026-11-01", changeFrequency: "monthly", priority: 0.7 },
       // 01/11/2026: company name, number and ICO registration on every page (footer) and the legal pages.
-      { url: "https://clinforms.co.uk/privacy", lastModified: "2026-11-08", changeFrequency: "yearly", priority: 0.4 },
+      { url: "https://clinforms.co.uk/privacy", lastModified: "2026-11-14", changeFrequency: "yearly", priority: 0.4 },
       { url: "https://clinforms.co.uk/cookies", lastModified: "2026-11-08", changeFrequency: "yearly", priority: 0.3 },
-      { url: "https://clinforms.co.uk/terms", lastModified: "2026-11-01", changeFrequency: "yearly", priority: 0.3 },
+      // 14/11/2026: the terms' liability limit (£600) and 3-month claim notice.
+      { url: "https://clinforms.co.uk/terms", lastModified: "2026-11-14", changeFrequency: "yearly", priority: 0.3 },
     ]);
   });
   it("its hosts keep the ClinForms brand, site and analytics; its public pages list is unchanged", () => {
@@ -91,20 +92,33 @@ describe("clinforms.co.uk is unchanged", () => {
       assert.ok(!/@\/app\/\(marketing\)/.test(fs.readFileSync(path.join(ROOT, f), "utf8")), `${f} imports a ClinForms page`);
     }
   });
-  // Privacy and cookies changed on purpose on 31/10/2026 (advertising measurement, src/components/ads): only the terms
-  // are still held to the clinic-system branch.
-  it("ClinForms' terms are byte-for-byte those of feat/clinic-system (when that branch is available)", (t) => {
-    const ref = "origin/feat/clinic-system";
-    try {
-      execFileSync("git", ["rev-parse", "--verify", "-q", ref], { cwd: ROOT, stdio: "pipe" });
-    } catch {
-      return t.skip(`${ref} is not available here`);
+  // The byte-for-byte check against feat/clinic-system was retired on 14/11/2026: that branch is merged into main, and
+  // the terms changed on purpose (Khuram: liability limit £600, claims notified within 3 months). Pinned instead:
+  it("both brands' terms and the DPA carry the same liability limit (£600) and 3-month claim notice", () => {
+    const clinforms = fs.readFileSync(path.join(ROOT, "src/app/(marketing)/terms/page.tsx"), "utf8").replace(/\s+/g, " ");
+    const clindesk = fs.readFileSync(path.join(ROOT, "src/app/clindesk-site/terms/page.tsx"), "utf8").replace(/\s+/g, " ");
+    const fills = JSON.parse(fs.readFileSync(path.join(ROOT, "content/clindesk-site.json"), "utf8"));
+    const dpa = JSON.parse(fs.readFileSync(path.join(ROOT, "content/dpa.json"), "utf8")) as { sections: { id: string; paragraphs: string[] }[] };
+    const dpaLiability = dpa.sections.find((s) => s.id === "liability")?.paragraphs.join(" ") ?? "";
+    assert.match(clinforms, /limited to £600 in total\. The same limit applies to data protection claims under the DPA\./);
+    assert.match(clindesk, /limited to\{" "\} <Fill k="legal\.liabilityCap" \/>\. The same limit applies to data protection claims under the DPA\./);
+    assert.equal(JSON.stringify(fills).includes('"legal.liabilityCap":{"value":"£600 in total"'), true);
+    assert.match(dpaLiability, /limited to £600 in total/);
+    for (const text of [clinforms, clindesk, dpaLiability]) assert.match(text, /within 3 months of the claiming party becoming aware/);
+  });
+  // 14/11/2026 (Khuram): an unpaid self-serve trial is kept read-only for 90 days after its end, the clinic emailed at
+  // least 14 days before, then deleted (src/server/trial/retention.ts) – both terms and the DPA (v1.1) say so.
+  it("both brands' terms and the DPA say an unpaid free trial is kept read-only 90 days, warned 14 days before, then deleted", () => {
+    const clinforms = fs.readFileSync(path.join(ROOT, "src/app/(marketing)/terms/page.tsx"), "utf8").replace(/\s+/g, " ");
+    const clindesk = fs.readFileSync(path.join(ROOT, "src/app/clindesk-site/terms/page.tsx"), "utf8").replace(/\s+/g, " ");
+    const dpa = JSON.parse(fs.readFileSync(path.join(ROOT, "content/dpa.json"), "utf8")) as { version: string; status: string; sections: { id: string; paragraphs: string[] }[] };
+    const dpaEnd = dpa.sections.find((s) => s.id === "end")?.paragraphs.join(" ") ?? "";
+    for (const text of [clinforms, clindesk, dpaEnd]) {
+      assert.match(text, /If a free trial ends without a paid plan, the clinic(&rsquo;|')s data is kept read-only for 90 days after the trial ends, so that the clinic can choose a plan or export its data\. We email the clinic at least 14 days before the/);
     }
-    for (const p of ["terms"]) {
-      const f = `src/app/(marketing)/${p}/page.tsx`;
-      const base = execFileSync("git", ["show", `${ref}:${f}`], { cwd: ROOT, maxBuffer: 4 * 1024 * 1024 });
-      assert.ok(Buffer.compare(base, fs.readFileSync(path.join(ROOT, f))) === 0, `${f} changed`);
-    }
+    assert.match(clindesk, /Clinical records are never deleted automatically while the agreement runs, except at the end of a free trial without a paid plan/);
+    assert.equal(dpa.version, "dpa-v1.1-2026-11-14");
+    assert.equal(dpa.status, "Version 1");
   });
 });
 
@@ -140,6 +154,9 @@ describe("clindesk.co.uk", () => {
     assert.match(res.headers.get("content-type") ?? "", /application\/xml/);
     const body = await res.text();
     const locs = Array.from(body.matchAll(/<loc>([^<]+)<\/loc>/g)).map((m) => m[1]);
+    // 14/11/2026: the privacy policy changed (an unpaid free trial's data), the cookie policy did not.
+    assert.match(body, /<loc>https:\/\/clindesk\.co\.uk\/privacy<\/loc>\s*<lastmod>2026-11-14<\/lastmod>/);
+    assert.match(body, /<loc>https:\/\/clindesk\.co\.uk\/cookies<\/loc>\s*<lastmod>2026-11-08<\/lastmod>/);
     assert.deepEqual(
       locs,
       CLINDESK_PAGES.filter((p) => p.indexed).map((p) => (p.path === "/" ? "https://clindesk.co.uk" : `https://clindesk.co.uk${p.path}`)),
@@ -219,8 +236,9 @@ describe("clindesk.co.uk legal pages", () => {
       for (const vendor of vendors) {
         assert.ok(!vendor.test(text), `${page}: names a vendor (${vendor})`);
       }
-      if (page === "terms") assert.match(text, /Last updated: 1 November 2026/);
-      if (page === "privacy" || page === "cookies") assert.match(text, /Last updated: 8 November 2026/);
+      if (page === "terms") assert.match(text, /Last updated: 14 November 2026/);
+      if (page === "cookies") assert.match(text, /Last updated: 8 November 2026/);
+      if (page === "privacy") assert.match(text, /Last updated: 14 November 2026/); // 14/11/2026: the unpaid free trial's 90 days
     });
   }
 
@@ -258,7 +276,7 @@ describe("clindesk.co.uk legal pages", () => {
       /Your data is stored in the UK \(London\)\. Hosted in UK data centres in London\./,
       /In transit: TLS 1\.2 or later\. At rest: AES-256, with patient files and notes also encrypted per clinic\./,
       /Daily, kept for 7 days, stored in the UK \(London\)\./,
-      /in line with HCPC and CSP record-keeping guidance \(adult records at least 8 years after the last treatment\)\. When a clinic leaves, it receives a full export of its data, and the data is then deleted\./,
+      /in line with HCPC and CSP record-keeping guidance \(adult records at least 8 years after the last treatment\)\. When a clinic leaves, it receives a full export of its data, and the data is then deleted\. If a free trial ends without a paid plan, the clinic's data is kept read-only for 90 days after the trial ends, so that the clinic can choose a plan or export its data\. We email the clinic at least 14 days before the data is deleted, and then delete it\./,
       /Kept for 8 years\./,
       /Security overview \(PDF\)/,
       /Sub-processors list \(PDF\)/,
@@ -313,7 +331,9 @@ describe("clindesk.co.uk legal pages", () => {
     assert.match(text, /Registered with the ICO, number ZC135044\./);
     assert.match(text, /clinic data is stored in the UK \(London\)\./);
     assert.match(text, /available on request as our Sub-processors list \(PDF\) from /);
-    assert.match(text, /in line with HCPC and CSP record-keeping guidance \(adult records at least 8 years after the last treatment\)\. Clinical records are never deleted automatically\. Backups are kept for 7 days\./);
+    // 14/11/2026: the unpaid free trial's exception, in the terms' words.
+    assert.match(text, /in line with HCPC and CSP record-keeping guidance \(adult records at least 8 years after the last treatment\)\. Clinical records are never deleted automatically while the clinic's agreement runs\. Backups are kept for 7 days\./);
+    assert.match(text, /If a free trial ends without a paid plan, the clinic's data is kept read-only for 90 days after the trial ends, so that the clinic can choose a plan or export its data\. We email the clinic at least 14 days before the data is deleted, and then delete it\./);
     assert.ok(!text.includes(TO_CONFIRM), "every fill-in filled (01/11/2026)");
   });
 

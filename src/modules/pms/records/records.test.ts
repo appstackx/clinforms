@@ -333,7 +333,8 @@ describe("record tabs in the design's order, by role", () => {
     const tabs = recordTabItems(PMS_RECORD_TABS, (p) => pmsCan("clinician", p));
     assert.deepEqual(
       tabs.map((t) => t.label),
-      ["Overview", "Appointments", "Cases", "Clinical notes", "Outcomes", "Attachments", "Invoices", "Messages", "Forms", "History"],
+      // Exercises (ex03) is registered; the record's layout leaves it out while CLINFORMS_EXERCISE or the clinic's setting is off.
+      ["Overview", "Appointments", "Cases", "Clinical notes", "Outcomes", "Attachments", "Invoices", "Messages", "Forms", "Exercises", "History"],
     );
     assert.deepEqual(tabs.filter((t) => t.standIn).map((t) => t.segment), []);
     assert.equal(tabs.find((t) => t.key === "forms")?.segment, "forms");

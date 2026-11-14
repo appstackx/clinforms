@@ -62,8 +62,9 @@ export async function confirmTrial(_prev: ConfirmTrialState, form: FormData): Pr
   }
   switch (outcome.kind) {
     case "created":
-      // The usual two-step set-up, then Plan and billing (the brand's plans and trial, as for any new clinic).
-      redirect(`/two-factor?next=${encodeURIComponent("/app/settings/billing")}`);
+      // The usual two-step set-up, then the clinic's own start page (13/11/2026: the free trial is running – no plan to
+      // choose first; the start page offers the sample clinic). Without a trial: Plan and billing, as before.
+      redirect(`/two-factor?next=${encodeURIComponent(outcome.trial ? "/app/start" : "/app/settings/billing")}`);
     case "wrong_password":
       return { status: "error", error: SIGNUP_COPY.wrongPassword };
     case "too_many":

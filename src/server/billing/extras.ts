@@ -12,7 +12,7 @@
  * written BEFORE the item, the item made with the idempotency key extra-<clinic>-<month>, then the row marked billed
  * with the item's id (unique). A month without extras is recorded as "skipped" so it is never looked at again.
  *
- * Not billed: months while ClinForms staff manage the clinic by hand (override), plans without reports, and the last
+ * Not billed: a self-serve free trial's reports (counted before it converted – 13/11/2026), months while ClinForms staff manage the clinic by hand (override), plans without reports, and the last
  * part-month after a subscription ends (no further invoice – BILLING.md "Known limits").
  */
 import "server-only";
@@ -21,7 +21,8 @@ import { EXTRA_REPORT_PENCE } from "../../lib/billing/plans";
 import type { Database } from "../db/schema";
 import { appendAudit } from "../repos/audit";
 import { getBillingExtra, markBillingExtraBilled, recordBillingExtra, type ClinicSubscription } from "../repos/clinic-subscription";
-import { getUsageMonths } from "../repos/usage";
+import { countBillableBefore, getUsageMonths } from "../repos/usage";
+import { readSelfTrial } from "../repos/self-trial";
 import { ukPeriodOf } from "../repos/usage-period";
 import { readClinicSubscriptions } from "../repos/clinic-subscription";
 import type { InvoiceInfo, SubscriptionPayments } from "./payments";
@@ -61,6 +62,9 @@ export async function billExtraReports(
   const periods = monthsBetween(ukPeriodOf(new Date(sub.activatedAt)), ukPeriodOf(now));
   if (periods.length === 0) return out;
   const months = new Map((await getUsageMonths(ctx, sub.tenantId, periods)).map((m) => [m.period, m]));
+  // 13/11/2026: a self-serve free trial's reports are free – never extras of the plan's first month.
+  const trial = await readSelfTrial(ctx, sub.tenantId).catch(() => null);
+  const freeBefore = trial && !trial.sampleOf ? (trial.convertedAt ?? sub.activatedAt) : null;
   for (const period of periods) {
     const existing = await getBillingExtra(ctx, sub.tenantId, period);
     if (existing && existing.status !== "pending") continue;
@@ -68,7 +72,8 @@ export async function billExtraReports(
     if (!row) {
       const m = months.get(period);
       const included = m?.planReportsIncluded ?? null;
-      const counted = m?.billableReports ?? 0;
+      const trialReports = freeBefore ? await countBillableBefore(ctx, sub.tenantId, period, freeBefore) : 0;
+      const counted = Math.max(0, (m?.billableReports ?? 0) - trialReports);
       const extra = included === null ? 0 : Math.max(0, counted - included);
       await recordBillingExtra(ctx, sub.tenantId, {
         period,

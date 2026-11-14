@@ -26,3 +26,11 @@ test("the release's report audit actions have their own labels, a filter group a
   assert.equal(describeActivityDetail("report.superseded", { version: "2" }), null);
   assert.equal(describeActivityDetail("report.approver_takeover", { from: "mem_tom" }), null);
 });
+
+test("sign-up online (14/11/2026): the activity shows drafting from the notes was switched on by the sign-up", () => {
+  assert.equal(
+    describeActivityDetail("clinic.self_signup", { termsVersion: "clindesk-terms-2026-11-14", dpaVersion: "dpa-v1.1-2026-11-14", draftingEnabled: true }),
+    "Terms clindesk-terms-2026-11-14 · agreement dpa-v1.1-2026-11-14 · drafting from the notes switched on",
+  );
+  assert.equal(describeActivityDetail("clinic.self_signup", { termsVersion: "t", dpaVersion: "d" }), "Terms t · agreement d");
+});

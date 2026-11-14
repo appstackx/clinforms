@@ -1,7 +1,7 @@
 /**
  * The data processing agreement shown at /data-processing-agreement (only where self-serve sign-up is switched on –
- * src/lib/self-signup.ts). SINGLE SOURCE: content/dpa.json. It is a DRAFT pending legal review (its `status`): the
- * page shows that in a banner above the text, and the version accepted at sign-up is `DPA_VERSION`. Change the text
+ * src/lib/self-signup.ts). SINGLE SOURCE: content/dpa.json. Version 1 since 14/11/2026 (`status`); while a status says
+ * "draft" the page shows that in a banner above the text, and the version accepted at sign-up is `DPA_VERSION`. Change the text
  * there and bump `version` + `lastUpdated` together – a new version is recorded for every acceptance after it.
  */
 import raw from "../../../content/dpa.json";

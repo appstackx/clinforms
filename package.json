@@ -42,7 +42,9 @@
     "admin:provision-auth": "node --disable-warning=ExperimentalWarning --import ./scripts/medreport/test-setup.mjs --import tsx scripts/admin/provision-auth-secrets.ts",
     "admin:with-env": "node --disable-warning=ExperimentalWarning --import ./scripts/medreport/test-setup.mjs --import tsx scripts/admin/with-env.ts",
     "demo:check": "node --import ./scripts/medreport/test-setup.mjs --import tsx scripts/medreport/check-demo-assets.ts",
-    "demo:red": "node scripts/medreport/demo-red.mjs"
+    "demo:red": "node scripts/medreport/demo-red.mjs",
+    "pms:cards-stripe-test": "node --disable-warning=ExperimentalWarning --import ./scripts/medreport/test-setup.mjs --import tsx scripts/pms/billing-cards-stripe-test.ts",
+    "trial:email-previews": "node --disable-warning=ExperimentalWarning --import ./scripts/medreport/test-setup.mjs --import tsx scripts/trial/render-email-previews.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.131.0",

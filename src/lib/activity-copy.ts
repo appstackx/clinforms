@@ -45,6 +45,9 @@ export const ACTIVITY_GROUPS: readonly ActivityGroup[] = [
     actions: [
       "clinic.create",
       "clinic.self_signup",
+      "clinic.trial_self_serve",
+      "clinic.sample_created",
+      "clinic.sample_removed",
       "clinic.update",
       "clinic.offboard",
       "clinic.trial_set",
@@ -120,6 +123,9 @@ export const ACTIVITY_LABELS: Readonly<Record<string, string>> = {
   "member.remove": "Member removed",
   "clinic.create": "Clinic account opened",
   "clinic.self_signup": "Signed up online – terms and data processing agreement accepted",
+  "clinic.trial_self_serve": "Free trial set up",
+  "clinic.sample_created": "Sample clinic created (made-up data)",
+  "clinic.sample_removed": "Sample clinic removed",
   "clinic.update": "Clinic details updated",
   "clinic.offboard": "Clinic account closed",
   "clinic.trial_set": "Trial set up by our support team",
@@ -284,7 +290,9 @@ export function describeActivityDetail(action: string, detail: Record<string, un
       return fields.length ? `Changed: ${fields.join(", ")}` : null;
     }
     case "clinic.self_signup":
-      return typeof detail.termsVersion === "string" && typeof detail.dpaVersion === "string" ? `Terms ${detail.termsVersion} · agreement ${detail.dpaVersion}` : null;
+      return typeof detail.termsVersion === "string" && typeof detail.dpaVersion === "string"
+        ? `Terms ${detail.termsVersion} · agreement ${detail.dpaVersion}${detail.draftingEnabled === true ? " · drafting from the notes switched on" : ""}`
+        : null;
     case "clinic.create":
       return typeof detail.retentionDays === "number" ? `Reports kept for ${detail.retentionDays} days` : null;
     case "auth.sign_in":
@@ -375,6 +383,14 @@ export function describeActivityDetail(action: string, detail: Record<string, un
         detail,
         typeof detail.days === "number" ? `${detail.days} more ${detail.days === 1 ? "day" : "days"}${typeof detail.endsAt === "string" ? `, now ends ${ukDateTime(detail.endsAt)}` : ""}` : null,
       );
+    case "clinic.trial_self_serve": {
+      const parts = [
+        typeof detail.days === "number" ? `${detail.days} days` : null,
+        typeof detail.reports === "number" ? `${detail.reports} free ${detail.reports === 1 ? "report" : "reports"}` : null,
+        typeof detail.texts === "number" && detail.texts > 0 ? `${detail.texts} free texts` : null,
+      ].filter(Boolean);
+      return parts.length ? parts.join(", ") : null;
+    }
     case "clinic.trial_ended":
     case "platform.trial_ended":
     case "clinic.trial_converted":

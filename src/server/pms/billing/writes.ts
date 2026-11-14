@@ -276,6 +276,21 @@ export async function refundFor(
       if (toCredit > inv.totalPence - inv.creditedPence) return fail("invalid", "That is more than can be credited on this invoice.");
       await createCreditNote(ctx, t, { invoiceId: inv.id, lines: spreadOverLines(inv, toCredit), reason: input.reason }, actor.actor);
     }
+    // Card payments through the clinic's own payment account are refunded from "Card payments → Refund to card" (the
+    // money really goes back to the card there); recording a "card" refund here would move no money.
+    if (input.method === "card") {
+      const connect = await ctx.db
+        .selectFrom("pms_payment_allocations as a")
+        .innerJoin("pms_payments as p", (j) => j.onRef("p.tenant_id", "=", "a.tenant_id").onRef("p.id", "=", "a.payment_id"))
+        .select("p.id")
+        .where("a.tenant_id", "=", t)
+        .where("a.invoice_id", "=", inv.id)
+        .where("a.reversed", "=", 0)
+        .where("p.provider", "=", "stripe_connect")
+        .where("p.kind", "=", "payment")
+        .executeTakeFirst();
+      if (connect) return fail("invalid", "This invoice was paid by card through the clinic's payment account. Use Card payments → Refund to card on this invoice, so the money goes back to the card.");
+    }
     // A card payment through the provider goes back to the card.
     let providerRef: string | null = null;
     let providerId = "manual";

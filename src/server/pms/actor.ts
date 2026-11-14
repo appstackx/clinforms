@@ -26,6 +26,7 @@ import { resolveMemberAccess } from "./access";
 import { hasPackage, requireEntitlement } from "./entitlements";
 import { HOLD_MESSAGE, accountHold, pausedByHold } from "../billing/access";
 import { pmsNow } from "../../modules/pms/core/clock";
+import { TRIAL_ENDED_MESSAGE, readOnlyProductMessage, trialWriteBlock } from "../trial/access";
 
 export interface ClinicActor {
   tenantId: string;
@@ -83,10 +84,23 @@ export async function requireClinicActor(options: { permission?: PmsPermission }
   return actor;
 }
 
-export type ClinicActorError = "signed_out" | "forbidden" | "no_clinic" | "not_entitled" | "payment_overdue";
+export type ClinicActorError = "signed_out" | "forbidden" | "no_clinic" | "not_entitled" | "payment_overdue" | "trial_ended" | "read_only";
+
+export interface ClinicActionOptions {
+  permission?: PmsPermission;
+  /**
+   * 13/11/2026 (self-serve free trial): the action ONLY READS (a search, loading a form or a thread, a lookup; route
+   * handlers: GET / HEAD). Every other action is treated as a WRITE – whatever its permission – and is refused once a
+   * self-serve trial has ended ("trial_ended") or for a trial product the paid plan does not include ("read_only",
+   * src/server/trial/access.ts). Mark an action readOnly only when it changes nothing and sends nothing.
+   */
+  readOnly?: boolean;
+  /** A write that stays available after the trial (buying text credits). */
+  allowAfterTrial?: boolean;
+}
 
 /** For server actions and route handlers: the actor, or an error code (nothing done). */
-export async function clinicActionActor(options: { permission?: PmsPermission } = {}): Promise<ClinicActor | { error: ClinicActorError }> {
+export async function clinicActionActor(options: ClinicActionOptions = {}): Promise<ClinicActor | { error: ClinicActorError }> {
   const ctx = await actionContext();
   if ("error" in ctx) return { error: ctx.error };
   if (!(await hasPackage(ctx.membership.tenantId, "clinic"))) return { error: "not_entitled" };
@@ -96,6 +110,12 @@ export async function clinicActionActor(options: { permission?: PmsPermission } 
   // A plan payment overdue past its grace period pauses admin set-up, imports and template changes only – never
   // clinical work (Khuram 01/11/2026, src/server/billing/access.ts).
   if (pausedByHold(permission) && (await accountHold(getDb(), actor.tenantId)).held) return { error: "payment_overdue" };
+  // 13/11/2026: a self-serve free trial that ended without a plan, or its product the plan does not include – writes stop,
+  // reading always works (records kept and readable).
+  if (!options.readOnly && !options.allowAfterTrial) {
+    const block = await trialWriteBlock(getDb(), actor.tenantId, "clinic");
+    if (block) return { error: block.reason };
+  }
   return actor;
 }
 
@@ -110,6 +130,10 @@ export function actorErrorMessage(error: ClinicActorError): string {
       return "This clinic does not use this part of the system.";
     case "payment_overdue":
       return HOLD_MESSAGE;
+    case "trial_ended":
+      return TRIAL_ENDED_MESSAGE;
+    case "read_only":
+      return readOnlyProductMessage("clinic");
     default:
       return "You do not have permission to do that.";
   }

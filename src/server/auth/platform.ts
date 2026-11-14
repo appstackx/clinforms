@@ -95,6 +95,12 @@ export interface CreateClinicInput {
    * (status "withheld"): the admin script always passes false, so a command run on a laptop never sends email.
    */
   sendEmail?: boolean;
+  /**
+   * Drafting from the notes (clinic_profile.drafting_enabled) from the start – ONLY the self-serve sign-up passes true
+   * (14/11/2026, Khuram: the owner accepted the DPA online, which names the drafting sub-processor). Clinics set up by
+   * hand (admin:create-clinic, the platform page) keep the default: off until the owner switches it on.
+   */
+  draftingEnabled?: boolean;
   now?: Date;
 }
 
@@ -162,7 +168,7 @@ export async function createClinic(db: Kysely<Database>, input: CreateClinicInpu
       phone: null,
       email: null,
       retention_days: retentionDays,
-      drafting_enabled: 0,
+      drafting_enabled: input.draftingEnabled === true ? 1 : 0,
       created_at: at,
       updated_at: at,
     }),
@@ -191,6 +197,7 @@ export async function createClinic(db: Kysely<Database>, input: CreateClinicInpu
       emailProvider: email.provider,
       emailStatus: email.status,
       ...(input.brand && input.brand !== "clinforms" ? { linkBrand: input.brand } : {}),
+      ...(input.draftingEnabled === true ? { draftingEnabled: true } : {}),
     },
   });
   return { organizationId, tenantId: slug, invitationId, inviteLink: link, invitationExpiresAt, email };
@@ -256,6 +263,22 @@ export interface OffboardInput {
    * when the id has audit rows (append-only, keyed by the id): the next clinic would inherit them.
    */
   releaseSlug?: boolean;
+  /**
+   * 14/11/2026: delete WITHOUT an export – the app's own deletions, never the admin script: a self-serve trial clinic
+   * nobody paid for, 90 days after its trial and 14 days after its owner was warned (src/server/trial/retention.ts), and
+   * a sample clinic its owner removed (src/server/trial/sample.ts). The same deletes as an offboarding (everything of
+   * the clinic, its memberships, the accounts that belong to no other clinic; the organization row kept as a tombstone,
+   * the audit trail and billing records kept) and the audit row says why. The stored files' keys are handed to
+   * `saveFileKeys` BEFORE the rows go (the caller keeps them durably), the files are removed AFTER the rows (a payment
+   * can never meet a clinic whose files are gone but whose rows remain), then `filesRemoved` is called – a failed
+   * removal leaves the saved keys for the caller's next run. Refused for a clinic already closed.
+   */
+  withoutExport?: {
+    reason: "trial_expired" | "sample_removed" | "trial_expired_sample";
+    byUserId?: string;
+    saveFileKeys?: (keys: string[]) => Promise<void>;
+    filesRemoved?: () => Promise<void>;
+  };
 }
 
 export interface OffboardPlan {
@@ -379,6 +402,7 @@ export async function offboardClinic(db: Kysely<Database>, cipher: DataCipher | 
     );
   }
   if (!input.confirm) return { ...plan, dryRun: true, exportDir: null, exportFiles: [] };
+  if (input.withoutExport) return deleteWithoutExport(db, org, plan, pmsCounts, deleteUserIds, input.withoutExport, Boolean(input.releaseSlug));
   if (!cipher) throw new RepoInputError("The data keys (CLINFORMS_DATA_KEYS) are needed to export the clinic's data.");
   const ctx = { db, cipher };
   const forms = await exportEncrypted(db, cipher, "forms", tenantId);
@@ -515,6 +539,53 @@ export async function offboardClinic(db: Kysely<Database>, cipher: DataCipher | 
     },
   });
   return { ...plan, dryRun: false, exportDir: dir, exportFiles };
+}
+
+/** offboardClinic's `withoutExport` path: the same deletes, no export (see OffboardInput.withoutExport). */
+async function deleteWithoutExport(
+  db: Kysely<Database>,
+  org: { id: string; metadata: string | null },
+  plan: OffboardPlan,
+  pmsCounts: Record<string, number>,
+  deleteUserIds: string[],
+  why: NonNullable<OffboardInput["withoutExport"]>,
+  releaseSlug: boolean,
+): Promise<OffboardResult> {
+  const tenantId = plan.tenantId;
+  if (releaseSlug) throw new RepoInputError("A deletion without an export never releases the clinic id.");
+  if (offboardedAt(org.metadata)) throw new RepoInputError(`The clinic "${tenantId}" is already closed.`);
+  // The stored patient files' keys are kept by the caller BEFORE the rows (which hold them) go.
+  const storedFiles = pmsCounts.pms_attachments ? await attachmentObjectKeysForClinic({ db }, tenantId) : [];
+  const store = storedFiles.length ? getFileStore() : null;
+  if (storedFiles.length && !store) throw new Error(`The clinic's ${storedFiles.length} stored files cannot be removed: the file store is not configured here. Nothing was deleted.`);
+  if (storedFiles.length && why.saveFileKeys) await why.saveFileKeys(storedFiles.map((f) => f.objectKey));
+  const queries = offboardDeleteQueries(db, { tenantId, organizationId: org.id, pmsTables: Object.keys(pmsCounts), releaseSlug: false, deleteUserIds, now: new Date().toISOString() });
+  const batches = offboardBatches(queries);
+  for (const batch of batches) await runBatch(db, batch);
+  const late = await countPmsRows(db, tenantId);
+  const lateRows = Object.values(late).reduce((a, b) => a + b, 0);
+  if (lateRows > 0) {
+    for (const batch of offboardBatches(deletePmsQueries(db, tenantId, { only: Object.keys(late) }))) await runBatch(db, batch);
+  }
+  await appendAudit({ db }, tenantId, {
+    userId: why.byUserId ?? PLATFORM_USER_ID,
+    action: "clinic.offboard",
+    targetType: "organization",
+    targetId: org.id,
+    detail: {
+      ...plan.counts,
+      usersDeleted: deleteUserIds.length,
+      slugReleased: false,
+      deleteBatches: batches.length,
+      withoutExport: why.reason,
+      storedFiles: storedFiles.length,
+      ...(lateRows > 0 ? { lateClinicSystemRows: lateRows } : {}),
+    },
+  });
+  // The files last (missing objects are ignored): a failure here leaves the saved keys for the next run.
+  if (store && storedFiles.length) await store.remove(storedFiles.map((f) => f.objectKey));
+  if (why.filesRemoved) await why.filesRemoved();
+  return { ...plan, dryRun: false, exportDir: null, exportFiles: [] };
 }
 
 export interface OffboardDeleteInput {

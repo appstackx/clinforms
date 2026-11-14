@@ -25,7 +25,7 @@ const key = () => `credits-${randomBytes(12).toString("base64url")}`;
 
 /** Buy a pack: the card payment page's address (the browser goes there). */
 export async function buyCreditsAction(pack: string, saveCard: boolean): Promise<CreditsActionResult<{ url: string }>> {
-  const actor = await clinicActionActor({ permission: "messages.send" });
+  const actor = await clinicActionActor({ permission: "messages.send", allowAfterTrial: true });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
   const p = cardPaymentsFromEnv();
   const r = await startPackCheckout(actor, { pack: String(pack).slice(0, 20), saveCard: saveCard === true, origin: ownOrigin(), idempotencyKey: key() }, p.ok ? p.payments : null);
@@ -34,7 +34,7 @@ export async function buyCreditsAction(pack: string, saveCard: boolean): Promise
 
 /** Save a card for automatic top-up: the card payment page in "save a card" mode. */
 export async function saveCardAction(): Promise<CreditsActionResult<{ url: string }>> {
-  const actor = await clinicActionActor({ permission: "messages.send" });
+  const actor = await clinicActionActor({ permission: "messages.send", allowAfterTrial: true });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
   const p = cardPaymentsFromEnv();
   const r = await startCardSetup(actor, { origin: ownOrigin(), idempotencyKey: key() }, p.ok ? p.payments : null);
@@ -42,7 +42,7 @@ export async function saveCardAction(): Promise<CreditsActionResult<{ url: strin
 }
 
 export async function saveAutoTopupAction(input: { enabled: boolean; threshold: number; pack: string }): Promise<CreditsActionResult<{ message: string }>> {
-  const actor = await clinicActionActor({ permission: "messages.send" });
+  const actor = await clinicActionActor({ permission: "messages.send", allowAfterTrial: true });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
   const r = await saveAutoTopupFor(actor, { enabled: input?.enabled === true, threshold: Number(input?.threshold), pack: String(input?.pack ?? "").slice(0, 20) });
   if (r.ok) revalidatePath(CREDITS_PAGE_PATH);
@@ -50,7 +50,7 @@ export async function saveAutoTopupAction(input: { enabled: boolean; threshold: 
 }
 
 export async function removeCardAction(): Promise<CreditsActionResult<{ message: string }>> {
-  const actor = await clinicActionActor({ permission: "messages.send" });
+  const actor = await clinicActionActor({ permission: "messages.send", allowAfterTrial: true });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
   const r = await removeCardFor(actor);
   if (r.ok) revalidatePath(CREDITS_PAGE_PATH);

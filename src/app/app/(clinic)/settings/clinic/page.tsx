@@ -6,6 +6,7 @@ import { requireAppContext } from "@/server/auth/session";
 import { getDb } from "@/server/db";
 import { hasPackage } from "@/server/pms/entitlements";
 import { getClinicProfile } from "@/server/repos/clinic-profile";
+import { clinicSignedUpOnline } from "@/server/repos/signup";
 import { ClinicProfileForm } from "./form";
 
 export const dynamic = "force-dynamic";
@@ -14,7 +15,13 @@ export const metadata: Metadata = { title: "Clinic details" };
 export default async function ClinicSettingsPage() {
   const { membership } = await requireAppContext();
   const db = getDb();
-  const [profile, trial, reports] = await Promise.all([getClinicProfile({ db }, membership.tenantId), clinicTrialRunning(db, membership.tenantId), hasPackage(membership.tenantId, "reports")]);
+  const [profile, trial, reports, selfServe] = await Promise.all([
+    getClinicProfile({ db }, membership.tenantId),
+    clinicTrialRunning(db, membership.tenantId),
+    hasPackage(membership.tenantId, "reports"),
+    // 14/11/2026: a clinic that signed up online had drafting switched on at sign-up – the wording says so.
+    clinicSignedUpOnline({ db }, membership.tenantId).catch(() => false),
+  ]);
   const editable = isManager(membership.role);
   return (
     <>
@@ -28,6 +35,7 @@ export default async function ClinicSettingsPage() {
         <ClinicProfileForm
           editable={editable}
           trial={trial}
+          selfServe={selfServe}
           reports={reports}
           values={{
             displayName: profile?.displayName ?? membership.clinicName,

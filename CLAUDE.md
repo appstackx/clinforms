@@ -48,7 +48,8 @@ He decides everything; the agent proposes.
   `scripts/medreport/neutral-wording.test.ts`. Still disclose truthfully: the DPA names **Anthropic as
   sub-processor**, and answer honestly if a customer asks.
 - **Fictional data only.** No real patient data until DPA + DPIA + safeguards exist (a clinic is created only after
-  its DPA is signed; drafting from notes is OFF for every new clinic until its owner switches it on).
+  its DPA is signed; drafting from notes is OFF for clinics set up by hand until the owner switches it on; ON by
+  default for self-serve sign-ups (DPA v1 accepted online), owner can switch it off).
   Organisations end "(fictional)"; HCPC-style numbers use the invalid `PH-DEMO-0N` format – **fictional clinicians
   only, never a patient label** (patients are `sim-pat-00N`; next free `sim-pat-007`).
 - Simulated TM3 is always labelled **"Simulated TM3 sandbox – demo data, not affiliated with TM3"**

@@ -19,10 +19,13 @@ export const ACCESSIBILITY_LAST_UPDATED = "2026-10-30";
  * "Last updated" of ClinDesk's own privacy policy, terms and cookie policy (ISO). Change it whenever their text
  * changes. (ClinForms' legal pages keep their own dates in src/lib/site.ts.)
  */
-export const CLINDESK_LEGAL_LAST_UPDATED = "2026-11-01";
+export const CLINDESK_LEGAL_LAST_UPDATED = "2026-11-14"; // 14/11/2026: terms liability limit £600 + 3-month claim notice
 
-/** "Last updated" of the privacy and cookie policies since the usage statistics (08/11/2026); the terms keep the above. */
+/** "Last updated" of the cookie policy since the usage statistics (08/11/2026); the terms keep the above. */
 export const CLINDESK_PRIVACY_COOKIES_LAST_UPDATED = "2026-11-08";
+
+/** "Last updated" of the privacy policy: 14/11/2026 – an unpaid free trial's data is kept 90 days, then deleted. */
+export const CLINDESK_PRIVACY_LAST_UPDATED = "2026-11-14";
 
 /** Date the site's pages last changed (sitemap lastModified; /tour uses its video's publishedOn). */
 export const CLINDESK_SITE_UPDATED = "2026-11-01";

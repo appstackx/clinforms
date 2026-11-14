@@ -9,7 +9,9 @@ export type EmailKind =
   | "payment_alert"
   | "billing_notice"
   | "signup_confirm"
-  | "signup_existing_account";
+  | "signup_existing_account"
+  /** 13/11/2026: the self-serve free trial's emails (welcome, tips, days left, ended, paid – src/server/trial/emails.ts). */
+  | "trial";
 
 export type EmailProviderName = "mailersend" | "log" | "mailpit" | "none";
 

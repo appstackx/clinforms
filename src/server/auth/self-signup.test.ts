@@ -25,7 +25,8 @@ import { createPgliteTestDb, createSqliteTestDb, type TestDb } from "../db/testi
 import { setEmailProviderForTests, signupConfirmEmail, signupExistingAccountEmail, type EmailMessage } from "../email";
 import { listAudit } from "../repos/audit";
 import { hitRateLimit, peekRateLimit } from "../repos/rate-limits";
-import { listSignupAcceptances, takeOverStaleSignupClaim } from "../repos/signup";
+import { getClinicProfile, upsertClinicProfile } from "../repos/clinic-profile";
+import { clinicSignedUpOnline, listSignupAcceptances, takeOverStaleSignupClaim } from "../repos/signup";
 import { ipLimitSubject, signupClientIp } from "../signup/client-ip";
 import { checkFormStamp, confirmSignup, issueFormStamp, signupHostServed, startSignup, viewSignupLink, type SignupDeps } from "../signup/self-signup";
 import { baseUrlSetting } from "./config";
@@ -96,15 +97,23 @@ describe("self sign-up – input rules", () => {
     assert.equal(slugBaseFromClinicName("Clinique Élan"), "clinique-elan");
     assert.ok(slugBaseFromClinicName("x".repeat(80)).length <= 40);
   });
-  it("versions: the terms page's date per brand, the DPA's own version (a draft, marked as one)", () => {
+  it("versions: the terms page's date per brand, the DPA's own version (version 1, no draft banner)", () => {
     assert.match(termsVersion("clinic"), /^clindesk-terms-\d{4}-\d{2}-\d{2}$/);
     assert.match(termsVersion("clinforms"), /^clinforms-terms-\d{4}-\d{2}-\d{2}$/);
     assert.equal(DPA_VERSION, DPA.version);
-    assert.equal(dpaIsDraft(), true, "the DPA is a draft pending legal review: the page must say so");
-    assert.match(DPA.status, /DRAFT/);
+    // 14/11/2026 Khuram: version 1 is in use (no draft banner); a lawyer review may follow, as a new version.
+    assert.equal(dpaIsDraft(), false, "version 1 is not a draft: no banner");
+    assert.equal(DPA.status, "Version 1");
+    assert.equal(dpaIsDraft({ ...DPA, status: "DRAFT – pending legal review" }), true, "a draft status still shows the banner");
   });
   it("neutral wording: the DPA text and the two new emails", () => {
-    const texts = [DPA.title, DPA.intro, DPA.statusNote, ...DPA.sections.flatMap((s) => [s.heading, ...s.paragraphs])].map((t) => fillDpa(t, { product: "ClinDesk", company: "Appstack X Ltd" }));
+    // The DPA must name the drafting sub-processor (hard rule: disclose truthfully) – in Annex 3 and nowhere else.
+    const named = (t: string) => /^Anthropic PBC – the drafting service/.test(t);
+    const annex3 = DPA.sections.find((s) => s.id === "annex-3")?.paragraphs ?? [];
+    assert.equal(annex3.filter(named).length, 1, "Annex 3 names the drafting sub-processor once");
+    const texts = [DPA.title, DPA.intro, DPA.statusNote, ...DPA.sections.flatMap((s) => [s.heading, ...s.paragraphs])]
+      .filter((t) => !(annex3.includes(t) && named(t)))
+      .map((t) => fillDpa(t, { product: "ClinDesk", company: "Appstack X Ltd" }));
     const confirm = signupConfirmEmail({ to: { email: "a@b.example" }, brand: "clinic", clinicName: "C", link: "https://x.example/l", expiresAt: new Date().toISOString() });
     const existing = signupExistingAccountEmail({ to: { email: "a@b.example" }, signInLink: "https://x.example/login", resetLink: "https://x.example/reset-password" });
     for (const t of [...texts, confirm.subject, confirm.text, confirm.html, existing.subject, existing.text, existing.html]) {
@@ -246,12 +255,14 @@ function defineFlow(label: string, open: () => Promise<TestDb>, dialect: "sqlite
       assert.equal(done.kind, "created");
       if (done.kind !== "created") return;
       assert.match(done.tenantId, /^larkfield-physio-fictional/);
-      // The clinic: created for the clinic brand, Reports paused, as the platform page does.
+      // The clinic: created for the clinic brand (as the platform page does); 13/11/2026: with the free trial, the
+      // clinic system and Reports are on as "trial" (src/server/trial/start.ts).
       const org = await t.db.selectFrom("organization").selectAll().where("slug", "=", done.tenantId).executeTakeFirstOrThrow();
       assert.equal(org.name, "Larkfield Physio (fictional)");
       assert.match(String(org.metadata), /"signupBrand":"clinic"/);
-      const ent = await t.db.selectFrom("clinic_entitlements").selectAll().where("tenant_id", "=", done.tenantId).execute();
-      assert.deepEqual(ent.map((e) => [e.package, e.status]), [["reports", "paused"]]);
+      assert.equal(done.trial, true);
+      const ent = await t.db.selectFrom("clinic_entitlements").selectAll().where("tenant_id", "=", done.tenantId).orderBy("package").execute();
+      assert.deepEqual(ent.map((e) => [e.package, e.status]), [["clinic", "trial"], ["reports", "trial"]]);
       // The owner: account (email verified by the link), owner membership, no two-step yet, a session.
       const user = await t.db.selectFrom("user").selectAll().where("email", "=", f.email as string).executeTakeFirstOrThrow();
       assert.equal(user.name, "Dana Lark");
@@ -273,7 +284,8 @@ function defineFlow(label: string, open: () => Promise<TestDb>, dialect: "sqlite
       for (const a of ["clinic.create", "member.join", "clinic.self_signup"]) assert.ok(actions.includes(a), `${a} in ${actions.join(",")}`);
       const selfRow = audit.find((a) => a.action === "clinic.self_signup");
       assert.equal(selfRow?.userId, user.id);
-      assert.deepEqual(selfRow?.detail, { brand: "clinic", termsVersion: termsVersion("clinic"), dpaVersion: DPA_VERSION, acceptance: acc[0].id });
+      // 14/11/2026: drafting from the notes switched on by the sign-up – recorded with the DPA version accepted.
+      assert.deepEqual(selfRow?.detail, { brand: "clinic", termsVersion: termsVersion("clinic"), dpaVersion: DPA_VERSION, acceptance: acc[0].id, draftingEnabled: true });
       const used = await t.db.selectFrom("signup_requests").selectAll().where("email", "=", f.email as string).executeTakeFirstOrThrow();
       assert.equal(used.password_hash, null);
       assert.equal(used.tenant_id, done.tenantId);
@@ -281,6 +293,34 @@ function defineFlow(label: string, open: () => Promise<TestDb>, dialect: "sqlite
       // The link works once.
       assert.equal((await confirmSignup({ token, password: PASSWORD }, confirmDeps)).kind, "invalid");
       assert.equal((await viewSignupLink(t.db, token, "clinic", now())).kind, "invalid");
+    });
+
+    it("drafting from the notes (14/11/2026): ON for a clinic that signed up online, OFF for one set up by hand; the owner can switch it off", async () => {
+      ipCounter++;
+      const f = form({ clinicName: "Kestrel Physio (fictional)" });
+      assert.equal((await startSignup(f, deps())).detail, "sent");
+      const done = await confirmSignup(
+        { token: tokenOf(lastTo(f.email as string)), password: PASSWORD },
+        { db: t.db, auth, secret: SECRET, baseUrl: BASE, brand: "clinic", headers: headersFor(DESK), isPlatformAdminEmail: (e: string) => platformAdmins.has(e), now },
+      );
+      assert.equal(done.kind, "created");
+      if (done.kind !== "created") return;
+      const self = await getClinicProfile({ db: t.db }, done.tenantId);
+      assert.equal(self?.draftingEnabled, true, "self-serve: on from sign-up");
+      assert.equal(await clinicSignedUpOnline({ db: t.db }, done.tenantId), true);
+      const audit = await listAudit({ db: t.db }, done.tenantId, { limit: 20 });
+      assert.equal(audit.find((a) => a.action === "clinic.self_signup")?.detail?.draftingEnabled, true, "audited at sign-up");
+      assert.equal(audit.find((a) => a.action === "clinic.self_signup")?.detail?.dpaVersion, DPA_VERSION, "with the DPA version");
+      assert.equal(audit.find((a) => a.action === "clinic.create")?.detail?.draftingEnabled, true);
+      // The owner switches it off (Settings → Clinic saves the profile): it stays off.
+      await upsertClinicProfile({ db: t.db }, done.tenantId, { organizationId: self!.organizationId, displayName: self!.displayName, retentionDays: self!.retentionDays, draftingEnabled: false });
+      assert.equal((await getClinicProfile({ db: t.db }, done.tenantId))?.draftingEnabled, false, "the owner can switch it off");
+      // A clinic set up by hand (platform page / admin:create-clinic): off until its owner switches it on.
+      const hand = await createClinic(t.db, { name: "Heron Physio (fictional)", slug: `heron-physio-${Math.random().toString(36).slice(2, 7)}`, ownerEmail: "owner@heron-physio.example", appOrigin: FORMS, linkSecret: SECRET, sendEmail: false, now: now() });
+      assert.equal((await getClinicProfile({ db: t.db }, hand.tenantId))?.draftingEnabled, false, "hand-created: off");
+      assert.equal(await clinicSignedUpOnline({ db: t.db }, hand.tenantId), false);
+      const handAudit = await listAudit({ db: t.db }, hand.tenantId, { limit: 5 });
+      assert.equal(handAudit.find((a) => a.action === "clinic.create")?.detail?.draftingEnabled, undefined);
     });
 
     it("ClinForms: the clinic is a ClinForms clinic (Reports as today), link and email on ClinForms' host", async () => {

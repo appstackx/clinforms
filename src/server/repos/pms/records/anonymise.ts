@@ -3,7 +3,7 @@
  *
  * Removes: the name (→ "Anonymised patient <number>"), date of birth, sex, contact details, address, emergency
  * contact, GP, alerts and notes, import references, every note's text and body chart, every amendment's text and
- * reason, the outcome measures' answers, attached files (name, description and bytes), case referral reasons, notes,
+ * reason, the outcome measures' answers, exercise programmes' text and check-in comments, attached files (name, description and bytes), case referral reasons, notes,
  * membership and claim numbers, authorisation notes and codes.
  * Keeps: dates, note types and status, who wrote and signed what, outcome scores, payer types – the clinic's figures.
  *
@@ -24,6 +24,7 @@ import { getPatient, setPatientStatus, updatePatient } from "../patients";
 import { getPmsSettings } from "../settings";
 import { RepoInputError, assertActor, assertId, assertTenantId, nowIso, pmsAuditQuery, pmsId, type RepoContext } from "../context";
 import { lastSignedNoteDate } from "./notes";
+import { anonymiseExerciseQueries, exerciseTablesInstalled } from "./exercises";
 import type { AnonymisationRecord } from "../../../../modules/pms/records/types";
 import { pmsNow } from "../../../../modules/pms/core/clock";
 
@@ -160,6 +161,8 @@ export async function anonymisePatient(ctx: RepoContext, tenantId: string, patie
       .where("tenant_id", "=", tenantId)
       .where("patient_id", "=", patientId),
     db.updateTable("pms_patient_extras").set({ pronouns: null, updated_at: at }).where("tenant_id", "=", tenantId).where("id", "=", patientId),
+    // 0127–0128: exercise programmes' title, note and exercises, and the check-ins' comments (only once migrated).
+    ...((await exerciseTablesInstalled(ctx, tenantId)) ? anonymiseExerciseQueries(ctx, tenantId, patientId, at) : []),
   ]);
   const affected = (i: number) => Number((results[i] as { numAffectedRows?: bigint | number })?.numAffectedRows ?? 0);
 

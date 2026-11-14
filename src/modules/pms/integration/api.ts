@@ -151,6 +151,7 @@ export const API_ERRORS = {
   HTTPS_REQUIRED: { status: 403, message: "Use HTTPS." },
   UNAUTHENTICATED: { status: 401, message: "Send a valid API key as 'Authorization: Bearer <key>'." },
   API_OFF: { status: 403, message: "The clinic's API is switched off." },
+  READ_ONLY: { status: 403, message: "The clinic's account is read-only: nothing new can be created or changed." },
   INSUFFICIENT_SCOPE: { status: 403, message: "This API key does not have the scope for this request." },
   SITE_NOT_ALLOWED: { status: 403, message: "This API key cannot use that site." },
   INVALID_REQUEST: { status: 422, message: "The request is not valid." },

@@ -26,7 +26,13 @@ export interface PmsModuleInfo {
    * Courses, gift cards and products (PK, 11/2026): billing 0231–0239. Bulk email to patient groups (xt02, 11/2026):
    * comms 0146 (inside comms' own range – reserved here so no other comms branch takes it; 0147–0149 stay free).
    * Public clinic API v1 (xt03, 11/2026, docs/clinic-system/api.md): integration 0171 (inside integration's own range –
-   * reserved here; 0172–0179 stay free).
+   * reserved here). Xero sync groundwork (xe03–xe06, 11/2026, docs/clinic-system/decisions/xero-sync-scope.md):
+   * integration 0172 (inside integration's own range – reserved here; 0173–0179 stay free).
+   * Home exercise programmes (ex03–ex06, 11/2026, docs/clinic-system/exercise-programmes.md): records 0126–0128 (inside
+   * records' own range – reserved here; 0129 stays free).
+   * Card payments through each clinic's own connected account (cp, 11/2026, docs/clinic-system/card-payments.md):
+   * billing 0226–0229 (inside the Healthcode block's free tail) and 0239 (the courses block's free tail), plus the new
+   * billing block 0240–0249 (0240–0241 used, 0242–0249 reserved for card payments' follow-ups).
    */
   extra?: readonly (readonly [number, number])[];
 }
@@ -35,12 +41,29 @@ export const PMS_MODULES: Readonly<Record<PmsModuleId, PmsModuleInfo>> = {
   foundation: { id: "foundation", title: "Foundation: entitlements, shell, shared patient record", sqlite: [100, 109], postgresPrefix: "2026102400", extra: [[213, 213]] },
   diary: { id: "diary", title: "Multi-site diary", sqlite: [110, 119], postgresPrefix: "2026102400", extra: [[180, 181], [189, 189], [210, 210]] },
   records: { id: "records", title: "Patient record screens and clinical notes", sqlite: [120, 129], postgresPrefix: "2026102400", extra: [[188, 188], [211, 211], [230, 230]] },
-  billing: { id: "billing", title: "Invoicing, insurer and MLC accounts, payments", sqlite: [130, 139], postgresPrefix: "2026102400", extra: [[212, 212], [220, 229], [231, 239]] },
+  billing: { id: "billing", title: "Invoicing, insurer and MLC accounts, payments", sqlite: [130, 139], postgresPrefix: "2026102400", extra: [[212, 212], [220, 229], [231, 239], [240, 249]] },
   comms: { id: "comms", title: "Reminders, messages, letters", sqlite: [140, 149], postgresPrefix: "2026102400" },
   portal: { id: "portal", title: "Online booking, patient portal, intake forms", sqlite: [150, 159], postgresPrefix: "2026102400", extra: [[182, 185], [190, 190]] },
   reporting: { id: "reporting", title: "Reporting, clinic set-up and administration", sqlite: [160, 169], postgresPrefix: "2026102400", extra: [[186, 187]] },
   integration: { id: "integration", title: "Data import and the native connector", sqlite: [170, 179], postgresPrefix: "2026102400" },
 };
+
+/**
+ * ClinForms' OWN migrations (below 0100 – not a clinic-system module), as reserved on branches not merged yet, so no
+ * two branches take the same number (13/11/2026). 0010 is used twice on purpose, under different names and Postgres
+ * versions that coexist (SQLite/D1 track applied files by NAME, Postgres by the 14-digit version):
+ *   0010_self_signup     / 20261112000010  main (self sign-up)
+ *   0010_lifecycle_email / 20261111000010  parked branch feat/lifecycle-emails – ALREADY APPLIED to production (two empty
+ *                                          tables lifecycle_email, lifecycle_email_pref); never reuse those table names
+ *   0011_self_trial      / 20261113000011  feat/self-serve-trial (self_trial, trial_email)
+ * Next free: 0012. Numbers reserved by other unreleased branches in the module ranges: 0172 (xero), 0126–0128
+ * (exercises), 0226–0229 and 0239–0241 (card payments).
+ */
+export const CLINFORMS_OWN_MIGRATIONS = [
+  { number: 10, name: "self_signup", postgres: "20261112000010", branch: "main" },
+  { number: 10, name: "lifecycle_email", postgres: "20261111000010", branch: "feat/lifecycle-emails (parked; applied to production)" },
+  { number: 11, name: "self_trial", postgres: "20261113000011", branch: "feat/self-serve-trial" },
+] as const;
 
 /** The module whose range holds a SQLite migration number, or null (numbers below 100 are ClinForms' own). */
 export function moduleForMigration(n: number): PmsModuleId | null {
