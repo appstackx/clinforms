@@ -1,6 +1,6 @@
 {
   "status": "DRAFT – pending legal review",
-  "statusNote": "This data processing agreement is a DRAFT. It has not yet been reviewed by a lawyer and may change before it is used. It is shown only where self-serve sign-up is switched on for testing. Items marked [to confirm] are still being checked.",
+  "statusNote": "This data processing agreement is a DRAFT. It has not yet been reviewed by a lawyer and may change before it is used. It is shown only where self-serve sign-up is switched on for testing.",
   "version": "dpa-draft-2026-11-14",
   "lastUpdated": "2026-11-14",
   "title": "Data processing agreement",
@@ -140,7 +140,7 @@
       "paragraphs": [
         "Vercel Inc. – application hosting. Runs in London (UK); the company is in the US. Safeguard for any access from outside the UK: the UK Extension to the EU-US Data Privacy Framework, with the EU standard contractual clauses and the UK Addendum as a fallback.",
         "Supabase Inc. – database and patient file storage. Stored in London (UK). Safeguard for any access from outside the UK: the EU standard contractual clauses with the UK International Data Transfer Addendum.",
-        "MailerSend – sending service emails such as invitations, sign-in links and notifications. EU (Belgium and Germany). Safeguard: UK adequacy regulation for the EU; for any access from outside the EU, the safeguards in its data processing agreement [to confirm].",
+        "MailerSend, Inc. – sending service emails such as invitations, sign-in links and notifications. Stored in the EU (Belgium); the company is in the US and may access data from there. Safeguard: the EU standard contractual clauses with the UK Addendum.",
         "Stripe Payments UK Ltd – subscription billing and, where the clinic switches it on, card payments from patients. UK, EU and US. Safeguard: the UK Extension to the EU-US Data Privacy Framework or the International Data Transfer Addendum.",
         "The SMS Works Ltd – text messages to patients, where the clinic switches them on. UK.",
         "PostHog Inc. – usage statistics, only after consent. EU cloud (Germany). Safeguard: UK adequacy regulation for the EU.",
