@@ -75,6 +75,8 @@ describe("shell navigation by permission", () => {
         "Practitioners",
         "Practitioner rotas",
         "Record templates",
+        // Only while CLINFORMS_EXERCISE=on (the clinic layout leaves it out otherwise).
+        "Exercises",
         "Staff access",
         "Roles and permissions",
         "Online booking",
@@ -103,6 +105,9 @@ describe("shell navigation by permission", () => {
     assert.equal(firstSetupEntry(PMS_NAV, onlyApi, { clinicApi: true })?.href, "/app/clinic/setup/api");
     assert.ok(!navForDeployment(PMS_NAV, { clinicApi: false }).some((e) => e.id === "integration.api"));
     assert.ok(navForDeployment(PMS_NAV, { clinicApi: true }).some((e) => e.id === "integration.api"));
+    // Exercises (ex03): only with CLINFORMS_EXERCISE=on – off by default.
+    assert.ok(!navForDeployment(PMS_NAV, { clinicApi: true }).some((e) => e.id === "records.exercises"));
+    assert.ok(navForDeployment(PMS_NAV, { clinicApi: false, exercises: true }).some((e) => e.id === "records.exercises"));
     assert.equal(firstSetupEntry(PMS_NAV, as("owner"), { clinicApi: false })?.id, "reporting.sites");
   });
 

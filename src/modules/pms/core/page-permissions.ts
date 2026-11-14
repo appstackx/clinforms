@@ -66,6 +66,9 @@ export const PAGE_PERMISSIONS: readonly (readonly [string, PmsPermission])[] = [
   ["/patients/[patientId]/messages", "messages.send"],
   ["/patients/[patientId]/notes", "clinical.view"],
   ["/patients/[patientId]/outcomes", "clinical.view"],
+  // Exercise programmes (ex03–ex05): also behind CLINFORMS_EXERCISE=on and the clinic's setting – the clinic layout checks both.
+  ["/patients/[patientId]/exercises", "clinical.view"],
+  ["/patients/[patientId]/exercises/[programmeId]", "clinical.view"],
   ["/patients/[patientId]", "patients.view"],
   ["/patients/[patientId]/tab/[tab]", "patients.view"],
   ["/patients/[patientId]/notes/[noteId]", "clinical.view"],
@@ -78,6 +81,8 @@ export const PAGE_PERMISSIONS: readonly (readonly [string, PmsPermission])[] = [
   ["/setup/audit", "settings.members"],
   ["/setup/billing", "settings.setup"],
   ["/setup/courses", "settings.setup"],
+  // Exercises (ex03): also behind CLINFORMS_EXERCISE=on – the clinic layout checks it.
+  ["/setup/exercises", "settings.setup"],
   ["/setup/import/[batchId]", "settings.import"],
   ["/setup/import", "settings.import"],
   ["/setup/insurer-codes", "settings.setup"],

@@ -11,6 +11,8 @@ import { ageOn } from "@/modules/pms/records/form-values";
 import { titleLine } from "@/modules/pms/records/flags";
 import { recordTabItems } from "@/modules/pms/records/record-tab-model";
 import { PMS_RECORD_TABS } from "@/modules/pms/record-tabs";
+import { EXERCISES_TAB_ID } from "@/modules/pms/record-tabs/records";
+import { exercisesOnForClinic } from "@/server/pms/records/exercises-service";
 import { requireClinicActor } from "@/server/pms/actor";
 import { loadRecordHeader } from "@/server/pms/records/record-header";
 import { PATIENTS_PATH, patientPath } from "@/server/pms/records/record";
@@ -48,7 +50,10 @@ export default async function PatientRecordLayout({ children, params }: { childr
   const name = personName(p);
   const age = ageOn(p.dateOfBirth, h.today);
   const sub = titleLine(p.title, h.pronouns);
-  const tabs: RecordTabLink[] = recordTabItems(PMS_RECORD_TABS, actor.can).map((t) => ({
+  // Exercise programmes: the tab only while the platform switch and the clinic's setting are both on.
+  const exercisesOn = actor.can("clinical.view") && (await exercisesOnForClinic(actor.repo(), actor.tenantId).catch(() => false));
+  const registered = exercisesOn ? PMS_RECORD_TABS : PMS_RECORD_TABS.filter((t) => t.id !== EXERCISES_TAB_ID);
+  const tabs: RecordTabLink[] = recordTabItems(registered, actor.can).map((t) => ({
     href: patientPath(p.id, t.segment),
     label: t.label,
     exact: t.segment === "",

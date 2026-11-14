@@ -28,6 +28,20 @@ export const RECORDS_AUDIT_LABELS: Readonly<Record<string, string>> = {
   "pms.clinical_flag.add": "Clinical flag added",
   "pms.clinical_flag.end": "Clinical flag ended",
   "pms.patients.export": "Patient list exported (CSV)",
+  "pms.exercise_settings.update": "Exercise programmes switched on or off",
+  "pms.exercise.create": "Exercise added to the clinic's library",
+  "pms.exercise.update": "Library exercise changed",
+  "pms.exercise.archive": "Library exercise archived",
+  "pms.exercise.restore": "Library exercise back in use",
+  "pms.exercise_programme.create": "Exercise programme started",
+  "pms.exercise_programme.save": "Exercise programme draft saved",
+  "pms.exercise_programme.share": "Exercise programme shared with the patient",
+  "pms.exercise_programme.end": "Exercise programme ended",
+  "pms.exercise_programme.view": "Exercise programme opened",
+  "pms.exercise_programme.pdf": "Exercise programme printed (PDF)",
+  "pms.exercise_programme.portal_view": "Patient opened their exercise programme",
+  "pms.exercise_programme.portal_pdf": "Patient downloaded their exercise programme",
+  "pms.exercise_checkin.record": "Patient checked in on their exercises",
 };
 
 /** Names of the record types its audit rows point at (target_type → label). */
@@ -40,4 +54,7 @@ export const RECORDS_AUDIT_TARGETS: Readonly<Record<string, string>> = {
   pms_patient_extras: "Patient details",
   pms_clinical_flag: "Clinical flag",
   pms_patient_list: "Patient list",
+  pms_exercise_settings: "Exercise programme settings",
+  pms_exercise: "Library exercise",
+  pms_exercise_programme: "Exercise programme",
 };

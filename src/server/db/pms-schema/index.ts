@@ -16,7 +16,7 @@ import {
   type IntegrationTables,
 } from "./integration";
 import { PORTAL_PRIMARY_KEYS, PORTAL_TABLES, PORTAL_TENANT_TABLES, PORTAL_TIMESTAMP_COLUMNS, type PortalTables } from "./portal";
-import { RECORDS_PRIMARY_KEYS, RECORDS_TABLES, RECORDS_TENANT_TABLES, RECORDS_TIMESTAMP_COLUMNS, type RecordsTables } from "./records";
+import { RECORDS_CASCADE_DELETED_TABLES, RECORDS_PRIMARY_KEYS, RECORDS_TABLES, RECORDS_TENANT_TABLES, RECORDS_TIMESTAMP_COLUMNS, type RecordsTables } from "./records";
 import { REPORTING_PRIMARY_KEYS, REPORTING_TABLES, REPORTING_TENANT_TABLES, REPORTING_TIMESTAMP_COLUMNS, type ReportingTables } from "./reporting";
 
 export type { FoundationTables } from "./foundation";
@@ -84,6 +84,7 @@ export const PMS_TENANT_TABLES: readonly PmsTableName[] = [
  * (one statement fewer each against the gateway's limit). Exported and counted like the others.
  */
 export const PMS_CASCADE_DELETED_TABLES: ReadonlySet<PmsTableName> = new Set<PmsTableName>([
+  ...RECORDS_CASCADE_DELETED_TABLES,
   ...BILLING_CASCADE_DELETED_TABLES,
   ...COMMS_CASCADE_DELETED_TABLES,
   ...INTEGRATION_CASCADE_DELETED_TABLES,

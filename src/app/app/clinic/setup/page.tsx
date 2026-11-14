@@ -5,6 +5,7 @@ import { requireClinicActor } from "@/server/pms/actor";
 import { clinicApiAvailable } from "@/server/pms/integration/api/screen";
 import { xeroAvailable } from "@/server/pms/integration/xero/config";
 import { mayManageXero } from "@/server/pms/integration/xero/screen";
+import { exercisesAvailable } from "@/server/pms/records/exercises-service";
 import { canOpenSetup } from "@/server/pms/reporting/setup";
 import { notFound } from "next/navigation";
 
@@ -17,7 +18,7 @@ export const dynamic = "force-dynamic";
 export default async function SetupStartPage() {
   const actor = await requireClinicActor();
   if (!canOpenSetup(actor)) notFound();
-  const first = firstSetupEntry(PMS_NAV, actor.can, { clinicApi: clinicApiAvailable(), xero: xeroAvailable() && mayManageXero(actor) });
+  const first = firstSetupEntry(PMS_NAV, actor.can, { clinicApi: clinicApiAvailable(), xero: xeroAvailable() && mayManageXero(actor), exercises: exercisesAvailable() });
   if (!first) notFound();
   redirect(first.href);
 }

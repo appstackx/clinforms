@@ -28,6 +28,8 @@ export interface PmsModuleInfo {
    * Public clinic API v1 (xt03, 11/2026, docs/clinic-system/api.md): integration 0171 (inside integration's own range –
    * reserved here). Xero sync groundwork (xe03–xe06, 11/2026, docs/clinic-system/decisions/xero-sync-scope.md):
    * integration 0172 (inside integration's own range – reserved here; 0173–0179 stay free).
+   * Home exercise programmes (ex03–ex06, 11/2026, docs/clinic-system/exercise-programmes.md): records 0126–0128 (inside
+   * records' own range – reserved here; 0129 stays free).
    */
   extra?: readonly (readonly [number, number])[];
 }

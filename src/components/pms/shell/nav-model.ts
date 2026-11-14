@@ -8,6 +8,7 @@ import type { PmsModuleId } from "@/modules/pms/core/modules";
 import type { PmsPermission } from "@/modules/pms/core/permissions";
 import { navAllowed, visibleNav } from "@/modules/pms/core/nav";
 import { CLINIC_API_NAV_ID, XERO_NAV_ID } from "@/modules/pms/nav/integration";
+import { EXERCISES_NAV_ID } from "@/modules/pms/nav/records";
 
 export type ShellNavIcon =
   | "overview"
@@ -66,6 +67,7 @@ const SETUP_ICONS: Readonly<Record<string, ShellNavIcon>> = {
   "reporting.practitioners": "user",
   "diary.rotas": "clock",
   "reporting.records": "file",
+  "records.exercises": "list",
   "reporting.audit": "list",
   "foundation.staff-access": "lock",
   "foundation.roles": "shield",
@@ -117,6 +119,7 @@ export const SETUP_ORDER: readonly string[] = [
   "reporting.practitioners",
   "diary.rotas",
   "reporting.records",
+  "records.exercises",
   "foundation.staff-access",
   "foundation.roles",
   "portal.setup",
@@ -258,15 +261,18 @@ export function clinicRoleLabel(role: string, fallback: string): string {
 
 /**
  * The navigation entries switched off on this deployment left out: API keys (integration.api) only while
- * CLINFORMS_CLINIC_API=on, and Xero (integration.xero) only while CLINFORMS_XERO=on. Used by the clinic layout and the
- * Set-up landing page, so neither offers a switched-off page.
+ * CLINFORMS_CLINIC_API=on, Xero (integration.xero) only while CLINFORMS_XERO=on, and Exercises (records.exercises) only
+ * while CLINFORMS_EXERCISE=on (`exercises`, default off). Used by the clinic layout and the Set-up landing page, so
+ * neither offers a switched-off page.
  */
-export function navForDeployment(entries: readonly PmsNavEntry[], switches: { clinicApi: boolean; xero?: boolean }): readonly PmsNavEntry[] {
-  return entries.filter((e) => (e.id !== CLINIC_API_NAV_ID || switches.clinicApi) && (e.id !== XERO_NAV_ID || switches.xero === true));
+export function navForDeployment(entries: readonly PmsNavEntry[], switches: { clinicApi: boolean; xero?: boolean; exercises?: boolean }): readonly PmsNavEntry[] {
+  return entries.filter(
+    (e) => (e.id !== CLINIC_API_NAV_ID || switches.clinicApi) && (e.id !== XERO_NAV_ID || switches.xero === true) && (e.id !== EXERCISES_NAV_ID || switches.exercises === true),
+  );
 }
 
 /** Set-up's start (/app/clinic/setup): the first set-up page, in the design's order, this member may open. */
-export function firstSetupEntry(entries: readonly PmsNavEntry[], can: (p: PmsPermission) => boolean, switches: { clinicApi: boolean; xero?: boolean }): PmsNavEntry | null {
+export function firstSetupEntry(entries: readonly PmsNavEntry[], can: (p: PmsPermission) => boolean, switches: { clinicApi: boolean; xero?: boolean; exercises?: boolean }): PmsNavEntry | null {
   const allowed = navForDeployment(entries, switches).filter((e) => e.group === "manage" && navAllowed(e, can) && e.id !== "diary.rotas");
   return SETUP_ORDER.map((id) => allowed.find((e) => e.id === id)).find((e): e is PmsNavEntry => Boolean(e)) ?? allowed[0] ?? null;
 }

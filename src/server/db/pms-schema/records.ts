@@ -10,6 +10,9 @@
  *   Attachment chunks hold the file's bytes as base64 inside the ciphertext, so the offboarding export (which
  *   decrypts every _enc column as text) carries them intact.
  * - Signed notes and amendments are locked by triggers (0121).
+ * - 0126–0128: home exercise programmes (behind CLINFORMS_EXERCISE=on and the clinic's own setting): the switch and the
+ *   clinic's exercise library (plain configuration), patients' programmes (title, note and exercises encrypted) and the
+ *   patient's check-ins (comment encrypted). All four go by ON DELETE CASCADE (RECORDS_CASCADE_DELETED_TABLES).
  */
 import type { ColumnType } from "kysely";
 import type { IsoTimestamp } from "../schema";
@@ -210,6 +213,84 @@ export interface PmsClinicalFlagsTable {
   updated_at: IsoTimestamp;
 }
 
+/** One row per clinic (id "exercises", 0126): the clinic's exercise-programme switch. No row = off. */
+export interface PmsExerciseSettingsTable {
+  tenant_id: string;
+  id: string;
+  /** Always "records": the row hangs off pms_records_settings (ON DELETE CASCADE). */
+  records_id: WithDefault<string>;
+  rev: number;
+  enabled: WithDefault<number>;
+  updated_by: string | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
+/** The clinic's own exercise library (0126): configuration, plain. Archived (active 0), never deleted. */
+export interface PmsExercisesTable {
+  tenant_id: string;
+  id: string;
+  /** Always "exercises": hangs off pms_exercise_settings (ON DELETE CASCADE). */
+  settings_id: WithDefault<string>;
+  rev: number;
+  name: string;
+  body_area: string | null;
+  instructions: string | null;
+  cautions: string | null;
+  /** https only; shown as links, never embedded. */
+  image_url: string | null;
+  video_url: string | null;
+  active: WithDefault<number>;
+  created_by: string | null;
+  updated_by: string | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
+/** A patient's exercise programme (0127). */
+export interface PmsExerciseProgrammesTable {
+  tenant_id: string;
+  id: string;
+  rev: number;
+  patient_id: string;
+  case_id: string | null;
+  /** The programme this version replaces (ended when this one is shared). */
+  replaces_id: string | null;
+  /** "draft" | "shared" | "ended" */
+  status: WithDefault<string>;
+  title_enc: string | null;
+  notes_enc: string | null;
+  /** JSON array of the exercises (a snapshot), encrypted. */
+  items_enc: string | null;
+  item_count: WithDefault<number>;
+  shared_at: IsoTimestamp | null;
+  shared_by: string | null;
+  shared_by_name: string | null;
+  ended_at: IsoTimestamp | null;
+  ended_by: string | null;
+  patient_viewed_at: IsoTimestamp | null;
+  created_by: string | null;
+  anonymised_at: IsoTimestamp | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
+/** The patient's check-ins on a shared programme (0128): one per programme per UK day. */
+export interface PmsExerciseCheckinsTable {
+  tenant_id: string;
+  id: string;
+  rev: number;
+  programme_id: string;
+  patient_id: string;
+  done_on: IsoDate;
+  completed: number;
+  pain_score: number | null;
+  comment_enc: string | null;
+  anonymised_at: IsoTimestamp | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
 export interface RecordsTables {
   pms_note_templates: PmsNoteTemplatesTable;
   pms_clinical_notes: PmsClinicalNotesTable;
@@ -221,6 +302,10 @@ export interface RecordsTables {
   pms_records_settings: PmsRecordsSettingsTable;
   pms_patient_extras: PmsPatientExtrasTable;
   pms_clinical_flags: PmsClinicalFlagsTable;
+  pms_exercise_settings: PmsExerciseSettingsTable;
+  pms_exercises: PmsExercisesTable;
+  pms_exercise_programmes: PmsExerciseProgrammesTable;
+  pms_exercise_checkins: PmsExerciseCheckinsTable;
 }
 
 /** Foreign-key order (parents first). */
@@ -235,6 +320,10 @@ export const RECORDS_TABLES = [
   "pms_records_settings",
   "pms_patient_extras",
   "pms_clinical_flags",
+  "pms_exercise_settings",
+  "pms_exercises",
+  "pms_exercise_programmes",
+  "pms_exercise_checkins",
 ] as const satisfies readonly (keyof RecordsTables)[];
 
 export const RECORDS_PRIMARY_KEYS: { readonly [T in (typeof RECORDS_TABLES)[number]]: readonly (keyof RecordsTables[T] & string)[] } = {
@@ -248,10 +337,21 @@ export const RECORDS_PRIMARY_KEYS: { readonly [T in (typeof RECORDS_TABLES)[numb
   pms_records_settings: ["tenant_id", "id"],
   pms_patient_extras: ["tenant_id", "id"],
   pms_clinical_flags: ["tenant_id", "id"],
+  pms_exercise_settings: ["tenant_id", "id"],
+  pms_exercises: ["tenant_id", "id"],
+  pms_exercise_programmes: ["tenant_id", "id"],
+  pms_exercise_checkins: ["tenant_id", "id"],
 };
 
 /** Timestamp columns besides created_at / updated_at (TEXT in SQLite, timestamptz in Postgres). */
-export const RECORDS_TIMESTAMP_COLUMNS: readonly string[] = ["signed_at", "discarded_at", "anonymised_at", "error_at", "withdrawn_at", "started_at", "done_at", "ended_at"];
+export const RECORDS_TIMESTAMP_COLUMNS: readonly string[] = ["signed_at", "discarded_at", "anonymised_at", "error_at", "withdrawn_at", "started_at", "done_at", "ended_at", "shared_at", "patient_viewed_at"];
 
 /** Every records table holds one clinic's own data (offboarding exports and deletes them). */
 export const RECORDS_TENANT_TABLES: readonly (typeof RECORDS_TABLES)[number][] = RECORDS_TABLES;
+
+/**
+ * Records tables deleted by their parents' ON DELETE CASCADE (0126–0128): the exercise switch with the clinic's
+ * pms_records_settings row, the library with the switch, programmes with the patient, check-ins with the programme.
+ * Offboarding does not name them (the gateway's statement limit).
+ */
+export const RECORDS_CASCADE_DELETED_TABLES: readonly (typeof RECORDS_TABLES)[number][] = ["pms_exercise_settings", "pms_exercises", "pms_exercise_programmes", "pms_exercise_checkins"];
