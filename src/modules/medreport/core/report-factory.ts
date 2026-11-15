@@ -531,6 +531,11 @@ function recordParagraph(sectionKey: string, index: number, text: string, source
 
 type Line = { text: string; sourceIds: string[] };
 
+/** "Self-referral" / "Self referral" / "self-referred" – the name a case without a referrer is given (no organisation). */
+export function isSelfReferral(name: string | null | undefined): boolean {
+  return /^\s*self[\s-]?referr?(al|ed)\s*$/i.test(name ?? "");
+}
+
 function factIds(facts: ComputedFact[], ...ids: FactId[]): string[] {
   const have = new Set<string>(facts.map((f) => f.id));
   return ids.filter((id) => have.has(id));
@@ -551,7 +556,11 @@ function fromRecordsTexts(key: string, input: CreateReportInput, now: Date): Lin
       return [
         {
           text:
-            `This report has been prepared at the request of ${party.name} (${INSTRUCTING_PARTY_LABELS[party.type].toLowerCase()})${ref}. ` +
+            // 15/11/2026: a self-referred patient (no referrer on the case) – "at the request of Self-referral (other
+            // referrer)" read oddly; the patient asked for it.
+            (isSelfReferral(party.name)
+              ? `This report has been prepared at the request of the patient (self-referral)${ref}. `
+              : `This report has been prepared at the request of ${party.name} (${INSTRUCTING_PARTY_LABELS[party.type].toLowerCase()})${ref}. `) +
             `It concerns ${reg.fullName}, who received physiotherapy ${clinicName ? `at ${clinicName}` : "at this clinic"}` +
             (bundle.incident?.date ? ` following an incident on ${formatUkDate(bundle.incident.date)}` : "") +
             ". It is based solely on the clinic's records of that episode of care, which are listed under Records reviewed.",
@@ -595,6 +604,10 @@ function fromRecordsTexts(key: string, input: CreateReportInput, now: Date): Lin
       const parts = Array.from(counts.entries()).map(
         ([status, n]) => `${APPOINTMENT_STATUS_LABELS[status as keyof typeof APPOINTMENT_STATUS_LABELS]}: ${n}`,
       );
+      // 15/11/2026: notes with no appointment history (pasted or uploaded notes) said "Appointments: 0.." – say so plainly.
+      if (bundle.appointments.length === 0) {
+        return [{ text: "No appointment history was included with the records provided, so attendance is not shown here.", sourceIds: [] }];
+      }
       return [{ text: `Appointments: ${bundle.appointments.length}. ${parts.join("; ")}.`, sourceIds: [] }];
     }
 

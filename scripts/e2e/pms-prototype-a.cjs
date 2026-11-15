@@ -268,7 +268,7 @@ const hhmm = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m %
       await jess.fill("#np-d", dob);
       const ia = await jess.locator("#bk-svc option", { hasText: /Initial/ }).first().getAttribute("value");
       if (ia) await jess.selectOption("#bk-svc", ia);
-      await jess.waitForSelector("text=Slot available");
+      await jess.waitForSelector("text=/Slot available|Outside working hours/");
       await jess.click("role=dialog >> button:has-text('Book appointment')");
       await jess.waitForSelector("text=Possible existing record");
       await shot(jess, "04-duplicate-check");
@@ -278,7 +278,7 @@ const hhmm = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m %
       await jess.fill("#np-d", "12/05/1994");
       await jess.fill("#np-m", "07700 900526");
       await jess.fill("#np-e", `nadia.hussain.${RUN}@example.com`);
-      await jess.waitForSelector("text=Slot available");
+      await jess.waitForSelector("text=/Slot available|Outside working hours/");
       await shot(jess, "05-new-patient-details");
       await jess.click("role=dialog >> button:has-text('Book appointment')");
       await jess.waitForSelector("text=Appointment booked");

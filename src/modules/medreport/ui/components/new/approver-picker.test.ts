@@ -43,4 +43,13 @@ describe("approver picker", () => {
     assert.match(some, /Tom Ellis \(HCPC PH-DEMO-02\)/);
     assert.match(some, /waits for them to adopt it/);
   });
+  it("15/11/2026: an owner or admin gets the Members link (new tab, the form is kept); everyone else the plain words", () => {
+    const owner = renderToStaticMarkup(createElement(ApproverPicker, { options: [], value: null, onChange: () => undefined, memberIsStaff: false, membersHref: "/app/settings/members" }));
+    assert.match(owner, /href="\/app\/settings\/members"/);
+    assert.match(owner, /target="_blank"/);
+    assert.match(owner, /This list updates when you come back/);
+    const other = renderToStaticMarkup(createElement(ApproverPicker, { options: [], value: null, onChange: () => undefined, memberIsStaff: true }));
+    assert.doesNotMatch(other, /href=/);
+    assert.match(other, /under Clinic settings → Members/);
+  });
 });

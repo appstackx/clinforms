@@ -200,6 +200,7 @@ export function BookingDialog(props: BookingDialogProps) {
   const practitionerName = practitioners.find((p) => p.id === practitionerId)?.name ?? "";
   const roomName = rooms.find((r) => r.id === roomId)?.name ?? null;
   const firstClash = check !== null && check.first.status !== "free";
+  const outsideHours = check !== null && !firstClash && Boolean(check.first.outsideHours);
   const overridable = firstClash && check.first.overridable;
   const blocked = firstClash && !(overridable && override && can.override);
   const toBook = check ? check.occurrences.filter((o, i) => i === 0 || (o.status === "free" && !unticked.has(o.date))).length : occurrences;
@@ -560,9 +561,20 @@ export function BookingDialog(props: BookingDialogProps) {
                     id="bk-slot"
                     role={firstClash ? "alert" : "status"}
                     aria-live="polite"
-                    className={cn("flex items-start gap-2.5 rounded-[10px] border px-3.5 py-3", firstClash ? "border-[#FECACA] bg-[#FEF2F2]" : "border-[#A7E8BE] bg-[#F0FDF4]", !check && "border-border bg-[#F8FAFC]")}
+                    className={cn(
+                      "flex items-start gap-2.5 rounded-[10px] border px-3.5 py-3",
+                      firstClash ? "border-[#FECACA] bg-[#FEF2F2]" : outsideHours ? "border-[#FCD34D] bg-[#FFFBEB]" : "border-[#A7E8BE] bg-[#F0FDF4]",
+                      !check && "border-border bg-[#F8FAFC]",
+                    )}
+                    data-testid="booking-slot-check"
                   >
-                    {firstClash ? <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive-strong" aria-hidden /> : <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#166534]" aria-hidden />}
+                    {firstClash ? (
+                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive-strong" aria-hidden />
+                    ) : outsideHours ? (
+                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[#B45309]" aria-hidden />
+                    ) : (
+                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#166534]" aria-hidden />
+                    )}
                     <div className="flex min-w-0 flex-col gap-1.5">
                       {!check ? (
                         <span className="text-[#475569]">{checking ? "Checking the time…" : "Choose a service, practitioner, date and time."}</span>
@@ -597,10 +609,12 @@ export function BookingDialog(props: BookingDialogProps) {
                         </>
                       ) : (
                         <>
-                          <strong className="text-[#166534]">Slot available</strong>
+                          {/* 15/11/2026 (Khuram): free but outside working hours is a warning (amber), not a green "available". */}
+                          <strong className={outsideHours ? "text-[#92400E]" : "text-[#166534]"}>{outsideHours ? "Outside working hours" : "Slot available"}</strong>
                           <span className="text-[#334155]">
                             {practitionerName}
-                            {roomName ? ` and ${roomName}` : ""} {roomName ? "are" : "is"} free {check.startTime}–{check.endTime}.{check.first.outsideHours ? " This is outside the practitioner's working hours." : ""}
+                            {roomName ? ` and ${roomName}` : ""} {roomName ? "are" : "is"} free {check.startTime}–{check.endTime}
+                            {outsideHours ? ", but this is outside the practitioner's working hours. You can still book it." : "."}
                           </span>
                         </>
                       )}

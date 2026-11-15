@@ -69,3 +69,23 @@ test("applyDraftResult merges a group; canSign blocks on open gaps until resolve
   const resolved = merged.gaps.map((g) => ({ ...g, resolution: { kind: "resolved" as const, text: "Written by clinician", at: "2026-10-06T10:00:00.000Z" } }));
   assert.equal(canSign(merged.flags, resolved).ok, true);
 });
+
+// 15/11/2026 (Khuram's live trial test): notes with no appointment history, and a self-referred patient.
+test("attendance with no appointment history says so (never 'Appointments: 0..')", () => {
+  const report = createReport({ template: SOLICITOR_RTA_TEMPLATE, bundle: { ...bundle, appointments: [] }, instructingParty: bundle.referral, computedFacts: [] });
+  const text = report.sections.find((s) => s.key === "attendance")!.paragraphs.map((p) => p.text).join(" ");
+  assert.equal(text, "No appointment history was included with the records provided, so attendance is not shown here.");
+  assert.doesNotMatch(text, /\.\./);
+});
+
+test("a self-referred patient: 'prepared at the request of the patient (self-referral)'; any other party as before", async () => {
+  const { isSelfReferral } = await import("./report-factory");
+  for (const n of ["Self-referral", "self referral", "Self-referred", " SELF-REFERRAL "]) assert.equal(isSelfReferral(n), true, n);
+  for (const n of ["Self Insurance Ltd (fictional)", "Harrow & Pike Solicitors (fictional)", "", null]) assert.equal(isSelfReferral(n), false, String(n));
+  const intro = (party: typeof bundle.referral) =>
+    createReport({ template: SOLICITOR_RTA_TEMPLATE, bundle, instructingParty: party, computedFacts: [] }).sections.find((s) => s.key === "introduction")!.paragraphs[0].text;
+  const self = intro({ ...bundle.referral!, type: "other", name: "Self-referral", reference: "" });
+  assert.match(self, /^This report has been prepared at the request of the patient \(self-referral\)\. /);
+  const solicitor = intro(bundle.referral);
+  assert.match(solicitor, new RegExp(`^This report has been prepared at the request of ${bundle.referral!.name.replace(/[()&]/g, "\\$&")} \\(`));
+});

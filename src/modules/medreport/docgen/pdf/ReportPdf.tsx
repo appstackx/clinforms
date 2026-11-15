@@ -18,6 +18,9 @@ import "server-only";
  */
 import React from "react";
 import type * as ReactPdf from "@react-pdf/renderer";
+
+/** A first paragraph up to this long moves to the next page with its heading rather than leave the heading alone. */
+const KEEP_WITH_HEADING_CHARS = 1400;
 import { PDF_FONT_FAMILY } from "./fonts";
 import type { AttendanceRow, OutcomeRow, RecordsReviewedRow, ReportViewModel, ReportViewSection } from "../view-model";
 
@@ -320,13 +323,28 @@ export function createReportPdf(rp: typeof ReactPdf): ReportPdfComponent {
   }
 
   function Section({ vm, section }: { vm: ReportViewModel; section: ReportViewSection }) {
+    const first = section.paragraphs[0];
+    const paraStyle = section.isPlaceholder ? s.placeholder : s.para;
     return (
       <View>
-        <Text style={s.h1} minPresenceAhead={60}>
-          {section.heading}
-        </Text>
-        {section.paragraphs.map((p, i) => (
-          <Text key={i} style={section.isPlaceholder ? s.placeholder : s.para}>
+        {/* 15/11/2026: the heading travels with the start of its text (a heading was printed alone at the foot of a
+            page). The first paragraph joins it unbreakably when it is short enough to move whole; a longer one keeps
+            the larger look-ahead. Tests: docgen/pdf-heading-orphans.test.ts. */}
+        {first && first.text.length <= KEEP_WITH_HEADING_CHARS ? (
+          <View wrap={false}>
+            <Text style={s.h1}>{section.heading}</Text>
+            <Text style={paraStyle}>{first.text}</Text>
+          </View>
+        ) : (
+          <>
+            <Text style={s.h1} minPresenceAhead={120}>
+              {section.heading}
+            </Text>
+            {first ? <Text style={paraStyle}>{first.text}</Text> : null}
+          </>
+        )}
+        {section.paragraphs.slice(1).map((p, i) => (
+          <Text key={i} style={paraStyle}>
             {p.text}
           </Text>
         ))}

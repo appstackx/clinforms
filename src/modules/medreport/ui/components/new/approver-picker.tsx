@@ -62,19 +62,35 @@ export function ApproverPicker({
   value,
   onChange,
   memberIsStaff,
+  membersHref,
 }: {
   options: readonly ApproverOption[];
   value: string | null;
   onChange(memberId: string | null): void;
   /** Staff choose the approver (they never approve themselves). */
   memberIsStaff: boolean;
+  /**
+   * 15/11/2026: an owner or administrator in a clinic's Studio – the Members page, opened in a new tab so this form is
+   * kept; the list updates when they come back (the screen refreshes the clinic's signers on focus). Unset: as before.
+   */
+  membersHref?: string;
 }) {
   const id = "approver-picker";
   if (options.length === 0) {
     return (
       <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950" role="status" data-approver-picker>
         <p className="font-medium">No member of your clinic can approve this form yet</p>
-        <p className="mt-1">An owner adds signing details (an HCPC number and “may sign”) for a clinician under Clinic settings → Members.</p>
+        {membersHref ? (
+          <p className="mt-1">
+            Add signing details (an HCPC number and “may sign”) for a clinician in{" "}
+            <a href={membersHref} target="_blank" rel="noopener" className="font-medium underline underline-offset-2" data-testid="approver-members-link">
+              Members
+            </a>{" "}
+            (opens in a new tab). This list updates when you come back – nothing you have entered here is lost.
+          </p>
+        ) : (
+          <p className="mt-1">An owner adds signing details (an HCPC number and “may sign”) for a clinician under Clinic settings → Members.</p>
+        )}
       </div>
     );
   }

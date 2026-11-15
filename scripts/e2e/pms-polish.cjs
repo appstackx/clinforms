@@ -265,7 +265,7 @@ const overlaps = (a, b) => a.x < b.x + b.width - 0.5 && b.x < a.x + a.width - 0.
         if (anyway) {
           await owner.waitForSelector("text=Book anyway (double-booking is logged)");
           await owner.check("text=Book anyway (double-booking is logged)");
-        } else await owner.waitForSelector("text=Slot available");
+        } else await owner.waitForSelector("text=/Slot available|Outside working hours/");
         await owner.click("role=dialog >> button:has-text('Book appointment')");
         await owner.waitForSelector("text=Appointment booked");
         await owner.click("text=Back to diary");
@@ -354,7 +354,7 @@ const overlaps = (a, b) => a.x < b.x + b.width - 0.5 && b.x < a.x + a.width - 0.
         await reception.selectOption("#bk-pr", col.practitionerId);
         await reception.fill("#bk-dt", day);
         await reception.selectOption("#bk-tm", hh(s.startMinute));
-        await reception.waitForSelector("text=Slot available");
+        await reception.waitForSelector("text=/Slot available|Outside working hours/");
         await reception.click("role=dialog >> button:has-text('Book appointment')");
         await reception.waitForSelector("text=Appointment booked");
         await reception.click("text=Back to diary");

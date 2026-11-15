@@ -367,7 +367,7 @@ const reportOriginRefused = (r) => r.status === 403 && /ORIGIN_NOT_ALLOWED/.test
       return `search statuses ${JSON.stringify(searches)}`;
     });
     await check("D2", "booking: the slot check says available; Book appointment → Appointment booked → the block is in the diary", async () => {
-      await owner.waitForSelector("text=Slot available", { timeout: 20000 });
+      await owner.waitForSelector("text=/Slot available|Outside working hours/", { timeout: 20000 });
       await owner.click("role=dialog >> button:has-text('Book appointment')");
       await owner.waitForSelector("text=Appointment booked", { timeout: 30000 });
       await owner.click("text=Back to diary");
