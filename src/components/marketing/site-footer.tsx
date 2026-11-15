@@ -51,7 +51,7 @@ export function SiteFooter({ brand = PUBLIC_SITE_BRAND }: { brand?: Brand }) {
               </a>
             </p>
             <p className="cf-family">
-              <a className="link" href={BRANDS.clinic.siteUrl}>
+              <a className="link" href={BRANDS.clinic.siteUrl} data-testid="family-link">
                 From the makers of {CLINIC_SYSTEM_NAME} <span className="arr" aria-hidden="true">→</span>
               </a>
             </p>
