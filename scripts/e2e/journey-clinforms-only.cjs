@@ -17,7 +17,8 @@
  *   this" (H1) → "See ClinDesk plans" moves the running plan to ClinDesk Solo + Reports 25 in place (U1) → Plan and
  *   billing links to ClinDesk's sign-in and /app hands off to clinic.localhost (U2).
  * The offer card (data-testid=clinic-system-offer) and the ?product=clindesk page are the INTENDED promotion; the
- * public cookie policy's mention of clindesk.co.uk is a deliberate disclosure.
+ * public cookie policy's mention of clindesk.co.uk is a deliberate disclosure; since the 15/11/2026 restyle the public
+ * site's family links (data-testid=family-link: footer "From the makers of ClinDesk", home FAQ) are intended too.
  * On every page / email / redirect: the host stays localhost:PORT (never clinic.localhost), the title, header mark and
  * tab icon say ClinForms, and any "ClinDesk" is recorded with its context (intended promotion or violation).
  *
@@ -318,7 +319,20 @@ async function audit(page, label, { expectHost = `localhost:${PORT}`, shot = tru
     // of the shared payment account – read on its own, like the offer card.
     const paymentsNote = [...document.querySelectorAll("[data-testid=payments-via-clindesk]")].map((n) => n.innerText);
     for (const n of paymentsNote) text = text.replace(n, " ");
-    return { title: document.title, icons, marks, hrefs, imgs, text, promoText, paymentsNote, html: document.documentElement.outerHTML };
+    // 15/11/2026 (Khuram's site restyle): the public site's family links – the footer's "From the makers of ClinDesk"
+    // and the home FAQ's "ClinDesk, from the same team" – are intended. Read on their own (text and href), like the
+    // offer card; any OTHER ClinDesk mention or link is still a finding.
+    const familyEls = [...document.querySelectorAll("[data-testid=family-link]")];
+    const family = familyEls.map((a) => ({ text: a.innerText, href: a.getAttribute("href") }));
+    for (const f of family) text = text.replace(f.text, " ");
+    const familyLeft = family.map((f) => f.href);
+    const hrefsKept = hrefs.filter((h) => {
+      const i = familyLeft.indexOf(h);
+      if (i === -1) return true;
+      familyLeft.splice(i, 1);
+      return false;
+    });
+    return { title: document.title, icons, marks, hrefs: hrefsKept, imgs, text, promoText, paymentsNote, family, html: document.documentElement.outerHTML };
   });
   const where = `${label} (${url.host}${url.pathname})`;
   if (url.host !== expectHost) finding("R3", "serious", where, `host is ${url.host}`, `host stays ${expectHost}`);
@@ -336,6 +350,7 @@ async function audit(page, label, { expectHost = `localhost:${PORT}`, shot = tru
   for (const c of ctxs) mentions.push({ where, context: c });
   if (info.promoText) mentions.push({ where, context: `offer card: ${info.promoText.replace(/\s+/g, " ").slice(0, 200)}` });
   for (const n of info.paymentsNote) mentions.push({ where, context: `payments note (shared account): ${n.replace(/\s+/g, " ")}` });
+  for (const f of info.family) mentions.push({ where, context: `family link (intended, 15/11/2026): "${f.text.replace(/\s+/g, " ").trim()}" → ${f.href}` });
   // promoPage: the ClinDesk plans page a ClinForms owner opens from the offer (?product=clindesk) – ClinDesk on purpose.
   // deliberateText: a public page whose ClinDesk mention is a deliberate disclosure (the shared cookie policy).
   const nonPromo = promoPage || deliberateText ? [] : ctxs.filter((c) => !PROMO_RE.test(c));

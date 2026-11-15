@@ -115,7 +115,7 @@ const FAQ: Array<{ q: string; a: ReactNode }> = [
         No. ClinForms works alongside your practice-management system. You bring a patient&rsquo;s notes in by uploading an
         export or a printed notes PDF, complete the referrer&rsquo;s form, and keep the approved copy in your own records.
         If you are choosing a new clinic system,{" "}
-        <a href={`${BRANDS.clinic.siteUrl}/reports`} className="link">
+        <a href={`${BRANDS.clinic.siteUrl}/reports`} className="link" data-testid="family-link">
           {CLINIC_SYSTEM_NAME}
         </a>
         , from the same team, offers ClinForms as its {REPORTS_ADDON_NAME} add-on, so the notes are already in the same
