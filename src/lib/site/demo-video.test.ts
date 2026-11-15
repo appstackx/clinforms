@@ -409,8 +409,8 @@ test("the header, the mobile menu, the hero, the final call to action and the fo
   assert.match(read("src/components/marketing/nav-link.tsx"), /aria-current=\{pathname === href \? "page" : undefined\}/);
   // Hero and final call to action: the video right after "Request access", its length spoken in words.
   const landing = prose(read("src/app/(marketing)/page.tsx"));
-  assert.equal(landing.match(/Request access <ArrowRight[^>]*\/> <\/Link> <Link href=\{DEMO_VIDEO_HREF\} className=\{btn\.secondary\}> <Play[^>]*\/> Watch the demo <DemoLength \/> <\/Link>/g)?.length, 2);
-  assert.match(landing, /<span aria-hidden>\{formatChapterTime\(DEMO_VIDEO\.durationSeconds\)\}<\/span> <span className="sr-only">, \{formatDurationWords\(DEMO_VIDEO\.durationSeconds\)\}<\/span>/);
+  assert.equal(landing.match(/Request access <span className="arr" aria-hidden="true">→<\/span> <\/Link> <Link href=\{DEMO_VIDEO_HREF\} className=\{(?:btn\.secondary|`\$\{btn\.secondary\} cf-btn-light`)\}> <PlayDot \/> Watch the demo <DemoLength \/> <\/Link>/g)?.length, 2);
+  assert.match(landing, /<span aria-hidden>\{formatChapterTime\(DEMO_VIDEO\.durationSeconds\)\}<\/span> <span className="vh">, \{formatDurationWords\(DEMO_VIDEO\.durationSeconds\)\}<\/span>/);
 });
 
 test("the page says who it is for and what the problem is before the video, and books the call the video promises", () => {

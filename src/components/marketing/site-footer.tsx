@@ -1,11 +1,8 @@
 import Link from "next/link";
-import { PUBLIC_SITE_BRAND, type Brand } from "@/lib/brand";
+import { BRANDS, CLINIC_SYSTEM_NAME, PUBLIC_SITE_BRAND, type Brand } from "@/lib/brand";
 import { COMPANY, companyRegistrationLine, registeredOfficeLine } from "@/lib/site";
 import { CookieSettingsButton } from "../consent/cookie-settings-button";
-import { LogoMark } from "./logo";
-
-const footerLink =
-  "rounded text-slate-600 underline-offset-2 hover:text-slate-900 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-700";
+import { Logo } from "./logo";
 
 const COLUMNS = [
   {
@@ -29,57 +26,80 @@ const COLUMNS = [
   },
 ] as const;
 
-/** Public site footer: links, legal, cookie settings, company line, contact. */
+/**
+ * Public site footer (ClinDesk's footer pattern on dark green, styles/site.css .site-footer): brand, the line to
+ * ClinDesk (same makers – a plain link to clindesk.co.uk, counted as cross_site_clicked), contact, link columns with
+ * cookie settings, the company line and, last and small, the registered office; the big faded name is decorative.
+ */
 export function SiteFooter({ brand = PUBLIC_SITE_BRAND }: { brand?: Brand }) {
   const registration = companyRegistrationLine();
   const office = registeredOfficeLine();
   return (
-    <footer className="border-t border-slate-200 bg-white">
-      <div className="mx-auto grid max-w-6xl gap-10 px-4 py-12 sm:px-6 md:grid-cols-[1.4fr_1fr_1fr] lg:px-8">
-        <div className="space-y-3">
-          <div className="flex items-center gap-2 text-base font-semibold text-slate-900">
-            <LogoMark className="h-7 w-7" />
-            {brand.productName}
+    <footer className="site-footer g-pine on-dark">
+      <div className="wrap">
+        <div className="f-grid cf-f-grid">
+          <div className="f-brand">
+            <Logo name={brand.productName} />
+            <p className="f-tag">
+              Completes each referrer&rsquo;s own report form from your clinic notes, ready for your clinician to review and
+              approve.
+            </p>
+            <p className="f-tag cf-f-contact">
+              Contact:{" "}
+              <a className="link" href={`mailto:${COMPANY.contactEmail}`}>
+                {COMPANY.contactEmail}
+              </a>
+            </p>
+            <p className="cf-family">
+              <a className="link" href={BRANDS.clinic.siteUrl}>
+                From the makers of {CLINIC_SYSTEM_NAME} <span className="arr" aria-hidden="true">→</span>
+              </a>
+            </p>
+            <div className="f-sign">
+              <span className="stamp f-stamp" aria-hidden="true">
+                <svg viewBox="0 0 140 140">
+                  <circle className="ring" cx="70" cy="70" r="64" />
+                  <circle className="ring-thin" cx="70" cy="70" r="44" />
+                  <path className="sig" d="M42 72 L60 90 L98 50" />
+                </svg>
+              </span>
+              <p className="pen">Checked. Approved. Sent.</p>
+            </div>
           </div>
-          <p className="max-w-sm text-sm text-slate-600">
-            Completes each referrer&rsquo;s own report form from your clinic notes, ready for your clinician to
-            review and approve.
-          </p>
-          <p className="text-sm text-slate-600">
-            Contact:{" "}
-            <a href={`mailto:${COMPANY.contactEmail}`} className={`${footerLink} font-medium text-teal-800`}>
-              {COMPANY.contactEmail}
-            </a>
-          </p>
+          {COLUMNS.map((column) => (
+            <nav key={column.title} className="f-col" aria-label={column.title}>
+              <h2 className="f-h">{column.title}</h2>
+              <ul>
+                {column.links.map((link) => (
+                  <li key={link.href}>
+                    <Link href={link.href} prefetch={link.href === "/reports" || link.href === "/login" ? false : undefined}>
+                      {link.label}
+                    </Link>
+                  </li>
+                ))}
+                {column.title === "Legal" ? (
+                  <li>
+                    <CookieSettingsButton className="f-cookie-btn" />
+                  </li>
+                ) : null}
+              </ul>
+            </nav>
+          ))}
         </div>
-        {COLUMNS.map((column) => (
-          <nav key={column.title} aria-label={column.title}>
-            <h2 className="text-sm font-semibold text-slate-900">{column.title}</h2>
-            <ul className="mt-3 space-y-2 text-sm">
-              {column.links.map((link) => (
-                <li key={link.href}>
-                  <Link href={link.href} className={footerLink} prefetch={link.href === "/reports" || link.href === "/login" ? false : undefined}>
-                    {link.label}
-                  </Link>
-                </li>
-              ))}
-              {column.title === "Legal" ? (
-                <li>
-                  <CookieSettingsButton className={footerLink} />
-                </li>
-              ) : null}
-            </ul>
-          </nav>
-        ))}
-      </div>
-      <div className="border-t border-slate-200">
-        <div className="mx-auto flex max-w-6xl flex-col gap-1 px-4 py-5 text-xs text-slate-600 sm:px-6 lg:px-8">
+        <div className="small f-legal cf-f-company">
           <p>
             {brand.productName} is a product of {COMPANY.legalName}. © {new Date().getFullYear()} {COMPANY.legalName}.
           </p>
           {registration ? <p>{registration}</p> : null}
-          {office ? <p data-registered-office="">{office}</p> : null}
         </div>
+        {office ? (
+          <p className="f-office" data-registered-office="">
+            {office}
+          </p>
+        ) : null}
+      </div>
+      <div className="f-giant" aria-hidden="true">
+        {brand.productName}
       </div>
     </footer>
   );

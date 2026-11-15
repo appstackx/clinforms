@@ -411,22 +411,22 @@ const settle = async (page) => {
     await context.close();
   });
 
-  await step("the header fits from 375 px to desktop (links collapse into the menu below lg)", async () => {
-    for (const width of [375, 768, 1023, 1024, 1280]) {
+  await step("the header fits from 375 px to desktop (links collapse into the menu below 1100 px, as on the clinic brand's site)", async () => {
+    for (const width of [375, 768, 1099, 1100, 1280]) {
       const context = await browser.newContext({ viewport: { width, height: 800 } });
       const page = await context.newPage();
       await page.goto(`${BASE}/`);
       const m = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, nav: getComputedStyle(document.querySelector('nav[aria-label="Main"]')).display }));
       assert.ok(m.sw <= width, `${width}: scrollWidth ${m.sw}`);
-      assert.equal(m.nav === "none", width < 1024, `${width}: nav display ${m.nav}`);
-      if (width >= 1024) {
+      assert.equal(m.nav === "none", width < 1100, `${width}: nav display ${m.nav}`);
+      if (width >= 1100) {
         const header = await page.locator("header").evaluate((h) => h.scrollWidth <= h.clientWidth);
         assert.ok(header, `${width}: header overflows`);
         const nav = page.getByRole("navigation", { name: "Main" });
         await nav.getByRole("link", { name: "Demo video" }).waitFor({ state: "visible" });
         await nav.getByRole("link", { name: "Interactive demo" }).waitFor({ state: "visible" });
       } else {
-        await page.getByRole("button", { name: "Open menu" }).click();
+        await page.locator("details.menu > summary").click();
         const nav = page.getByRole("navigation", { name: "Main (mobile)" });
         await nav.getByRole("link", { name: "Demo video" }).waitFor({ state: "visible" });
         await nav.getByRole("link", { name: "Interactive demo" }).waitFor({ state: "visible" });

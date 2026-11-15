@@ -3,6 +3,7 @@ import Link from "next/link";
 import { LegalPage, LegalTable } from "@/components/marketing/legal-page";
 import { COMPANY, PRIVACY_LAST_UPDATED, companyRegistrationLine } from "@/lib/site";
 import { PRODUCT } from "@/modules/medreport/config.public";
+import { ProseFrame } from "@/components/marketing/prose-frame";
 
 const DESCRIPTION = `How ${COMPANY.legalName} handles personal data for the ${PRODUCT.name} website, clinic user accounts and the patient information clinics process with ${PRODUCT.name}.`;
 
@@ -17,6 +18,7 @@ export default function PrivacyPage() {
   const registration = companyRegistrationLine();
   const email = COMPANY.contactEmail;
   return (
+    <ProseFrame>
     <LegalPage
       title="Privacy policy"
       lastUpdated={PRIVACY_LAST_UPDATED}
@@ -313,5 +315,6 @@ export default function PrivacyPage() {
         top. If a change affects clinics materially, we will tell them in advance.
       </p>
     </LegalPage>
+    </ProseFrame>
   );
 }

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 200" width="280" height="200" aria-hidden="true">
+  <!-- Step 1: the referrer's form, uploaded once; the answer spaces found and marked. -->
+  <g fill="none" stroke="#0F3B35" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="103" y="25" width="140" height="164" rx="4" fill="#0B6B65" stroke="none"/>
+    <rect x="96" y="18" width="140" height="164" rx="4" fill="#fff"/>
+    <rect x="99" y="21" width="134" height="24" fill="#1F3A6B" stroke="none"/>
+    <path d="M96 46 H236"/>
+    <path stroke-width="4" d="M114 66 H200 M114 106 H190 M114 146 H204"/>
+    <rect x="114" y="76" width="96" height="16" rx="3" fill="#F6C34A" stroke-width="3"/>
+    <rect x="114" y="116" width="96" height="16" rx="3" fill="#F6C34A" stroke-width="3"/>
+    <rect x="114" y="156" width="96" height="16" rx="3" fill="#F6C34A" stroke-width="3"/>
+    <circle cx="222" cy="84" r="6" fill="#C4432B" stroke-width="3"/>
+    <circle cx="222" cy="124" r="6" fill="#C4432B" stroke-width="3"/>
+    <circle cx="222" cy="164" r="6" fill="#C4432B" stroke-width="3"/>
+    <path stroke="#C4432B" stroke-width="8" d="M48 170 V76 M26 98 L48 76 L70 98"/>
+  </g>
+</svg>

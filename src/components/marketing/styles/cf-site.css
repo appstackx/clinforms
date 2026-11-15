@@ -1,0 +1,201 @@
+/* ClinForms public site (clinforms.co.uk) – its own sections on top of ClinDesk's design system.
+   The tokens, type, buttons, header, footer, product and paper-form layers come from
+   src/components/clindesk/styles/site.css (loaded first by src/app/(marketing)/layout.tsx), so the two sites read as one
+   family. Everything here sits under .cd-site.cf-site (ClinForms' pages only) and uses the shared tokens; the drawings
+   are ClinForms' own (public/clinforms/site/*.svg). */
+
+/* ---------- header / footer: ClinForms specifics ---------- */
+.cf-site .logo .cf-mark { width: 34px; height: 34px; flex: none; }
+.cf-site .logo-word { color: var(--pine); }
+.cf-site .site-footer .logo-word { color: var(--couch-roll); }
+.cf-site .menu-sheet .btn { color: #fff; }
+.cf-site .menu-sheet { z-index: 60; }
+.cf-site .cf-f-grid { grid-template-columns: minmax(0, 6fr) repeat(2, minmax(0, 3fr)); }
+.cf-site .cf-f-contact .link, .cf-site .cf-family .link { color: var(--couch-roll); min-height: 44px; }
+.cf-site .cf-family { margin-top: 4px; font-weight: 600; }
+.cf-site .cf-f-company p { margin: 0; }
+.cf-site .cf-f-company { padding-block: 12px 4px; }
+.cf-site .f-cookie-btn { display: inline-flex; align-items: center; min-height: 44px; padding: 0; background: none; border: 0; cursor: pointer; color: var(--muted-on-dark); font: 500 16px/1.2 var(--font-text); text-align: left; }
+.cf-site .f-cookie-btn:hover { color: var(--couch-roll); text-decoration: underline 2px var(--sun); text-underline-offset: 4px; }
+
+/* ---------- shared bits ---------- */
+.cf-site .cf-section { padding-block: 96px; }
+.cf-site .cf-head { display: flex; flex-direction: column; align-items: flex-start; gap: 16px; max-width: 820px; margin-bottom: 48px; }
+.cf-site .cf-head .marker { margin-bottom: -4px; }
+.cf-site .cf-center { display: flex; justify-content: center; margin-top: 48px; }
+.cf-site .cf-length { font-weight: 500; font-variant-numeric: tabular-nums; opacity: .85; }
+.cf-site .btn .tour-link-dot { width: 24px; height: 24px; }
+.cf-site .btn .tour-link-dot svg { width: 10px; height: 10px; }
+.cf-site .cf-btn-light { border-color: var(--couch-roll); color: #fff; }
+.cf-site .cf-btn-light:hover { background: rgba(255, 255, 255, .12); }
+.cf-site .cf-btn-light .tour-link-dot { background: var(--couch-roll); color: var(--tape-coral); }
+/* links inside running text stay inline (the inline-link exception to the 44 px target size) */
+.cf-site :is(.body, .small, .cta-q, .lead) .link { display: inline; min-height: 0; }
+.cf-site .cf-tick { width: 22px; height: 22px; flex: none; margin-top: 3px; fill: none; stroke: var(--tape-coral); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---------- hero ---------- */
+.cf-site .cf-hero { position: relative; overflow: hidden; background: var(--sage); }
+.cf-site .cf-hero-inner { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); column-gap: 48px; align-items: start; }
+.cf-site .cf-hero-copy { position: relative; z-index: 3; display: flex; flex-direction: column; align-items: flex-start; gap: 26px; padding: 80px 0 88px; }
+.cf-site .cf-kicker { display: inline-flex; align-items: center; gap: 12px; padding: 8px 14px; border-radius: 999px; background: var(--couch-roll); color: var(--pine); font: 700 15px/1.2 var(--font-text); box-shadow: var(--shadow-chip); }
+.cf-site .cf-h1 { max-width: 13ch; }
+/* the highlighter tape behind "clinic notes" (as ClinDesk's hero, home.css .hl / .hl-tape) */
+.cf-site .hl { position: relative; display: inline-block; z-index: 0; white-space: nowrap; }
+.cf-site .hl-tape { position: absolute; z-index: -1; left: -10px; right: -12px; top: 18%; height: 70%; width: auto; --rotate: -1.5deg; border-radius: 5px; transform-origin: left center; animation: cd-stick .5s var(--ease) .3s both; }
+.cf-site .cf-hero-copy .lead { max-width: 34em; }
+.cf-site .cf-hero-copy .small { margin-top: -8px; }
+.cf-site .cf-hero-art { position: relative; min-height: 1000px; }
+.cf-site .cf-hero-plane { position: absolute; left: 60px; right: -50vw; top: 0; bottom: 0; background: var(--sun); clip-path: polygon(110px 0, 100% 0, 100% 100%, 0 100%); }
+.cf-site .cf-hero-drawing { position: absolute; z-index: 1; left: 40px; top: 28px; width: 600px; }
+.cf-site .cf-hero-drawing img { width: 100%; height: auto; }
+/* product scene */
+.cf-site .cf-scene { position: absolute; z-index: 2; left: 0; right: 0; top: 400px; }
+.cf-site .cf-scene-tape { left: -18px; top: -16px; --w: 140px; --h: 32px; --rotate: -7deg; z-index: 5; }
+.cf-site .cf-form { position: relative; width: min(530px, 100%); }
+.cf-site .cf-form-head { padding: 20px 24px 14px; border-bottom: 1px solid #E5EAE8; }
+.cf-site .cf-form-head .doc-title { font-size: 20px; margin-top: 10px; }
+.cf-site .cf-form-rows { display: flex; flex-direction: column; gap: 14px; padding: 16px 24px 4px; margin: 0; }
+.cf-site .cf-form-row dt { font-size: 15px; font-weight: 700; }
+.cf-site .cf-form-row dd { margin: 6px 0 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.cf-site .cf-answer { font: 600 15px/1.3 var(--font-inter), Arial, sans-serif; }
+.cf-site .cf-bars { display: flex; flex-direction: column; gap: 6px; flex: 1 1 100%; }
+.cf-site .cf-bars i { display: block; height: 8px; border-radius: 99px; background: #D5DDDA; }
+.cf-site .cf-form-row .need { flex: 1; }
+.cf-site .cf-form-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin: 14px 24px 20px; padding-top: 12px; border-top: 1px solid #E5EAE8; font-size: 13.5px; font-weight: 600; }
+.cf-site .cf-form-foot .lock svg { stroke-width: 2.4; }
+.cf-site .cf-frag-source { right: 0; top: 218px; width: 220px; rotate: 2deg; display: flex; flex-direction: column; gap: 2px; font-size: 13.5px; z-index: 4; border-left: 6px solid var(--tape-coral); }
+.cf-site .cf-frag-progress { right: -10px; top: auto; bottom: -44px; width: 210px; rotate: -1.5deg; display: flex; flex-direction: column; gap: 2px; font-size: 13.5px; z-index: 4; border-left: 6px solid var(--sun); }
+.cf-site .cf-scene-tag { left: 340px; top: -14px; }
+
+/* ---------- referrers strip ---------- */
+.cf-site .cf-referrers { padding-block: 34px; }
+.cf-site .cf-referrers-inner { display: flex; flex-wrap: wrap; align-items: center; gap: 14px 32px; }
+.cf-site .cf-referrers-title { color: var(--sun); }
+.cf-site .cf-ref-list { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 26px; font: 600 17px/1.4 var(--font-text); color: var(--couch-roll); }
+.cf-site .cf-ref-list li { display: inline-flex; align-items: center; gap: 12px; }
+
+/* ---------- before / after ---------- */
+.cf-site .cf-why { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); column-gap: 64px; align-items: center; }
+.cf-site .cf-why .cf-head { margin-bottom: 0; }
+.cf-site .cf-compare { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; align-items: start; }
+.cf-site .cf-card { position: relative; padding: 28px 28px 30px; border-radius: 16px; }
+.cf-site .cf-card ul { display: flex; flex-direction: column; gap: 14px; margin-top: 18px; }
+.cf-site .cf-card li { display: flex; gap: 12px; font-size: 17px; line-height: 1.45; }
+.cf-site .cf-card-title { font-family: var(--font-display); font-variation-settings: var(--display-vars); font-weight: 750; font-size: 24px; line-height: 1.1; color: var(--pine); }
+.cf-site .cf-card--before { background: var(--cardboard); rotate: -1deg; }
+.cf-site .cf-card--before li { color: var(--pine); }
+.cf-site .cf-dash { flex: none; width: 14px; height: 3px; margin-top: 12px; border-radius: 2px; background: var(--brick); }
+.cf-site .cf-card--after { background: #fff; border: 1px solid rgba(15, 59, 53, .12); box-shadow: var(--shadow-fragment); margin-top: 40px; }
+.cf-site .cf-card-tape { right: 24px; top: -14px; --w: 96px; --h: 28px; --rotate: 5deg; }
+
+/* ---------- how it works ---------- */
+.cf-site .cf-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 24px; counter-reset: none; }
+.cf-site .cf-step { display: flex; flex-direction: column; gap: 10px; padding: 16px 16px 26px; background: #fff; border-radius: 16px; border: 1px solid rgba(15, 59, 53, .12); box-shadow: var(--shadow-chip); }
+.cf-site .cf-step-art { display: grid; place-items: center; aspect-ratio: 7 / 5; border-radius: 10px; margin-bottom: 8px; overflow: hidden; }
+.cf-site .cf-step-art img { width: 88%; height: auto; }
+.cf-site .cf-step-art--1 { background: var(--sun-soft); }
+.cf-site .cf-step-art--2 { background: var(--blush); }
+.cf-site .cf-step-art--3 { background: var(--sage); }
+.cf-site .cf-step-art--4 { background: var(--cardboard); }
+.cf-site .cf-step-n { display: flex; align-items: center; gap: 10px; padding-inline: 6px; color: var(--teal); }
+.cf-site .cf-step-n .n { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--pine); color: var(--couch-roll); font: 700 14px/1 var(--font-text); }
+.cf-site .cf-step-title { padding-inline: 6px; font-family: var(--font-display); font-variation-settings: var(--display-vars); font-weight: 750; font-size: 24px; line-height: 1.1; color: var(--pine); }
+.cf-site .cf-step-body { padding-inline: 6px; font-size: 16px; line-height: 1.55; color: var(--muted); }
+
+/* ---------- features ---------- */
+.cf-site .cf-features { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 40px 48px; }
+.cf-site .cf-features li { display: flex; flex-direction: column; gap: 10px; }
+.cf-site .cf-features .tb { width: 28px; height: 10px; }
+.cf-site .cf-feature-title { font-family: var(--font-display); font-variation-settings: var(--display-vars); font-weight: 750; font-size: 24px; line-height: 1.12; color: var(--pine); }
+.cf-site .cf-features p { font-size: 17px; line-height: 1.55; color: var(--muted); max-width: 40ch; }
+
+/* ---------- security ---------- */
+.cf-site .cf-security-inner { display: grid; grid-template-columns: minmax(0, 8fr) minmax(0, 4fr); column-gap: 64px; align-items: center; }
+.cf-site .cf-security-text { display: flex; flex-direction: column; align-items: flex-start; gap: 18px; }
+.cf-site .cf-on-dark-label { color: var(--sun); }
+.cf-site .cf-security-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 40px; margin: 18px 0 8px; }
+.cf-site .cf-security-list li { display: flex; gap: 14px; align-items: flex-start; }
+.cf-site .cf-security-list .tb { margin-top: 10px; }
+.cf-site .cf-security-title { font: 700 18px/1.3 var(--font-text); color: var(--couch-roll); }
+.cf-site .cf-security-list p { margin-top: 4px; font-size: 16px; line-height: 1.5; color: var(--muted-on-dark); }
+.cf-site .cf-security-art { position: relative; padding: 22px; background: var(--couch-roll); rotate: 2deg; box-shadow: var(--shadow-fragment); }
+.cf-site .cf-security-art img { width: 100%; height: auto; }
+.cf-site .cf-print-tape { left: -28px; top: -8px; --w: 118px; --h: 30px; --rotate: -32deg; z-index: 2; }
+
+/* ---------- FAQ ---------- */
+.cf-site .cf-faq-wrap { max-width: 1000px; }
+.cf-site .cf-faq { border-top: 2px solid var(--pine); }
+.cf-site .cf-faq details { border-bottom: 1px solid var(--line); }
+.cf-site .cf-faq summary { list-style: none; cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 20px; min-height: 64px; padding: 14px 0; font-family: var(--font-display); font-variation-settings: var(--display-vars); font-weight: 700; font-size: 23px; line-height: 1.2; color: var(--pine); }
+.cf-site .cf-faq summary::-webkit-details-marker { display: none; }
+.cf-site .cf-faq-plus { flex: none; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: var(--tape-coral); color: #fff; font: 700 22px/1 var(--font-text); transition: rotate .15s var(--ease); }
+.cf-site .cf-faq details[open] .cf-faq-plus { rotate: 45deg; }
+.cf-site .cf-faq details .body { padding-bottom: 22px; max-width: 70ch; }
+
+/* ---------- final call to action ---------- */
+.cf-site .cta .hero-ctas { margin-top: 6px; }
+.cf-site .cf-slip .appt-rows dd { font-size: 19px; }
+
+/* ---------- pages that keep the app's Tailwind styling (ProseFrame: security, legal, demo video, request form) ----------
+   The content's own classes still lay it out; these rules give it the site's ground, display headings, colours and
+   links. Two classes + an element outrank the content's single Tailwind classes. */
+.cf-site .cf-prose { background: var(--couch-roll); color: var(--ink); font-size: 16px; line-height: 1.6; }
+.cf-site .cf-prose > :is(div, section) { background: transparent; }
+.cf-site .cf-prose :is(h1, h2) { font-family: var(--font-display); font-optical-sizing: auto; font-variation-settings: var(--display-vars); color: var(--pine); letter-spacing: -.015em; text-wrap: balance; }
+.cf-site .cf-prose h1 { font-size: 56px; line-height: 1.02; font-weight: 800; }
+.cf-site .cf-prose h2 { font-weight: 750; line-height: 1.12; }
+.cf-site .cf-prose h3 { color: var(--pine); }
+.cf-site .cf-prose :is(.text-slate-900, .text-slate-800) { color: var(--ink); }
+.cf-site .cf-prose :is(.text-slate-700, .text-slate-600, .text-slate-500) { color: var(--muted); }
+.cf-site .cf-prose :is(.text-teal-700, .text-teal-800) { color: var(--teal); }
+.cf-site .cf-prose a:not(.btn) { text-decoration-color: var(--tape-coral); text-decoration-thickness: 2px; text-underline-offset: 3px; }
+.cf-site .cf-prose :is(.border-slate-200, .border-slate-300) { border-color: var(--line); }
+.cf-site .cf-prose .bg-slate-50 { background-color: #fff; }
+
+/* ---------- below 1100: one column ---------- */
+@media (max-width: 1099px) {
+  .cf-site .cf-hero-inner { grid-template-columns: minmax(0, 1fr); }
+  .cf-site .cf-hero-copy { padding: 48px 0 32px; gap: 22px; }
+  .cf-site .cf-h1 { max-width: 16ch; }
+  .cf-site .cf-hero-art { min-height: 0; padding-bottom: 56px; }
+  .cf-site .cf-hero-plane { left: auto; right: calc(-1 * var(--margin)); top: 0; bottom: auto; width: 82%; height: 300px; clip-path: polygon(40px 0, 100% 0, 100% 100%, 0 100%); }
+  .cf-site .cf-hero-drawing { position: relative; left: auto; top: 0; width: min(520px, 100%); margin-left: auto; }
+  .cf-site .cf-scene { position: relative; top: auto; margin-top: -60px; display: flex; flex-direction: column; gap: 14px; }
+  .cf-site .cf-scene .frag { position: relative; right: auto; top: auto; bottom: auto; rotate: none; width: auto; max-width: 420px; }
+  .cf-site .cf-scene-tag { left: auto; right: 6px; top: -12px; }
+  .cf-site .cf-why { grid-template-columns: minmax(0, 1fr); row-gap: 40px; }
+  .cf-site .cf-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cf-site .cf-features { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cf-site .cf-security-inner { grid-template-columns: minmax(0, 1fr); row-gap: 48px; }
+  .cf-site .cf-security-art { max-width: 380px; }
+  .cf-site .cf-f-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* ---------- 767 and below: phones ---------- */
+@media (max-width: 767px) {
+  .cf-site .cf-section { padding-block: 64px; }
+  .cf-site .cf-head { margin-bottom: 32px; gap: 12px; }
+  .cf-site .cf-hero-copy { padding: 32px 0 24px; }
+  .cf-site .cf-hero-copy .hero-ctas { flex-direction: column; align-self: stretch; }
+  .cf-site .cf-hero-copy .hero-ctas .btn { width: 100%; }
+  .cf-site .cf-h1 .hl { white-space: normal; }
+  .cf-site .cf-hero-plane { height: 220px; }
+  .cf-site .cf-scene { margin-top: -36px; }
+  .cf-site .cf-form-head { padding: 16px 16px 12px; }
+  .cf-site .cf-form-rows { padding: 14px 16px 4px; }
+  .cf-site .cf-form-foot { margin: 12px 16px 16px; }
+  .cf-site .cf-referrers-inner { flex-direction: column; align-items: flex-start; }
+  .cf-site .cf-ref-list { flex-direction: column; align-items: flex-start; gap: 8px; font-size: 16px; }
+  .cf-site .cf-compare { grid-template-columns: minmax(0, 1fr); }
+  .cf-site .cf-card--after { margin-top: 0; }
+  .cf-site .cf-steps, .cf-site .cf-features, .cf-site .cf-security-list { grid-template-columns: minmax(0, 1fr); }
+  .cf-site .cf-faq summary { font-size: 20px; }
+  .cf-site .cf-prose h1 { font-size: 38px; }
+  .cf-site .cta .hero-ctas { flex-direction: column; align-self: stretch; }
+  .cf-site .cta .hero-ctas .btn { width: 100%; }
+}
+@media (max-width: 479px) {
+  .cf-site .hdemo-s { display: none; }
+  .cf-site .cf-hero-drawing { display: block !important; }
+  .cf-site .cf-security-art { display: none !important; }
+}

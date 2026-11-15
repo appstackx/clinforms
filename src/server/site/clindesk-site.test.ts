@@ -84,8 +84,11 @@ describe("clinforms.co.uk is unchanged", () => {
     assert.deepEqual(PUBLIC_PAGES.map((p) => p.path), ["/", "/demo", "/request-access", "/security", "/privacy", "/cookies", "/terms"]);
   });
   it("ClinForms' marketing pages are not edited by this site, and ClinDesk's site no longer imports them", () => {
+    // 15/11/2026 (Khuram): ClinForms' site uses ClinDesk's design system (styles, fonts, the drawing tag) so both sites
+    // look like one family – those imports are allowed; nothing else from ClinDesk's site.
+    const SHARED_DESIGN = /^import [^\n]*"@\/components\/clindesk\/(styles\/site\.css|fonts|drawing)";$/gm;
     for (const f of ["src/app/(marketing)/layout.tsx", "src/app/(marketing)/page.tsx", "src/app/(marketing)/privacy/page.tsx", "src/app/(marketing)/terms/page.tsx", "src/app/(marketing)/cookies/page.tsx", "src/app/robots.ts", "src/app/sitemap.ts"]) {
-      assert.ok(!/clindesk/i.test(fs.readFileSync(path.join(ROOT, f), "utf8")), f);
+      assert.ok(!/clindesk/i.test(fs.readFileSync(path.join(ROOT, f), "utf8").replace(SHARED_DESIGN, "")), f);
     }
     for (const p of ["privacy", "terms", "cookies", "accessibility"]) {
       const f = `src/app/clindesk-site/${p}/page.tsx`;
@@ -262,7 +265,8 @@ describe("clindesk.co.uk legal pages", () => {
     assert.match(css, /\.cd-site \.f-office \{[^}]*font-size: 12px;[^}]*color: var\(--muted-on-dark\);/);
     const { SiteFooter: ClinFormsFooter } = await import("@/components/marketing/site-footer");
     const cf = renderToStaticMarkup(createElement(ClinFormsFooter)).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-    assert.match(cf, /ClinForms is a product of Appstack X Ltd\. © \d{4} Appstack X Ltd\. Registered in England and Wales, company number 16287309\. Registered office: 18 Westergate Avenue, Milton Keynes, MK10 7LQ$/);
+    assert.match(cf, /ClinForms is a product of Appstack X Ltd\. © \d{4} Appstack X Ltd\. Registered in England and Wales, company number 16287309\. Registered office: 18 Westergate Avenue, Milton Keynes, MK10 7LQ ClinForms$/, "last line (before the decorative giant name)");
+    assert.match(cf, /From the makers of ClinDesk/);
   });
 
   it("/security: the filled hosting, encryption, backup, retention and document lines read as sentences; no certification claimed", async () => {

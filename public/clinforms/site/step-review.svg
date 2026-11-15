@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 200" width="280" height="200" aria-hidden="true">
+  <!-- Step 3: the clinician checks each answer, fills the gap and approves. -->
+  <g fill="none" stroke="#0F3B35" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="47" y="25" width="140" height="164" rx="4" fill="#F3A9BA" stroke="none"/>
+    <rect x="40" y="18" width="140" height="164" rx="4" fill="#fff"/>
+    <rect x="43" y="21" width="134" height="24" fill="#1F3A6B" stroke="none"/>
+    <path d="M40 46 H180"/>
+    <path stroke-width="4" d="M58 68 H150 M58 92 H140"/>
+    <rect x="56" y="110" width="104" height="24" rx="3" fill="#FDE8B4" stroke-width="3" stroke-dasharray="7 7"/>
+    <path stroke-width="4" d="M58 154 H146"/>
+    <path stroke="#0F3B35" stroke-width="20" d="M222 152 L254 184"/>
+    <path stroke="#0B6B65" stroke-width="9" d="M222 152 L254 184"/>
+    <circle cx="190" cy="118" r="44" fill="#D3E7EF" opacity=".92"/>
+    <path stroke="#C4432B" stroke-width="8" d="M168 118 L184 134 L214 98"/>
+  </g>
+</svg>

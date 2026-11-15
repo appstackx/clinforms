@@ -14,6 +14,7 @@ import {
 } from "@/lib/site/demo-video";
 import { PRODUCT } from "@/modules/medreport/config.public";
 import { DemoPlayer } from "./demo-player";
+import { ProseFrame } from "@/components/marketing/prose-frame";
 
 const TITLE = "Product demo video";
 const DESCRIPTION =
@@ -44,6 +45,7 @@ const STRUCTURED_DATA_JSON = JSON.stringify(STRUCTURED_DATA).replace(/</g, "\\u0
 /** The product demo video: public, indexable, linked from the header, the hero and the footer. */
 export default function DemoPage() {
   return (
+    <ProseFrame>
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: STRUCTURED_DATA_JSON }} />
 
@@ -142,5 +144,6 @@ export default function DemoPage() {
         </div>
       </section>
     </>
+    </ProseFrame>
   );
 }

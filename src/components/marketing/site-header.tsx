@@ -6,19 +6,21 @@ import { MobileNav } from "./mobile-nav";
 import { NavLink } from "./nav-link";
 import { DEMO_HREF, DEMO_VIDEO_HREF, MARKETING_NAV, REQUEST_ACCESS_HREF, SIGN_IN_HREF, btn } from "./nav";
 
-const navLink =
-  "rounded-md px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-700 aria-[current=page]:bg-slate-100 aria-[current=page]:text-slate-900";
+/** Header links: laid out by the site's design system (.nav a – the current page gets the coral bar). */
+const navLink = "cf-navlink";
 
 /**
- * Public site header: logo, navigation (incl. "Demo video", the recorded walk-through at /demo, and "Interactive demo",
- * the sandbox at /reports), "Sign in", "Request access". The link to the page being shown carries aria-current="page".
+ * Public site header (ClinDesk's header pattern, src/components/clindesk/site-header.tsx): logo, navigation (incl.
+ * "Demo video", the recorded walk-through at /demo, and "Interactive demo", the sandbox at /reports), "Sign in" and
+ * "Request access" from 1100 px; below that a short "Request access" button and the menu. The link to the page being
+ * shown carries aria-current="page".
  */
 export function SiteHeader({ brand = PUBLIC_SITE_BRAND }: { brand?: Brand }) {
   return (
-    <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/90 backdrop-blur supports-[backdrop-filter]:bg-white/75">
-      <div className="mx-auto flex h-16 max-w-6xl items-center gap-4 px-4 sm:px-6 lg:px-8">
+    <header className="site-header">
+      <div className="wrap hbar">
         <Logo name={brand.productName} />
-        <nav aria-label="Main" className="ml-6 hidden items-center gap-1 lg:flex">
+        <nav aria-label="Main" className="nav">
           {MARKETING_NAV.map((item) => (
             <NavLink key={item.href} href={item.href} className={navLink}>
               {item.label}
@@ -31,13 +33,18 @@ export function SiteHeader({ brand = PUBLIC_SITE_BRAND }: { brand?: Brand }) {
             Interactive demo
           </TrackedLink>
         </nav>
-        <div className="ml-auto flex items-center gap-2">
-          <Link href={SIGN_IN_HREF} prefetch={false} className={`${navLink} hidden sm:inline-flex`}>
+        <div className="hactions">
+          <Link href={SIGN_IN_HREF} prefetch={false} className="signin">
             Sign in
           </Link>
-          <Link href={REQUEST_ACCESS_HREF} className={`${btn.small} hidden sm:inline-flex`}>
-            Request access
+          <Link href={REQUEST_ACCESS_HREF} className={btn.small}>
+            Request access <span className="arr" aria-hidden="true">→</span>
           </Link>
+        </div>
+        <div className="hright">
+          <Link href={REQUEST_ACCESS_HREF} className={`${btn.small} hdemo-s`}>
+            Request access
+          </Link>{" "}
           <MobileNav />
         </div>
       </div>

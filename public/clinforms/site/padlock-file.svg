@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 280" width="320" height="280" aria-hidden="true">
+  <!-- Security: a clinic's file, locked; the key kept apart. -->
+  <g fill="none" stroke="#0F3B35" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="-3" y="247" width="330" height="24" rx="8" fill="#F6C34A" stroke="none"/>
+    <rect x="-10" y="240" width="330" height="24" rx="8"/>
+    <path d="M47 77 H117 L135 95 H277 V247 H47 Z" fill="#0F3B35" stroke="none"/>
+    <path d="M40 70 H110 L128 88 H270 V240 H40 Z" fill="#0B6B65"/>
+    <path stroke="#FBF4E8" stroke-width="5" d="M58 112 H252"/>
+    <path stroke="#0F3B35" stroke-width="22" d="M126 140 V112 a30 30 0 0 1 60 0 V140"/>
+    <path stroke="#FBF4E8" stroke-width="9" d="M126 140 V112 a30 30 0 0 1 60 0 V140"/>
+    <rect x="113" y="143" width="94" height="84" rx="12" fill="#0F3B35" stroke="none"/>
+    <rect x="106" y="136" width="94" height="84" rx="12" fill="#C4432B"/>
+    <circle cx="153" cy="170" r="10" fill="#FBF4E8" stroke-width="4"/>
+    <path stroke="#FBF4E8" stroke-width="7" d="M153 180 V196"/>
+    <g transform="rotate(-20 270 210)">
+      <circle cx="252" cy="206" r="14" fill="#F6C34A"/>
+      <path stroke-width="7" d="M266 206 H302 M290 206 V218 M300 206 V216"/>
+    </g>
+  </g>
+</svg>

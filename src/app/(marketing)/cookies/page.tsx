@@ -7,6 +7,7 @@ import { AdsCookiesSection } from "@/components/marketing/ads-cookies";
 import { LegalPage, LegalTable } from "@/components/marketing/legal-page";
 import { COMPANY, COOKIES_LAST_UPDATED } from "@/lib/site";
 import { PRODUCT } from "@/modules/medreport/config.public";
+import { ProseFrame } from "@/components/marketing/prose-frame";
 
 const DESCRIPTION = `The cookies and browser storage the ${PRODUCT.name} website, application and demo use, and how to change your choice.`;
 
@@ -21,6 +22,7 @@ const COLUMNS = ["Name", "Type", "Purpose", "Duration"];
 
 export default function CookiesPage() {
   return (
+    <ProseFrame>
     <LegalPage
       title="Cookie policy"
       lastUpdated={COOKIES_LAST_UPDATED}
@@ -138,5 +140,6 @@ export default function CookiesPage() {
         <a href={`mailto:${COMPANY.contactEmail}`}>{COMPANY.contactEmail}</a>.
       </p>
     </LegalPage>
+    </ProseFrame>
   );
 }
