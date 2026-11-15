@@ -8,7 +8,9 @@ import { accountAdminLinks, clinicRoleLabel, navForDeployment, shellNav, sitesSu
 import { resolveSiteChoice, SITE_COOKIE } from "@/components/pms/shell/site-cookie";
 import { ALL_SITES } from "@/components/pms/ui/site-switcher";
 import { roleLabel } from "@/lib/account-copy";
-import { CLINFORMS_NAME, CLINIC_SYSTEM_NAME, REPORTS_ADDON_NAME, brandViewport } from "@/lib/brand";
+import { CLINFORMS_NAME, CLINIC_SYSTEM_NAME, REPORT_FORMS_LABEL, brandViewport } from "@/lib/brand";
+import { ReportFormsElsewhere } from "@/components/account/report-forms-elsewhere";
+import { freeReportsNote, sampleClinicHome } from "@/server/trial/report-forms";
 import { MANIFEST_PATH } from "@/lib/pwa/manifest";
 import { listMemberships } from "@/server/auth/membership";
 import { CLINIC_BASE_PATH } from "@/modules/pms/core/modules";
@@ -135,6 +137,10 @@ export default async function ClinicSystemLayout({ children }: { children: React
   const account = accountAdminLinks(canManageBilling(actor.role));
   // A member of more than one clinic: the way to the clinic chooser (01/11/2026).
   const menu = memberships.length > 1 ? [...account.menu, { id: "account.switch", href: "/app/select-clinic", label: "Switch clinic", icon: "overview" as const, exact: true }] : account.menu;
+  // 15/11/2026 (Khuram): the report forms card – its trial line ("8 of 10 free reports left"), or, in a sample clinic,
+  // the way to the real clinic where they are.
+  const reportFormsLabel = brand.id === "clinic" ? REPORT_FORMS_LABEL : CLINFORMS_NAME;
+  const sampleHome = reports ? null : await sampleClinicHome(getDb(), actor.tenantId, memberships);
   const mySites = scope ? sites.filter((s) => scope.has(s.id)) : sites;
   const siteValue = resolveSiteChoice(cookies().get(SITE_COOKIE)?.value, mySites.map((s) => s.id), ALL_SITES);
   return (
@@ -147,7 +153,8 @@ export default async function ClinicSystemLayout({ children }: { children: React
       nav={withSetupAccountLinks(shellNav(navForDeployment(PMS_NAV, { clinicApi: apiOn, xero: xeroOn && mayManageXero(actor), exercises: exercisesOn, cardPayments: cardsOn }), actor.can, { "comms.messages": { count: replies, label: "replies to answer" } }, reportsSection(actor.can)), account.setup)}
       sites={{ options: mySites.map((s, i) => ({ id: s.id, name: s.name, note: i === 0 ? "Default" : undefined })), value: siteValue, total: sites.length }}
       searchHref={actor.can("patients.view") ? `${CLINIC_BASE_PATH}/patients` : null}
-      clinForms={reports ? { href: "/app/studio", label: brand.id === "clinic" ? REPORTS_ADDON_NAME : CLINFORMS_NAME } : null}
+      clinForms={reports ? { href: "/app/studio", label: reportFormsLabel, note: freeReportsNote(trial) } : null}
+      reportsElsewhere={sampleHome ? <ReportFormsElsewhere compact label={reportFormsLabel} clinicName={sampleHome.clinicName} organizationId={sampleHome.organizationId} /> : undefined}
       accountHref="/app/clinic/account"
       adminLinks={menu}
       installableApp={currentInstallableApp() !== null}

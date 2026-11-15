@@ -21,6 +21,12 @@ export const CLINIC_SYSTEM_NAME = "ClinDesk";
  */
 export const REPORTS_ADDON_NAME = "Reports";
 
+/**
+ * 15/11/2026 (Khuram): the add-on's menu name inside ClinDesk – "Report forms", so it is never confused with the clinic
+ * system's own "Reports" (figures: appointments, income …). Plans and invoices still say the "Reports add-on".
+ */
+export const REPORT_FORMS_LABEL = "Report forms";
+
 /** ClinForms' own product name (equals the module's PRODUCT.name; checked by src/lib/brand.test.ts). */
 export const CLINFORMS_NAME = "ClinForms";
 

@@ -297,10 +297,12 @@ async function submit(page) {
       await owner.waitForURL(`${DESK}/app/settings/members`);
     });
 
-    await check("N3", "the account area: an 'Open ClinDesk' tab and button lead into the clinic system", async () => {
+    await check("N3", "the account area: a green 'Open ClinDesk' header button (every page) and the overview's button lead into the clinic system", async () => {
+      await owner.goto(`${DESK}/app/settings/members`);
+      const header = owner.locator("header [data-testid=header-open-clinic-system]");
+      assert.equal(await header.getAttribute("href"), "/app/clinic");
+      assert.equal(await owner.locator("nav[aria-label=Clinic] a:has-text('Open ClinDesk')").count(), 0, "no longer a settings tab");
       await owner.goto(`${DESK}/app`);
-      const tab = owner.locator("nav[aria-label=Clinic] a:has-text('Open ClinDesk')");
-      assert.equal(await tab.getAttribute("href"), "/app/clinic");
       const button = owner.locator("[data-testid=open-clinic-system] a:has-text('Open ClinDesk')");
       assert.equal(await button.getAttribute("href"), "/app/clinic");
       await owner.screenshot({ path: path.join(OUT, "3-account-overview-open-clindesk.png"), fullPage: true });
