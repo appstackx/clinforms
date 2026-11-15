@@ -27,7 +27,7 @@ export const TENANT_STUDIO_BASE_PATH = "/app/studio";
 export function tenantHooks(
   clinic: StudioClinic,
   member: StudioMember,
-  options: { onSignOut?: () => Promise<void> | void; supportEmail?: string; brand?: StudioBrand } = {},
+  options: { onSignOut?: () => Promise<void> | void; supportEmail?: string; brand?: StudioBrand; clinicSystemPatients?: HostHooks["clinicSystemPatients"] } = {},
 ): HostHooks {
   return {
     basePath: TENANT_STUDIO_BASE_PATH,
@@ -44,6 +44,8 @@ export function tenantHooks(
     ...(options.onSignOut ? { onSignOut: options.onSignOut } : {}),
     // The host brand's chrome (F4; set by the layout): none on ClinForms' hosts.
     ...(options.brand ? { brand: options.brand } : {}),
+    // 15/11/2026: a clinic that also has the clinic system (set by the layout); nothing for any other clinic.
+    ...(options.clinicSystemPatients ? { clinicSystemPatients: options.clinicSystemPatients } : {}),
   };
 }
 
@@ -52,14 +54,18 @@ export function TenantHost({
   member,
   supportEmail,
   brand,
+  clinicSystemPatients,
   children,
 }: {
   clinic: StudioClinic;
   member: StudioMember;
   supportEmail?: string;
   brand?: StudioBrand;
+  clinicSystemPatients?: HostHooks["clinicSystemPatients"];
   children: ReactNode;
 }) {
+  const csHref = clinicSystemPatients?.href;
+  const csName = clinicSystemPatients?.name;
   const { tenantId, name, draftingEnabled, clinicians, signers, demoClinic } = clinic;
   const { name: memberName, userId, role, email, roleLabel, hcpc, jobTitle, canSign } = member;
   const hooks = useMemo(
@@ -67,9 +73,14 @@ export function TenantHost({
       tenantHooks(
         { tenantId, name, draftingEnabled, ...(clinicians ? { clinicians } : {}), ...(signers ? { signers } : {}), ...(demoClinic ? { demoClinic: true } : {}) },
         { name: memberName, userId, role, email, roleLabel, hcpc, jobTitle, canSign },
-        { onSignOut: () => signOutAndReload(), ...(supportEmail ? { supportEmail } : {}), ...(brand ? { brand } : {}) },
+        {
+          onSignOut: () => signOutAndReload(),
+          ...(supportEmail ? { supportEmail } : {}),
+          ...(brand ? { brand } : {}),
+          ...(csHref && csName ? { clinicSystemPatients: { href: csHref, name: csName } } : {}),
+        },
       ),
-    [tenantId, name, draftingEnabled, clinicians, signers, demoClinic, memberName, userId, role, email, roleLabel, hcpc, jobTitle, canSign, supportEmail, brand],
+    [tenantId, name, draftingEnabled, clinicians, signers, demoClinic, memberName, userId, role, email, roleLabel, hcpc, jobTitle, canSign, supportEmail, brand, csHref, csName],
   );
   return <HostHooksProvider hooks={hooks}>{children}</HostHooksProvider>;
 }

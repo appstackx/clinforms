@@ -101,10 +101,13 @@ interface GenerationState {
 export function NewReportScreen({
   launchToken,
   initialFormId,
+  preferBuiltIn = false,
   reuseReportId,
 }: {
   launchToken?: string;
   initialFormId?: string;
+  /** 15/11/2026: opened from the clinic system with "Built-in report" chosen – the built-in reports open at step 3. */
+  preferBuiltIn?: boolean;
   /** A clinic's Studio: start from this earlier report's checked notes (another form for the same patient). */
   reuseReportId?: string;
 }) {
@@ -393,6 +396,17 @@ export function NewReportScreen({
             </div>
           ) : (
             <>
+              {tenant && hooks.clinicSystemPatients ? (
+                <Notice tone="info" title={`Patient already in ${hooks.clinicSystemPatients.name}?`}>
+                  <span data-testid="clinic-system-patients-hint">
+                    Open the patient&apos;s case in {hooks.clinicSystemPatients.name} and choose <strong>Complete referrer form</strong> – their signed notes,
+                    appointments and outcome scores come across, so there is nothing to upload.{" "}
+                    <a href={hooks.clinicSystemPatients.href} className="font-medium underline underline-offset-2">
+                      Go to patients
+                    </a>
+                  </span>
+                </Notice>
+              ) : null}
               <SourceStep onLoaded={onLoaded} />
               {tenant ? <p className="text-xs text-slate-500">{TENANT_COPY.reuse.uploadHint}</p> : null}
             </>
@@ -424,6 +438,7 @@ export function NewReportScreen({
               onChoice={setChoice}
               onTemplates={setTemplates}
               preferredFormId={initialFormId}
+              preferBuiltIn={preferBuiltIn}
               kind={notesKind}
               completedFormId={reused?.formId ?? null}
             />

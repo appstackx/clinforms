@@ -19,8 +19,8 @@ function param(value: string | string[] | undefined): string | undefined {
 export default function TenantNewReportPage({
   searchParams,
 }: {
-  searchParams: { lt?: string | string[]; form?: string | string[]; from?: string | string[] };
+  searchParams: { lt?: string | string[]; form?: string | string[]; from?: string | string[]; builtin?: string | string[] };
 }) {
   const from = param(searchParams.from);
-  return <NewReportScreen key={from ?? ""} launchToken={param(searchParams.lt)} initialFormId={param(searchParams.form)} reuseReportId={from} />;
+  return <NewReportScreen key={from ?? ""} launchToken={param(searchParams.lt)} initialFormId={param(searchParams.form)} preferBuiltIn={param(searchParams.builtin) === "1"} reuseReportId={from} />;
 }

@@ -86,9 +86,9 @@ describe("brand chrome per host", () => {
     assert.match(src, /const CLINIC_HOST_REPORTS_PATH = "\/reports";/);
   });
 
-  it("F4: the clinic's Studio chrome follows the host brand (the clinic system's mark and Reports on its host)", () => {
+  it("F4: the clinic's Studio chrome follows the host brand (the clinic system's mark and \"Report forms\" on its host, 15/11/2026)", () => {
     const src = read("src/app/app/studio/layout.tsx");
-    assert.match(src, /studioName: REPORTS_ADDON_NAME/);
+    assert.match(src, /studioName: REPORT_FORMS_LABEL/);
     assert.match(src, /mark: <ClinicSystemMark/);
     assert.match(src, /if \(brand\.id !== "clinic"\) return undefined;/);
   });
