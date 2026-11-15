@@ -682,7 +682,7 @@ async function step(n, title, fn) {
       await me.locator("text=Saved.").waitFor({ timeout: 20000 });
       await hold(1200);
       await page.goto(`${DESK}/app/clinic`);
-      await page.click("text=Go to Reports");
+      await page.click("[data-testid=shell-report-forms]");
       await page.waitForURL((u) => u.pathname === "/app/studio", { timeout: 30000 });
       await hold(1800);
       await page.goto(`${DESK}/app/studio/new`);

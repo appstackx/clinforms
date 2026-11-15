@@ -2,8 +2,8 @@
 /**
  * The clinic system's app shell (design: docs/clinic-system/design/clinic-system-design-v1.html, "App shell"):
  * product switch, site switcher, patient search ("/"), keyboard shortcuts ("?"), user menu; the left navigation
- * from the modules' registry (already filtered by the member's permissions on the server); "Go to ClinForms" and
- * the clinic's name at the bottom. Below md (phones) the navigation folds behind a "Menu" button.
+ * from the modules' registry (already filtered by the member's permissions on the server); the report forms card under
+ * the menu and the clinic's name at the bottom. Below md (phones) the navigation folds behind a "Menu" button.
  *
  * Plain data in, no data fetching: src/app/app/clinic/layout.tsx checks the member and the package and builds the
  * props. A layout never protects a page: every page and action checks for itself.
@@ -13,7 +13,9 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Activity,
+  ArrowLeft,
   ArrowLeftRight,
+  ArrowRight,
   BarChart3,
   Calendar,
   ChevronDown,
@@ -70,7 +72,12 @@ export interface ClinicShellProps {
   /** null = the member may not search patients. */
   searchHref: string | null;
   /** ClinForms (reports) for this clinic, or null when the clinic has only the clinic system. */
-  clinForms: { href: string; label: string; waiting?: number } | null;
+  clinForms: { href: string; label: string; waiting?: number; /** e.g. "8 of 10 free reports left" (a self-serve trial). */ note?: string } | null;
+  /**
+   * 15/11/2026 (Khuram): a self-serve trial's SAMPLE clinic has no report forms (they are in the real clinic) – the card
+   * that says so and switches to the real clinic (a server-rendered form). Unset everywhere else.
+   */
+  reportsElsewhere?: React.ReactNode;
   /** Owners/administrators: their account page; everyone: theirs. */
   accountHref: string;
   /**
@@ -113,7 +120,7 @@ const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [{ title: "Everywhere", shortc
 const focusRing = "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary";
 
 export function ClinicShell(props: ClinicShellProps) {
-  const { productName, mark, homeHref, clinicName, user, nav, sites, searchHref, clinForms, accountHref, adminLinks = [], installableApp = false, children } = props;
+  const { productName, mark, homeHref, clinicName, user, nav, sites, searchHref, clinForms, reportsElsewhere, accountHref, adminLinks = [], installableApp = false, children } = props;
   const app = useClinicApp(installableApp);
   const [installOpen, setInstallOpen] = React.useState(false);
   const pathname = usePathname() ?? "";
@@ -260,13 +267,18 @@ export function ClinicShell(props: ClinicShellProps) {
               {siteSwitcher("mb-2 px-1 md:hidden")}
               {sectionView && section ? (
                 <nav aria-label={section.label} className="flex flex-col gap-0.5">
+                  {/* 15/11/2026 (Khuram): a real button, not a text link – the way back to the main menu. */}
                   <button
                     type="button"
                     onClick={() => setShowMain(true)}
-                    className={cn("mb-1 self-start rounded px-2.5 text-[13px] font-medium text-[#0B5F58] underline underline-offset-2 hover:text-[#08463F]", focusRing)}
+                    className={cn(
+                      "mb-2 flex h-9 w-full items-center gap-2 rounded-[8px] border border-[#0B5F58] bg-[#E6F7F5] px-2.5 text-[13px] font-semibold text-[#0B5F58] hover:bg-[#CCEFEA]",
+                      focusRing,
+                    )}
                     data-testid="shell-back-to-main"
                   >
-                    ← Clinic navigation
+                    <ArrowLeft className="h-4 w-4 shrink-0" aria-hidden />
+                    Back to main menu
                   </button>
                   <span className="px-2.5 pb-1.5 text-[17px] font-semibold text-foreground" id="clinic-nav-section">
                     {section.label}
@@ -287,13 +299,36 @@ export function ClinicShell(props: ClinicShellProps) {
                   ))}
                 </nav>
               )}
+              {/* 15/11/2026 (Khuram): report forms (the Studio) as a card right under the menu, not a link at the bottom. */}
+              {clinForms ? (
+                <Link
+                  href={clinForms.href}
+                  data-testid="shell-report-forms"
+                  className={cn("mt-3 block rounded-[10px] border border-[#BFD0F5] bg-[#EFF4FF] p-3 hover:border-[#1842B4] hover:bg-[#E3ECFF]", focusRing)}
+                >
+                  <span className="flex items-center gap-2 font-semibold text-[#1842B4]">
+                    <FileText className="h-[18px] w-[18px] shrink-0" aria-hidden />
+                    <span className="min-w-0 flex-1">{clinForms.label}</span>
+                    {clinForms.waiting ? (
+                      <span className="rounded-full bg-white px-1.5 text-[11px] font-semibold leading-[18px] text-[#1842B4]">
+                        {clinForms.waiting}
+                        <span className="sr-only"> forms waiting</span>
+                      </span>
+                    ) : null}
+                  </span>
+                  <span className="mt-1 block text-xs text-[#334155]">Fill referrers&apos; own forms from your notes.</span>
+                  {clinForms.note ? <span className="mt-1 block text-xs font-semibold text-[#0B5F58]">{clinForms.note}</span> : null}
+                  <span className="mt-2 inline-flex h-8 items-center gap-1.5 rounded-[8px] bg-[#1842B4] px-3 text-xs font-semibold text-white">
+                    Open {clinForms.label.toLowerCase()}
+                    <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+                  </span>
+                </Link>
+              ) : reportsElsewhere ? (
+                <div className="mt-3" data-testid="shell-report-forms-elsewhere">
+                  {reportsElsewhere}
+                </div>
+              ) : null}
               <div className="mt-4 flex flex-col gap-2 border-t border-border px-1 pt-3 md:mt-auto">
-                {clinForms ? (
-                  <Link href={clinForms.href} className={cn("flex h-9 items-center gap-2.5 rounded-[8px] px-2.5 font-medium text-[#1842B4] hover:bg-[#EFF4FF]", focusRing)}>
-                    <ArrowLeftRight className="h-4 w-4 shrink-0" aria-hidden />
-                    Go to {clinForms.label}
-                  </Link>
-                ) : null}
                 <span className="px-2.5 text-xs text-muted-foreground">{clinicName}</span>
               </div>
             </div>

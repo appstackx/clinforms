@@ -4,7 +4,7 @@ import { listMemberships } from "@/server/auth/membership";
 import { BrandMark } from "@/components/account/shell";
 import { SubmitButton } from "@/components/account/form-controls";
 import { roleLabel } from "@/lib/account-copy";
-import { CLINIC_SYSTEM_NAME } from "@/lib/brand";
+import { CLINIC_SYSTEM_NAME, REPORT_FORMS_LABEL } from "@/lib/brand";
 import { isManager } from "@/server/auth/roles";
 import { DemoClinicBanner } from "@/components/account/demo-clinic-banner";
 import { TrialBannerBar } from "@/components/account/trial-banner";
@@ -45,9 +45,10 @@ export default async function ClinicLayout({ children }: { children: React.React
   const reportsArea = packages.reports || ownBrand === "clinforms";
   const items: NavItem[] = [
     { href: "/app", label: "Overview" },
-    // 01/11/2026: the way into the clinic system, said plainly ("Open ClinDesk").
-    ...(packages.clinic ? [{ href: "/app/clinic", label: `Open ${CLINIC_SYSTEM_NAME}` }] : []),
-    ...(packages.reports ? [{ href: "/app/studio", label: "Studio" }] : []),
+    // 01/11/2026: the way into the clinic system, said plainly ("Open ClinDesk") – since 15/11/2026 (Khuram: "so hidden")
+    // a green button in the header on every page of this area, no longer a tab among the settings.
+    // 15/11/2026: on ClinDesk's host the Studio is "Report forms" (never confused with the clinic system's Reports).
+    ...(packages.reports ? [{ href: "/app/studio", label: brand.id === "clinic" ? REPORT_FORMS_LABEL : "Studio" }] : []),
     { href: "/app/settings/clinic", label: "Clinic" },
     { href: "/app/settings/members", label: "Members" },
     { href: "/app/settings/security", label: "Security" },
@@ -72,7 +73,16 @@ export default async function ClinicLayout({ children }: { children: React.React
             <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">{roleLabel(membership.role)}</span>
           </div>
           <div className="flex shrink-0 items-center gap-3">
-            <span className="hidden text-sm text-slate-600 md:inline">{session.user.email}</span>
+            <span className="hidden text-sm text-slate-600 lg:inline">{session.user.email}</span>
+            {packages.clinic ? (
+              <Link
+                href="/app/clinic"
+                data-testid="header-open-clinic-system"
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-teal-700 px-3 text-xs font-semibold text-white hover:bg-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-700 focus-visible:ring-offset-2 sm:text-sm"
+              >
+                <span aria-hidden>←</span> Open {CLINIC_SYSTEM_NAME}
+              </Link>
+            ) : null}
             {memberships.length > 1 ? (
               <Link href="/app/select-clinic" className="text-sm font-medium text-teal-700 underline-offset-4 hover:underline">
                 Switch clinic

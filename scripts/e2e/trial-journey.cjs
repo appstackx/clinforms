@@ -361,6 +361,25 @@ const banner = async (page) => ((await page.locator("[data-testid=trial-banner]"
       const ents = ["clinic", "reports"].map((p) => one("SELECT status FROM clinic_entitlements WHERE tenant_id = ? AND package = ?", tenant, p).status);
       assert.deepEqual(ents, ["trial", "trial"]);
       assert.equal(one("SELECT balance FROM pms_sms_credit_accounts WHERE tenant_id = ?", tenant).balance, 10);
+      // 15/11/2026 (Khuram): report forms as a card under the menu, with the free reports left.
+      const card = page.locator("[data-testid=shell-report-forms]");
+      assert.equal(await card.getAttribute("href"), "/app/studio");
+      const cardText = (await card.innerText()).replace(/\s+/g, " ");
+      assert.match(cardText, /Report forms/);
+      assert.match(cardText, /10 of 10 free reports left/);
+      // The account area: a green "Open ClinDesk" button in the header on every page; the overview's Report forms panel.
+      await page.goto(`${DESK}/app/settings/members`);
+      assert.equal(await page.locator("header [data-testid=header-open-clinic-system]").getAttribute("href"), "/app/clinic");
+      await page.goto(`${DESK}/app`);
+      assert.match(await page.locator("[data-testid=free-reports-left]").innerText(), /10 of 10 free reports left in your free trial/);
+      await page.screenshot({ path: path.join(SHOTS, "t3-account-overview.png"), fullPage: true });
+      // A set-up page: "Back to main menu" is a real button that brings the main menu back.
+      await page.goto(`${DESK}/app/clinic/setup/audit`);
+      const back = page.locator("[data-testid=shell-back-to-main]");
+      assert.match(await back.innerText(), /Back to main menu/);
+      await page.screenshot({ path: path.join(SHOTS, "t3-setup-back-button.png") });
+      await back.click();
+      await page.locator("nav[aria-label='ClinDesk'] >> text=Diary").waitFor();
       await page.goto(`${DESK}/app/clinic/messages/credits`);
       const credits = (await page.locator("main").innerText()).replace(/\s+/g, " ");
       assert.match(credits, /Trial credits – free test texts for your trial/);
@@ -395,17 +414,19 @@ const banner = async (page) => ((await page.locator("[data-testid=trial-banner]"
       const main = (await page.locator("body").innerText()).replace(/\s+/g, " ");
       assert.match(main, /sample clinic \(fictional\)/i, "the sample clinic is open");
       await page.screenshot({ path: path.join(SHOTS, "t5-sample-clinic.png"), fullPage: true });
+      // 15/11/2026: no report forms in the sample clinic – the card says where they are and switches there.
+      assert.equal(await page.locator("[data-testid=shell-report-forms]").count(), 0);
+      const elsewhere = (await page.locator("[data-testid=shell-report-forms-elsewhere]").innerText()).replace(/\s+/g, " ");
+      assert.ok(elsewhere.includes(`They are in your own clinic, ${OWNER.clinic}.`), elsewhere);
       const samplePatients = one("SELECT count(*) AS n FROM pms_patients WHERE tenant_id = ?", sampleTenant).n;
       assert.ok(samplePatients >= 12);
       assert.equal(one("SELECT count(*) AS n FROM pms_patients WHERE tenant_id = ?", tenant).n, 0, "the real clinic holds none of them");
-      await page.goto(`${DESK}/app/select-clinic`);
-      await page
-        .locator("form")
-        .filter({ has: page.locator("p", { hasText: new RegExp(`^${OWNER.clinic.replace(/[()]/g, "\\$&")}$`) }) })
-        .locator("button:has-text('Open')")
-        .click();
-      await page.waitForURL((u) => u.pathname.startsWith("/app/clinic"), { timeout: 30000 });
+      await page.click("[data-testid=shell-report-forms-elsewhere] button:has-text('Switch to your clinic')");
+      // The switch loads the real clinic's page in full: the sample's card goes away with the old page.
+      await page.locator("[data-testid=shell-report-forms-elsewhere]").waitFor({ state: "detached", timeout: 30000 });
+      await page.waitForLoadState("networkidle");
       await page.goto(`${DESK}/app/clinic`);
+      assert.equal(await page.locator("[data-testid=shell-report-forms]").count(), 1, "back in the real clinic: report forms");
       assert.equal(await page.locator("[data-testid=sample-offer]").count(), 0, "no second offer");
       return `${sampleTenant}: ${samplePatients} made-up patients`;
     });

@@ -4,7 +4,10 @@ import { PageHeader, Panel } from "@/components/account/shell";
 import { cookies } from "next/headers";
 import { ClinDeskOfferCard } from "@/components/account/clindesk-offer";
 import { DRAFTING_COPY, roleDescriptions, roleLabel } from "@/lib/account-copy";
-import { CLINIC_SYSTEM_NAME } from "@/lib/brand";
+import { CLINIC_SYSTEM_NAME, REPORT_FORMS_LABEL } from "@/lib/brand";
+import { ReportFormsElsewhere } from "@/components/account/report-forms-elsewhere";
+import { listMemberships } from "@/server/auth/membership";
+import { freeReportsNote, sampleClinicHome } from "@/server/trial/report-forms";
 import { CLINDESK_OFFER_COOKIE, showClinDeskOffer } from "@/lib/clindesk-offer";
 import { currentBrand } from "@/server/brand";
 import { clinicBrand } from "@/server/brand-home";
@@ -21,7 +24,7 @@ import { RemoveSampleClinicCard, SampleRemovedNotice } from "@/components/accoun
 import { SAMPLE_REMOVED_PARAM } from "@/lib/trial-copy";
 import { sampleRemovalOffer } from "@/server/trial/sample";
 import { clinicAccessOf, readClinicPlan } from "@/server/repos/clinic-plan";
-import { sampleOfferFor } from "@/server/trial/view";
+import { sampleOfferFor, trialBannerState } from "@/server/trial/view";
 import { clinicSignedUpOnline } from "@/server/repos/signup";
 
 export const dynamic = "force-dynamic";
@@ -45,7 +48,13 @@ export default async function ClinicOverviewPage({ searchParams }: { searchParam
   // R2: the full clinic system offered to a ClinForms clinic's owners and admins (hidden on request, per browser).
   const offer = showClinDeskOffer({ clinicSystem: packages.clinic, clinicBrand: ownBrand, role: membership.role }) && cookies().get(CLINDESK_OFFER_COOKIE)?.value !== "1";
   // 13/11/2026: a self-serve trial's owner is offered the separate sample clinic (src/server/trial/sample.ts).
-  const sample = await sampleOfferFor(db, membership.tenantId, membership.role, await readClinicPlan({ db }, membership.tenantId).then((p) => (p ? clinicAccessOf(p) : null)).catch(() => null));
+  const access = await readClinicPlan({ db }, membership.tenantId).then((p) => (p ? clinicAccessOf(p) : null)).catch(() => null);
+  const sample = await sampleOfferFor(db, membership.tenantId, membership.role, access);
+  // 15/11/2026 (Khuram): report forms near the top – with the trial's free reports left; a sample clinic (no report
+  // forms there on purpose) gets the way to the real clinic instead.
+  const brandId = currentBrand().id;
+  const freeReports = packages.reports ? freeReportsNote(await trialBannerState(db, membership.tenantId, access, false)) : undefined;
+  const sampleHome = packages.reports ? null : await sampleClinicHome(db, membership.tenantId, await listMemberships(db, session.user.id).catch(() => []));
   // 14/11/2026: after paying, the owner may remove the sample clinic (owner only – re-checked by the action).
   const removable = await sampleRemovalOffer(db, membership.tenantId, session.user.id, membership.role);
   // Fix wave 2: a new clinic's first steps, for the owner and administrators (who can do them).
@@ -109,6 +118,40 @@ export default async function ClinicOverviewPage({ searchParams }: { searchParam
             </Link>
           </div>
         </Panel>
+      ) : null}
+      {packages.reports ? (
+        <Panel title={brandId === "clinic" ? REPORT_FORMS_LABEL : "Completing forms"} className="mb-6">
+          <p className="text-sm text-slate-700">
+            {brandId === "clinic" ? "Complete referrers' own forms here" : "The Studio is where your clinic completes referrers' own forms"}: upload the patient&apos;s notes, choose the referrer&apos;s
+            form, and the treating clinician reviews and approves every answer before the form is issued.
+          </p>
+          {freeReports ? <p className="mt-2 text-sm font-semibold text-teal-800" data-testid="free-reports-left">{freeReports} in your free trial.</p> : null}
+          {setup.draftingEnabled ? null : (
+            <p className="mt-2 text-sm text-amber-800">
+              Drafting from the notes is switched off for your clinic, so answers from the notes are left for the clinician to write.
+              {manager ? " You can switch it on in Clinic details." : " Your clinic's owner or an administrator can switch it on."}
+            </p>
+          )}
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <Link
+              href="/app/studio"
+              className="inline-flex h-10 items-center rounded-lg bg-teal-700 px-4 text-sm font-semibold text-white hover:bg-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-700 focus-visible:ring-offset-2"
+            >
+              {brandId === "clinic" ? `Open ${REPORT_FORMS_LABEL.toLowerCase()}` : "Open the Studio"}
+            </Link>
+            {/* The public demo lives on ClinForms' own site; on the clinic brand's host /reports is its marketing page. */}
+            {brandId === "clinforms" ? (
+              <Link href="/reports" className="text-sm font-medium text-teal-700 underline-offset-4 hover:underline">
+                Try the demo with fictional patients
+              </Link>
+            ) : null}
+          </div>
+        </Panel>
+      ) : null}
+      {sampleHome ? (
+        <div className="mb-6" data-testid="report-forms-elsewhere">
+          <ReportFormsElsewhere label={brandId === "clinic" ? REPORT_FORMS_LABEL : "Report forms"} clinicName={sampleHome.clinicName} organizationId={sampleHome.organizationId} />
+        </div>
       ) : null}
       {offer ? <ClinDeskOfferCard onHide={hideClinDeskOfferAction} className="mb-6" /> : null}
       <div className="grid gap-4 md:grid-cols-3">
@@ -175,35 +218,6 @@ export default async function ClinicOverviewPage({ searchParams }: { searchParam
           ))}
         </ul>
       </Panel>
-
-      {packages.reports ? (
-        <Panel title="Completing forms" className="mt-6">
-          <p className="text-sm text-slate-700">
-            The Studio is where your clinic completes referrers&apos; own forms: upload the patient&apos;s notes, choose the referrer&apos;s
-            form, and the treating clinician reviews and approves every answer before the form is issued.
-          </p>
-          {setup.draftingEnabled ? null : (
-            <p className="mt-2 text-sm text-amber-800">
-              Drafting from the notes is switched off for your clinic, so answers from the notes are left for the clinician to write.
-              {manager ? " You can switch it on in Clinic details." : " Your clinic's owner or an administrator can switch it on."}
-            </p>
-          )}
-          <div className="mt-4 flex flex-wrap items-center gap-3">
-            <Link
-              href="/app/studio"
-              className="inline-flex h-10 items-center rounded-lg bg-teal-700 px-4 text-sm font-semibold text-white hover:bg-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-700 focus-visible:ring-offset-2"
-            >
-              Open the Studio
-            </Link>
-            {/* The public demo lives on ClinForms' own site; on the clinic brand's host /reports is its marketing page. */}
-            {currentBrand().id === "clinforms" ? (
-              <Link href="/reports" className="text-sm font-medium text-teal-700 underline-offset-4 hover:underline">
-                Try the demo with fictional patients
-              </Link>
-            ) : null}
-          </div>
-        </Panel>
-      ) : null}
     </>
   );
 }
