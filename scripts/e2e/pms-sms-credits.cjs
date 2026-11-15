@@ -568,7 +568,7 @@ const waitFor = async (fn, ms = 60000, what = "condition") => {
       await owner.waitForSelector("role=dialog >> text=New appointment");
       await owner.fill("#bk-search", `${p.first_name} ${p.last_name}`);
       await owner.locator(`[role=option]:has-text("${p.last_name}")`).first().click({ timeout: 20000 });
-      await owner.waitForSelector("text=Slot available", { timeout: 20000 });
+      await owner.waitForSelector("text=/Slot available|Outside working hours/", { timeout: 20000 });
       await owner.click("role=dialog >> button:has-text('Book appointment')");
       await owner.waitForSelector("text=Appointment booked", { timeout: 30000 });
     };

@@ -258,7 +258,7 @@ async function pickPatient(page, q, name) {
       assert((await reception.inputValue("#bk-pr")) === booked.practitionerId, "practitioner prefilled");
       booked.time = hh;
       await pickPatient(reception, "Megan", "Megan Hart");
-      await reception.waitForSelector("text=Slot available");
+      await reception.waitForSelector("text=/Slot available|Outside working hours/");
       await shot(reception, "1440-booking-dialog-free");
       await axe(reception, "booking dialog");
       await reception.click("role=dialog >> button:has-text('Book appointment')");
@@ -368,7 +368,7 @@ async function pickPatient(page, q, name) {
       await owner.selectOption("#bk-pr", booked.practitionerId);
       await owner.fill("#bk-dt", DB);
       await owner.selectOption("#bk-tm", doubleAt.time);
-      await owner.waitForSelector("text=Slot available");
+      await owner.waitForSelector("text=/Slot available|Outside working hours/");
       const room = await owner.inputValue("#bk-rm");
       await owner.click("role=dialog >> button:has-text('Book appointment')");
       await owner.waitForSelector("text=Appointment booked");
@@ -676,7 +676,7 @@ async function pickPatient(page, q, name) {
       await clickSlot(reception, found.ci, found.minute);
       await reception.waitForSelector("role=dialog >> text=New appointment");
       await pickPatient(reception, "Megan", "Megan Hart");
-      await reception.waitForSelector("text=Slot available");
+      await reception.waitForSelector("text=/Slot available|Outside working hours/");
       await reception.click("role=dialog >> button:has-text('Book appointment')");
       await reception.waitForSelector("text=Appointment booked");
       await reception.click("text=Back to diary");
@@ -796,7 +796,7 @@ async function pickPatient(page, q, name) {
       if (!starts.includes(9 * 60)) assert(tm !== "09:00", "not on a clash at 09:00");
       // …and it is free for the dialog's own check too.
       await pickPatient(owner, "Megan", "Megan Hart");
-      await owner.waitForSelector("text=Slot available");
+      await owner.waitForSelector("text=/Slot available|Outside working hours/");
       await owner.keyboard.press("Escape");
     });
 

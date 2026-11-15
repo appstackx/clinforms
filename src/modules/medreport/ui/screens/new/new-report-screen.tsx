@@ -131,6 +131,19 @@ export function NewReportScreen({
   // bh2 WC design 1: the approving clinician, chosen when the report is created (a clinic's Studio).
   const approverChoices = useMemo(() => (tenant ? approverOptions(hooks.clinic, hooks.member) : []), [tenant, hooks.clinic, hooks.member]);
   const [approverId, setApproverId] = useState<string | null>(() => defaultApproverId(approverChoices, hooks.member));
+  // 15/11/2026: while nobody may approve, coming back to this tab (e.g. after adding signing details in Members)
+  // refreshes the clinic's signers from the server – the wizard's own state is kept (router.refresh keeps client state).
+  const noApprover = tenant && approverChoices.length === 0;
+  useEffect(() => {
+    if (!noApprover) return;
+    const onFocus = () => router.refresh();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [noApprover, router]);
+  // A signer who appears after a refresh becomes the default choice (only while none is chosen yet).
+  useEffect(() => {
+    if (approverId === null && approverChoices.length > 0) setApproverId(defaultApproverId(approverChoices, hooks.member));
+  }, [approverChoices, approverId, hooks.member]);
   const abortRef = useRef<AbortController | null>(null);
   const launchStarted = useRef(false);
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -442,7 +455,15 @@ export function NewReportScreen({
               kind={notesKind}
               completedFormId={reused?.formId ?? null}
             />
-            {tenant ? <ApproverPicker options={approverChoices} value={approverId} onChange={setApproverId} memberIsStaff={hooks.member?.role === "staff"} /> : null}
+            {tenant ? (
+              <ApproverPicker
+                options={approverChoices}
+                value={approverId}
+                onChange={setApproverId}
+                memberIsStaff={hooks.member?.role === "staff"}
+                {...(hooks.accountHref && (hooks.member?.role === "owner" || hooks.member?.role === "admin") ? { membersHref: `${hooks.accountHref}/settings/members` } : {})}
+              />
+            ) : null}
             <NavBar
               back={{ label: "Back", onClick: () => setStep(2) }}
               next={{

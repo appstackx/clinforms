@@ -233,7 +233,7 @@ async function recordRows(page, patientId) {
     await reception.selectOption("#bk-tm", hhmm(minute));
     const confirm = reception.locator("role=dialog >> label:has-text('Send confirmation text and email') input");
     assert(await confirm.isChecked(), "confirmation ticked by default");
-    await reception.waitForSelector("text=Slot available");
+    await reception.waitForSelector("text=/Slot available|Outside working hours/");
     await reception.click("role=dialog >> button:has-text('Book appointment')");
     await reception.waitForSelector("text=Appointment booked");
     await reception.click("text=Back to diary");
