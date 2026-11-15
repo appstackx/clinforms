@@ -18,7 +18,7 @@ import { retryMessageFor } from "./comms/writes";
 import { clearTestOutbox, testOutbox } from "./comms/providers/test";
 import { sendSignInLink } from "./portal/portal-auth";
 import { clinicalAccessFrom } from "./native-report-access";
-import { TRIAL_ENDED_MESSAGE, referrerFormsFor, startReferrerFormFor, type ReferrerFormDeps } from "./integration/referrer-forms";
+import { BUILT_IN_FORM_ID, TRIAL_ENDED_MESSAGE, referrerFormsFor, startReferrerFormFor, type ReferrerFormDeps } from "./integration/referrer-forms";
 import { createCase } from "../repos/pms/cases";
 import { createSite } from "../repos/pms/directory";
 import { loadBookingOptions } from "./diary/reads";
@@ -175,6 +175,26 @@ describe("M10 security", () => {
       assert.ok(open.ok && open.value.canStart && open.value.cannotStartReason === null);
       const notBlocked = await startReferrerFormFor(clin, { patientId: ids.megan, caseId: kase.id, formId: "frm_any", consentRecorded: true }, running);
       assert.equal(!notBlocked.ok && notBlocked.code, "invalid", "goes on to the form check");
+    });
+  });
+
+  describe("15/11/2026: 'Built-in report' in the case's picker (a clinic with no referrer form yet)", () => {
+    it("opens the Studio with the case loaded and the built-in reports shown; the request is recorded; a made-up id is still refused", async () => {
+      const kase = await createCase(ctx, A, { patientId: ids.megan, title: "Whiplash (fictional)", openedOn: "2026-11-15" }, OWNER);
+      const running: ReferrerFormDeps = { packageOn: async () => true, clinicProfile: async () => ({ trial: { state: "active" } }) as unknown as ClinicProfile };
+      const clin = testActor(ctx, A, "clinician", { userId: "user_clin_b", name: "Sarah Reid (fictional)" });
+      const before = (await g.db.selectFrom("pms_form_requests").select("id").where("tenant_id", "=", A).execute()).length;
+      const r = await withEnv({ MEDREPORT_LAUNCH_SECRET: "x".repeat(48) }, () =>
+        startReferrerFormFor(clin, { patientId: ids.megan, caseId: kase.id, formId: BUILT_IN_FORM_ID, consentRecorded: true }, running),
+      );
+      const v = value(r);
+      assert.match(v.url, /^\/app\/studio\/new\?lt=[^&]+&builtin=1$/);
+      assert.doesNotMatch(v.url, /[?&]form=/);
+      const rows = await g.db.selectFrom("pms_form_requests").select(["form_ref", "form_title"]).where("tenant_id", "=", A).execute();
+      assert.equal(rows.length, before + 1);
+      assert.ok(rows.some((x) => x.form_ref === BUILT_IN_FORM_ID && x.form_title === "Built-in report"));
+      const bogus = await startReferrerFormFor(clin, { patientId: ids.megan, caseId: kase.id, formId: "builtin-x", consentRecorded: true }, running);
+      assert.equal(!bogus.ok && bogus.code, "invalid");
     });
   });
 

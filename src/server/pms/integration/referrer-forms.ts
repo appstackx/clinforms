@@ -89,6 +89,14 @@ const NOT_FOUND = "This case no longer exists in this clinic.";
 /** Where a clinic's Studio opens a launch (medreport api/handlers/launch.ts TENANT_LAUNCH_PATH). */
 export const STUDIO_NEW_PATH = "/app/studio/new";
 
+/**
+ * 15/11/2026 (Khuram's live trial test): the picker's "Built-in report" choice – for a clinic with no referrer form in
+ * its library yet (every new clinic), so "Complete referrer form" is never a dead end. The Studio then opens with the
+ * case loaded and its built-in reports shown (`builtin=1`); the clinician picks the solicitor or employer report there.
+ */
+export const BUILT_IN_FORM_ID = "builtin";
+export const BUILT_IN_FORM_TITLE = "Built-in report";
+
 export interface LibraryForm {
   id: string;
   title: string;
@@ -249,9 +257,12 @@ export async function startReferrerFormFor(
   const refusal = await launchRefusal(actor.tenantId, deps);
   if (refusal) return fail("forbidden", refusal);
   const ctx = actor.repo();
-  const form = (await listFormMeta(ctx, actor.tenantId)).find(
-    (f) => f.id === input.formId && f.status === "confirmed",
-  );
+  const builtIn = input.formId === BUILT_IN_FORM_ID;
+  const form = builtIn
+    ? { id: BUILT_IN_FORM_ID, title: BUILT_IN_FORM_TITLE }
+    : (await listFormMeta(ctx, actor.tenantId)).find(
+        (f) => f.id === input.formId && f.status === "confirmed",
+      );
   if (!form)
     return fail(
       "invalid",
@@ -298,7 +309,9 @@ export async function startReferrerFormFor(
       // M10 L7: only this member can redeem the launch (ClinForms' /launch/verify checks it).
       forUserId: actor.userId,
     });
-    const url = `${STUDIO_NEW_PATH}?lt=${encodeURIComponent(issued.token)}&form=${encodeURIComponent(form.id)}`;
+    const url = builtIn
+      ? `${STUDIO_NEW_PATH}?lt=${encodeURIComponent(issued.token)}&builtin=1`
+      : `${STUDIO_NEW_PATH}?lt=${encodeURIComponent(issued.token)}&form=${encodeURIComponent(form.id)}`;
     return { ok: true, value: { url, requestId: request.id } };
   } catch (err) {
     if (err instanceof RepoInputError) return fail("invalid", err.message);

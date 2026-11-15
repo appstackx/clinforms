@@ -155,6 +155,12 @@ export interface HostHooks {
   supportEmail?: string;
   /** 01/11/2026 (F4): the brand the Studio is shown under; default ClinForms'. */
   brand?: StudioBrand;
+  /**
+   * 15/11/2026: tenant mode, a clinic that ALSO has the host's clinic system – where its patients are, so "Complete a
+   * form" can point there (open the patient's case → Complete referrer form: the signed notes come across, nothing to
+   * upload). Unset for every other clinic: the screen is exactly as before.
+   */
+  clinicSystemPatients?: { href: string; name: string };
 }
 
 const HostHooksContext = createContext<HostHooks>({});

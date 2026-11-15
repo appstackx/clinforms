@@ -42,9 +42,11 @@ export interface FormStepProps {
   kind?: ReportKind | null;
   /** The form the earlier report completed from the same notes (another form for this patient): never preselected. */
   completedFormId?: string | null;
+  /** 15/11/2026: open the built-in reports at once (a form started from the clinic system with "Built-in report"). */
+  preferBuiltIn?: boolean;
 }
 
-export function FormStep({ party, forms, formsReady, choice, onChoice, onTemplates, preferredFormId, kind = null, completedFormId = null }: FormStepProps) {
+export function FormStep({ party, forms, formsReady, choice, onChoice, onTemplates, preferredFormId, kind = null, completedFormId = null, preferBuiltIn = false }: FormStepProps) {
   const paths = useStudioPaths();
   const confirmed = useMemo(() => forms.filter((f) => f.status === "confirmed"), [forms]);
   const proposed = useMemo(() => forms.filter((f) => f.status !== "confirmed"), [forms]);
@@ -52,17 +54,17 @@ export function FormStep({ party, forms, formsReady, choice, onChoice, onTemplat
     () => (formsReady ? matchReferrerForm(party, confirmed, getRememberedFormId(party.name, kind), kind) : null),
     [formsReady, party, confirmed, kind],
   );
-  const [showBuiltIn, setShowBuiltIn] = useState(choice?.kind === "template");
+  const [showBuiltIn, setShowBuiltIn] = useState(choice?.kind === "template" || preferBuiltIn);
   const [templates, setTemplates] = useState<ReportTemplate[] | null>(null);
   const [templatesError, setTemplatesError] = useState<string | null>(null);
 
   // Default choice: ?form=, else the referral's referrer's form.
   useEffect(() => {
-    if (!formsReady || choice) return;
+    if (!formsReady || choice || preferBuiltIn) return;
     const preferred = preferredFormId ? confirmed.find((f) => f.id === preferredFormId) : undefined;
     const pick = preferred ?? match?.form;
     if (pick && pick.id !== completedFormId) onChoice({ kind: "form", formId: pick.id });
-  }, [formsReady, choice, preferredFormId, confirmed, match, onChoice, completedFormId]);
+  }, [formsReady, choice, preferredFormId, confirmed, match, onChoice, completedFormId, preferBuiltIn]);
 
   // Built-in templates, loaded when that option is opened.
   useEffect(() => {

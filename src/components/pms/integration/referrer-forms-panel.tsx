@@ -6,7 +6,10 @@
  * with who approved them and when.
  */
 import Link from "next/link";
-import { REPORTS_ADDON_NAME } from "@/lib/brand";
+import { REPORT_FORMS_LABEL } from "@/lib/brand";
+
+/** The "Built-in report" choice (src/server/pms/integration/referrer-forms.ts BUILT_IN_FORM_ID). */
+export const BUILT_IN_CHOICE = "builtin";
 import * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { FileText } from "lucide-react";
@@ -59,7 +62,8 @@ export function ReferrerFormsPanel({
   start,
 }: ReferrerFormsPanelProps) {
   const [open, setOpen] = React.useState(false);
-  const [formId, setFormId] = React.useState<string>(library[0]?.id ?? "");
+  // 15/11/2026: a library form when there is one, else the built-in report (never a dead end for a new clinic).
+  const [formId, setFormId] = React.useState<string>(library[0]?.id ?? BUILT_IN_CHOICE);
   const [consent, setConsent] = React.useState(true);
   const [pending, setPending] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -110,7 +114,7 @@ export function ReferrerFormsPanel({
       {!clinForms ? (
         <p className="mt-3 text-sm text-[#334155]">
           Completing a referrer&apos;s own form from this case needs the{" "}
-          {REPORTS_ADDON_NAME} add-on, which is not switched on for this clinic.{" "}
+          {REPORT_FORMS_LABEL} add-on, which is not switched on for this clinic.{" "}
           <Link
             href="/app/settings/billing"
             className="text-primary-strong underline underline-offset-2"
@@ -176,49 +180,67 @@ export function ReferrerFormsPanel({
                 Choose a form
               </DialogPrimitive.Title>
               <DialogPrimitive.Description className="mt-1 text-[#475569]">
-                From your clinic&apos;s form library, filtered to this
-                case&apos;s referrer and insurer.
+                The referrer&apos;s own form from your library (this case&apos;s
+                referrer and insurer first), or a built-in report.
               </DialogPrimitive.Description>
             </div>
             <div className="px-5 py-4">
               {library.length === 0 ? (
-                <PmsNotice tone="info" title="No forms in your library yet">
-                  Add the referrer&apos;s form in {REPORTS_ADDON_NAME} (Forms →
-                  Upload a referrer form) and confirm its mapping, then come back
-                  to this case.
-                </PmsNotice>
-              ) : (
-                <div role="radiogroup" aria-label="Forms" className="space-y-2">
-                  {library.map((f) => (
-                    <label
-                      key={f.id}
-                      className={`flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2.5 ${formId === f.id ? "border-[#1842B4] bg-[#F5F8FF]" : "border-border bg-white"}`}
-                    >
-                      <input
-                        type="radio"
-                        name="referrer-form"
-                        value={f.id}
-                        checked={formId === f.id}
-                        onChange={() => setFormId(f.id)}
-                        className="mt-1 accent-[#1842B4]"
-                      />
-                      <span>
-                        <strong className="block text-foreground">
-                          {f.title}
-                        </strong>
-                        <span className="block text-xs text-[#475569]">
-                          {[
-                            f.referrer,
-                            f.forThisCase ? "for this case" : "other referrer",
-                          ]
-                            .filter(Boolean)
-                            .join(" · ")}
-                        </span>
+                <p className="mb-3 text-[#475569]" data-testid="no-library-forms">
+                  No referrer forms in your library yet. Use a built-in report now, or add the referrer&apos;s own
+                  form in {REPORT_FORMS_LABEL} (Referrer forms → upload) and it will be offered here.
+                </p>
+              ) : null}
+              <div role="radiogroup" aria-label="Forms" className="space-y-2">
+                {library.map((f) => (
+                  <label
+                    key={f.id}
+                    className={`flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2.5 ${formId === f.id ? "border-[#1842B4] bg-[#F5F8FF]" : "border-border bg-white"}`}
+                  >
+                    <input
+                      type="radio"
+                      name="referrer-form"
+                      value={f.id}
+                      checked={formId === f.id}
+                      onChange={() => setFormId(f.id)}
+                      className="mt-1 accent-[#1842B4]"
+                    />
+                    <span>
+                      <strong className="block text-foreground">
+                        {f.title}
+                      </strong>
+                      <span className="block text-xs text-[#475569]">
+                        {[
+                          f.referrer,
+                          f.forThisCase ? "for this case" : "other referrer",
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
                       </span>
-                    </label>
-                  ))}
-                </div>
-              )}
+                    </span>
+                  </label>
+                ))}
+                <label
+                  data-testid="built-in-choice"
+                  className={`flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2.5 ${formId === BUILT_IN_CHOICE ? "border-[#1842B4] bg-[#F5F8FF]" : "border-border bg-white"}`}
+                >
+                  <input
+                    type="radio"
+                    name="referrer-form"
+                    value={BUILT_IN_CHOICE}
+                    checked={formId === BUILT_IN_CHOICE}
+                    onChange={() => setFormId(BUILT_IN_CHOICE)}
+                    className="mt-1 accent-[#1842B4]"
+                  />
+                  <span>
+                    <strong className="block text-foreground">Built-in report</strong>
+                    <span className="block text-xs text-[#475569]">
+                      No form from the referrer: a treating physiotherapist report for a solicitor (road traffic) or a
+                      fitness for work report for an employer – you choose in the next step.
+                    </span>
+                  </span>
+                </label>
+              </div>
               <label className="mt-4 flex items-start gap-2 text-[#334155]">
                 <input
                   type="checkbox"
@@ -233,8 +255,8 @@ export function ReferrerFormsPanel({
               </label>
               <p className="mt-3 text-xs text-[#475569]">
                 {clinicalPrefill
-                  ? `${REPORTS_ADDON_NAME} gets the patient, the case, the referrer and authorisations, appointments, and the signed notes and outcome scores of this case. Unsigned notes are never used.`
-                  : `${REPORTS_ADDON_NAME} gets the patient, the case, the referrer and authorisations and appointments. Clinical notes are not shared from your account – a clinician completes the clinical answers.`}
+                  ? `${REPORT_FORMS_LABEL} gets the patient, the case, the referrer and authorisations, appointments, and the signed notes and outcome scores of this case. Unsigned notes are never used.`
+                  : `${REPORT_FORMS_LABEL} gets the patient, the case, the referrer and authorisations and appointments. Clinical notes are not shared from your account – a clinician completes the clinical answers.`}
               </p>
               {error ? (
                 <p role="alert" className="mt-3 text-sm text-[#B91C1C]">
@@ -244,7 +266,7 @@ export function ReferrerFormsPanel({
             </div>
             <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border px-5 py-3">
               <span className="mr-auto text-xs text-[#475569]">
-                Opens in {REPORTS_ADDON_NAME}
+                Opens in {REPORT_FORMS_LABEL}
               </span>
               <DialogPrimitive.Close asChild>
                 <PmsButton variant="secondary" disabled={pending}>
@@ -254,11 +276,10 @@ export function ReferrerFormsPanel({
               <PmsButton
                 type="button"
                 loading={pending}
-                disabled={library.length === 0}
                 onClick={() => void openForm()}
                 data-testid="open-in-clinforms"
               >
-                Open in {REPORTS_ADDON_NAME}
+                Open in {REPORT_FORMS_LABEL}
               </PmsButton>
             </div>
           </DialogPrimitive.Content>

@@ -6,7 +6,7 @@ import { BillingBannerBar } from "@/components/account/billing-banner";
 import { billingBannerFor } from "@/server/billing/banner";
 import { ProductSwitchBar } from "@/components/pms/shell/product-switch";
 import { ClinicSystemMark } from "@/components/clindesk/logo";
-import { CLINFORMS_NAME, CLINIC_SYSTEM_NAME, REPORTS_ADDON_NAME } from "@/lib/brand";
+import { CLINFORMS_NAME, CLINIC_SYSTEM_NAME, REPORT_FORMS_LABEL } from "@/lib/brand";
 import { StudioShell } from "@/modules/medreport/ui/components/shared/studio-shell";
 import type { StudioBrand } from "@/modules/medreport/ui/host-hooks";
 import { getAuth } from "@/server/auth/auth";
@@ -45,15 +45,16 @@ export async function generateMetadata(): Promise<Metadata> {
  */
 /**
  * The brand the Studio's own chrome is shown under (01/11/2026, F4): none on ClinForms' hosts (ClinForms' mark and name,
- * as before); on the clinic brand's host the clinic system's mark, "Reports" in the header, "<clinic system> Reports"
+ * as before); on the clinic brand's host the clinic system's mark, "Report forms" in the header, "<clinic system> Report forms"
  * in the footer and the clinic system's name where the Studio's copy names the product.
  */
 function studioBrandFor(brand: ReturnType<typeof currentBrand>): StudioBrand | undefined {
   if (brand.id !== "clinic") return undefined;
   return {
     productName: brand.productName,
-    studioName: REPORTS_ADDON_NAME,
-    footerName: `${brand.productName} ${REPORTS_ADDON_NAME}`,
+    // 15/11/2026 (Khuram): "Report forms" – never confused with the clinic system's own Reports (figures).
+    studioName: REPORT_FORMS_LABEL,
+    footerName: `${brand.productName} ${REPORT_FORMS_LABEL}`,
     mark: <ClinicSystemMark className="h-8 w-8 shrink-0" />,
   };
 }
@@ -77,13 +78,15 @@ export default async function TenantStudioLayout({ children }: { children: React
   const studioBrand = studioBrandFor(hostBrand);
   return (
     <>
-      {clinicSystem ? <ProductSwitchBar clinicSystemName={CLINIC_SYSTEM_NAME} clinicHref="/app/clinic" reportsName={hostBrand.id === "clinic" ? REPORTS_ADDON_NAME : CLINFORMS_NAME} /> : null}
+      {clinicSystem ? <ProductSwitchBar clinicSystemName={CLINIC_SYSTEM_NAME} clinicHref="/app/clinic" reportsName={hostBrand.id === "clinic" ? REPORT_FORMS_LABEL : CLINFORMS_NAME} /> : null}
       {/* A demo clinic (made-up data only; clinic_plan.demo_clinic read on the server): the banner, and the header pill. */}
       <DemoClinicBanner on={context.demoClinic} />
       <TrialBannerBar access={trial} contactEmail={contactEmail} />
       <BillingBannerBar banner={billing} />
       <TenantHost
         supportEmail={contactEmail}
+        // 15/11/2026: only a clinic that also has the clinic system – "Complete a form" points to its patients' cases.
+        {...(clinicSystem ? { clinicSystemPatients: { href: "/app/clinic/patients", name: CLINIC_SYSTEM_NAME } } : {})}
         {...(studioBrand ? { brand: studioBrand } : {})}
         clinic={{
           tenantId: context.tenantId,
