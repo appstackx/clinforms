@@ -3,6 +3,7 @@ import Link from "next/link";
 import { LegalPage } from "@/components/marketing/legal-page";
 import { COMPANY, TERMS_LAST_UPDATED, companyRegistrationLine } from "@/lib/site";
 import { PRODUCT } from "@/modules/medreport/config.public";
+import { ProseFrame } from "@/components/marketing/prose-frame";
 
 const DESCRIPTION = `The terms on which ${COMPANY.legalName} provides ${PRODUCT.name} to physiotherapy clinics.`;
 
@@ -17,6 +18,7 @@ export default function TermsPage() {
   const registration = companyRegistrationLine();
   const email = COMPANY.contactEmail;
   return (
+    <ProseFrame>
     <LegalPage
       title="Terms of service"
       lastUpdated={TERMS_LAST_UPDATED}
@@ -207,5 +209,6 @@ export default function TermsPage() {
         Wales have exclusive jurisdiction.
       </p>
     </LegalPage>
+    </ProseFrame>
   );
 }

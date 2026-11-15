@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 440" width="640" height="440" aria-hidden="true">
+  <!-- ClinForms hero: a referrer's form arriving in the post, a stamp lifting off an approved copy. Site palette and line (styles/site.css). -->
+  <g fill="none" stroke="#0F3B35" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <!-- desk -->
+    <rect x="-3" y="399" width="660" height="28" rx="8" fill="#F6C34A" stroke="none"/>
+    <rect x="-10" y="392" width="660" height="28" rx="8"/>
+
+    <!-- envelope: back flap, open -->
+    <path d="M60 236 L210 146 L360 236 Z" fill="#0B6B65"/>
+
+    <!-- the referrer's form, rising out of the envelope -->
+    <g transform="rotate(-4 210 180)">
+      <rect x="117" y="57" width="200" height="260" rx="4" fill="#FBF4E8" stroke="none"/>
+      <rect x="110" y="50" width="200" height="260" rx="4" fill="#fff"/>
+      <rect x="113" y="53" width="194" height="32" fill="#1F3A6B" stroke="none"/>
+      <path d="M110 86 H310"/>
+      <path stroke="#FBF4E8" stroke-width="5" d="M128 69 H206"/>
+      <rect x="126" y="104" width="20" height="20" rx="3" stroke-width="4"/>
+      <rect x="126" y="140" width="20" height="20" rx="3" stroke-width="4"/>
+      <rect x="126" y="176" width="20" height="20" rx="3" stroke-width="4"/>
+      <path stroke-width="4" d="M158 114 H292 M158 150 H272 M158 186 H284"/>
+      <path stroke="#C4432B" stroke-width="7" d="M127 113 L134 121 L150 100 M127 149 L134 157 L150 136"/>
+      <rect x="156" y="200" width="134" height="20" rx="3" fill="#FDE8B4" stroke="#0F3B35" stroke-width="3" stroke-dasharray="7 7"/>
+    </g>
+
+    <!-- paper clip -->
+    <path stroke-width="5" d="M282 40 V86 a10 10 0 0 0 20 0 V30 a15 15 0 0 0 -30 0 V78"/>
+
+    <!-- envelope: pocket -->
+    <rect x="67" y="235" width="300" height="164" rx="10" fill="#C4432B" stroke="none"/>
+    <rect x="60" y="228" width="300" height="164" rx="10" fill="#0B6B65"/>
+    <path stroke="#FBF4E8" stroke-width="5" d="M76 378 L210 300 L344 378"/>
+    <rect x="298" y="244" width="42" height="50" rx="3" fill="#F6C34A" stroke-width="4"/>
+    <path stroke-width="3" d="M308 256 H330 M308 266 H326"/>
+    <circle cx="300" cy="286" r="16" stroke="#FBF4E8" stroke-width="3"/>
+
+    <!-- rubber stamp, lifting -->
+    <circle cx="505" cy="97" r="30" fill="#F6C34A" stroke="none"/>
+    <circle cx="498" cy="90" r="30" fill="#C4432B"/>
+    <rect x="491" y="125" width="28" height="54" fill="#F6C34A" stroke="none"/>
+    <rect x="484" y="118" width="28" height="56" fill="#FBF4E8"/>
+    <rect x="441" y="179" width="128" height="42" rx="8" fill="#F6C34A" stroke="none"/>
+    <rect x="434" y="172" width="128" height="42" rx="8" fill="#0F3B35"/>
+    <rect x="444" y="212" width="108" height="14" rx="3" fill="#C4432B" stroke-width="5"/>
+    <path stroke-width="5" d="M468 246 V262 M498 244 V266 M528 246 V262"/>
+
+    <!-- the approved copy on the desk -->
+    <g transform="rotate(3 520 338)">
+      <rect x="427" y="293" width="196" height="100" rx="4" fill="#FBF4E8" stroke="none"/>
+      <rect x="420" y="286" width="196" height="100" rx="4" fill="#fff"/>
+      <path stroke-width="4" d="M440 308 H516 M440 330 H500 M440 352 H508"/>
+      <circle cx="568" cy="336" r="31" stroke="#C4432B" stroke-width="5"/>
+      <path stroke="#C4432B" stroke-width="7" d="M552 336 L563 348 L584 322"/>
+    </g>
+  </g>
+</svg>

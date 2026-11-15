@@ -4,6 +4,7 @@ import { CheckCircle2, ShieldCheck } from "lucide-react";
 import { COMPANY } from "@/lib/site";
 import { PRODUCT } from "@/modules/medreport/config.public";
 import { RequestAccessForm } from "./request-access-form";
+import { ProseFrame } from "@/components/marketing/prose-frame";
 
 const TITLE = "Request access";
 const DESCRIPTION = `Ask for ${PRODUCT.name} for your physiotherapy clinic. Tell us about your clinic and the referrers' forms you receive, and we will be in touch.`;
@@ -23,6 +24,7 @@ const NEXT_STEPS = [
 
 export default function RequestAccessPage() {
   return (
+    <ProseFrame>
     <div className="bg-gradient-to-b from-teal-50/60 via-white to-white">
       <div className="mx-auto grid max-w-6xl gap-12 px-4 py-12 sm:px-6 sm:py-16 lg:grid-cols-[1fr_1.15fr] lg:gap-16 lg:px-8">
         <div>
@@ -58,5 +60,6 @@ export default function RequestAccessPage() {
         <RequestAccessForm />
       </div>
     </div>
+    </ProseFrame>
   );
 }

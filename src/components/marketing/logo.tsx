@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { PUBLIC_SITE_BRAND } from "@/lib/brand";
 
-/** The ClinForms mark (same glyph as src/app/icon.svg) and name, linking home. */
+/** The ClinForms mark (same glyph as src/app/icon.svg). Also used by the app's own chrome (account shell). */
 export function LogoMark({ className = "h-8 w-8" }: { className?: string }) {
   return (
     <svg viewBox="0 0 32 32" className={className} aria-hidden focusable="false">
@@ -13,14 +13,15 @@ export function LogoMark({ className = "h-8 w-8" }: { className?: string }) {
   );
 }
 
+/**
+ * The website's logo: the mark and the name, linking home. Laid out by the site's design system (.logo / .logo-word,
+ * src/components/clindesk/styles/site.css), so the name is set like ClinDesk's word mark.
+ */
 export function Logo({ name = PUBLIC_SITE_BRAND.productName }: { name?: string }) {
   return (
-    <Link
-      href="/"
-      className="flex items-center gap-2 rounded-lg text-lg font-semibold tracking-tight text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-700 focus-visible:ring-offset-2"
-    >
-      <LogoMark />
-      <span>{name}</span>
+    <Link href="/" className="logo" aria-label={`${name} home`}>
+      <LogoMark className="cf-mark" />
+      <span className="logo-word">{name}</span>
     </Link>
   );
 }

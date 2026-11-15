@@ -5,6 +5,7 @@ import { CircleDashed, CheckCircle2 } from "lucide-react";
 import { LegalPage } from "@/components/marketing/legal-page";
 import { COMPANY, LEGAL_LAST_UPDATED } from "@/lib/site";
 import { PRODUCT } from "@/modules/medreport/config.public";
+import { ProseFrame } from "@/components/marketing/prose-frame";
 
 const DESCRIPTION = `How ${PRODUCT.name} protects clinic and patient information: clinician approval, traceable answers, two-step verification, encryption, EU storage, audit trail and data minimisation.`;
 
@@ -141,6 +142,7 @@ function MeasureList({ items, planned = false }: { items: Measure[]; planned?: b
 export default function SecurityPage() {
   const email = COMPANY.contactEmail;
   return (
+    <ProseFrame>
     <LegalPage
       title="Security and data protection"
       lastUpdated={LEGAL_LAST_UPDATED}
@@ -176,5 +178,6 @@ export default function SecurityPage() {
         report and keep you informed.
       </p>
     </LegalPage>
+    </ProseFrame>
   );
 }
