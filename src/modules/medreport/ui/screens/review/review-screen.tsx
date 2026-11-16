@@ -29,6 +29,7 @@ import { NOTICES } from "../../../config.public";
 import { formatUkDateTime } from "../../../core/dates";
 import { computeFacts } from "../../../core/computed-facts";
 import { isDemoHcpc } from "../../../core/demo-clinic";
+import { isPracticeReport } from "../../../core/practice";
 import { formToTemplate, primaryTreatingClinician } from "../../../core/forms";
 import { referralValueForPath } from "../../../core/form-record-rules";
 import { prefillSigners, prefillSignersText } from "../../../core/parties";
@@ -628,6 +629,12 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
 
   return (
     <div className="space-y-5">
+      {isPracticeReport(report) ? (
+        // 16/11/2026: the practice patient (core/practice.ts) – said once at the top; the server marks every output.
+        <p role="note" data-testid="practice-report-banner" className="rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-slate-800">
+          {WORDING.practice.banner}
+        </p>
+      ) : null}
       {handOver && (
         <div role="region" aria-label="Hand-over" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-slate-800">
           <span>

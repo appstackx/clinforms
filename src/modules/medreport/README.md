@@ -749,7 +749,10 @@ additive optional `HostHooks` members (`ui/host-hooks.tsx`):
   Simulated TM3 tiles / source tab / sandbox launch hints, "Try the …" fictional samples, the forms library's
   sample and demonstration forms, PH-DEMO placeholders and hints, the Security page's "In this demo" table,
   "Use the prepared demo draft", and the batch screen (it reads a connected clinic system; tenant mode explains
-  that instead and hides Batch from the navigation). The notes upload is the source. Production copy lives in
+  that instead and hides Batch from the navigation). The notes upload is the source – plus, since 16/11/2026, ONE
+  made-up **practice patient** (`core/practice.ts`, "Use the practice patient" in step 1): her record is read like
+  uploaded notes, and the SERVER marks every output of a report made from it as practice (recognised by the record's
+  patient id, never a browser flag); usage is unchanged (it counts as one report). Production copy lives in
   `ui/studio-copy.ts` `TENANT_COPY`. Fix wave 2 (end-to-end review): no "TM3" anywhere in a clinic's Studio
   (`useFillSourceLabels`, `TENANT_COPY.sources`, no practice-system tile – pinned by `ui/tenant-mode.test.ts`), no
   "demo"/"live" analysis labels or request counts (`useAnalysisModeLabels`, `WORDING.server.analysis.clinic*` for a

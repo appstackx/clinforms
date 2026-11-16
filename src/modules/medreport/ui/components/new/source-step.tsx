@@ -5,8 +5,9 @@
  * or an uploaded TM3 export (our documented JSON / CSV format, or pasted anonymised notes). The launch
  * from TM3 itself is handled by the screen (launch token) and skips this step.
  * Tenant mode (a clinic's own Studio): the notes upload only – no Simulated TM3 picker, no sandbox link,
- * no fictional samples to try – and the signed-in member's own sign-in authorises the upload (no demo
- * session).
+ * no sample downloads – and the signed-in member's own sign-in authorises the upload (no demo session).
+ * 16/11/2026: one made-up PRACTICE PATIENT to try the service with (core/practice.ts): her record is read
+ * like uploaded notes, and every output of a report made from it is marked as practice by the server.
  * Wave 3: uploads go to POST /connectors/file-import/read. Notes in the documented layout give the record
  * straight away; ordinary clinic notes (a PDF, Word document, CSV export, text file or pasted text in any
  * layout) come back as a NotesReview that staff check and confirm in ./notes-review.tsx before the record is
@@ -16,10 +17,10 @@
  */
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { ChevronRight, Download, ExternalLink, FileUp, MonitorSmartphone, Search, Upload, UserRound } from "lucide-react";
+import { ChevronRight, Download, ExternalLink, FileUp, GraduationCap, MonitorSmartphone, Search, Upload, UserRound } from "lucide-react";
 import type { BundleResponse } from "../../../api/contract";
 import { IMPORT_FORMAT_GUIDE } from "../../../connectors/file-import/format";
-import { SAMPLE_IMPORT_FILES, SAMPLE_PRINTED_NOTES_PDF } from "../../../connectors/file-import/samples";
+import { PRACTICE_PATIENT_FILE, SAMPLE_IMPORT_FILES, SAMPLE_PRINTED_NOTES_PDF } from "../../../connectors/file-import/samples";
 import { formatUkDate } from "../../../core/dates";
 import { INSTRUCTING_PARTY_LABELS } from "../../../core/labels";
 import type { ConnectorId, EpisodeSummary, PatientSummary } from "../../../core/types";
@@ -28,6 +29,7 @@ import { ApiError, api, saveBlob, toBase64 } from "../../api-client";
 import { useHostHooks, useStudioMode } from "../../host-hooks";
 import { getSession, setSession } from "../../store";
 import { TENANT_COPY } from "../../studio-copy";
+import { WORDING } from "../../wording";
 import { Button, Input, Skeleton, cn } from "../../primitives";
 import { FileDrop } from "../shared/file-drop";
 import { errorMessage } from "../shared/format";
@@ -289,7 +291,7 @@ function ExportUpload({ onLoaded, tenant = false }: { onLoaded(result: SourceRes
     return { message: err instanceof ApiError ? (err.problem.detail ?? err.problem.title) : errorMessage(err), issues };
   };
 
-  const submit = async (format: ImportFormat, content: string, fileName?: string) => {
+  const submit = async (format: ImportFormat, content: string, fileName?: string, label?: string) => {
     setBusy(true);
     setError(null);
     try {
@@ -301,7 +303,7 @@ function ExportUpload({ onLoaded, tenant = false }: { onLoaded(result: SourceRes
         setReview(read.review);
         return;
       }
-      onLoaded({ data: read.data, sourceLabel: fileName ? `${format === "pdf" ? "Printed notes" : "Notes export"} (${fileName})` : "Pasted notes" });
+      onLoaded({ data: read.data, sourceLabel: label ?? (fileName ? `${format === "pdf" ? "Printed notes" : "Notes export"} (${fileName})` : "Pasted notes") });
     } catch (err) {
       setError(problemOf(err));
     } finally {
@@ -401,7 +403,38 @@ function ExportUpload({ onLoaded, tenant = false }: { onLoaded(result: SourceRes
           </Notice>
         ) : null}
       </div>
-      {tenant ? <TenantFormatGuide /> : <DemoFormatGuide busy={busy} submit={submit} />}
+      {tenant ? (
+        <div className="space-y-3">
+          <PracticePatientCard
+            busy={busy}
+            onUse={() => void submit(PRACTICE_PATIENT_FILE.format, PRACTICE_PATIENT_FILE.content, PRACTICE_PATIENT_FILE.fileName, WORDING.practice.sourceLabel)}
+          />
+          <TenantFormatGuide />
+        </div>
+      ) : (
+        <DemoFormatGuide busy={busy} submit={submit} />
+      )}
+    </div>
+  );
+}
+
+/**
+ * A clinic's Studio (16/11/2026): the made-up practice patient, to try the service without a real patient's notes.
+ * One click reads her record like uploaded notes; the server marks every output of the report as practice.
+ */
+function PracticePatientCard({ busy, onUse }: { busy: boolean; onUse(): void }) {
+  const w = WORDING.practice;
+  return (
+    <div className="space-y-2 rounded-xl border border-teal-200 bg-teal-50/60 p-3 text-sm" data-testid="practice-patient-card">
+      <p className="flex items-center gap-2 font-medium text-slate-900">
+        <GraduationCap className="h-4 w-4 shrink-0 text-teal-700" aria-hidden />
+        {w.cardTitle}
+      </p>
+      <p className="text-xs leading-relaxed text-slate-700">{w.cardBody}</p>
+      <Button size="sm" disabled={busy} onClick={onUse} data-testid="use-practice-patient">
+        {w.cardButton}
+      </Button>
+      <p className="text-xs text-slate-600">{w.cardNote}</p>
     </div>
   );
 }

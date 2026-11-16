@@ -38,6 +38,9 @@ import { withAttestedConfirmation } from "@/modules/medreport/auth/attestations"
 import { verifyReceipt } from "@/modules/medreport/auth/sign-receipt";
 import { buildAnswersCopy, copyFormOf, copyTextForAnswer } from "@/modules/medreport/core/answer-copy";
 import { demoOutputNotice, isDemoHcpc, normaliseDemoHcpc } from "@/modules/medreport/core/demo-clinic";
+import { PRACTICE_PATIENT_ID, isPracticeBundle, isPracticeReport, practiceOutputNotice } from "@/modules/medreport/core/practice";
+import { parseImport } from "@/modules/medreport/connectors/file-import/parser";
+import { PRACTICE_PATIENT_FILE, SAMPLE_IMPORT_FILES } from "@/modules/medreport/connectors/file-import/samples";
 import { FORM_ATTESTATIONS } from "@/modules/medreport/core/forms";
 import { EXAMPLE_PORTAL_QUESTIONS, createQuestionSet, parsePortalQuestions } from "@/modules/medreport/core/question-set";
 import { createFormReport, createReport } from "@/modules/medreport/core/report-factory";
@@ -472,6 +475,120 @@ describe("outputs – the demonstration notice", () => {
       const docx = await call(handleRender, "/render?format=docx", { report }, { member });
       assert.equal(docx.status, 200, await docx.clone().text());
       assert.equal(docxFooters(new Uint8Array(await docx.arrayBuffer())).includes("made-up data from a demo clinic. Not for clinical use."), expected, `${tenantId} Word footer`);
+    }
+  });
+});
+
+/* ------------------------------------------------------------------------------------------------
+ * 16/11/2026: the practice patient (core/practice.ts) – a made-up patient a REAL clinic's staff can complete their
+ * forms from. The server reads "practice" from the report's own record and marks every output; a real patient's
+ * report in the same clinic is untouched (the tests above).
+ * ----------------------------------------------------------------------------------------------*/
+const PRACTICE_NOTICE = "PRACTICE – made-up patient, for trying the service. Not for clinical use.";
+const hasPracticeNotice = (text: string) => text.includes("PRACTICE") && text.includes("made-up patient, for trying the service. Not for clinical use.");
+
+/** A report as the practice patient's: the record carries the practice ids, as the practice file's import gives it. */
+function asPractice(r: Report): Report {
+  return {
+    ...r,
+    episodeRef: { ...r.episodeRef, patientId: PRACTICE_PATIENT_ID },
+    bundleSnapshot: {
+      ...r.bundleSnapshot,
+      source: { ...r.bundleSnapshot.source, externalPatientId: PRACTICE_PATIENT_ID },
+      registration: { ...r.bundleSnapshot.registration, externalPatientId: PRACTICE_PATIENT_ID },
+    },
+  };
+}
+
+describe("the practice patient – a real clinic's practice reports are marked on every output", () => {
+  test("core/practice.ts: recognised by the record's patient id only; the notice is added for practice reports and nothing else", () => {
+    assert.equal(WORDING.practice.outputNotice, PRACTICE_NOTICE);
+    const real = reportOf(A, "rpt_practice_unit");
+    assert.equal(isPracticeReport(real), false);
+    assert.equal(isPracticeReport(asPractice(real)), true);
+    assert.equal(isPracticeReport({ episodeRef: { patientId: PRACTICE_PATIENT_ID } }), true);
+    assert.equal(isPracticeBundle({ source: { externalPatientId: PRACTICE_PATIENT_ID } }), true);
+    assert.equal(isPracticeBundle({ source: { externalPatientId: "imp-pat-3017" }, registration: { externalPatientId: "imp-pat-3017" } }), false);
+    assert.equal(isPracticeReport(null), false);
+    assert.equal(practiceOutputNotice(null, false), undefined);
+    assert.equal(practiceOutputNotice(null, true), PRACTICE_NOTICE);
+    assert.equal(practiceOutputNotice({ demoNotice: " A form's  own notice. " }, true), "A form's own notice.");
+  });
+
+  test("the practice file reads like uploaded notes and gives the practice patient's record (same case as the sample export)", () => {
+    const now = new Date("2026-11-16T09:00:00.000Z");
+    const read = parseImport({ format: PRACTICE_PATIENT_FILE.format, content: PRACTICE_PATIENT_FILE.content, fileName: PRACTICE_PATIENT_FILE.fileName }, { tenantId: A, now });
+    assert.ok(read.ok, JSON.stringify(read));
+    assert.equal(isPracticeBundle(read.bundle), true);
+    assert.equal(read.bundle.source.externalPatientId, PRACTICE_PATIENT_ID);
+    assert.equal(read.bundle.registration.externalPatientId, PRACTICE_PATIENT_ID);
+    assert.equal(read.bundle.registration.fullName, "Priya Nair");
+    assert.deepEqual(read.stats, { notes: 6, appointments: 7, outcomeSeries: 2, clinicians: 1 });
+    const sample = parseImport({ format: "json", content: SAMPLE_IMPORT_FILES.json.content, fileName: "sample.json" }, { tenantId: A, now });
+    assert.ok(sample.ok);
+    assert.equal(isPracticeBundle(sample.bundle), false, "the public demo's sample export is not the practice patient");
+    assert.deepEqual(read.bundle.notes, sample.bundle.notes);
+    // A report made from it is a practice report.
+    const form = northfieldOf(A);
+    const report = createFormReport({ form, bundle: read.bundle, instructingParty: read.bundle.referral, computedFacts: computeFacts(read.bundle), now });
+    assert.equal(isPracticeReport(report), true);
+  });
+
+  test("PDF form in a real clinic: a practice report's draft preview and FINAL file carry the practice notice on every page", async () => {
+    const fileBase64 = await sampleBase64("northfield-rehab-progress");
+    const signer = { name: "Sam Ward (fictional)", hcpc: "PH123456" };
+    const report = asPractice(reportOf(A, "rpt_practice_render"));
+    const preview = await call(handleFormsFillPreview, "/forms/fill-preview", { report, form: northfieldOf(A), fileBase64, mode: "draft" }, { member: "sam-a" });
+    assert.equal(preview.status, 200, await preview.clone().text());
+    const previewPages = await pagesText(new Uint8Array(await preview.arrayBuffer()));
+    previewPages.forEach((text, i) => assert.ok(hasPracticeNotice(text), `preview page ${i + 1}: ${text.slice(-200)}`));
+    previewPages.forEach((text) => assert.ok(!hasNotice(text), "not the demo clinic's notice"));
+
+    const receipt = await sign("sam-a", report, northfieldOf(A), signer);
+    const res = await call(handleRender, "/render?format=original", { report: { ...report, status: "signed", receipt }, receipt, form: northfieldOf(A), fileBase64, requireFinal: true }, { member: "sam-a" });
+    assert.equal(res.status, 200, await res.clone().text());
+    assert.equal(res.headers.get(HEADERS.renderKind), "final");
+    (await pagesText(new Uint8Array(await res.arrayBuffer()))).forEach((text, i) => assert.ok(hasPracticeNotice(text), `final page ${i + 1}: ${text.slice(-200)}`));
+    // The trail is a real clinic's: no demo flag.
+    const finalRow = (await listAudit({ db }, A)).find((r) => r.action === "report.render_final" && r.targetId === report.id);
+    assert.ok(finalRow);
+    assert.equal(finalRow.detail?.demoClinic, undefined);
+  });
+
+  test("Word form, portal question set and built-in report in a real clinic: practice notice on the practice report only", async () => {
+    // Word form (final).
+    const wordFile = await sampleBase64("harrow-pike-treating-physio");
+    const wordForm = attested(HARROW_PIKE_FORM, A);
+    const signer = { name: "Sam Ward (fictional)", hcpc: "PH123456" };
+    for (const practice of [true, false]) {
+      const base = reportOf(A, `rpt_practice_word_${practice}`, wordForm);
+      const report = practice ? asPractice(base) : base;
+      const receipt = await sign("sam-a", report, wordForm, signer);
+      const res = await call(handleRender, "/render?format=original", { report: { ...report, status: "signed", receipt }, receipt, form: wordForm, fileBase64: wordFile, requireFinal: true }, { member: "sam-a" });
+      assert.equal(res.status, 200, await res.clone().text());
+      assert.equal(docxFooters(new Uint8Array(await res.arrayBuffer())).includes("made-up patient, for trying the service. Not for clinical use."), practice, `Word footer (practice ${practice})`);
+    }
+    // Portal question set (the summary PDF) and built-in report (PDF + Word), drafts.
+    const bundle = getDemoBundle("megan-hart");
+    const at = new Date("2026-11-16T10:00:00.000Z");
+    const parsed = parsePortalQuestions(EXAMPLE_PORTAL_QUESTIONS);
+    const set = attested(await createQuestionSet({ referrer: { name: "Northbridge Health Insurance (fictional)", type: "insurer" }, questions: parsed.questions, now: at, id: "form-portal-practice" }), A);
+    const template = BUILTIN_TEMPLATES[0];
+    for (const practice of [true, false]) {
+      const mark = (r: Report): Report => (practice ? asPractice(r) : r);
+      const portal = mark({ ...createFormReport({ form: set, bundle: { ...bundle, tenantId: A }, instructingParty: bundle.referral, computedFacts: computeFacts(bundle), now: at }), tenantId: A });
+      const summary = await call(handleRender, "/render?format=pdf", { report: portal, form: set }, { member: "sam-a" });
+      assert.equal(summary.status, 200, await summary.clone().text());
+      (await pagesText(new Uint8Array(await summary.arrayBuffer()))).forEach((text, i) => assert.equal(hasPracticeNotice(text), practice, `summary page ${i + 1} (practice ${practice})`));
+      assert.equal(buildAnswersCopy({ report: portal, form: copyFormOf(set), ...(practice ? { demoNotice: practiceOutputNotice(set, true) } : {}) }).text.includes(PRACTICE_NOTICE), practice, "copied answers");
+
+      const builtIn = mark(createReport({ template, bundle: { ...bundle, tenantId: A }, instructingParty: bundle.referral, computedFacts: computeFacts(bundle, { asOf: "2026-11-16" }), now: at, id: `rpt_practice_builtin_${practice}` }));
+      const pdf = await call(handleRender, "/render?format=pdf", { report: builtIn }, { member: "sam-a" });
+      assert.equal(pdf.status, 200, await pdf.clone().text());
+      (await pagesText(new Uint8Array(await pdf.arrayBuffer()))).forEach((text, i) => assert.equal(hasPracticeNotice(text), practice, `built-in PDF page ${i + 1} (practice ${practice})`));
+      const docx = await call(handleRender, "/render?format=docx", { report: builtIn }, { member: "sam-a" });
+      assert.equal(docx.status, 200, await docx.clone().text());
+      assert.equal(docxFooters(new Uint8Array(await docx.arrayBuffer())).includes("made-up patient, for trying the service. Not for clinical use."), practice, `built-in Word footer (practice ${practice})`);
     }
   });
 });

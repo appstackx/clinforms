@@ -63,6 +63,7 @@ import { readReportFingerprint, verifyReceipt } from "../../auth/sign-receipt";
 import { MAX_TEMPLATE_DOCX_BYTES } from "../../config.public";
 import { todayIso } from "../../core/dates";
 import { demoOutputNotice, isDemoHcpc } from "../../core/demo-clinic";
+import { isPracticeReport, practiceOutputNotice } from "../../core/practice";
 import { buildFormAnswers } from "../../core/forms";
 import type { FormDefinition, Report, ReportTemplate, SignReceipt } from "../../core/types";
 import { validateReport, type ValidateReportResult } from "../../core/validation";
@@ -314,7 +315,9 @@ export const handleRender: MedreportHandler = async (req, _ctx, deps) => {
   // receipt's signer is covered by its MAC, verified above) keeps the notice after the clinic is switched back to real.
   const madeUpApproval = actor.via !== "demo" && final && isDemoHcpc(receipt?.signer.hcpc);
   const demoClinic = (await actorInDemoClinic(deps, actor)) || madeUpApproval;
-  const notice = demoClinic ? demoOutputNotice(formDef, true) : undefined;
+  // 16/11/2026: a report made from the practice patient's record (core/practice.ts – read from the report itself)
+  // carries the practice notice on every page, in any clinic. A real patient's report: undefined, as before.
+  const notice = demoClinic ? demoOutputNotice(formDef, true) : practiceOutputNotice(formDef, isPracticeReport(report));
   // FINAL: the hash the verified receipt records – also when it verified over the report as this build knows it (keys
   // it does not know left out, as before the rollback shim). Draft: the report's fingerprint as read, else as known.
   const contentSha256 = final && decision.contentSha256 ? decision.contentSha256 : await readReportFingerprint(report);

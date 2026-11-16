@@ -16,6 +16,7 @@ import { useCallback, useMemo, useRef } from "react";
 import { CheckCircle2, ClipboardCopy, Copy, Download, PenLine } from "lucide-react";
 import { answersFileName, answersTxt, buildAnswersCopy, copyFormOf, copyTextForAnswer, type AnswersCopy } from "../../../core/answer-copy";
 import { demoOutputNotice } from "../../../core/demo-clinic";
+import { isPracticeReport, practiceOutputNotice } from "../../../core/practice";
 import type { FormDefinition, Report } from "../../../core/types";
 import { saveBlob } from "../../api-client";
 import { useDemoClinic } from "../../host-hooks";
@@ -82,7 +83,8 @@ export function useAnswersCopy(opts: {
   const { report, form, actor, dispatch, toast } = opts;
   // A demo clinic (from the server, via the host): every copy carries the demonstration notice.
   const demoClinic = useDemoClinic();
-  const demoNotice = demoClinic ? demoOutputNotice(form, true) : undefined;
+  // The practice patient (core/practice.ts): copies carry the practice notice, as the files do.
+  const demoNotice = demoClinic ? demoOutputNotice(form, true) : practiceOutputNotice(form, isPracticeReport(report));
   const copy = useMemo(() => buildAnswersCopy({ report, form: copyFormOf(form), ...(demoNotice ? { demoNotice } : {}) }), [report, form, demoNotice]);
   const copyable = useMemo(() => new Set(copy.entries.filter((e) => e.answer !== null).map((e) => e.key)), [copy]);
   const latest = useRef({ copy, report, actor, dispatch, toast, demoNotice });

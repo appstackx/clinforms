@@ -16,6 +16,7 @@ import { CONTENT_TYPES } from "../../../api/contract";
 import { NOTICES } from "../../../config.public";
 import { formatUkDateTime } from "../../../core/dates";
 import { demoOutputNotice } from "../../../core/demo-clinic";
+import { isPracticeReport, practiceOutputNotice } from "../../../core/practice";
 import { buildFormAnswers } from "../../../core/forms";
 import { isQuestionSet } from "../../../core/question-set";
 import type { FormDefinition, Report } from "../../../core/types";
@@ -342,6 +343,9 @@ export function PreviewPanel({
       {demoClinic ? (
         // A demo clinic: every output carries a notice (the form's own, else the demo clinic notice).
         <DemoNoticeBar notice={demoOutputNotice(isForm ? form : null, true)} label={form?.demoNotice && isForm ? "Demonstration form" : WORDING.demoClinic.label} />
+      ) : isPracticeReport(report) ? (
+        // The practice patient (core/practice.ts): the server prints this notice on every page.
+        <DemoNoticeBar notice={practiceOutputNotice(isForm ? form : null, true)} label={WORDING.practice.label} />
       ) : isForm ? (
         <DemoNoticeBar notice={form?.demoNotice} />
       ) : null}

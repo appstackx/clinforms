@@ -207,7 +207,7 @@ export function parseMapsJson(text: string): MapsJson {
   return out;
 }
 
-async function requireOpenClinic(db: Kysely<Database>, tenantId: string): Promise<void> {
+export async function requireOpenClinic(db: Kysely<Database>, tenantId: string): Promise<void> {
   const org = await db.selectFrom("organization").select(["id", "metadata"]).where("slug", "=", tenantId).executeTakeFirst();
   if (!org) throw new RepoInputError(`No clinic with the id "${tenantId}".`);
   if (org.metadata && /"offboardedAt"/.test(org.metadata)) throw new RepoInputError(`The clinic "${tenantId}" is closed.`);
