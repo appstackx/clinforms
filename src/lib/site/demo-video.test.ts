@@ -420,7 +420,8 @@ test("the page says who it is for and what the problem is before the video, and 
   // The video ends with "Book a 15-minute call": the page's main button says the same and leads to the request form.
   assert.match(page, /<Link href=\{REQUEST_ACCESS_HREF\} className=\{btn\.primary\}> Book a 15-minute call <ArrowRight/);
   assert.equal(DEMO_CHAPTERS[DEMO_CHAPTERS.length - 1].transcript.at(-1), "Book a 15-minute call at clinforms.co.uk.");
-  assert.match(prose(read("src/app/(marketing)/request-access/page.tsx")), /We reply by email to arrange a 15-minute call\./);
+  // 16/11/2026 (Khuram): the request page no longer lists "What happens next" (no promise of a call, no DPA steps).
+  assert.doesNotMatch(prose(read("src/app/(marketing)/request-access/page.tsx")), /What happens next/);
   // The transcript sits on the page's grid (left edge in line with the video), its lines kept short inside it.
   assert.match(page, /<section id="transcript"[^>]*> (\{\} )?<div className="mx-auto max-w-6xl px-4 [^"]*"> <div className="max-w-3xl"> <h2 id="demo-transcript-title"/);
 });

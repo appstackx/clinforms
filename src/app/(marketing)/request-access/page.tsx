@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { CheckCircle2, ShieldCheck } from "lucide-react";
+import { ShieldCheck } from "lucide-react";
 import { COMPANY } from "@/lib/site";
 import { PRODUCT } from "@/modules/medreport/config.public";
 import { RequestAccessForm } from "./request-access-form";
@@ -16,12 +16,6 @@ export const metadata: Metadata = {
   openGraph: { title: `${TITLE} · ${PRODUCT.name}`, description: DESCRIPTION, url: "/request-access", siteName: PRODUCT.name, locale: "en_GB", type: "website" },
 };
 
-const NEXT_STEPS = [
-  "We reply by email to arrange a 15-minute call.",
-  "Together we look at the referrers' forms your clinic receives most.",
-  "Your clinic is set up after the data processing agreement is signed, and your team is invited.",
-];
-
 export default function RequestAccessPage() {
   return (
     <ProseFrame>
@@ -33,15 +27,6 @@ export default function RequestAccessPage() {
             {PRODUCT.name} is available to UK physiotherapy clinics by invitation. Tell us a little about your clinic and
             we will get in touch.
           </p>
-          <h2 className="mt-10 text-base font-semibold text-slate-900">What happens next</h2>
-          <ol className="mt-4 space-y-3">
-            {NEXT_STEPS.map((step) => (
-              <li key={step} className="flex gap-3 text-slate-700">
-                <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-teal-700" aria-hidden />
-                {step}
-              </li>
-            ))}
-          </ol>
           <div className="mt-10 flex gap-3 rounded-2xl border border-slate-200 bg-white p-5 text-sm text-slate-600">
             <ShieldCheck className="h-5 w-5 shrink-0 text-teal-700" aria-hidden />
             <p>
