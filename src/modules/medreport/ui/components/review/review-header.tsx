@@ -35,7 +35,9 @@ import { referrerNamesMatch } from "../../../core/forms";
 import { FORM_KIND_LABELS, INSTRUCTING_PARTY_LABELS } from "../../../core/labels";
 import type { Report, ReportTemplate } from "../../../core/types";
 import { useStudioMode } from "../../host-hooks";
+import { isPracticeReport } from "../../../core/practice";
 import { Button, Tooltip, TooltipContent, TooltipTrigger, cn } from "../../primitives";
+import { WORDING } from "../../wording";
 import { useStudioPaths } from "../../routes";
 import { useStoreSync } from "../../store";
 import { TENANT_COPY } from "../../studio-copy";
@@ -189,6 +191,15 @@ export function ReviewHeader({
             {report.version && report.version > 1 ? (
               <span className="inline-flex h-6 items-center whitespace-nowrap rounded-full bg-violet-100 px-2.5 text-xs font-semibold text-violet-900 ring-1 ring-violet-200">
                 Amended – v{report.version}
+              </span>
+            ) : null}
+            {isPracticeReport(report) ? (
+              <span
+                className="inline-flex h-6 items-center whitespace-nowrap rounded-full bg-teal-50 px-2.5 text-xs font-semibold text-teal-900 ring-1 ring-teal-200"
+                title={WORDING.practice.banner}
+                data-testid="practice-report-pill"
+              >
+                {WORDING.practice.label}
               </span>
             ) : null}
           </div>

@@ -172,6 +172,9 @@ export interface Wording {
   /* Demo clinics (clinic_plan.demo_clinic, set by ClinForms staff only – core/demo-clinic.ts) ------- */
   demoClinic: DemoClinicWording;
 
+  /* The practice patient of a clinic's own Studio (core/practice.ts) ------------------------------ */
+  practice: PracticeWording;
+
   /* "See exactly what the drafting service receives" panel -------------------------------------- */
   payload: {
     toggle: string;
@@ -550,6 +553,39 @@ const DEMO_CLINIC: DemoClinicWording = {
       : "A real clinic again",
 };
 
+/**
+ * The practice patient (16/11/2026, core/practice.ts): a made-up patient a clinic's staff can complete any of their
+ * forms from, to try the service without a real patient's notes. Every output of a practice report carries
+ * `outputNotice`, decided by the server from the report's record.
+ */
+export interface PracticeWording {
+  /** Step 1 of "Complete a form" in a clinic's Studio. */
+  cardTitle: string;
+  cardBody: string;
+  cardButton: string;
+  cardNote: string;
+  /** Where the record came from (the report's source label). */
+  sourceLabel: string;
+  /** Short label (previews, the reports list). */
+  label: string;
+  /** Review screen banner. */
+  banner: string;
+  /** Every output (draft preview, Word / PDF files, copied answers). */
+  outputNotice: string;
+}
+
+const PRACTICE: PracticeWording = {
+  cardTitle: "No patient to hand? Try it with a practice patient",
+  cardBody:
+    "A made-up patient with a full set of notes: a right shoulder injury after a fall, seven appointments and outcome scores. Complete any of your forms from her record to see how it works – no real patient's notes are needed.",
+  cardButton: "Use the practice patient",
+  cardNote: "A practice report is marked as practice on every page and is not for sending. It counts as one report on your plan.",
+  sourceLabel: "Practice patient (made-up)",
+  label: "Practice report",
+  banner: "Practice report – this is the made-up practice patient. Every page is marked as practice; it is not for sending.",
+  outputNotice: "PRACTICE – made-up patient, for trying the service. Not for clinical use.",
+};
+
 /** Problem codes in plain words (the codes themselves stay in the API). */
 const NEUTRAL_FAILURE_CODES: Record<string, string> = {
   AI_TIMEOUT: "timed out",
@@ -675,6 +711,7 @@ const NEUTRAL: Wording = {
   answersCopy: ANSWERS_COPY,
   questionSet: QUESTION_SET,
   demoClinic: DEMO_CLINIC,
+  practice: PRACTICE,
   payload: {
     toggle: "See exactly what the drafting service receives",
     subtitle: "The minimised record for this patient, exactly as a drafting request would send it – nothing is sent to show it.",
@@ -883,6 +920,7 @@ const AI_ASSISTED: Wording = {
   answersCopy: ANSWERS_COPY,
   questionSet: QUESTION_SET,
   demoClinic: DEMO_CLINIC,
+  practice: PRACTICE,
   payload: {
     toggle: "See exactly what is sent to the AI",
     subtitle: "The minimised record for this patient, as a drafting call would send it – no AI call is made to show it.",

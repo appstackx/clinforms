@@ -240,16 +240,23 @@ describe("SourceStep (Complete a form, step 1)", () => {
   it("demo offers the Simulated TM3 picker, the sandbox launch and the fictional samples", () => {
     const html = render(createElement(SourceStep, { onLoaded: () => undefined }));
     const visible = text(html);
+    assert.doesNotMatch(html, /practice-patient-card/, "the practice patient is a clinic's own Studio's");
     assert.match(visible, /Simulated TM3/);
     assert.match(visible, /Launch from the patient record/);
     assert.ok(hrefs(html).includes("/pms-sandbox"));
   });
 
-  it("tenant offers the notes upload only – no picker, no sandbox, no samples to try, no PH-DEMO placeholder", () => {
+  it("tenant offers the notes upload and the one practice patient – no picker, no sandbox, no sample downloads, no PH-DEMO placeholder", () => {
     const html = render(createElement(SourceStep, { onLoaded: () => undefined }), TENANT, "/app/studio/new");
     const visible = text(html);
     assert.match(visible, /Drop the patient's notes here/);
     assert.match(visible, /Or paste notes/);
+    // 16/11/2026 (core/practice.ts): one made-up patient to try the service with; her record is not in the page.
+    assert.match(html, /data-testid="practice-patient-card"/);
+    assert.match(visible, /No patient to hand\? Try it with a practice patient/);
+    assert.match(visible, /Use the practice patient/);
+    assert.match(visible, /marked as practice on every page and is not for sending\. It counts as one report on your plan\./);
+    assert.doesNotMatch(visible, /Download sample|sample export/i);
     assert.doesNotMatch(visible, /Find a patient|Launch from the patient record|Try the/);
     assert.doesNotMatch(html, /PH-DEMO|Sarah Reid/, "no demo placeholder in attributes either");
     assertTenantClean(html);

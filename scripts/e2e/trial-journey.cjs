@@ -15,6 +15,7 @@
  *   T4  the welcome email: once, branded HTML (tables, ClinDesk's colours, no images), plain text, "Stop these tips"
  *   T5  "Explore with sample data" → a SEPARATE sample clinic with made-up patients and the demo marker → Switch clinic
  *       back: the real clinic holds none of them
+ *   T5b 16/11/2026: report forms → "Use the practice patient" reads the made-up patient's record (no upload)
  *   T6  10 free reports used → the banner says so (the Report API's refusal itself: src/server/trial tests)
  *   T7  the trial ends: the banner says the data is safe; a new patient is refused with the trial message; records read
  *   T8  the daily cron: "Your ClinDesk free trial has ended – your data is safe" once (a second run sends nothing),
@@ -429,6 +430,24 @@ const banner = async (page) => ((await page.locator("[data-testid=trial-banner]"
       assert.equal(await page.locator("[data-testid=shell-report-forms]").count(), 1, "back in the real clinic: report forms");
       assert.equal(await page.locator("[data-testid=sample-offer]").count(), 0, "no second offer");
       return `${sampleTenant}: ${samplePatients} made-up patients`;
+    });
+
+    await step("T5b", "report forms: 'Use the practice patient' reads the made-up patient's record – no notes upload needed", async () => {
+      // 16/11/2026 (core/practice.ts): a clinic's own Studio offers one made-up patient to try the service with.
+      await page.goto(`${DESK}/app/studio/new`);
+      const card = page.locator("[data-testid=practice-patient-card]");
+      await card.waitFor({ timeout: 30000 });
+      const words = (await card.innerText()).replace(/\s+/g, " ");
+      assert.match(words, /A made-up patient with a full set of notes/, words);
+      assert.match(words, /marked as practice on every page and is not for sending/, words);
+      await page.screenshot({ path: path.join(SHOTS, "t5b-practice-card.png"), fullPage: true });
+      await page.click("[data-testid=use-practice-patient]");
+      await page.locator("text=/Imported from Practice patient \\(made-up\\)/").first().waitFor({ timeout: 30000 });
+      const body = (await page.locator("body").innerText()).replace(/\s+/g, " ");
+      assert.match(body, /Priya Nair/, "the practice patient's record is loaded");
+      await page.screenshot({ path: path.join(SHOTS, "t5b-practice-loaded.png"), fullPage: true });
+      assert.equal(one("SELECT count(*) AS n FROM pms_patients WHERE tenant_id = ?", tenant).n, 0, "nothing is added to the clinic's patients");
+      return "practice record read";
     });
 
     await step("T6", "10 free reports used → the banner says so", async () => {

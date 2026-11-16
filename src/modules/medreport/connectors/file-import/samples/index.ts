@@ -17,6 +17,7 @@ import { PRIYA_NAIR_IMPORT } from "./priya-nair";
 import { PRIYA_NAIR_NOTES_PDF_BASE64 } from "./generated/priya-nair-notes.pdf.b64";
 
 export { PRIYA_NAIR_IMPORT } from "./priya-nair";
+export { PRACTICE_PATIENT_FILE, PRACTICE_PATIENT_IMPORT } from "./practice-patient";
 
 export interface SampleImportFile {
   format: "json" | "csv" | "text";

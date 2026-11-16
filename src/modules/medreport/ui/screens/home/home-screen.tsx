@@ -63,6 +63,7 @@ import {
   cn,
 } from "../../primitives";
 import { plural } from "../../components/shared/format";
+import { isPracticeReport } from "../../../core/practice";
 import { WORDING } from "../../wording";
 import { StudioShell } from "../../components/shared/studio-shell";
 import { EmptyState, FormKindBadge, Notice, ReportStatusBadge } from "../../components/shared/ui-bits";
@@ -721,6 +722,14 @@ function FormCell({ report }: { report: Report }) {
 function SourceLine({ report }: { report: Report }) {
   // A connector id this build does not know (a later release's record) is named neutrally, never shown as a raw id.
   const source = report.bundleSnapshot.source.simulated ? "Simulated TM3" : (report.bundleSnapshot.source.label ?? connectorIdLabel(report.episodeRef.connectorId));
+  // 16/11/2026: a report made from the practice patient's record says so in the list (core/practice.ts).
+  if (isPracticeReport(report)) {
+    return (
+      <p className="max-w-[14rem] truncate text-xs font-medium text-teal-800" title={WORDING.practice.sourceLabel} data-testid="practice-report-source">
+        {WORDING.practice.sourceLabel}
+      </p>
+    );
+  }
   return (
     <p className="max-w-[14rem] truncate text-xs text-slate-500" title={source}>
       {source}

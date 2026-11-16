@@ -29,6 +29,7 @@ import { actorInDemoClinic, assertActorTenant, requireActor } from "../../auth/a
 import { MAX_FORM_REQUEST_BYTES } from "../../config.public";
 import { todayIso } from "../../core/dates";
 import { demoOutputNotice } from "../../core/demo-clinic";
+import { isPracticeReport, practiceOutputNotice } from "../../core/practice";
 import { buildFormAnswers } from "../../core/forms";
 import { isQuestionSet } from "../../core/question-set";
 import { renderQuestionSummaryPdf } from "../../docgen/question-summary";
@@ -62,7 +63,8 @@ export const handleFormsFillPreview: MedreportHandler = async (req, _ctx, deps) 
 
   const started = Date.now();
   // Demo clinics (read on the server): the preview carries the demonstration notice too.
-  const notice = (await actorInDemoClinic(deps, actor)) ? demoOutputNotice(form, true) : undefined;
+  // 16/11/2026: the practice patient's reports carry the practice notice (core/practice.ts), in any clinic.
+  const notice = (await actorInDemoClinic(deps, actor)) ? demoOutputNotice(form, true) : practiceOutputNotice(form, isPracticeReport(report));
   if (isQuestionSet(form)) {
     const out = await renderQuestionSummaryPdf(report, form, resolved.template);
     const bytes = notice ? await stampPdfDemoNotice(out.bytes, notice, { draft: true }) : out.bytes;
