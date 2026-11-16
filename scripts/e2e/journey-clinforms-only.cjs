@@ -666,11 +666,19 @@ async function acceptInvite(page, link, email, name, label) {
       await audit(owner, "studio home");
       const links = await owner.locator("a[href^='/app/studio']").evaluateAll((as) => [...new Set(as.map((a) => a.getAttribute("href")))]);
       const seen = [];
+      let sawNewForm = false;
       for (const h of links.slice(0, 12)) {
         await owner.goto(new URL(h, FORMS).href);
         const a = await audit(owner, `studio ${h}`);
         seen.push(`${h} "${a.title}"`);
+        // 16/11/2026: on ClinForms' own host too, "Complete a form" offers the practice patient (core/practice.ts).
+        if (h === "/app/studio/new") {
+          sawNewForm = true;
+          await owner.locator("[data-testid=practice-patient-card]").waitFor({ timeout: 20000 });
+          assert.match((await owner.locator("[data-testid=practice-patient-card]").innerText()).replace(/\s+/g, " "), /Use the practice patient/);
+        }
       }
+      assert.ok(sawNewForm, "the Studio links to Complete a form (/app/studio/new)");
       await owner.goto(`${FORMS}/app/studio`);
       const menuBtn = owner.locator("button[aria-haspopup], button[aria-expanded]").first();
       let menu = "(no account menu button)";
